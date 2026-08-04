@@ -132,6 +132,8 @@ Die Synology dient ausschließlich als Update-Server. Sie stellt statische Progr
 
 - **Mobile First:** Gestaltung und Implementierung beginnen beim Smartphone und skalieren anschließend auf größere Displays.
 - Die häufigsten Aufgaben benötigen möglichst wenige, eindeutige Schritte.
+- Häufig genutzte Kernfunktionen eines Hauptmenüpunkts müssen in höchstens drei bewussten Interaktionen erreichbar sein, sofern keine fachlich oder rechtlich zwingenden Schritte entgegenstehen.
+- FRECKA unterstützt bestehende Arbeitsabläufe des Betriebs, statt sie unnötig zu ersetzen.
 - Primäre Aktionen sind gut erreichbar, konsistent benannt und visuell klar von sekundären oder destruktiven Aktionen getrennt.
 - Die Anwendung zeigt jederzeit verständlich, ob Daten gespeichert, ein Vorgang offen, die Verbindung offline oder ein Update bereit ist.
 - Kein Kernablauf darf durch fehlendes Netz blockiert oder durch einen ungeplanten Reload verloren gehen.

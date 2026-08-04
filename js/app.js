@@ -28,7 +28,10 @@
     creditText: "Korrektur / Kulanz",
     finishedReceipt: null,
     successNotice: "",
-    qrVisible: false
+    qrVisible: false,
+    voucherSearch: "",
+    voucherDetailReference: null,
+    voucherNotice: ""
   };
 
   const mainContent = document.getElementById("mainContent");
@@ -41,7 +44,7 @@
   const confirmDiscard = document.getElementById("confirmDiscard");
   const dialogTitle = document.getElementById("dialogTitle");
   const dialogText = document.getElementById("dialogText");
-  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit"]);
+  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview"]);
   const validRoutes = new Set(["home", "receipts", "customers", "vouchers", "settings", ...flowRoutes]);
 
   const escapeHtml = value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -970,6 +973,176 @@
     navigate("receipt-detail");
   }
 
+  const voucherByReference = reference => data.vouchers.find(voucher => voucher.reference === reference) ?? null;
+  const voucherStatusLabel = voucher => voucher.status === "redeemed" ? "Vollständig eingelöst" : "Aktiv";
+  const maskVoucherCode = code => {
+    const parts = String(code).split("-");
+    if (parts.length < 3) return code;
+    return [parts[0], "••••", parts.at(-1)].join("-");
+  };
+
+  // App-Links contain only an opaque reference. A future resolver must look it up
+  // in the local voucher store and show a clear not-found state when it is absent;
+  // this URL structure does not imply a central voucher database or cross-device sync.
+  function voucherAppLink(reference) {
+    const url = new URL(window.location.href);
+    url.search = "";
+    url.hash = `#/voucher/${encodeURIComponent(reference)}`;
+    return url.href;
+  }
+
+  function voucherQrPlaceholder(voucher) {
+    const size = 21;
+    let seed = Array.from(voucher.reference).reduce((value, character) => ((value * 31) + character.charCodeAt(0)) >>> 0, 2166136261);
+    const inFinder = (row, column, top, left) => {
+      const localRow = row - top;
+      const localColumn = column - left;
+      if (localRow < 0 || localRow > 6 || localColumn < 0 || localColumn > 6) return null;
+      return localRow === 0 || localRow === 6 || localColumn === 0 || localColumn === 6 || (localRow >= 2 && localRow <= 4 && localColumn >= 2 && localColumn <= 4);
+    };
+    const cells = Array.from({ length: size * size }, (_, index) => {
+      const row = Math.floor(index / size);
+      const column = index % size;
+      const finder = inFinder(row, column, 0, 0) ?? inFinder(row, column, 0, size - 7) ?? inFinder(row, column, size - 7, 0);
+      seed = ((seed * 1664525) + 1013904223) >>> 0;
+      const active = finder ?? (((seed >>> 28) + row + column) % 3 === 0);
+      return `<i class="${active ? "on" : ""}"></i>`;
+    }).join("");
+    const appLink = voucherAppLink(voucher.reference);
+    return `<div class="voucher-qr" role="img" aria-label="Technisch vorbereiteter QR-Code-Platzhalter" data-voucher-app-link="${escapeHtml(appLink)}">${cells}</div>`;
+  }
+
+  function filteredVouchers() {
+    const query = state.voucherSearch.trim().toLowerCase().replaceAll("-", "").replaceAll(" ", "");
+    if (!query) return data.vouchers;
+    return data.vouchers.filter(voucher => [voucher.code, voucher.reference, voucherStatusLabel(voucher)]
+      .join(" ")
+      .toLowerCase()
+      .replaceAll("-", "")
+      .replaceAll(" ", "")
+      .includes(query));
+  }
+
+  function renderVouchers() {
+    const vouchers = filteredVouchers();
+    mainContent.innerHTML = `<section class="voucher-overview page-enter">
+      <header class="voucher-overview-head">
+        <p class="eyebrow">Verwaltung</p>
+        <h1>Gutscheine</h1>
+        <p>Gutscheine verkaufen und vorhandene Gutscheine nachsehen.</p>
+      </header>
+
+      <button class="button button-primary voucher-sell-button" type="button" data-action="voucher-sell">＋ Gutschein verkaufen</button>
+      ${state.voucherNotice ? `<div class="voucher-notice" role="status">${escapeHtml(state.voucherNotice)}</div>` : ""}
+
+      <label class="search-field voucher-search-field">
+        <span aria-hidden="true">⌕</span>
+        <input id="voucherSearch" type="search" inputmode="search" autocomplete="off" placeholder="Gutscheincode suchen" value="${escapeHtml(state.voucherSearch)}">
+      </label>
+
+      <div class="voucher-list" aria-label="Demo-Gutscheine">
+        ${vouchers.length ? vouchers.map(voucher => `<button class="voucher-list-item" type="button" data-open-voucher="${escapeHtml(voucher.reference)}">
+          <span class="voucher-list-symbol" aria-hidden="true">◇</span>
+          <span class="voucher-list-main">
+            <strong>${escapeHtml(maskVoucherCode(voucher.code))}</strong>
+            <small class="voucher-status ${voucher.status === "redeemed" ? "is-redeemed" : "is-active"}">${escapeHtml(voucherStatusLabel(voucher))}</small>
+          </span>
+          <span class="voucher-list-value"><small>Restwert</small><strong>${formatCurrency(voucher.currentValue)}</strong></span>
+          <span class="voucher-list-arrow" aria-hidden="true">›</span>
+        </button>`).join("") : `<div class="empty-state">Kein Gutschein zu diesem Code gefunden.</div>`}
+      </div>
+
+      <p class="prototype-note">Demo ohne dauerhafte Speicherung. Änderungen gehen beim Neuladen verloren.</p>
+    </section>`;
+
+    document.getElementById("voucherSearch")?.addEventListener("input", event => {
+      state.voucherSearch = event.target.value;
+      renderVouchers();
+      const input = document.getElementById("voucherSearch");
+      input?.focus();
+      input?.setSelectionRange(state.voucherSearch.length, state.voucherSearch.length);
+    });
+  }
+
+  function renderVoucherDetail() {
+    const voucher = voucherByReference(state.voucherDetailReference);
+    if (!voucher) {
+      navigate("vouchers", false);
+      return;
+    }
+    const appLink = voucherAppLink(voucher.reference);
+    mainContent.innerHTML = `<section class="flow-page voucher-detail-page page-enter">
+      <div class="flow-head compact-flow-head">
+        <button class="button button-back" type="button" data-route="vouchers"><span aria-hidden="true">←</span> Zurück</button>
+        <p class="eyebrow">Gutschein</p>
+        <h1 class="flow-title">Gutscheindetails</h1>
+      </div>
+
+      ${state.voucherNotice ? `<div class="voucher-notice" role="status">${escapeHtml(state.voucherNotice)}</div>` : ""}
+
+      <section class="voucher-identity-card">
+        <div class="voucher-code-block"><span>Gutscheincode</span><strong>${escapeHtml(voucher.code)}</strong><small>Zum Übertragen auf einen vorhandenen Papiergutschein</small></div>
+        <div class="voucher-qr-block">
+          ${voucherQrPlaceholder(voucher)}
+          <div><strong>QR-Code · Prototyp</strong><small>Verweist auf dieselbe Gutscheinidentität wie der sichtbare Code.</small></div>
+        </div>
+        <p class="voucher-local-note">Der App-Link kann den Gutschein nur auf einem Gerät öffnen, auf dem dieser Gutschein lokal vorhanden ist. Eine geräteübergreifende Auflösung ist nicht eingerichtet.</p>
+        <code class="voucher-app-link">${escapeHtml(appLink)}</code>
+      </section>
+
+      <section class="voucher-facts">
+        <div><span>Status</span><strong class="voucher-status ${voucher.status === "redeemed" ? "is-redeemed" : "is-active"}">${escapeHtml(voucherStatusLabel(voucher))}</strong></div>
+        <div class="voucher-balance"><span>Aktueller Restwert</span><strong>${formatCurrency(voucher.currentValue)}</strong></div>
+        <div><span>Ursprünglicher Wert</span><strong>${formatCurrency(voucher.issuedValue)}</strong></div>
+        <div><span>Verkauft am</span><strong>${escapeHtml(voucher.soldAt)}</strong></div>
+      </section>
+
+      <section class="voucher-detail-actions" aria-label="Gutscheinaktionen">
+        <button class="button button-primary" type="button" data-route="voucher-preview">Gutschein anzeigen</button>
+        <button class="button button-secondary" type="button" data-action="voucher-pdf">Als PDF speichern</button>
+        <button class="button button-secondary" type="button" data-action="voucher-email">Per E-Mail senden</button>
+      </section>
+    </section>`;
+  }
+
+  function renderVoucherPreview() {
+    const voucher = voucherByReference(state.voucherDetailReference);
+    if (!voucher) {
+      navigate("vouchers", false);
+      return;
+    }
+    mainContent.innerHTML = `<section class="flow-page voucher-preview-page page-enter">
+      <div class="flow-head compact-flow-head voucher-preview-controls">
+        <button class="button button-back" type="button" data-route="voucher-detail"><span aria-hidden="true">←</span> Zurück</button>
+        <p class="eyebrow">Feste Vorlage · Version 1.0</p>
+        <h1 class="flow-title">Gutschein anzeigen</h1>
+        <p class="page-copy">Neutrale Druckansicht ohne individuelle Designkonfiguration.</p>
+      </div>
+
+      ${state.voucherNotice ? `<div class="voucher-notice voucher-preview-controls" role="status">${escapeHtml(state.voucherNotice)}</div>` : ""}
+
+      <article class="voucher-sheet">
+        <header>
+          <span>Gutschein</span>
+          <strong>${escapeHtml(data.company.name)}</strong>
+          <small>${escapeHtml(data.company.owner || "")}</small>
+          <small>${escapeHtml(data.company.street || "")}</small>
+          <small>${escapeHtml(data.company.city || "")}</small>
+        </header>
+        <div class="voucher-sheet-value"><span>Wert</span><strong>${formatCurrency(voucher.issuedValue)}</strong></div>
+        <div class="voucher-sheet-code"><span>Gutscheincode</span><strong>${escapeHtml(voucher.code)}</strong></div>
+        <div class="voucher-sheet-qr">
+          ${voucherQrPlaceholder(voucher)}
+          <small>QR-Code · technische Vorschau</small>
+        </div>
+        <footer>Bitte Gutscheincode oder QR-Code bei der Einlösung vorzeigen.</footer>
+      </article>
+
+      <p class="prototype-note voucher-preview-controls">Die Vorlage enthält Demo-Daten. Der QR-Bereich ist technisch vorbereitet, aber in diesem UX-Block noch kein scanbarer Produktions-QR-Code.</p>
+      <button class="button button-primary voucher-print-button voucher-preview-controls" type="button" data-action="voucher-print">Drucken / als PDF sichern</button>
+    </section>`;
+  }
+
   function renderPlaceholder(routeKey) {
     const page = data.placeholders[routeKey];
     const tools = routeKey === "settings" ? `<div class="prototype-tools"><label><input id="toggleOpenReceipt" type="checkbox" ${state.openReceiptVisible ? "checked" : ""}> Offenen Beleg auf der Startseite simulieren</label></div>` : "";
@@ -987,7 +1160,9 @@
       "customer-new",
       "customer-edit",
       "customer-detail",
-      "receipt-preview"
+      "receipt-preview",
+      "voucher-detail",
+      "voucher-preview"
     ].includes(state.route));
     if (state.route === "home") renderHome();
     else if (state.route === "receipts") renderReceipts();
@@ -1003,6 +1178,9 @@
     else if (state.route === "customer-detail") renderCustomerDetail();
     else if (state.route === "receipt-success") renderReceiptSuccess();
     else if (state.route === "receipt-preview") renderReceiptPreview();
+    else if (state.route === "vouchers") renderVouchers();
+    else if (state.route === "voucher-detail") renderVoucherDetail();
+    else if (state.route === "voucher-preview") renderVoucherPreview();
     else renderPlaceholder(state.route);
     const isFlow = flowRoutes.has(state.route);
     bottomNav.hidden = isFlow;
@@ -1214,9 +1392,34 @@
       else navigate("catalog");
       return;
     }
+    const openVoucher = event.target.closest("[data-open-voucher]");
+    if (openVoucher) {
+      state.voucherDetailReference = openVoucher.dataset.openVoucher;
+      state.voucherNotice = "";
+      navigate("voucher-detail");
+      return;
+    }
     const route = event.target.closest("[data-route]");
-    if (route) { if ((route.dataset.route === "checkout" || route.dataset.route === "edit-cart") && !cartCount()) return; navigate(route.dataset.route); return; }
+    if (route) {
+      if ((route.dataset.route === "checkout" || route.dataset.route === "edit-cart") && !cartCount()) return;
+      if (["vouchers", "voucher-detail", "voucher-preview"].includes(route.dataset.route)) state.voucherNotice = "";
+      navigate(route.dataset.route);
+      return;
+    }
     const action = event.target.closest("[data-action]")?.dataset.action;
+    if (action === "voucher-sell") {
+      state.voucherNotice = "Der Verkaufsablauf folgt im nächsten Gutscheinblock. Es wurde kein Gutschein angelegt.";
+      renderVouchers();
+    }
+    if (action === "voucher-pdf") {
+      state.voucherNotice = "Noch wurde keine PDF-Datei erzeugt. In der Druckansicht kann der Browserdialog zum Speichern als PDF geöffnet werden.";
+      navigate("voucher-preview");
+    }
+    if (action === "voucher-email") {
+      state.voucherNotice = "Der E-Mail-Versand ist in diesem Prototyp noch nicht eingerichtet. Es wurde keine E-Mail gesendet.";
+      renderVoucherDetail();
+    }
+    if (action === "voucher-print") window.print();
     if (action === "new-receipt") startNewReceipt();
     if (action === "resume-receipt") {
       state.cart = [{ ...(data.catalog.hair[0]), basePrice: data.catalog.hair[0].price, quantity: 1, discountPercent: 0, discountAmount: 0, discountType: "percent", priceOverride: null }, { ...(data.catalog.hair[1]), basePrice: data.catalog.hair[1].price, quantity: 1, discountPercent: 0, discountAmount: 0, discountType: "percent", priceOverride: null }];

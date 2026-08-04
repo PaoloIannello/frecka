@@ -1,6 +1,6 @@
 window.PROTOTYPE_DATA = Object.freeze({
-  version: "UX-019",
-  build: "2026-08-01",
+  version: "UX-020a",
+  build: "2026-08-04",
   company: {
     name: "Studio Beispiel",
     owner: "Angel Luzolo",
@@ -217,11 +217,36 @@ window.PROTOTYPE_DATA = Object.freeze({
     { id: "card", title: "Karte", icon: "▣" },
     { id: "later", title: "Später", icon: "…" }
   ],
+  vouchers: [
+    {
+      reference: "vch_8f4c2a91d7e6",
+      code: "FRKA-7Q2M-9K4X",
+      status: "active",
+      issuedValue: 50,
+      currentValue: 18.5,
+      soldAt: "28.07.2026"
+    },
+    {
+      reference: "vch_1b7e93a4c5d8",
+      code: "FRKA-3N8R-6W5P",
+      status: "active",
+      issuedValue: 100,
+      currentValue: 100,
+      soldAt: "01.08.2026"
+    },
+    {
+      reference: "vch_6d2a84f9b3c1",
+      code: "FRKA-5T9L-2H7C",
+      status: "redeemed",
+      issuedValue: 25,
+      currentValue: 0,
+      soldAt: "14.07.2026"
+    }
+  ],
   openReceipt: { exists: true, customer: "Ohne Kundenzuordnung", lastEdited: "vor wenigen Minuten", itemCount: 2 },
   placeholders: {
     receipts: { title: "Belege", icon: "▤", note: "Die Belegübersicht folgt in einem späteren UX-Block." },
     customers: { title: "Kunden", icon: "◎", note: "Kunden suchen, auswählen und neu anlegen." },
-    vouchers: { title: "Gutscheine", icon: "◇", note: "Die Gutscheinverwaltung folgt in einem späteren UX-Block." },
     settings: { title: "Einstellungen", icon: "⚙", note: "Die Einstellungen folgen in einem späteren UX-Block." }
   }
 });
