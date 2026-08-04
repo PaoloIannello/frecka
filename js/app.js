@@ -27,6 +27,8 @@
     receiptFilter: "all",
     receiptSearch: "",
     receiptDetailNumber: null,
+    receiptPreviewNumber: null,
+    receiptPreviewReturnRoute: "receipt-success",
     receiptCounter: initialReceiptCounter,
     creditMode: "full",
     creditAmount: "",
@@ -460,21 +462,26 @@
   }
 
   function renderReceiptPreview() {
-    const receipt = state.finishedReceipt;
+    const receipt = state.receiptPreviewNumber ? receiptByNumber(state.receiptPreviewNumber) : state.finishedReceipt;
     if (!receipt) {
-      navigate("home", false);
+      navigate(state.receiptPreviewNumber ? "receipts" : "home", false);
       return;
     }
+    const isVoucherSale = receipt.receiptKind === "voucher-sale";
+    const linkedVoucher = isVoucherSale ? voucherByReference(receipt.voucherReference) : null;
+    const createdAt = receipt.createdAt || [receipt.date, receipt.time].filter(Boolean).join(" · ");
+    const taxGroups = Array.isArray(receipt.taxGroups) ? receipt.taxGroups : [];
+    const showTaxDetails = !isVoucherSale && Number.isFinite(Number(receipt.netTotal)) && taxGroups.length > 0;
 
     mainContent.innerHTML = `<section class="flow-page receipt-preview-page page-enter">
       <div class="flow-head compact-flow-head">
-        <button class="button button-back" type="button" data-route="receipt-success"><span aria-hidden="true">←</span> Zurück</button>
-        <p class="eyebrow">PDF-Vorschau</p>
-        <h1 class="flow-title">Digitaler Beleg</h1>
-        <p class="page-copy">Vorschau ohne echte PDF-Erstellung.</p>
+        <button class="button button-back" type="button" data-route="${escapeHtml(state.receiptPreviewReturnRoute)}"><span aria-hidden="true">←</span> Zurück</button>
+        <p class="eyebrow">Kassenbon</p>
+        <h1 class="flow-title">${isVoucherSale ? "Verkaufsbeleg" : "Digitaler Beleg"}</h1>
+        <p class="page-copy">Kassenzettelansicht für Druck oder PDF-Sicherung.</p>
       </div>
 
-      <article class="receipt-paper">
+      <article class="receipt-paper ${isVoucherSale ? "is-voucher-sale" : ""}">
         <header>
           <strong>${escapeHtml(data.company.name)}</strong>
           <span>${escapeHtml(data.company.owner || "")}</span>
@@ -486,15 +493,16 @@
 
         <div class="receipt-paper-meta">
           <span>Beleg ${escapeHtml(receipt.number)}</span>
-          <span>${escapeHtml(receipt.createdAt)}</span>
+          <span>${escapeHtml(createdAt)}</span>
         </div>
+        <div class="receipt-paper-kind"><span>Belegart</span><strong>${escapeHtml(receiptKindLabel(receipt))}</strong></div>
 
         <div class="receipt-paper-items">
           ${receipt.items.map(item => `<div class="receipt-paper-item">
             <span>
               <strong>${escapeHtml(item.title)}</strong>
-              <small>${item.quantity} × ${formatCurrency(item.originalUnitPrice)}</small>
-              ${item.discountTotal > 0 ? `<em>${escapeHtml(item.discountLabel || "Rabatt")} <b>−${formatCurrency(item.discountTotal)}</b></em>` : ""}
+              <small>${item.quantity} × ${formatCurrency(item.originalUnitPrice ?? item.unitPrice)}</small>
+              ${Number(item.discountTotal || 0) > 0 ? `<em>${escapeHtml(item.discountLabel || "Rabatt")} <b>−${formatCurrency(item.discountTotal)}</b></em>` : ""}
             </span>
             <strong>${formatCurrency(item.total)}</strong>
           </div>`).join("")}
@@ -502,19 +510,20 @@
 
         ${receipt.customer ? `<div class="receipt-paper-customer"><span>Kunde</span><strong>${escapeHtml(receipt.customer.name)}</strong>${customerAddressLines(receipt.customer).map(line => `<small>${escapeHtml(line)}</small>`).join("")}</div>` : ""}
         <div class="receipt-paper-row"><span>Zahlungsart</span><strong>${escapeHtml(receipt.payment)}</strong></div>
+        ${linkedVoucher ? `<div class="receipt-paper-voucher-link"><span>Verknüpfter Gutschein</span><strong>${escapeHtml(maskVoucherCode(linkedVoucher.code))}</strong></div>` : ""}
 
-        <div class="receipt-paper-totals">
+        ${showTaxDetails ? `<div class="receipt-paper-totals">
           ${receipt.discountTotal > 0 ? `<div><span>Zwischensumme</span><strong>${formatCurrency(receipt.originalTotal)}</strong></div>
           <div class="receipt-discount-total"><span>Rabatt gesamt</span><strong>−${formatCurrency(receipt.discountTotal)}</strong></div>` : ""}
           <div><span>Netto</span><strong>${formatCurrency(receipt.netTotal)}</strong></div>
-          ${receipt.taxGroups.map(group => `<div><span>MwSt. ${group.rate}%</span><strong>${formatCurrency(group.tax)}</strong></div>`).join("")}
-        </div>
+          ${taxGroups.map(group => `<div><span>MwSt. ${group.rate}%</span><strong>${formatCurrency(group.tax)}</strong></div>`).join("")}
+        </div>` : ""}
 
-        <div class="receipt-paper-total"><span>Gesamt brutto</span><strong>${formatCurrency(receipt.total)}</strong></div>
+        <div class="receipt-paper-total"><span>${isVoucherSale ? "Gesamtbetrag" : "Gesamt brutto"}</span><strong>${formatCurrency(receipt.total)}</strong></div>
         <footer>Vielen Dank für Ihren Besuch.</footer>
       </article>
 
-      <button class="button button-primary preview-download" type="button" data-action="simulate-pdf-download">PDF-Download simulieren</button>
+      <button class="button button-primary preview-download" type="button" data-action="receipt-print">Drucken / als PDF sichern</button>
     </section>`;
   }
 
@@ -915,7 +924,7 @@
       </section>
 
       <section class="receipt-primary-actions">
-        <button class="button button-secondary" type="button" data-action="receipt-preview-demo">Beleg anzeigen</button>
+        <button class="button button-secondary" type="button" data-preview-receipt="${escapeHtml(receipt.number)}">${receipt.receiptKind === "voucher-sale" ? "Kassenbon anzeigen" : "Beleg anzeigen"}</button>
         <button class="button button-secondary" type="button" data-action="receipt-email-demo">Erneut per E-Mail senden</button>
         ${receipt.receiptKind === "voucher-sale" ? "" : `<button class="button button-secondary" type="button" data-action="copy-receipt">Duplizieren</button>`}
       </section>
@@ -1081,7 +1090,7 @@
               <div><dt>Restwert danach</dt><dd>${formatCurrency(event.balanceAfter)}</dd></div>
               ${event.receiptNumber ? `<div><dt>Beleg</dt><dd>${escapeHtml(event.receiptNumber)}</dd></div>` : ""}
             </dl>
-            ${linkedReceipt && event.type === "sold" && event.receiptNumber === linkedReceipt.number ? `<button class="voucher-history-receipt-link" type="button" data-open-receipt="${escapeHtml(linkedReceipt.number)}">Beleg öffnen</button>` : ""}
+            ${linkedReceipt && event.type === "sold" && event.receiptNumber === linkedReceipt.number ? `<button class="voucher-history-receipt-link" type="button" data-open-receipt="${escapeHtml(linkedReceipt.number)}">Verkaufsbeleg öffnen</button>` : ""}
           </div>
         </article>`).join("") : `<p class="voucher-history-empty">Noch keine historischen Vorgänge vorhanden.</p>`}
       </div>
@@ -1457,9 +1466,9 @@
 
       <section class="voucher-sale-success-actions" aria-label="Aktionen nach dem Gutscheinverkauf">
         <button class="button button-primary" type="button" data-route="voucher-preview">Gutschein anzeigen</button>
-        ${saleReceipt ? `<button class="button button-secondary" type="button" data-open-receipt="${escapeHtml(saleReceipt.number)}">Beleg anzeigen</button>` : ""}
-        <button class="button button-secondary" type="button" data-action="voucher-pdf">Als PDF speichern</button>
-        <button class="button button-secondary" type="button" data-action="voucher-email">Per E-Mail senden</button>
+        ${saleReceipt ? `<button class="button button-secondary" type="button" data-preview-receipt="${escapeHtml(saleReceipt.number)}">Verkaufsbeleg anzeigen</button>` : ""}
+        <button class="button button-secondary" type="button" data-action="voucher-pdf">Gutschein als PDF speichern</button>
+        <button class="button button-secondary" type="button" data-action="voucher-email">Gutschein per E-Mail senden · Simulation</button>
         <button class="button button-ghost" type="button" data-route="vouchers">Zur Gutscheinübersicht</button>
       </section>
     </section>`;
@@ -1500,7 +1509,7 @@
         <div><span>Ursprünglicher Wert</span><strong>${formatCurrency(voucher.issuedValue)}</strong></div>
         <div><span>Verkauft am</span><strong>${escapeHtml([voucher.soldAt, voucher.soldTime].filter(Boolean).join(" · "))}</strong></div>
         <div><span>Zahlungsart beim Verkauf</span><strong>${escapeHtml(voucher.payment || "Nicht angegeben")}</strong></div>
-        ${voucher.saleReceipt?.number ? `<div><span>Verkaufsbeleg</span>${saleReceipt ? `<button type="button" data-open-receipt="${escapeHtml(saleReceipt.number)}">${escapeHtml(saleReceipt.number)} · Beleg öffnen</button>` : `<strong>${escapeHtml(voucher.saleReceipt.number)}</strong>`}</div>` : ""}
+        ${voucher.saleReceipt?.number ? `<div><span>Verkaufsbeleg</span>${saleReceipt ? `<button type="button" data-open-receipt="${escapeHtml(saleReceipt.number)}">${escapeHtml(saleReceipt.number)} · Verkaufsbeleg öffnen</button>` : `<strong>${escapeHtml(voucher.saleReceipt.number)}</strong>`}</div>` : ""}
         ${voucher.customer ? `<div><span>Zugeordneter Kunde</span><strong>${escapeHtml(voucher.customer.name)}</strong></div>` : ""}
         ${voucher.displayName ? `<div><span>Name auf dem Gutschein</span><strong>${escapeHtml(voucher.displayName)}</strong></div>` : ""}
       </section>
@@ -1588,6 +1597,7 @@
 
   function renderRoute(pushHistory = true) {
     document.body.classList.toggle("catalog-mode", state.route === "catalog");
+    document.body.classList.toggle("receipt-preview-mode", state.route === "receipt-preview");
     document.body.classList.toggle("work-mode", [
       "catalog",
       "edit-cart",
@@ -1783,6 +1793,16 @@
       navigate("voucher-detail");
       return;
     }
+    const previewReceipt = event.target.closest("[data-preview-receipt]");
+    if (previewReceipt) {
+      const receipt = receiptByNumber(previewReceipt.dataset.previewReceipt);
+      if (!receipt) return;
+      state.receiptDetailNumber = receipt.number;
+      state.receiptPreviewNumber = receipt.number;
+      state.receiptPreviewReturnRoute = "receipt-detail";
+      navigate("receipt-preview");
+      return;
+    }
     const openReceipt = event.target.closest("[data-open-receipt]");
     if (openReceipt) {
       state.receiptDetailNumber = openReceipt.dataset.openReceipt;
@@ -1899,6 +1919,10 @@
     const route = event.target.closest("[data-route]");
     if (route) {
       if ((route.dataset.route === "checkout" || route.dataset.route === "edit-cart") && !cartCount()) return;
+      if (route.dataset.route === "receipt-preview" && state.route === "receipt-success") {
+        state.receiptPreviewNumber = null;
+        state.receiptPreviewReturnRoute = "receipt-success";
+      }
       if (route.dataset.route === "customer-picker") {
         state.customerPickerContext = state.route === "voucher-sale" ? "voucher" : "receipt";
         state.customerSearch = "";
@@ -1966,10 +1990,7 @@
         : "Für diesen Beleg ist keine E-Mail-Adresse hinterlegt.";
       renderReceiptDetail();
     }
-    if (action === "receipt-preview-demo") {
-      state.successNotice = "Die vollständige Belegansicht wurde bereits im vorherigen UX-Block geprüft. Hier wird das Öffnen simuliert.";
-      renderReceiptDetail();
-    }
+    if (action === "receipt-print") window.print();
     if (action === "copy-receipt") {
       const receipt = receiptByNumber(state.receiptDetailNumber);
       if (receipt && receipt.receiptKind !== "voucher-sale") {

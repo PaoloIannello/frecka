@@ -1577,6 +1577,18 @@ body.work-mode:not(.catalog-mode) .flow-page {
     box-shadow: none;
     break-inside: avoid;
   }
+  body.receipt-preview-mode .receipt-paper,
+  body.receipt-preview-mode .receipt-paper * { visibility: visible !important; }
+  body.receipt-preview-mode .receipt-paper {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 72mm;
+    margin: 0;
+    padding: 6mm;
+    border: 1px solid #777;
+    box-shadow: none;
+    break-inside: avoid;
+  }
 }
 
 /* UX-020b – prototypischer Gutscheinverkauf */
@@ -2162,4 +2174,39 @@ body.work-mode:not(.catalog-mode) .flow-page {
   font: inherit;
   font-size: .72rem;
   font-weight: 900;
+}
+
+/* UX-020d-2 – gemeinsame Kassenzettelansicht */
+.receipt-paper-kind,
+.receipt-paper-voucher-link {
+  padding: 10px 0;
+  border-bottom: 1px dashed #9da9a5;
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: baseline;
+}
+.receipt-paper-kind span,
+.receipt-paper-voucher-link span {
+  color: #66726e;
+  font-size: .68rem;
+}
+.receipt-paper-kind strong,
+.receipt-paper-voucher-link strong {
+  text-align: right;
+  font-size: .76rem;
+}
+.receipt-paper.is-voucher-sale .receipt-paper-total {
+  margin-top: 10px;
+}
+@media(max-width:360px) {
+  .receipt-paper {
+    padding: 18px;
+  }
+  .receipt-paper-meta,
+  .receipt-paper-kind,
+  .receipt-paper-voucher-link,
+  .receipt-paper-row {
+    gap: 8px;
+  }
 }
