@@ -31,7 +31,13 @@
     qrVisible: false,
     voucherSearch: "",
     voucherDetailReference: null,
-    voucherNotice: ""
+    voucherNotice: "",
+    voucherSaleAmountChoice: null,
+    voucherSaleCustomAmount: "",
+    voucherSalePaymentChoice: "cash",
+    voucherSaleError: "",
+    voucherSaleSubmitting: false,
+    voucherSaleCreatedReference: null
   };
 
   const mainContent = document.getElementById("mainContent");
@@ -44,7 +50,7 @@
   const confirmDiscard = document.getElementById("confirmDiscard");
   const dialogTitle = document.getElementById("dialogTitle");
   const dialogText = document.getElementById("dialogText");
-  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview"]);
+  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success"]);
   const validRoutes = new Set(["home", "receipts", "customers", "vouchers", "settings", ...flowRoutes]);
 
   const escapeHtml = value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -1064,6 +1070,176 @@
     });
   }
 
+  const VOUCHER_SALE_MAX_AMOUNT = 1000;
+  const VOUCHER_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+
+  function resetVoucherSaleDraft() {
+    state.voucherSaleAmountChoice = null;
+    state.voucherSaleCustomAmount = "";
+    state.voucherSalePaymentChoice = "cash";
+    state.voucherSaleError = "";
+    state.voucherSaleSubmitting = false;
+    state.voucherSaleCreatedReference = null;
+    state.voucherNotice = "";
+  }
+
+  function voucherSaleAmount() {
+    if (["25", "50", "100"].includes(state.voucherSaleAmountChoice)) return Number(state.voucherSaleAmountChoice);
+    if (state.voucherSaleAmountChoice !== "custom") return null;
+    const normalized = state.voucherSaleCustomAmount.trim().replace(",", ".");
+    if (!normalized) return null;
+    const amount = Number(normalized);
+    return Number.isFinite(amount) ? amount : null;
+  }
+
+  function validateVoucherSaleAmount() {
+    if (!state.voucherSaleAmountChoice) return "Bitte einen Gutscheinwert auswählen.";
+    const amount = voucherSaleAmount();
+    if (amount === null) return "Bitte einen gültigen Betrag eingeben.";
+    if (amount <= 0) return "Der Gutscheinwert muss größer als 0 € sein.";
+    if (amount > VOUCHER_SALE_MAX_AMOUNT) return `Im Prototyp sind höchstens ${formatCurrency(VOUCHER_SALE_MAX_AMOUNT)} möglich. Diese Grenze ist noch keine endgültige Produktregel.`;
+    if (Math.abs(amount * 100 - Math.round(amount * 100)) > 0.0001) return "Bitte höchstens zwei Nachkommastellen eingeben.";
+    return "";
+  }
+
+  function voucherSalePaymentLabel() {
+    return data.paymentChoices.find(choice => choice.id === state.voucherSalePaymentChoice)?.title ?? "Bar";
+  }
+
+  function randomHex(byteCount) {
+    const bytes = new Uint8Array(byteCount);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, value => value.toString(16).padStart(2, "0")).join("");
+  }
+
+  function randomVoucherCodePart(length = 4) {
+    const bytes = new Uint8Array(length);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, value => VOUCHER_CODE_ALPHABET[value % VOUCHER_CODE_ALPHABET.length]).join("");
+  }
+
+  function createPrototypeVoucher(amount) {
+    let code;
+    do {
+      code = `FRKA-${randomVoucherCodePart()}-${randomVoucherCodePart()}`;
+    } while (data.vouchers.some(voucher => voucher.code === code));
+
+    let reference;
+    do {
+      reference = `vch_${randomHex(8)}`;
+    } while (data.vouchers.some(voucher => voucher.reference === reference));
+
+    const now = new Date();
+    return {
+      id: `voucher_${randomHex(12)}`,
+      reference,
+      code,
+      status: "active",
+      issuedValue: Math.round(amount * 100) / 100,
+      currentValue: Math.round(amount * 100) / 100,
+      soldAt: new Intl.DateTimeFormat("de-DE", { dateStyle: "short" }).format(now),
+      soldTime: new Intl.DateTimeFormat("de-DE", { timeStyle: "short" }).format(now),
+      createdAt: now.toISOString(),
+      payment: voucherSalePaymentLabel()
+    };
+  }
+
+  function updateVoucherSaleSummary() {
+    const amount = voucherSaleAmount();
+    const validAmount = amount !== null && amount > 0 && amount <= VOUCHER_SALE_MAX_AMOUNT && Math.abs(amount * 100 - Math.round(amount * 100)) <= 0.0001;
+    const amountOutput = document.getElementById("voucherSaleSummaryAmount");
+    if (amountOutput) amountOutput.textContent = validAmount ? formatCurrency(amount) : "Noch nicht festgelegt";
+  }
+
+  function renderVoucherSale() {
+    const amount = voucherSaleAmount();
+    const completedVoucher = voucherByReference(state.voucherSaleCreatedReference);
+    const paymentChoices = data.paymentChoices.filter(choice => choice.id === "cash" || choice.id === "card");
+    mainContent.innerHTML = `<section class="flow-page voucher-sale-page page-enter">
+      <div class="flow-head compact-flow-head">
+        <button class="button button-back" type="button" data-action="voucher-sale-cancel"><span aria-hidden="true">←</span> Abbrechen</button>
+        <p class="eyebrow">Gutscheinverkauf</p>
+        <h1 class="flow-title">Gutschein verkaufen</h1>
+        <p class="page-copy">Wert und Zahlungsart wählen. Weitere Angaben sind nicht nötig.</p>
+      </div>
+
+      ${completedVoucher ? `<div class="voucher-notice" role="status">Dieser Gutschein wurde bereits erstellt. Eine erneute Bestätigung erzeugt keinen weiteren Gutschein.</div>` : ""}
+
+      <form id="voucherSaleForm" class="voucher-sale-form" novalidate>
+        <section class="voucher-sale-section" aria-labelledby="voucherAmountTitle">
+          <h2 id="voucherAmountTitle">1. Gutscheinwert</h2>
+          <div class="voucher-amount-grid">
+            ${[25, 50, 100].map(value => `<button class="voucher-amount-choice ${state.voucherSaleAmountChoice === String(value) ? "is-selected" : ""}" type="button" data-voucher-sale-amount="${value}" aria-pressed="${state.voucherSaleAmountChoice === String(value)}" ${completedVoucher ? "disabled" : ""}>${formatCurrency(value)}</button>`).join("")}
+            <button class="voucher-amount-choice ${state.voucherSaleAmountChoice === "custom" ? "is-selected" : ""}" type="button" data-voucher-sale-amount="custom" aria-pressed="${state.voucherSaleAmountChoice === "custom"}" ${completedVoucher ? "disabled" : ""}>Anderer Betrag</button>
+          </div>
+          ${state.voucherSaleAmountChoice === "custom" ? `<label class="voucher-custom-amount"><span>Eigener Gutscheinwert</span><div class="money-input"><input id="voucherCustomAmount" name="voucherCustomAmount" type="number" inputmode="decimal" min="0.01" max="${VOUCHER_SALE_MAX_AMOUNT}" step="0.01" placeholder="0,00" value="${escapeHtml(state.voucherSaleCustomAmount)}" ${completedVoucher ? "disabled" : ""}><strong>€</strong></div><small>Vorläufige UI-Grenze: ${formatCurrency(VOUCHER_SALE_MAX_AMOUNT)}</small></label>` : ""}
+        </section>
+
+        <section class="voucher-sale-section" aria-labelledby="voucherPaymentTitle">
+          <h2 id="voucherPaymentTitle">2. Zahlungsart</h2>
+          <div class="voucher-payment-grid">
+            ${paymentChoices.map(choice => `<button class="voucher-payment-choice ${state.voucherSalePaymentChoice === choice.id ? "is-selected" : ""}" type="button" data-voucher-sale-payment="${escapeHtml(choice.id)}" aria-pressed="${state.voucherSalePaymentChoice === choice.id}" ${completedVoucher ? "disabled" : ""}><span aria-hidden="true">${escapeHtml(choice.icon)}</span><strong>${escapeHtml(choice.title)}</strong></button>`).join("")}
+          </div>
+        </section>
+
+        <section class="voucher-sale-summary" aria-labelledby="voucherSummaryTitle">
+          <h2 id="voucherSummaryTitle">Zusammenfassung</h2>
+          <div><span>Gutscheinwert</span><strong id="voucherSaleSummaryAmount">${amount !== null && !validateVoucherSaleAmount() ? formatCurrency(amount) : "Noch nicht festgelegt"}</strong></div>
+          <div><span>Zahlungsart</span><strong>${escapeHtml(voucherSalePaymentLabel())}</strong></div>
+          <p>Nach der Bestätigung werden ein Gutscheincode und die zugehörige QR-Vorschau erzeugt.</p>
+        </section>
+
+        ${state.voucherSaleError ? `<div class="voucher-sale-error" role="alert">${escapeHtml(state.voucherSaleError)}</div>` : ""}
+
+        <button class="button button-primary voucher-sale-submit" type="submit" ${state.voucherSaleSubmitting || completedVoucher ? "disabled" : ""}>${state.voucherSaleSubmitting ? "Gutschein wird erstellt …" : completedVoucher ? "Gutschein bereits erstellt" : "Gutschein jetzt verkaufen"}</button>
+        ${completedVoucher ? `<button class="button button-secondary voucher-sale-completed-link" type="button" data-route="voucher-sale-success">Zum verkauften Gutschein</button>` : ""}
+        <p class="prototype-note">Nur Prototyp: Der Gutschein bleibt bis zum Neuladen im Arbeitsspeicher.</p>
+      </form>
+    </section>`;
+
+    document.getElementById("voucherCustomAmount")?.addEventListener("input", event => {
+      state.voucherSaleCustomAmount = event.target.value;
+      state.voucherSaleError = "";
+      document.querySelector(".voucher-sale-error")?.remove();
+      updateVoucherSaleSummary();
+    });
+  }
+
+  function renderVoucherSaleSuccess() {
+    const voucher = voucherByReference(state.voucherSaleCreatedReference);
+    if (!voucher) {
+      navigate("vouchers", false);
+      return;
+    }
+    mainContent.innerHTML = `<section class="flow-page voucher-sale-success-page page-enter">
+      <div class="voucher-sale-success-hero">
+        <div class="success-mark" aria-hidden="true">✓</div>
+        <p class="eyebrow">Verkauf abgeschlossen</p>
+        <h1>Gutschein verkauft</h1>
+        <p>Der Gutschein wurde nur für diesen Prototyp im Arbeitsspeicher angelegt.</p>
+      </div>
+
+      ${state.voucherNotice ? `<div class="voucher-notice" role="status">${escapeHtml(state.voucherNotice)}</div>` : ""}
+
+      <section class="voucher-sale-result">
+        <div class="voucher-sale-result-value"><span>Gutscheinwert</span><strong>${formatCurrency(voucher.issuedValue)}</strong></div>
+        <div class="voucher-code-block"><span>Gutscheincode</span><strong>${escapeHtml(voucher.code)}</strong><small>Zum Abschreiben auf einen eigenen vorgedruckten Gutschein</small></div>
+        <div class="voucher-qr-block">
+          ${voucherQrPlaceholder(voucher)}
+          <div><strong>QR-Code · Prototyp</strong><small>Code und QR-Vorschau gehören zu derselben stabilen Gutscheinidentität.</small></div>
+        </div>
+        <div class="voucher-sale-result-meta"><span>Status</span><strong class="voucher-status is-active">Aktiv</strong></div>
+      </section>
+
+      <section class="voucher-sale-success-actions" aria-label="Aktionen nach dem Gutscheinverkauf">
+        <button class="button button-primary" type="button" data-route="voucher-preview">Gutschein anzeigen</button>
+        <button class="button button-secondary" type="button" data-action="voucher-pdf">Als PDF speichern</button>
+        <button class="button button-secondary" type="button" data-action="voucher-email">Per E-Mail senden</button>
+        <button class="button button-ghost" type="button" data-route="vouchers">Zur Gutscheinübersicht</button>
+      </section>
+    </section>`;
+  }
+
   function renderVoucherDetail() {
     const voucher = voucherByReference(state.voucherDetailReference);
     if (!voucher) {
@@ -1094,7 +1270,7 @@
         <div><span>Status</span><strong class="voucher-status ${voucher.status === "redeemed" ? "is-redeemed" : "is-active"}">${escapeHtml(voucherStatusLabel(voucher))}</strong></div>
         <div class="voucher-balance"><span>Aktueller Restwert</span><strong>${formatCurrency(voucher.currentValue)}</strong></div>
         <div><span>Ursprünglicher Wert</span><strong>${formatCurrency(voucher.issuedValue)}</strong></div>
-        <div><span>Verkauft am</span><strong>${escapeHtml(voucher.soldAt)}</strong></div>
+        <div><span>Verkauft am</span><strong>${escapeHtml([voucher.soldAt, voucher.soldTime].filter(Boolean).join(" · "))}</strong></div>
       </section>
 
       <section class="voucher-detail-actions" aria-label="Gutscheinaktionen">
@@ -1162,7 +1338,9 @@
       "customer-detail",
       "receipt-preview",
       "voucher-detail",
-      "voucher-preview"
+      "voucher-preview",
+      "voucher-sale",
+      "voucher-sale-success"
     ].includes(state.route));
     if (state.route === "home") renderHome();
     else if (state.route === "receipts") renderReceipts();
@@ -1181,6 +1359,8 @@
     else if (state.route === "vouchers") renderVouchers();
     else if (state.route === "voucher-detail") renderVoucherDetail();
     else if (state.route === "voucher-preview") renderVoucherPreview();
+    else if (state.route === "voucher-sale") renderVoucherSale();
+    else if (state.route === "voucher-sale-success") renderVoucherSaleSuccess();
     else renderPlaceholder(state.route);
     const isFlow = flowRoutes.has(state.route);
     bottomNav.hidden = isFlow;
@@ -1392,6 +1572,22 @@
       else navigate("catalog");
       return;
     }
+    const voucherSaleAmountButton = event.target.closest("[data-voucher-sale-amount]");
+    if (voucherSaleAmountButton) {
+      state.voucherSaleAmountChoice = voucherSaleAmountButton.dataset.voucherSaleAmount;
+      state.voucherSaleError = "";
+      if (state.voucherSaleAmountChoice !== "custom") state.voucherSaleCustomAmount = "";
+      renderVoucherSale();
+      if (state.voucherSaleAmountChoice === "custom") document.getElementById("voucherCustomAmount")?.focus();
+      return;
+    }
+    const voucherSalePaymentButton = event.target.closest("[data-voucher-sale-payment]");
+    if (voucherSalePaymentButton) {
+      state.voucherSalePaymentChoice = voucherSalePaymentButton.dataset.voucherSalePayment;
+      state.voucherSaleError = "";
+      renderVoucherSale();
+      return;
+    }
     const openVoucher = event.target.closest("[data-open-voucher]");
     if (openVoucher) {
       state.voucherDetailReference = openVoucher.dataset.openVoucher;
@@ -1408,8 +1604,12 @@
     }
     const action = event.target.closest("[data-action]")?.dataset.action;
     if (action === "voucher-sell") {
-      state.voucherNotice = "Der Verkaufsablauf folgt im nächsten Gutscheinblock. Es wurde kein Gutschein angelegt.";
-      renderVouchers();
+      resetVoucherSaleDraft();
+      navigate("voucher-sale");
+    }
+    if (action === "voucher-sale-cancel") {
+      resetVoucherSaleDraft();
+      navigate("vouchers");
     }
     if (action === "voucher-pdf") {
       state.voucherNotice = "Noch wurde keine PDF-Datei erzeugt. In der Druckansicht kann der Browserdialog zum Speichern als PDF geöffnet werden.";
@@ -1417,7 +1617,8 @@
     }
     if (action === "voucher-email") {
       state.voucherNotice = "Der E-Mail-Versand ist in diesem Prototyp noch nicht eingerichtet. Es wurde keine E-Mail gesendet.";
-      renderVoucherDetail();
+      if (state.route === "voucher-sale-success") renderVoucherSaleSuccess();
+      else renderVoucherDetail();
     }
     if (action === "voucher-print") window.print();
     if (action === "new-receipt") startNewReceipt();
@@ -1535,6 +1736,37 @@
   });
 
   document.addEventListener("submit", event => {
+    const voucherSaleForm = event.target.closest("#voucherSaleForm");
+    if (voucherSaleForm) {
+      event.preventDefault();
+      if (state.voucherSaleSubmitting || state.voucherSaleCreatedReference) return;
+
+      state.voucherSaleError = validateVoucherSaleAmount();
+      if (state.voucherSaleError) {
+        renderVoucherSale();
+        if (state.voucherSaleAmountChoice === "custom") document.getElementById("voucherCustomAmount")?.focus();
+        return;
+      }
+
+      const amount = voucherSaleAmount();
+      if (amount === null) return;
+      state.voucherSaleSubmitting = true;
+      const submitButton = voucherSaleForm.querySelector(".voucher-sale-submit");
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = "Gutschein wird erstellt …";
+      }
+
+      const voucher = createPrototypeVoucher(amount);
+      data.vouchers.unshift(voucher);
+      state.voucherSaleCreatedReference = voucher.reference;
+      state.voucherDetailReference = voucher.reference;
+      state.voucherSaleSubmitting = false;
+      state.voucherNotice = "";
+      navigate("voucher-sale-success");
+      return;
+    }
+
     const customerForm = event.target.closest("#customerForm");
     if (customerForm) {
       event.preventDefault();
