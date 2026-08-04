@@ -980,12 +980,74 @@
   }
 
   const voucherByReference = reference => data.vouchers.find(voucher => voucher.reference === reference) ?? null;
-  const voucherStatusLabel = voucher => voucher.status === "redeemed" ? "Vollständig eingelöst" : "Aktiv";
+  const voucherStatusLabel = voucher => {
+    if (voucher.status === "redeemed") return "Vollständig eingelöst";
+    if (voucher.status === "cancelled") return "Storniert";
+    return "Aktiv";
+  };
+  const voucherStatusClass = voucher => {
+    if (voucher.status === "redeemed") return "is-redeemed";
+    if (voucher.status === "cancelled") return "is-cancelled";
+    return "is-active";
+  };
   const maskVoucherCode = code => {
     const parts = String(code).split("-");
     if (parts.length < 3) return code;
     return [parts[0], "••••", parts.at(-1)].join("-");
   };
+
+  function currentVoucherPresentationSnapshot() {
+    return {
+      issuer: {
+        name: data.company.name,
+        owner: data.company.owner || "",
+        street: data.company.street || "",
+        city: data.company.city || ""
+      },
+      redemptionLocation: {
+        name: data.voucherDemoRedemptionLocation?.name || data.company.name,
+        street: data.voucherDemoRedemptionLocation?.street || data.company.street || "",
+        city: data.voucherDemoRedemptionLocation?.city || data.company.city || ""
+      }
+    };
+  }
+
+  function voucherPresentation(voucher) {
+    return voucher.presentationSnapshot ?? currentVoucherPresentationSnapshot();
+  }
+
+  function sameVoucherAddress(issuer, redemptionLocation) {
+    const normalize = value => String(value || "").trim().toLocaleLowerCase("de-DE");
+    return normalize(issuer.street) === normalize(redemptionLocation.street)
+      && normalize(issuer.city) === normalize(redemptionLocation.city);
+  }
+
+  const voucherHistoryLabel = type => ({
+    sold: "Verkauft",
+    partial_redemption: "Teilweise eingelöst",
+    full_redemption: "Vollständig eingelöst",
+    cancelled: "Storniert"
+  })[type] ?? "Gutschein aktualisiert";
+
+  function renderVoucherHistory(voucher) {
+    const events = Array.isArray(voucher.history) ? voucher.history : [];
+    return `<section class="voucher-history" aria-labelledby="voucherHistoryTitle">
+      <div class="voucher-section-title"><h2 id="voucherHistoryTitle">Historie</h2><span>${events.length}</span></div>
+      <div class="voucher-history-list">
+        ${events.length ? events.map(event => `<article class="voucher-history-item voucher-history-${escapeHtml(event.type)}">
+          <span class="voucher-history-marker" aria-hidden="true"></span>
+          <div class="voucher-history-main">
+            <div><strong>${escapeHtml(voucherHistoryLabel(event.type))}</strong><time>${escapeHtml([event.date, event.time].filter(Boolean).join(" · "))}</time></div>
+            <dl>
+              <div><dt>Betrag</dt><dd>${formatCurrency(event.amount)}</dd></div>
+              <div><dt>Restwert danach</dt><dd>${formatCurrency(event.balanceAfter)}</dd></div>
+              ${event.receiptNumber ? `<div><dt>Beleg</dt><dd>${escapeHtml(event.receiptNumber)}</dd></div>` : ""}
+            </dl>
+          </div>
+        </article>`).join("") : `<p class="voucher-history-empty">Noch keine historischen Vorgänge vorhanden.</p>`}
+      </div>
+    </section>`;
+  }
 
   // App-Links contain only an opaque reference. A future resolver must look it up
   // in the local voucher store and show a clear not-found state when it is absent;
@@ -1051,9 +1113,9 @@
           <span class="voucher-list-symbol" aria-hidden="true">◇</span>
           <span class="voucher-list-main">
             <strong>${escapeHtml(maskVoucherCode(voucher.code))}</strong>
-            <small class="voucher-status ${voucher.status === "redeemed" ? "is-redeemed" : "is-active"}">${escapeHtml(voucherStatusLabel(voucher))}</small>
+            <small class="voucher-status ${voucherStatusClass(voucher)}">${escapeHtml(voucherStatusLabel(voucher))}</small>
           </span>
-          <span class="voucher-list-value"><small>Restwert</small><strong>${formatCurrency(voucher.currentValue)}</strong></span>
+          <span class="voucher-list-value ${voucher.status === "active" ? "" : "is-unavailable"}"><small>Restwert</small><strong>${formatCurrency(voucher.currentValue)}</strong></span>
           <span class="voucher-list-arrow" aria-hidden="true">›</span>
         </button>`).join("") : `<div class="empty-state">Kein Gutschein zu diesem Code gefunden.</div>`}
       </div>
@@ -1130,17 +1192,28 @@
     } while (data.vouchers.some(voucher => voucher.reference === reference));
 
     const now = new Date();
+    const issuedValue = Math.round(amount * 100) / 100;
+    const soldAt = new Intl.DateTimeFormat("de-DE", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric"
+    }).format(now);
+    const soldTime = new Intl.DateTimeFormat("de-DE", { timeStyle: "short" }).format(now);
     return {
       id: `voucher_${randomHex(12)}`,
       reference,
       code,
       status: "active",
-      issuedValue: Math.round(amount * 100) / 100,
-      currentValue: Math.round(amount * 100) / 100,
-      soldAt: new Intl.DateTimeFormat("de-DE", { dateStyle: "short" }).format(now),
-      soldTime: new Intl.DateTimeFormat("de-DE", { timeStyle: "short" }).format(now),
+      issuedValue,
+      currentValue: issuedValue,
+      soldAt,
+      soldTime,
       createdAt: now.toISOString(),
-      payment: voucherSalePaymentLabel()
+      payment: voucherSalePaymentLabel(),
+      presentationSnapshot: currentVoucherPresentationSnapshot(),
+      history: [
+        { type: "sold", date: soldAt, time: soldTime, amount: issuedValue, balanceAfter: issuedValue }
+      ]
     };
   }
 
@@ -1247,6 +1320,8 @@
       return;
     }
     const appLink = voucherAppLink(voucher.reference);
+    const presentation = voucherPresentation(voucher);
+    const addressesMatch = sameVoucherAddress(presentation.issuer, presentation.redemptionLocation);
     mainContent.innerHTML = `<section class="flow-page voucher-detail-page page-enter">
       <div class="flow-head compact-flow-head">
         <button class="button button-back" type="button" data-route="vouchers"><span aria-hidden="true">←</span> Zurück</button>
@@ -1267,11 +1342,31 @@
       </section>
 
       <section class="voucher-facts">
-        <div><span>Status</span><strong class="voucher-status ${voucher.status === "redeemed" ? "is-redeemed" : "is-active"}">${escapeHtml(voucherStatusLabel(voucher))}</strong></div>
-        <div class="voucher-balance"><span>Aktueller Restwert</span><strong>${formatCurrency(voucher.currentValue)}</strong></div>
+        <div><span>Status</span><strong class="voucher-status ${voucherStatusClass(voucher)}">${escapeHtml(voucherStatusLabel(voucher))}</strong></div>
+        <div class="voucher-balance ${voucher.status === "active" ? "" : "is-unavailable"}"><span>Aktueller Restwert</span><strong>${formatCurrency(voucher.currentValue)}</strong></div>
         <div><span>Ursprünglicher Wert</span><strong>${formatCurrency(voucher.issuedValue)}</strong></div>
         <div><span>Verkauft am</span><strong>${escapeHtml([voucher.soldAt, voucher.soldTime].filter(Boolean).join(" · "))}</strong></div>
+        <div><span>Zahlungsart beim Verkauf</span><strong>${escapeHtml(voucher.payment || "Nicht angegeben")}</strong></div>
       </section>
+
+      <section class="voucher-parties" aria-labelledby="voucherPartiesTitle">
+        <div class="voucher-section-title"><h2 id="voucherPartiesTitle">Ausstellung und Einlöseort</h2><span>Stand bei Verkauf</span></div>
+        <div class="voucher-party-card">
+          <span>Aussteller</span>
+          <strong>${escapeHtml(presentation.issuer.name)}</strong>
+          ${presentation.issuer.owner ? `<small>${escapeHtml(presentation.issuer.owner)}</small>` : ""}
+          <small>${escapeHtml(presentation.issuer.street)}</small>
+          <small>${escapeHtml(presentation.issuer.city)}</small>
+        </div>
+        ${addressesMatch ? `<div class="voucher-location-same"><span>Einlöseort</span><strong>Ausstelleradresse</strong><small>Einlösbar an der oben genannten Adresse.</small></div>` : `<div class="voucher-party-card is-redemption-location">
+          <span>Einlösbar bei</span>
+          <strong>${escapeHtml(presentation.redemptionLocation.name || "Leistungsort")}</strong>
+          <small>${escapeHtml(presentation.redemptionLocation.street)}</small>
+          <small>${escapeHtml(presentation.redemptionLocation.city)}</small>
+        </div>`}
+      </section>
+
+      ${renderVoucherHistory(voucher)}
 
       <section class="voucher-detail-actions" aria-label="Gutscheinaktionen">
         <button class="button button-primary" type="button" data-route="voucher-preview">Gutschein anzeigen</button>
@@ -1287,6 +1382,8 @@
       navigate("vouchers", false);
       return;
     }
+    const presentation = voucherPresentation(voucher);
+    const addressesMatch = sameVoucherAddress(presentation.issuer, presentation.redemptionLocation);
     mainContent.innerHTML = `<section class="flow-page voucher-preview-page page-enter">
       <div class="flow-head compact-flow-head voucher-preview-controls">
         <button class="button button-back" type="button" data-route="voucher-detail"><span aria-hidden="true">←</span> Zurück</button>
@@ -1300,16 +1397,22 @@
       <article class="voucher-sheet">
         <header>
           <span>Gutschein</span>
-          <strong>${escapeHtml(data.company.name)}</strong>
-          <small>${escapeHtml(data.company.owner || "")}</small>
-          <small>${escapeHtml(data.company.street || "")}</small>
-          <small>${escapeHtml(data.company.city || "")}</small>
+          <small class="voucher-sheet-label">Aussteller</small>
+          <strong>${escapeHtml(presentation.issuer.name)}</strong>
+          ${presentation.issuer.owner ? `<small>${escapeHtml(presentation.issuer.owner)}</small>` : ""}
+          <small>${escapeHtml(presentation.issuer.street)}</small>
+          <small>${escapeHtml(presentation.issuer.city)}</small>
         </header>
         <div class="voucher-sheet-value"><span>Wert</span><strong>${formatCurrency(voucher.issuedValue)}</strong></div>
+        <div class="voucher-sheet-status"><span>Status</span><strong class="voucher-status ${voucherStatusClass(voucher)}">${escapeHtml(voucherStatusLabel(voucher))}</strong></div>
         <div class="voucher-sheet-code"><span>Gutscheincode</span><strong>${escapeHtml(voucher.code)}</strong></div>
         <div class="voucher-sheet-qr">
           ${voucherQrPlaceholder(voucher)}
           <small>QR-Code · technische Vorschau</small>
+        </div>
+        <div class="voucher-sheet-location ${addressesMatch ? "is-same" : ""}">
+          <span>Einlösbar bei</span>
+          ${addressesMatch ? `<strong>Ausstelleradresse</strong>` : `<strong>${escapeHtml(presentation.redemptionLocation.name || "Leistungsort")}</strong><small>${escapeHtml(presentation.redemptionLocation.street)}</small><small>${escapeHtml(presentation.redemptionLocation.city)}</small>`}
         </div>
         <footer>Bitte Gutscheincode oder QR-Code bei der Einlösung vorzeigen.</footer>
       </article>

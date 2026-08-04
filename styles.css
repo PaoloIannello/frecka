@@ -1469,12 +1469,14 @@ body.work-mode:not(.catalog-mode) .flow-page {
   color: #596560;
 }
 .voucher-sheet-value,
+.voucher-sheet-status,
 .voucher-sheet-code {
   display: grid;
   align-content: start;
   gap: 6px;
 }
 .voucher-sheet-value span,
+.voucher-sheet-status > span,
 .voucher-sheet-code span {
   color: #596560;
   font-size: .72rem;
@@ -1483,6 +1485,16 @@ body.work-mode:not(.catalog-mode) .flow-page {
 .voucher-sheet-value strong {
   font-size: clamp(2.2rem,10vw,4rem);
   letter-spacing: -.05em;
+}
+.voucher-sheet-status {
+  grid-column: 1/-1;
+  padding: 9px 11px;
+  border-radius: 7px;
+  background: #f1f5f3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 .voucher-sheet-code strong {
   font-size: clamp(1.05rem,5vw,1.45rem);
@@ -1494,7 +1506,7 @@ body.work-mode:not(.catalog-mode) .flow-page {
 }
 .voucher-sheet-qr {
   grid-column: 2;
-  grid-row: 2/4;
+  grid-row: 3/5;
   display: grid;
   justify-items: center;
   gap: 7px;
@@ -1792,5 +1804,193 @@ body.work-mode:not(.catalog-mode) .flow-page {
   }
   .voucher-payment-choice {
     grid-template-columns: 28px 1fr;
+  }
+}
+
+/* UX-020c – konsolidierte Gutscheindetails und Historie */
+.voucher-status.is-cancelled {
+  color: var(--danger);
+}
+.voucher-list-value.is-unavailable strong,
+.voucher-balance.is-unavailable strong {
+  color: var(--muted);
+}
+.voucher-parties,
+.voucher-history {
+  margin-top: 12px;
+  padding: 17px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.voucher-section-title {
+  margin-bottom: 13px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.voucher-section-title h2 {
+  margin: 0;
+  font-size: .96rem;
+}
+.voucher-section-title > span {
+  color: var(--muted);
+  font-size: .68rem;
+  font-weight: 800;
+}
+.voucher-party-card,
+.voucher-location-same {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  display: grid;
+  gap: 3px;
+}
+.voucher-party-card > span,
+.voucher-location-same > span {
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: .68rem;
+  font-weight: 850;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.voucher-party-card small,
+.voucher-location-same small {
+  color: var(--muted);
+  font-size: .75rem;
+  line-height: 1.4;
+}
+.voucher-party-card.is-redemption-location,
+.voucher-location-same {
+  margin-top: 9px;
+  background: var(--surface-soft);
+}
+.voucher-history-list {
+  display: grid;
+}
+.voucher-history-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px minmax(0,1fr);
+  gap: 10px;
+  padding-bottom: 17px;
+}
+.voucher-history-item:last-child {
+  padding-bottom: 0;
+}
+.voucher-history-item::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 12px;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+.voucher-history-item:last-child::before {
+  display: none;
+}
+.voucher-history-marker {
+  position: relative;
+  z-index: 1;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  border: 3px solid var(--surface);
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+.voucher-history-full_redemption .voucher-history-marker,
+.voucher-history-cancelled .voucher-history-marker {
+  background: var(--muted);
+  box-shadow: 0 0 0 1px var(--muted);
+}
+.voucher-history-main {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+.voucher-history-main > div:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.voucher-history-main time {
+  color: var(--muted);
+  font-size: .67rem;
+  white-space: nowrap;
+}
+.voucher-history-main dl {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 13px;
+  background: var(--surface-soft);
+  display: grid;
+  gap: 7px;
+}
+.voucher-history-main dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+.voucher-history-main dt,
+.voucher-history-main dd {
+  margin: 0;
+  font-size: .72rem;
+}
+.voucher-history-main dt {
+  color: var(--muted);
+}
+.voucher-history-main dd {
+  text-align: right;
+  font-weight: 850;
+}
+.voucher-history-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: .8rem;
+}
+.voucher-sheet-label {
+  margin-top: 2px;
+  font-size: .66rem !important;
+  font-weight: 850;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.voucher-sheet-location {
+  grid-column: 1/-1;
+  padding: 12px 14px;
+  border: 1px solid #dce2e0;
+  border-radius: 8px;
+  display: grid;
+  gap: 3px;
+}
+.voucher-sheet-location > span {
+  color: #596560;
+  font-size: .67rem;
+  font-weight: 850;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.voucher-sheet-location small {
+  color: #596560;
+  font-size: .7rem;
+}
+@media(max-width:380px) {
+  .voucher-parties,
+  .voucher-history {
+    padding: 14px;
+  }
+  .voucher-history-main > div:first-child {
+    display: grid;
+    gap: 2px;
+  }
+  .voucher-history-main time {
+    white-space: normal;
   }
 }
