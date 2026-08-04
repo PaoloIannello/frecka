@@ -1,0 +1,7 @@
+UX-010b – Strukturfix für die feste Live-Belegleiste
+
+- Live-Belegleiste liegt nicht mehr innerhalb der animierten Katalogseite.
+- Safari kann sie dadurch nicht mehr als mitscrollendes Element behandeln.
+- Die Differenz zwischen großer und dynamischer Viewport-Höhe hebt die Leiste über die Safari-Browserleiste.
+- In installierter PWA/Fullscreen sitzt sie normal am unteren Rand.
+- Der Inhaltsbereich behält ausreichend Abstand nach unten.

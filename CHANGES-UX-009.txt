@@ -1,0 +1,13 @@
+UX-009 – Belegabschluss
+
+Neu:
+- Erfolgsseite nach „Demo abschließen“.
+- Simulierte fortlaufende Belegnummer.
+- Zusammenfassung von Gesamt, Kunde und Zahlungsart.
+- Belegvorschau als simuliertes PDF.
+- Simulierter E-Mail-Versand.
+- Simulierter QR-Code.
+- Direkter Start eines neuen Belegs.
+- Rückkehr zur Startseite und zur Belegliste.
+
+Keine echte PDF-, E-Mail-, QR-, Speicher-, Zahlungs- oder Fiskalfunktion.

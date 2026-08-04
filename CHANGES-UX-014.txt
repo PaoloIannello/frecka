@@ -1,0 +1,11 @@
+UX-014
+
+- Bestehende Kunden können aus Kundenliste und Kundendetail bearbeitet werden.
+- Bearbeiten ist auch direkt beim ausgewählten Kunden im Belegabschluss möglich.
+- Vorname, Nachname, Telefon, E-Mail, Straße, PLZ, Ort und Notiz sind änderbar.
+- Kundenadresse wird in Kundendetail, Checkout und Beleg übernommen.
+- Ohne ausgewählten Kunden bleibt die Kundenzeile vollständig ausgeblendet.
+- Rabattdaten werden beim Hinzufügen einer Position korrekt initialisiert.
+- Positionsrabatt zeigt ursprünglichen Preis, Rabattart/-höhe und Endpreis.
+- MwSt.-Hinweis wurde aus den einzelnen Positionen entfernt.
+- MwSt. bleibt ausschließlich im Summenblock.

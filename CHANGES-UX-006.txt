@@ -1,0 +1,15 @@
+UX-006 – Preis, Rabatt und Produktemenge
+
+Neu:
+- Dienstleistungen haben keine veränderbare Menge.
+- Produkte können mit Plus und Minus mengenmäßig angepasst werden.
+- Jede Position kann einen manuellen Einzelpreis erhalten.
+- Jede Position kann alternativ einen prozentualen Rabatt erhalten.
+- Standardpreis, Preisänderung und Rabatt bleiben im Prototyp sichtbar nachvollziehbar.
+- Preis/Rabatt kann auf den Standardwert zurückgesetzt werden.
+- Gesamtsumme und Abschlussseite reagieren sofort auf Änderungen.
+
+Wichtig:
+- weiterhin keine echte Speicherung
+- weiterhin keine produktive Buchhaltungs- oder Fiskallogik
+- ausschließlich simulierte Beispieldaten

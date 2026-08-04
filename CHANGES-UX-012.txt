@@ -1,0 +1,11 @@
+UX-012 – vollständigerer Beleg
+
+- Firmenanschrift und Steuernummer im Belegkopf.
+- MwSt.-Satz je Position vorbereitet.
+- Netto- und MwSt.-Summen im Beleg.
+- Gesamtbetrag klar als Bruttobetrag.
+- Rabatt je Position wird sichtbar ausgewiesen.
+- Gesamtrabatt wird im Summenblock ausgewiesen.
+- Kundenzeile entfällt vollständig, wenn kein Kunde gewählt wurde.
+- Erfolgsseite zeigt ebenfalls keine Kundenzeile ohne Kundenzuordnung.
+- Demo verwendet 19 % MwSt.; später pro Position konfigurierbar.

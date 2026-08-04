@@ -1,0 +1,8 @@
+UX-008 – Kundenverwaltung
+
+- Kundenliste mit Suche nach Name, Telefon oder E-Mail
+- Neue Kunden mit wenigen Feldern anlegen
+- Kundendetail mit Kontaktdaten und simulierten Belegen
+- Kunden direkt im Beleg auswählen oder neu anlegen
+- Ohne Kunde bleibt möglich
+- Daten nur für die laufende Sitzung, keine Speicherung

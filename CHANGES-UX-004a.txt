@@ -1,0 +1,16 @@
+UX-004a – Schneller Arbeitsmodus
+
+- Keine Schrittanzeige mehr.
+- Positionen werden weiterhin direkt per Kachel gewählt.
+- Gewählte Kacheln zeigen die Menge.
+- Aktueller Beleg bleibt am unteren Rand erreichbar.
+- Beleg kann auf derselben Seite aufgeklappt und bearbeitet werden.
+- Menge kann mit Plus/Minus geändert werden.
+- Positionen können direkt entfernt werden.
+- Kunde und simulierte Zahlungsart wurden auf einer Abschlussseite zusammengeführt.
+- Keine echte Speicherung, Zahlung oder Fiskalisierung.
+
+ERGÄNZUNG UX-004a
+- Gewählte Artikel-/Leistungskachel erhält eine klare aktive Farbfläche und Haken.
+- Zweites Antippen hebt die Auswahl auf und entfernt die Position aus dem Beleg.
+- Mengensteuerung bleibt im aufgeklappten Beleg über Plus/Minus möglich.

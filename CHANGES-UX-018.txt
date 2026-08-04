@@ -1,0 +1,15 @@
+UX-018 – Kunden-Belegverlauf und Korrekturregeln
+
+- Kundenhistorie als kompaktes Akkordeon „Belegverlauf“.
+- Historie wird dynamisch aus den globalen Belegen, Stornos und Gutschriften aufgebaut.
+- Belegkorrekturen erscheinen damit automatisch beim zugeordneten Kunden.
+- Verknüpfte Storno- und Gutschriftvorgänge sind direkt anklickbar.
+- Kundenumsatz zeigt den wirtschaftlich gültigen Stand inklusive Minusbelegen.
+- Doppelte Umsatzanzeige in der Historienüberschrift entfällt.
+- Storno und Vollgutschrift sperren weitere Korrekturen.
+- Nach Teilgutschriften ist nur noch der verbleibende Betrag gutschreibbar.
+- Sicherheitsabfrage vor Vollstorno und vollständiger Gutschrift.
+- „Als neuen Beleg übernehmen“ wurde in „Duplizieren“ umbenannt.
+- Gutschriftfeld heißt jetzt „Grund der Gutschrift“.
+- Interne Belegnotiz ergänzt.
+- Weiterhin reine Prototyp-Simulation ohne dauerhafte Speicherung.

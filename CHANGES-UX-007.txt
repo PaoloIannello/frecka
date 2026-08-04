@@ -1,0 +1,12 @@
+UX-007 – Rabatt in Prozent oder Euro
+
+Neu:
+- Rabattart per kompaktem Umschalter: % oder €.
+- Manueller Preis und Rabatt schließen sich gegenseitig aus.
+- Euro-Rabatt ist auf den regulären Einzelpreis begrenzt.
+- Prozent-Rabatt ist auf 100 % begrenzt.
+- Standardpreis und Abweichung bleiben sichtbar.
+- Dienstleistungen bleiben ohne Mengensteuerung.
+- Produkte behalten Plus/Minus.
+
+Weiterhin reine Simulation ohne Speicherung oder Fiskallogik.

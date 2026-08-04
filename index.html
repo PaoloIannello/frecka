@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f7f6">
+  <meta name="description" content="Klickbarer UX-Prototyp für das mobile Beleg-Tool – UX-019">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Beleg-Tool">
+  <title>Mobiles Beleg-Tool – UX-019</title>
+  <link rel="manifest" href="manifest.webmanifest?v=ux019">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css?v=ux019">
+</head>
+<body>
+  <div class="app-shell" id="app">
+    <header class="app-header" aria-label="Unternehmen und Geschäftsbereich">
+      <div class="brand-block">
+        <div id="brandLogo" class="brand-logo" hidden aria-hidden="true"></div>
+        <div class="brand-copy">
+          <p id="companyName" class="company-name"></p>
+          <p class="company-caption">Mobiles Beleg-Tool</p>
+        </div>
+      </div>
+      <div id="businessSwitcherWrap" class="business-switcher-wrap" hidden>
+        <label class="sr-only" for="businessSwitcher">Geschäftsbereich wechseln</label>
+        <select id="businessSwitcher" class="business-switcher" aria-label="Geschäftsbereich wechseln"></select>
+        <span class="select-chevron" aria-hidden="true">⌄</span>
+      </div>
+    </header>
+
+    <main id="mainContent" class="main-content" tabindex="-1"></main>
+
+    <nav id="bottomNav" class="bottom-nav" aria-label="Hauptnavigation">
+      <button class="nav-item is-active" type="button" data-route="home" aria-current="page"><span class="nav-icon" aria-hidden="true">⌂</span><span>Start</span></button>
+      <button class="nav-item" type="button" data-route="receipts"><span class="nav-icon" aria-hidden="true">▤</span><span>Belege</span></button>
+      <button class="nav-item" type="button" data-route="customers"><span class="nav-icon" aria-hidden="true">◎</span><span>Kunden</span></button>
+      <button class="nav-item" type="button" data-route="vouchers"><span class="nav-icon" aria-hidden="true">◇</span><span>Gutscheine</span></button>
+      <button class="nav-item" type="button" data-route="settings"><span class="nav-icon" aria-hidden="true">⚙</span><span>Einstellungen</span></button>
+    </nav>
+  </div>
+
+  <div id="dialogBackdrop" class="dialog-backdrop" hidden>
+    <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialogTitle" aria-describedby="dialogText">
+      <div class="dialog-symbol" aria-hidden="true">!</div>
+      <h2 id="dialogTitle">Offenen Beleg verwerfen?</h2>
+      <p id="dialogText">Der simulierte Entwurf wird entfernt. Es werden keine echten Daten gelöscht.</p>
+      <div class="dialog-actions">
+        <button id="cancelDiscard" class="button button-secondary" type="button">Abbrechen</button>
+        <button id="confirmDiscard" class="button button-danger" type="button">Beleg verwerfen</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="js/data.js?v=ux019"></script>
+  <script src="js/app.js?v=ux019"></script>
+</body>
+</html>

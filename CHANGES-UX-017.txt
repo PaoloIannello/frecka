@@ -1,0 +1,11 @@
+UX-017 – Belegverwaltung
+
+- Globale Belegliste mit Suche und Statusfiltern.
+- Belege mit und ohne Kundenzuordnung.
+- Detailansicht mit Positionen, Zahlungsart, Aktivitätsprotokoll und Verknüpfungen.
+- Erneuter E-Mail-Versand wird simuliert.
+- Beleg kann als Vorlage in einen neuen Beleg übernommen werden.
+- Storno erzeugt einen separaten simulierten Stornobeleg; Original bleibt bestehen.
+- Gesamt- oder Teilgutschrift erzeugt einen separaten Gutschriftbeleg.
+- Kundenhistorie enthält jetzt „Beleg öffnen“.
+- Alle Änderungen sind weiterhin reine Prototyp-Simulation ohne dauerhafte Speicherung.

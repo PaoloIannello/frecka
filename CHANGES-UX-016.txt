@@ -1,0 +1,7 @@
+UX-016 – kompakte Kundenhistorie
+
+- Kundendetail zeigt zusätzlich den Gesamtumsatz.
+- Die letzten fünf Belege werden kompakt aufgelistet.
+- Ein Tipp auf einen Beleg blendet die damaligen Positionen ein.
+- Keine Firmenkundenlogik und keine zusätzlichen Kundentypen.
+- Bestehende Kundensuche, Neuanlage, Bearbeitung und Belegerstellung bleiben unverändert.

@@ -1,0 +1,11 @@
+UX-010 – Sticky-Warenkorb / Live-Belegleiste
+
+Neu:
+- Anzahl der Positionen und aktuelle Summe bleiben beim Scrollen dauerhaft sichtbar.
+- Kompakte feste Belegleiste am unteren Bildschirmrand.
+- Tippen auf Anzahl/Summe öffnet „Positionen bearbeiten“.
+- „Weiter“ bleibt jederzeit mit dem Daumen erreichbar.
+- Der bisherige große Belegblock am Ende der Kachelliste entfällt.
+- Leichte Aktualisierungsanimation bei Summe und Positionen.
+
+Weiterhin reine Simulation ohne Speicherung oder echte Beleglogik.

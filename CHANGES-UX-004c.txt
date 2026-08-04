@@ -1,0 +1,7 @@
+UX-004c – Netlify-Paket korrigiert
+
+- ZIP-Inhalt liegt direkt im Archiv-Hauptverzeichnis.
+- Netlify findet index.html unmittelbar am Projekt-Root.
+- Alte Service Worker und Browser-Caches werden beim Start entfernt.
+- Gewählte Kacheln werden grün hervorgehoben und mit einem Haken markiert.
+- Erneutes Antippen hebt die Auswahl auf und entfernt die Position.

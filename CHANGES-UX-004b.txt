@@ -1,0 +1,7 @@
+UX-004b – Cache-Fix und sichtbare Auswahl
+
+- Service-Worker-Cache auf neue Version angehoben.
+- Netzwerk wird vor dem Cache geprüft.
+- CSS- und JavaScript-Dateien erhalten Versionsparameter.
+- Ausgewählte Kacheln werden grün hervorgehoben und mit Haken markiert.
+- Zweites Tippen hebt die Auswahl wieder auf.

@@ -1,0 +1,16 @@
+UX-005 – Positionen bearbeiten
+
+Neu:
+- Eigener Bildschirm „Positionen bearbeiten“.
+- Menge pro Position mit Plus und Minus ändern.
+- Position direkt entfernen.
+- Einzelpreis, Zeilensumme und Gesamtsumme sichtbar.
+- Rückkehr zur Positionsauswahl.
+- Direkter Übergang zum Belegabschluss.
+- „Bearbeiten“ im aktuellen Beleg und auf der Abschlussseite öffnet denselben Bearbeitungsbildschirm.
+
+Weiterhin reine Simulation:
+- keine Speicherung
+- keine echte Zahlung
+- keine Kundendaten
+- kein PDF, QR-Code, E-Mail oder TSE

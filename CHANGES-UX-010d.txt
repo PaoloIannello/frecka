@@ -1,0 +1,11 @@
+UX-010d – kompakter POS-Katalog
+
+- Firmenkopf auf der Positionsauswahl entfernt.
+- Neuer kompakter Arbeitskopf:
+  Zurück, Geschäftsbereich, Neuer Beleg, Positionen und kurzer Infotext.
+- Suchleiste und Kategorien deutlich nach oben gezogen.
+- Kacheln kompakter und enger angeordnet.
+- Warenkorb standardmäßig als schmale Ein-Zeilen-Leiste.
+- Warenkorb klappt erst nach Antippen auf.
+- Im aufgeklappten Zustand erscheint „Positionen bearbeiten“.
+- Weiter bleibt dauerhaft mit dem Daumen erreichbar.

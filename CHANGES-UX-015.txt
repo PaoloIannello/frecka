@@ -1,0 +1,6 @@
+UX-015
+
+- Bei Dienstleistungen heißt die Schaltfläche jetzt „Preis anpassen“.
+- Bei Produkten heißt die Schaltfläche jetzt „Menge / Preis“.
+- „Preis / Rabatt“ wurde aus der geschlossenen Positionsansicht entfernt.
+- Prozent- und Euro-Rabatte bleiben innerhalb der geöffneten Bearbeitung verfügbar.

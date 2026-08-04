@@ -1,0 +1,8 @@
+UX-010e – großer Testkatalog
+
+- Friseur-Katalog auf 44 Einträge erweitert.
+- 10 Favoriten.
+- 15 weitere Dienstleistungen.
+- 16 weitere Produkte.
+- 3 Gutscheinwerte.
+- Lange Listen ermöglichen realistischen Test von Scrollen, Suche, Kategorien und festem Warenkorb.

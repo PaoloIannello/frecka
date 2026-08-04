@@ -1,0 +1,6 @@
+UX-010a – Fix für dauerhaft sichtbare Live-Belegleiste
+
+- Safari-/Browserleiste wird dynamisch berücksichtigt.
+- Live-Belegleiste ist sofort sichtbar, ohne zuerst scrollen zu müssen.
+- Position bleibt beim Ein- und Ausblenden der Browser-Bedienelemente korrekt.
+- Zusätzlicher Abstand verhindert, dass Kacheln durch die Leiste verdeckt werden.

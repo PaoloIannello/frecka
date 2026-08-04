@@ -1,0 +1,15 @@
+UX-011 – kompakte Arbeitsseiten
+
+Kompakter Kopfbereich jetzt auch auf:
+- Positionen bearbeiten
+- Beleg abschließen
+- Kundenauswahl
+- Neuer Kunde
+- Kundendetail
+- PDF-Vorschau
+
+Zusätzlich:
+- Firmenkopf auf Arbeitsseiten ausgeblendet
+- Karten und Abstände auf den Arbeitsseiten reduziert
+- mehr Inhalt ohne Scrollen sichtbar
+- Startseite und Erfolgsseite bleiben bewusst großzügiger

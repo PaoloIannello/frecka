@@ -1,0 +1,10 @@
+UX-019 – Storno-Bestätigung repariert
+
+- Fehler behoben: „Gesamten Beleg stornieren“ reagierte auf iPhone/Safari nicht.
+- Browser-eigene confirm()-Abfrage vollständig entfernt.
+- Neue zuverlässige In-App-Bestätigung für Vollstorno.
+- Stornobeleg wird nach Bestätigung erstellt und mit dem Ursprungsbeleg verknüpft.
+- Ursprungsbeleg erhält Status „Storniert“ und Aktivitätseintrag.
+- Gesamtgutschrift nutzt ebenfalls die neue In-App-Bestätigung.
+- Abbrechen und Tippen außerhalb des Dialogs schließen die Abfrage ohne Änderung.
+- Weiterhin reine Prototyp-Simulation ohne dauerhafte Speicherung.
