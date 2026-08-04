@@ -34,6 +34,12 @@ Typische Rahmenbedingungen:
 5. **Wartbarkeit vor Entwicklungsgeschwindigkeit.** Verständlicher, testbarer Code hat Vorrang vor kurzfristig schnellen Lösungen.
 6. **Schrittweise Weiterentwicklung.** Kleine, rückwärtskompatible Änderungen reduzieren Betriebs- und Datenrisiken.
 
+## Nichtziele / Out of Scope
+
+FRECKA ist ausdrücklich kein ERP-System, keine Warenwirtschaft, kein vollständiges CRM, keine Buchhaltungssoftware, keine klassische Kassensoftware und kein komplexes Termin- oder Buchungssystem. FRECKA wird weder ein zentrales SaaS noch eine Plattform mit zentraler Speicherung von Geschäfts- oder Kundendaten. Es wird auch kein Funktionssammelsurium für seltene Sonderfälle.
+
+Neue Funktionen werden nur aufgenommen, wenn sie den einfachen Kernablauf für die Zielgruppe nachweislich verbessern und die Bedienung nicht unnötig verkomplizieren.
+
 ## 4. Architekturprinzipien
 
 - FRECKA ist eine **Offline-First Progressive Web App (PWA)**.
