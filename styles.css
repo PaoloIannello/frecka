@@ -2140,6 +2140,238 @@ body.work-mode:not(.catalog-mode) .flow-page {
   }
 }
 
+/* UX-021 – Gutschein im normalen Beleg einlösen */
+.voucher-status.is-partial {
+  color: var(--primary-strong);
+}
+.checkout-voucher-section .section-title-row {
+  align-items: baseline;
+  gap: 12px;
+}
+.checkout-voucher-section .section-title-row > span {
+  color: var(--muted);
+  font-size: .68rem;
+  font-weight: 800;
+  text-align: right;
+}
+.checkout-voucher-code-row {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  gap: 9px;
+  align-items: end;
+}
+.checkout-voucher-code-row label {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+.checkout-voucher-code-row label > span,
+.checkout-remainder-payment > span {
+  color: var(--muted);
+  font-size: .7rem;
+  font-weight: 850;
+}
+.checkout-voucher-code-row input {
+  width: 100%;
+  min-height: 52px;
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+.checkout-voucher-entry-actions {
+  margin-top: 9px;
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 9px;
+}
+.checkout-voucher-entry-actions .button {
+  min-width: 0;
+  padding-inline: 11px;
+  flex-wrap: wrap;
+  text-align: center;
+}
+.checkout-voucher-entry-actions small {
+  color: var(--muted);
+  font-size: .62rem;
+}
+.checkout-voucher-error {
+  margin: 11px 0 0;
+  padding: 11px 13px;
+  border-radius: 13px;
+  background: #fff1f0;
+  color: var(--danger);
+  font-size: .78rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+.checkout-voucher-picker {
+  margin-top: 11px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-soft);
+  display: grid;
+  gap: 8px;
+}
+.checkout-voucher-picker > p {
+  margin: 1px 3px 3px;
+  color: var(--muted);
+  font-size: .69rem;
+}
+.checkout-voucher-picker > button {
+  width: 100%;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--surface);
+  color: var(--text);
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+}
+.checkout-voucher-picker > button > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.checkout-voucher-picker > button > span:last-child {
+  justify-items: end;
+}
+.checkout-voucher-picker small {
+  color: var(--muted);
+  font-size: .68rem;
+}
+.checkout-voucher-selected {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--primary);
+  border-radius: 17px;
+  background: var(--primary-soft);
+  display: grid;
+  gap: 13px;
+}
+.checkout-voucher-selected-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.checkout-voucher-selected-head > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.checkout-voucher-selected-head small,
+.checkout-voucher-selected dt {
+  color: var(--muted);
+  font-size: .68rem;
+}
+.checkout-voucher-selected dl,
+.checkout-voucher-selected dd {
+  margin: 0;
+}
+.checkout-voucher-selected dl {
+  display: grid;
+  gap: 7px;
+}
+.checkout-voucher-selected dl > div,
+.checkout-voucher-calculation > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.checkout-voucher-selected dd {
+  max-width: 60%;
+  text-align: right;
+  font-size: .75rem;
+  font-weight: 850;
+}
+.checkout-voucher-calculation {
+  padding-top: 12px;
+  border-top: 1px solid rgba(13,107,91,.2);
+  display: grid;
+  gap: 8px;
+  font-size: .8rem;
+}
+.checkout-voucher-calculation strong {
+  text-align: right;
+}
+.checkout-voucher-remainder {
+  margin-top: 2px;
+  padding-top: 9px;
+  border-top: 1px dashed rgba(13,107,91,.3);
+  font-size: .92rem;
+}
+.checkout-remainder-payment {
+  display: grid;
+  gap: 8px;
+}
+.checkout-remainder-payment > div {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 8px;
+}
+.checkout-remainder-payment button {
+  min-height: 50px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--surface);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+.checkout-remainder-payment button.is-selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(13,107,91,.08);
+}
+.receipt-paper-voucher-payment {
+  padding: 10px 0;
+  border-bottom: 1px dashed #9da9a5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.receipt-paper-voucher-payment > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.receipt-paper-voucher-payment small {
+  color: #66726e;
+  font-size: .68rem;
+}
+.receipt-paper-voucher-payment strong {
+  font-size: .76rem;
+}
+@media(max-width:480px) {
+  .payment-grid {
+    grid-template-columns: repeat(2,minmax(0,1fr));
+  }
+}
+@media(max-width:360px) {
+  .checkout-voucher-code-row,
+  .checkout-voucher-entry-actions {
+    grid-template-columns: 1fr;
+  }
+  .checkout-voucher-code-row .button {
+    width: 100%;
+  }
+  .checkout-voucher-section .section-title-row {
+    align-items: start;
+  }
+}
+
 /* UX-020d-1 – verknüpfter Verkaufsbeleg */
 .receipt-card-kind {
   width: fit-content;

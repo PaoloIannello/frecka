@@ -15,6 +15,12 @@
     cartExpanded: false,
     customerChoice: "none",
     paymentChoice: "cash",
+    checkoutVoucherCode: "",
+    checkoutVoucherReference: null,
+    checkoutVoucherError: "",
+    checkoutVoucherPickerOpen: false,
+    checkoutVoucherRemainderPayment: "cash",
+    checkoutSubmitting: false,
     priceEditorId: null,
     customerSearch: "",
     selectedCustomerId: null,
@@ -312,6 +318,70 @@
     return data.paymentChoices.find(choice => choice.id === state.paymentChoice)?.title ?? "Nicht angegeben";
   }
 
+  const normalizeVoucherCode = value => String(value || "").trim().toLocaleUpperCase("de-DE").replaceAll("-", "").replaceAll(" ", "");
+  const eligibleCheckoutVouchers = () => data.vouchers.filter(isVoucherOpen);
+  const selectedCheckoutVoucher = () => voucherByReference(state.checkoutVoucherReference);
+
+  function resetCheckoutVoucher() {
+    state.checkoutVoucherCode = "";
+    state.checkoutVoucherReference = null;
+    state.checkoutVoucherError = "";
+    state.checkoutVoucherPickerOpen = false;
+    state.checkoutVoucherRemainderPayment = "cash";
+  }
+
+  function chooseCheckoutVoucher(voucher) {
+    if (!voucher) return false;
+    if (voucher.status === "cancelled") {
+      state.checkoutVoucherError = "Dieser Gutschein wurde storniert.";
+      return false;
+    }
+    if (voucher.status === "redeemed" || Number(voucher.currentValue) <= 0) {
+      state.checkoutVoucherError = "Dieser Gutschein wurde bereits vollständig eingelöst.";
+      return false;
+    }
+    if (!isVoucherOpen(voucher)) {
+      state.checkoutVoucherError = "Dieser Gutschein kann nicht eingelöst werden.";
+      return false;
+    }
+    state.checkoutVoucherReference = voucher.reference;
+    state.checkoutVoucherCode = voucher.code;
+    state.checkoutVoucherError = "";
+    state.checkoutVoucherPickerOpen = false;
+    return true;
+  }
+
+  function chooseCheckoutVoucherByCode() {
+    const query = normalizeVoucherCode(state.checkoutVoucherCode);
+    if (!query) {
+      state.checkoutVoucherError = "Bitte einen Gutscheincode eingeben.";
+      return false;
+    }
+    const matches = data.vouchers.filter(voucher => normalizeVoucherCode(voucher.code).includes(query));
+    if (!matches.length) {
+      state.checkoutVoucherError = "Gutschein wurde nicht gefunden.";
+      return false;
+    }
+    if (matches.length > 1) {
+      state.checkoutVoucherError = "Mehrere Gutscheine passen. Bitte den Code genauer eingeben.";
+      return false;
+    }
+    return chooseCheckoutVoucher(matches[0]);
+  }
+
+  function checkoutVoucherAmounts(voucher = selectedCheckoutVoucher()) {
+    const total = Math.round(cartTotal() * 100) / 100;
+    const balanceBefore = Math.max(0, Number(voucher?.currentValue || 0));
+    const voucherAmount = Math.min(total, balanceBefore);
+    return {
+      total,
+      balanceBefore,
+      voucherAmount: Math.round(voucherAmount * 100) / 100,
+      balanceAfter: Math.round((balanceBefore - voucherAmount) * 100) / 100,
+      remainder: Math.round((total - voucherAmount) * 100) / 100
+    };
+  }
+
   function nextReceiptNumber() {
     let number;
     do {
@@ -322,7 +392,25 @@
   }
 
   function finishReceipt() {
+    if (state.checkoutSubmitting) return;
     const customer = selectedCustomer();
+    const voucher = state.paymentChoice === "voucher" ? selectedCheckoutVoucher() : null;
+    if (state.paymentChoice === "voucher" && (!voucher || !isVoucherOpen(voucher))) {
+      state.checkoutVoucherError = voucher?.status === "cancelled"
+        ? "Dieser Gutschein wurde storniert."
+        : voucher?.status === "redeemed" || Number(voucher?.currentValue || 0) <= 0
+          ? "Dieser Gutschein wurde bereits vollständig eingelöst."
+          : "Bitte einen gültigen Gutschein auswählen.";
+      renderCheckout();
+      return;
+    }
+    const voucherAmounts = voucher ? checkoutVoucherAmounts(voucher) : null;
+    if (voucherAmounts?.remainder > 0 && !["cash", "card"].includes(state.checkoutVoucherRemainderPayment)) {
+      state.checkoutVoucherError = "Bitte Bar oder Karte für die Restzahlung auswählen.";
+      renderCheckout();
+      return;
+    }
+    state.checkoutSubmitting = true;
     const defaultTaxRate = Number(data.company.defaultTaxRate || 19);
 
     const items = state.cart.map(item => {
@@ -380,25 +468,95 @@
       gross: Math.round(group.gross * 100) / 100
     }));
 
-    state.finishedReceipt = {
-      number: nextReceiptNumber(),
+    const now = new Date();
+    const receiptNumber = nextReceiptNumber();
+    const receiptDate = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }).format(now);
+    const receiptTime = new Intl.DateTimeFormat("de-DE", { timeStyle: "short" }).format(now);
+    const remainderPayment = voucherAmounts?.remainder > 0
+      ? data.paymentChoices.find(choice => choice.id === state.checkoutVoucherRemainderPayment)?.title || "Bar"
+      : null;
+    const receiptPayment = voucher
+      ? voucherAmounts.remainder > 0 ? `Gutschein + ${remainderPayment}` : "Gutschein"
+      : paymentLabel();
+    const customerSnapshot = customer ? {
+      id: customer.id,
+      name: customerName(customer),
+      email: customer.email || "",
+      street: customer.street || "",
+      zip: customer.zip || "",
+      city: customer.city || ""
+    } : null;
+    const receipt = {
+      id: `receipt_${crypto.randomUUID?.() || Date.now()}`,
+      number: receiptNumber,
+      type: "receipt",
+      status: "completed",
+      date: receiptDate,
+      time: receiptTime,
+      sortKey: now.toISOString(),
       total,
       originalTotal,
       discountTotal,
       netTotal,
       taxTotal,
       taxGroups,
-      payment: paymentLabel(),
-      customer: customer ? {
-        name: customerName(customer),
-        street: customer.street || "",
-        zip: customer.zip || "",
-        city: customer.city || ""
-      } : null,
+      payment: receiptPayment,
+      customer: customerSnapshot,
       customerEmail: customer?.email || "",
       createdAt: new Intl.DateTimeFormat("de-DE", { dateStyle: "short", timeStyle: "short" }).format(new Date()),
-      items
+      items,
+      voucherPayment: voucher ? {
+        reference: voucher.reference,
+        code: voucher.code,
+        amount: voucherAmounts.voucherAmount,
+        balanceBefore: voucherAmounts.balanceBefore,
+        balanceAfter: voucherAmounts.balanceAfter
+      } : null,
+      remainderPayment: voucherAmounts?.remainder > 0 ? { method: remainderPayment, amount: voucherAmounts.remainder } : null,
+      activity: [
+        { label: "Beleg erstellt", date: `${receiptDate} · ${receiptTime}` },
+        ...(voucher ? [{ label: `Mit Gutschein ${voucher.code} bezahlt`, date: `${receiptDate} · ${receiptTime}` }] : [])
+      ]
     };
+    const previousVoucher = voucher ? {
+      currentValue: voucher.currentValue,
+      status: voucher.status,
+      historyLength: Array.isArray(voucher.history) ? voucher.history.length : 0
+    } : null;
+    let receiptInserted = false;
+    try {
+      if (voucher) {
+        voucher.currentValue = voucherAmounts.balanceAfter;
+        voucher.status = voucherAmounts.balanceAfter <= 0 ? "redeemed" : "partially_redeemed";
+        voucher.history = Array.isArray(voucher.history) ? voucher.history : [];
+        voucher.history.push({
+          type: voucherAmounts.balanceAfter <= 0 ? "full_redemption" : "partial_redemption",
+          date: receiptDate,
+          time: receiptTime,
+          amount: voucherAmounts.voucherAmount,
+          balanceAfter: voucherAmounts.balanceAfter,
+          receiptNumber
+        });
+      }
+      data.receipts.unshift(receipt);
+      receiptInserted = true;
+      state.finishedReceipt = receipt;
+    } catch (error) {
+      if (receiptInserted) {
+        const receiptIndex = data.receipts.indexOf(receipt);
+        if (receiptIndex >= 0) data.receipts.splice(receiptIndex, 1);
+      }
+      if (voucher && previousVoucher) {
+        voucher.currentValue = previousVoucher.currentValue;
+        voucher.status = previousVoucher.status;
+        voucher.history.splice(previousVoucher.historyLength);
+      }
+      state.checkoutSubmitting = false;
+      state.checkoutVoucherError = "Beleg und Gutscheineinlösung konnten nicht gemeinsam abgeschlossen werden.";
+      renderCheckout();
+      return;
+    }
+    state.checkoutSubmitting = false;
     state.successNotice = "";
     state.qrVisible = false;
     state.openReceiptVisible = false;
@@ -411,6 +569,7 @@
       navigate("home", false);
       return;
     }
+    const paidVoucher = receipt.voucherPayment ? voucherByReference(receipt.voucherPayment.reference) : null;
 
     const qrCells = Array.from({ length: 81 }, (_, index) => {
       const on = [0,1,2,3,4,9,13,18,20,22,27,28,29,30,31,36,40,44,45,49,53,54,55,56,57,58,62,64,67,71,72,73,74,75,76,77,78,79,80].includes(index) || (index * 7 + 3) % 11 < 4;
@@ -430,6 +589,8 @@
         <div><span>Gesamt</span><strong>${formatCurrency(receipt.total)}</strong></div>
         ${receipt.customer ? `<div><span>Kunde</span><strong>${escapeHtml(receipt.customer.name)}</strong>${customerAddressLines(receipt.customer).map(line => `<small>${escapeHtml(line)}</small>`).join("")}</div>` : ""}
         <div><span>Zahlungsart</span><strong>${escapeHtml(receipt.payment)}</strong></div>
+        ${receipt.voucherPayment ? `<div><span>Mit Gutschein bezahlt</span><strong>${formatCurrency(receipt.voucherPayment.amount)}</strong><small>${escapeHtml(receipt.voucherPayment.code)}</small></div>` : ""}
+        ${receipt.remainderPayment ? `<div><span>Restzahlung</span><strong>${formatCurrency(receipt.remainderPayment.amount)}</strong><small>${escapeHtml(receipt.remainderPayment.method)}</small></div>` : ""}
       </section>
 
       ${state.successNotice ? `<div class="success-notice" role="status">${escapeHtml(state.successNotice)}</div>` : ""}
@@ -440,6 +601,7 @@
       </section>` : ""}
 
       <section class="success-actions" aria-label="Aktionen nach dem Belegabschluss">
+        ${paidVoucher ? `<button class="success-action-card" type="button" data-open-linked-voucher="${escapeHtml(paidVoucher.reference)}"><span aria-hidden="true">◇</span><strong>Gutschein öffnen</strong><small>${escapeHtml(maskVoucherCode(paidVoucher.code))}</small></button>` : ""}
         <button class="success-action-card" type="button" data-route="receipt-preview">
           <span aria-hidden="true">▤</span><strong>PDF anzeigen</strong><small>Belegvorschau öffnen</small>
         </button>
@@ -468,7 +630,9 @@
       return;
     }
     const isVoucherSale = receipt.receiptKind === "voucher-sale";
-    const linkedVoucher = isVoucherSale ? voucherByReference(receipt.voucherReference) : null;
+    const linkedVoucher = isVoucherSale
+      ? voucherByReference(receipt.voucherReference)
+      : receipt.voucherPayment ? voucherByReference(receipt.voucherPayment.reference) : null;
     const createdAt = receipt.createdAt || [receipt.date, receipt.time].filter(Boolean).join(" · ");
     const taxGroups = Array.isArray(receipt.taxGroups) ? receipt.taxGroups : [];
     const showTaxDetails = !isVoucherSale && Number.isFinite(Number(receipt.netTotal)) && taxGroups.length > 0;
@@ -510,6 +674,8 @@
 
         ${receipt.customer ? `<div class="receipt-paper-customer"><span>Kunde</span><strong>${escapeHtml(receipt.customer.name)}</strong>${customerAddressLines(receipt.customer).map(line => `<small>${escapeHtml(line)}</small>`).join("")}</div>` : ""}
         <div class="receipt-paper-row"><span>Zahlungsart</span><strong>${escapeHtml(receipt.payment)}</strong></div>
+        ${receipt.voucherPayment ? `<div class="receipt-paper-voucher-payment"><span><small>Bezahlt mit Gutschein</small><strong>${escapeHtml(maskVoucherCode(receipt.voucherPayment.code))}</strong></span><strong>${formatCurrency(receipt.voucherPayment.amount)}</strong></div>` : ""}
+        ${receipt.remainderPayment ? `<div class="receipt-paper-row"><span>Restzahlung · ${escapeHtml(receipt.remainderPayment.method)}</span><strong>${formatCurrency(receipt.remainderPayment.amount)}</strong></div>` : ""}
         ${linkedVoucher ? `<div class="receipt-paper-voucher-link"><span>Verknüpfter Gutschein</span><strong>${escapeHtml(maskVoucherCode(linkedVoucher.code))}</strong></div>` : ""}
 
         ${showTaxDetails ? `<div class="receipt-paper-totals">
@@ -529,6 +695,10 @@
 
   function renderCheckout() {
     const selectedCustomer = data.customers.find(c => c.id === state.selectedCustomerId);
+    const checkoutVoucher = selectedCheckoutVoucher();
+    const voucherAmounts = checkoutVoucher ? checkoutVoucherAmounts(checkoutVoucher) : null;
+    const voucherQuery = normalizeVoucherCode(state.checkoutVoucherCode);
+    const selectableVouchers = eligibleCheckoutVouchers().filter(voucher => !voucherQuery || normalizeVoucherCode(voucher.code).includes(voucherQuery));
     const customerCards = selectedCustomer
       ? `<div class="selected-customer"><div><strong>${escapeHtml(customerName(selectedCustomer))}</strong>${customerAddressLines(selectedCustomer).map(line => `<small>${escapeHtml(line)}</small>`).join("")}<small>${escapeHtml(selectedCustomer.phone || selectedCustomer.email || "Kunde ausgewählt")}</small></div><div class="selected-customer-actions"><button class="text-action" type="button" data-edit-customer="${selectedCustomer.id}">Bearbeiten</button><button class="text-action" type="button" data-route="customer-picker">Ändern</button></div></div>`
       : `<button class="mini-choice ${state.customerChoice === "none" ? "is-selected" : ""}" type="button" data-select-no-customer><span class="mini-choice-icon" aria-hidden="true">→</span><span><strong>Ohne Kunde</strong><small>Keine persönlichen Daten</small></span></button><button class="mini-choice" type="button" data-route="customer-picker"><span class="mini-choice-icon" aria-hidden="true">◎</span><span><strong>Kunde auswählen</strong><small>Suchen oder neu anlegen</small></span></button>`;
@@ -538,10 +708,52 @@
       <section class="checkout-section"><div class="section-title-row"><h2>Positionen</h2><button class="text-action" type="button" data-route="edit-cart">Bearbeiten</button></div><div class="checkout-items">${state.cart.map(item => `<div class="checkout-item"><span><strong>${escapeHtml(item.title)}</strong><small>${item.quantity} × ${formatCurrency(item.price)}</small></span><strong>${formatCurrency(item.price * item.quantity)}</strong></div>`).join("")}</div></section>
       <section class="checkout-section"><h2>Kunde <span>optional</span></h2><div class="mini-choice-grid">${customerCards}</div></section>
       <section class="checkout-section"><h2>Zahlungsart <span>nur Simulation</span></h2><div class="payment-grid">${paymentCards}</div></section>
+      ${state.paymentChoice === "voucher" ? `<section class="checkout-section checkout-voucher-section" aria-labelledby="checkoutVoucherTitle">
+        <div class="section-title-row"><h2 id="checkoutVoucherTitle">Gutschein einlösen</h2><span>1 Gutschein pro Beleg</span></div>
+        <div class="checkout-voucher-code-row">
+          <label><span>Gutscheincode</span><input id="checkoutVoucherCode" type="search" autocomplete="off" placeholder="FRKA-XXXX-XXXX" value="${escapeHtml(state.checkoutVoucherCode)}"></label>
+          <button class="button button-secondary" type="button" data-action="checkout-voucher-code">Code anwenden</button>
+        </div>
+        <div class="checkout-voucher-entry-actions">
+          <button class="button button-secondary" type="button" data-action="checkout-voucher-qr">QR-Code scannen <small>Simulation</small></button>
+          <button class="button button-secondary" type="button" data-action="checkout-voucher-picker">Gutschein auswählen</button>
+        </div>
+        ${state.checkoutVoucherError ? `<p class="checkout-voucher-error" role="alert">${escapeHtml(state.checkoutVoucherError)}</p>` : ""}
+        ${state.checkoutVoucherPickerOpen ? `<div class="checkout-voucher-picker" aria-label="Einlösbare Gutscheine">
+          <p>Nur aktive Gutscheine mit Restwert.</p>
+          ${selectableVouchers.length ? selectableVouchers.map(voucher => `<button type="button" data-select-checkout-voucher="${escapeHtml(voucher.reference)}"><span><strong>${escapeHtml(voucher.code)}</strong><small>${escapeHtml(voucherStatusLabel(voucher))}</small></span><span><small>Restwert</small><strong>${formatCurrency(voucher.currentValue)}</strong></span></button>`).join("") : `<div class="empty-state">Keine einlösbaren Gutscheine zu diesem Code.</div>`}
+        </div>` : ""}
+        ${checkoutVoucher ? `<div class="checkout-voucher-selected">
+          <div class="checkout-voucher-selected-head"><span><small>Ausgewählter Gutschein</small><strong>${escapeHtml(checkoutVoucher.code)}</strong></span><button class="text-action" type="button" data-action="checkout-voucher-change">Ändern</button></div>
+          <dl>
+            <div><dt>Aktueller Restwert</dt><dd>${formatCurrency(checkoutVoucher.currentValue)}</dd></div>
+            <div><dt>Verkauft am</dt><dd>${escapeHtml(checkoutVoucher.soldAt)}</dd></div>
+            ${checkoutVoucher.customer ? `<div><dt>Zugeordneter Kunde</dt><dd>${escapeHtml(checkoutVoucher.customer.name)}</dd></div>` : ""}
+          </dl>
+          <div class="checkout-voucher-calculation">
+            <div><span>Mit Gutschein bezahlt</span><strong>${formatCurrency(voucherAmounts.voucherAmount)}</strong></div>
+            <div><span>Restwert danach</span><strong>${formatCurrency(voucherAmounts.balanceAfter)}</strong></div>
+            ${voucherAmounts.balanceAfter <= 0 ? `<div><span>Status danach</span><strong>Vollständig eingelöst</strong></div>` : ""}
+            ${voucherAmounts.remainder > 0 ? `<div class="checkout-voucher-remainder"><span>Restzahlung</span><strong>${formatCurrency(voucherAmounts.remainder)}</strong></div>` : ""}
+          </div>
+          ${voucherAmounts.remainder > 0 ? `<div class="checkout-remainder-payment"><span>Restzahlung mit</span><div role="group" aria-label="Zahlungsart für Restzahlung">${data.paymentChoices.filter(choice => ["cash", "card"].includes(choice.id)).map(choice => `<button class="${state.checkoutVoucherRemainderPayment === choice.id ? "is-selected" : ""}" type="button" data-voucher-remainder-payment="${choice.id}" aria-pressed="${state.checkoutVoucherRemainderPayment === choice.id}"><span aria-hidden="true">${choice.icon}</span><strong>${choice.title}</strong></button>`).join("")}</div></div>` : ""}
+        </div>` : ""}
+      </section>` : ""}
       <section class="checkout-total"><span>Gesamt</span><strong>${formatCurrency(cartTotal())}</strong></section>
-      <p class="prototype-note">Keine echte Zahlung, Speicherung, PDF-, E-Mail-, QR- oder Fiskalisierungsfunktion.</p>
-      <div class="checkout-action"><button class="button button-primary" type="button" data-action="finish-demo">Demo abschließen</button></div>
+      <p class="prototype-note">Keine echte Zahlung, Speicherung, QR-, Steuer- oder Fiskalisierungsfunktion.</p>
+      <div class="checkout-action"><button class="button button-primary" type="button" data-action="finish-demo" ${state.checkoutSubmitting ? "disabled" : ""}>${state.checkoutSubmitting ? "Wird abgeschlossen …" : "Demo abschließen"}</button></div>
     </section>`;
+
+    document.getElementById("checkoutVoucherCode")?.addEventListener("input", event => {
+      state.checkoutVoucherCode = event.target.value;
+      state.checkoutVoucherError = "";
+      if (state.checkoutVoucherPickerOpen) {
+        renderCheckout();
+        const input = document.getElementById("checkoutVoucherCode");
+        input?.focus();
+        input?.setSelectionRange(state.checkoutVoucherCode.length, state.checkoutVoucherCode.length);
+      }
+    });
   }
 
 
@@ -854,6 +1066,7 @@
   function renderReceiptDetail() {
     const receipt = receiptByNumber(state.receiptDetailNumber);
     if (!receipt) { navigate("receipts", false); return; }
+    const paidVoucher = receipt.voucherPayment ? voucherByReference(receipt.voucherPayment.reference) : null;
     const related = data.receipts.filter(item => item.reference === receipt.number || item.number === receipt.reference);
     const relatedCreditsTotal = data.receipts
       .filter(item => item.reference === receipt.number && item.type === "credit")
@@ -862,6 +1075,7 @@
     const hasCancellation = data.receipts.some(item => item.reference === receipt.number && item.type === "cancellation");
     const canCorrect = receipt.type === "receipt"
       && receipt.receiptKind !== "voucher-sale"
+      && !receipt.voucherPayment
       && !hasCancellation
       && receipt.status !== "cancelled"
       && receipt.status !== "credited"
@@ -883,8 +1097,12 @@
         <div class="receipt-detail-row"><span>Belegart</span><strong>${escapeHtml(receiptKindLabel(receipt))}</strong></div>
         <div class="receipt-detail-row"><span>Kunde</span><strong>${escapeHtml(receiptCustomerLabel(receipt))}</strong></div>
         <div class="receipt-detail-row"><span>Zahlungsart</span><strong>${escapeHtml(receipt.payment)}</strong></div>
+        ${receipt.voucherPayment ? `<div class="receipt-detail-row"><span>Bezahlt mit Gutschein</span><strong>${formatCurrency(receipt.voucherPayment.amount)}</strong></div><div class="receipt-detail-row"><span>Gutscheincode</span><strong>${escapeHtml(receipt.voucherPayment.code)}</strong></div>` : ""}
+        ${receipt.remainderPayment ? `<div class="receipt-detail-row"><span>Restzahlung · ${escapeHtml(receipt.remainderPayment.method)}</span><strong>${formatCurrency(receipt.remainderPayment.amount)}</strong></div>` : ""}
         ${receipt.reference ? `<div class="receipt-detail-row"><span>Bezug</span><button type="button" data-open-receipt="${escapeHtml(receipt.reference)}">${escapeHtml(receipt.reference)}</button></div>` : ""}
       </section>
+
+      ${paidVoucher ? `<section class="receipt-detail-card voucher-receipt-link"><div class="receipt-section-title"><h2>Verwendeter Gutschein</h2></div><p>Dieser Gutschein wurde für die Bezahlung des Belegs verwendet.</p><button class="button button-primary" type="button" data-open-linked-voucher="${escapeHtml(paidVoucher.reference)}">Gutschein öffnen</button></section>` : ""}
 
       ${receipt.receiptKind === "voucher-sale" ? `<section class="receipt-detail-card voucher-receipt-link">
         <div class="receipt-section-title"><h2>Verknüpfter Gutschein</h2></div>
@@ -1029,13 +1247,16 @@
   const voucherStatusLabel = voucher => {
     if (voucher.status === "redeemed") return "Vollständig eingelöst";
     if (voucher.status === "cancelled") return "Storniert";
+    if (voucher.status === "partially_redeemed") return "Teilweise eingelöst";
     return "Aktiv";
   };
   const voucherStatusClass = voucher => {
     if (voucher.status === "redeemed") return "is-redeemed";
     if (voucher.status === "cancelled") return "is-cancelled";
+    if (voucher.status === "partially_redeemed") return "is-partial";
     return "is-active";
   };
+  const isVoucherOpen = voucher => ["active", "partially_redeemed"].includes(voucher.status) && Number(voucher.currentValue) > 0;
   const maskVoucherCode = code => {
     const parts = String(code).split("-");
     if (parts.length < 3) return code;
@@ -1081,7 +1302,11 @@
     return `<section class="voucher-history" aria-labelledby="voucherHistoryTitle">
       <div class="voucher-section-title"><h2 id="voucherHistoryTitle">Historie</h2><span>${events.length}</span></div>
       <div class="voucher-history-list">
-        ${events.length ? events.map(event => `<article class="voucher-history-item voucher-history-${escapeHtml(event.type)}">
+        ${events.length ? events.map(event => {
+          const eventReceipt = event.type === "sold"
+            ? (linkedReceipt && event.receiptNumber === linkedReceipt.number ? linkedReceipt : null)
+            : data.receipts.find(receipt => receipt.number === event.receiptNumber && receipt.voucherPayment?.reference === voucher.reference) ?? null;
+          return `<article class="voucher-history-item voucher-history-${escapeHtml(event.type)}">
           <span class="voucher-history-marker" aria-hidden="true"></span>
           <div class="voucher-history-main">
             <div><strong>${escapeHtml(voucherHistoryLabel(event.type))}</strong><time>${escapeHtml([event.date, event.time].filter(Boolean).join(" · "))}</time></div>
@@ -1090,9 +1315,10 @@
               <div><dt>Restwert danach</dt><dd>${formatCurrency(event.balanceAfter)}</dd></div>
               ${event.receiptNumber ? `<div><dt>Beleg</dt><dd>${escapeHtml(event.receiptNumber)}</dd></div>` : ""}
             </dl>
-            ${linkedReceipt && event.type === "sold" && event.receiptNumber === linkedReceipt.number ? `<button class="voucher-history-receipt-link" type="button" data-open-receipt="${escapeHtml(linkedReceipt.number)}">Verkaufsbeleg öffnen</button>` : ""}
+            ${eventReceipt ? `<button class="voucher-history-receipt-link" type="button" data-open-receipt="${escapeHtml(eventReceipt.number)}">${event.type === "sold" ? "Verkaufsbeleg" : "Beleg"} öffnen</button>` : ""}
           </div>
-        </article>`).join("") : `<p class="voucher-history-empty">Noch keine historischen Vorgänge vorhanden.</p>`}
+        </article>`;
+        }).join("") : `<p class="voucher-history-empty">Noch keine historischen Vorgänge vorhanden.</p>`}
       </div>
     </section>`;
   }
@@ -1142,7 +1368,7 @@
     if (state.voucherFilter === "redeemed") return data.vouchers.filter(voucher => voucher.status === "redeemed");
     if (state.voucherFilter === "cancelled") return data.vouchers.filter(voucher => voucher.status === "cancelled");
     if (state.voucherFilter === "all") return data.vouchers;
-    return data.vouchers.filter(voucher => voucher.status === "active" && Number(voucher.currentValue) > 0);
+    return data.vouchers.filter(isVoucherOpen);
   }
 
   function renderVouchers() {
@@ -1179,7 +1405,7 @@
             <strong>${escapeHtml(maskVoucherCode(voucher.code))}</strong>
             <small class="voucher-status ${voucherStatusClass(voucher)}">${escapeHtml(voucherStatusLabel(voucher))}</small>
           </span>
-          <span class="voucher-list-value ${voucher.status === "active" ? "" : "is-unavailable"}"><small>Restwert</small><strong>${formatCurrency(voucher.currentValue)}</strong></span>
+          <span class="voucher-list-value ${isVoucherOpen(voucher) ? "" : "is-unavailable"}"><small>Restwert</small><strong>${formatCurrency(voucher.currentValue)}</strong></span>
           <span class="voucher-list-arrow" aria-hidden="true">›</span>
         </button>`).join("") : `<div class="empty-state">${state.voucherSearch.trim() ? "Keine passenden Gutscheine gefunden." : "Keine Gutscheine in diesem Filter."}</div>`}
       </div>
@@ -1505,7 +1731,7 @@
 
       <section class="voucher-facts">
         <div><span>Status</span><strong class="voucher-status ${voucherStatusClass(voucher)}">${escapeHtml(voucherStatusLabel(voucher))}</strong></div>
-        <div class="voucher-balance ${voucher.status === "active" ? "" : "is-unavailable"}"><span>Aktueller Restwert</span><strong>${formatCurrency(voucher.currentValue)}</strong></div>
+        <div class="voucher-balance ${isVoucherOpen(voucher) ? "" : "is-unavailable"}"><span>Aktueller Restwert</span><strong>${formatCurrency(voucher.currentValue)}</strong></div>
         <div><span>Ursprünglicher Wert</span><strong>${formatCurrency(voucher.issuedValue)}</strong></div>
         <div><span>Verkauft am</span><strong>${escapeHtml([voucher.soldAt, voucher.soldTime].filter(Boolean).join(" · "))}</strong></div>
         <div><span>Zahlungsart beim Verkauf</span><strong>${escapeHtml(voucher.payment || "Nicht angegeben")}</strong></div>
@@ -1657,6 +1883,8 @@
     state.customerChoice = "none";
     state.selectedCustomerId = null;
     state.paymentChoice = "cash";
+    resetCheckoutVoucher();
+    state.checkoutSubmitting = false;
     state.activeCategory = "Favoriten";
     state.search = "";
     state.cartExpanded = false;
@@ -1834,7 +2062,24 @@
     const customer = event.target.closest("[data-customer-choice]");
     if (customer) { state.customerChoice = customer.dataset.customerChoice; renderCheckout(); return; }
     const payment = event.target.closest("[data-payment-choice]");
-    if (payment) { state.paymentChoice = payment.dataset.paymentChoice; renderCheckout(); return; }
+    if (payment) {
+      state.paymentChoice = payment.dataset.paymentChoice;
+      if (state.paymentChoice !== "voucher") resetCheckoutVoucher();
+      renderCheckout();
+      return;
+    }
+    const checkoutVoucher = event.target.closest("[data-select-checkout-voucher]");
+    if (checkoutVoucher) {
+      chooseCheckoutVoucher(voucherByReference(checkoutVoucher.dataset.selectCheckoutVoucher));
+      renderCheckout();
+      return;
+    }
+    const remainderPayment = event.target.closest("[data-voucher-remainder-payment]");
+    if (remainderPayment) {
+      state.checkoutVoucherRemainderPayment = remainderPayment.dataset.voucherRemainderPayment;
+      renderCheckout();
+      return;
+    }
     const editIncrease = event.target.closest("[data-edit-increase]");
     if (editIncrease) {
       const item = state.cart.find(entry => entry.id === editIncrease.dataset.editIncrease);
@@ -1932,6 +2177,28 @@
       return;
     }
     const action = event.target.closest("[data-action]")?.dataset.action;
+    if (action === "checkout-voucher-code") {
+      chooseCheckoutVoucherByCode();
+      renderCheckout();
+    }
+    if (action === "checkout-voucher-qr") {
+      const query = normalizeVoucherCode(state.checkoutVoucherCode);
+      const matches = eligibleCheckoutVouchers().filter(voucher => !query || normalizeVoucherCode(voucher.code).includes(query));
+      if (matches.length) chooseCheckoutVoucher(matches[0]);
+      else state.checkoutVoucherError = "Gutschein wurde nicht gefunden.";
+      renderCheckout();
+    }
+    if (action === "checkout-voucher-picker") {
+      state.checkoutVoucherPickerOpen = !state.checkoutVoucherPickerOpen;
+      state.checkoutVoucherError = "";
+      renderCheckout();
+    }
+    if (action === "checkout-voucher-change") {
+      state.checkoutVoucherReference = null;
+      state.checkoutVoucherPickerOpen = true;
+      state.checkoutVoucherError = "";
+      renderCheckout();
+    }
     if (action === "voucher-sell") {
       startVoucherSale("vouchers");
     }

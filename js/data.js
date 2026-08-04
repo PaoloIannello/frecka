@@ -1,5 +1,5 @@
 window.PROTOTYPE_DATA = Object.freeze({
-  version: "UX-020d-2",
+  version: "UX-021",
   build: "2026-08-04",
   company: {
     name: "Studio Beispiel",
@@ -220,13 +220,14 @@ window.PROTOTYPE_DATA = Object.freeze({
   paymentChoices: [
     { id: "cash", title: "Bar", icon: "€" },
     { id: "card", title: "Karte", icon: "▣" },
+    { id: "voucher", title: "Gutschein", icon: "◇" },
     { id: "later", title: "Später", icon: "…" }
   ],
   vouchers: [
     {
       reference: "vch_8f4c2a91d7e6",
       code: "FRKA-7Q2M-9K4X",
-      status: "active",
+      status: "partially_redeemed",
       issuedValue: 50,
       currentValue: 18.5,
       soldAt: "28.07.2026",
