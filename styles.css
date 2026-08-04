@@ -2127,3 +2127,39 @@ body.work-mode:not(.catalog-mode) .flow-page {
     justify-content: start;
   }
 }
+
+/* UX-020d-1 – verknüpfter Verkaufsbeleg */
+.receipt-card-kind {
+  width: fit-content;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  font-size: .64rem;
+  font-weight: 900;
+}
+.voucher-receipt-link {
+  display: grid;
+  gap: 10px;
+}
+.voucher-receipt-link p {
+  margin: 0;
+  color: var(--muted);
+  font-size: .78rem;
+  line-height: 1.45;
+}
+.voucher-receipt-link .button {
+  width: 100%;
+}
+.voucher-history-receipt-link {
+  width: fit-content;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid var(--primary);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--primary-strong);
+  font: inherit;
+  font-size: .72rem;
+  font-weight: 900;
+}

@@ -1,6 +1,10 @@
 (() => {
   "use strict";
   const data = window.PROTOTYPE_DATA;
+  const initialReceiptCounter = [...data.receipts, ...data.vouchers.map(voucher => ({ number: voucher.saleReceipt?.number }))].reduce((highest, receipt) => {
+    const match = /^2026-(\d{6})$/.exec(receipt.number || "");
+    return match ? Math.max(highest, Number(match[1])) : highest;
+  }, 0);
   const state = {
     route: "home",
     activeBusinessArea: data.businessAreas[0]?.id ?? null,
@@ -23,6 +27,7 @@
     receiptFilter: "all",
     receiptSearch: "",
     receiptDetailNumber: null,
+    receiptCounter: initialReceiptCounter,
     creditMode: "full",
     creditAmount: "",
     creditText: "Korrektur / Kulanz",
@@ -306,10 +311,12 @@
   }
 
   function nextReceiptNumber() {
-    const current = Number(sessionStorage.getItem("prototypeReceiptCounter") || "127");
-    const next = current + 1;
-    sessionStorage.setItem("prototypeReceiptCounter", String(next));
-    return `2026-${String(next).padStart(6, "0")}`;
+    let number;
+    do {
+      state.receiptCounter += 1;
+      number = `2026-${String(state.receiptCounter).padStart(6, "0")}`;
+    } while (data.receipts.some(receipt => receipt.number === number));
+    return number;
   }
 
   function finishReceipt() {
@@ -751,6 +758,13 @@
     return data.receipts.find(receipt => receipt.number === number) || null;
   }
 
+  function receiptKindLabel(receipt) {
+    if (receipt.receiptKind === "voucher-sale") return "Gutscheinverkauf";
+    if (receipt.type === "credit") return "Gutschrift";
+    if (receipt.type === "cancellation") return "Stornobeleg";
+    return "Beleg";
+  }
+
   function visibleReceipts() {
     const search = state.receiptSearch.trim().toLowerCase();
     return data.receipts
@@ -765,6 +779,7 @@
         if (!search) return true;
         return [
           receipt.number,
+          receiptKindLabel(receipt),
           receiptCustomerLabel(receipt),
           receipt.date,
           String(receipt.total).replace(".", ",")
@@ -805,6 +820,7 @@
         ${receipts.length ? receipts.map(receipt => `<button class="receipt-admin-card" type="button" data-open-receipt="${escapeHtml(receipt.number)}">
           <span class="receipt-card-main">
             <span class="receipt-card-number">${escapeHtml(receipt.number)}</span>
+            ${receipt.receiptKind === "voucher-sale" ? `<span class="receipt-card-kind">Gutscheinverkauf</span>` : ""}
             <strong>${escapeHtml(receiptCustomerLabel(receipt))}</strong>
             <small>${escapeHtml(receipt.date)} · ${escapeHtml(receipt.time)} · ${escapeHtml(receipt.payment)}</small>
           </span>
@@ -836,6 +852,7 @@
     const remainingCredit = Math.max(0, Number(receipt.total || 0) - relatedCreditsTotal);
     const hasCancellation = data.receipts.some(item => item.reference === receipt.number && item.type === "cancellation");
     const canCorrect = receipt.type === "receipt"
+      && receipt.receiptKind !== "voucher-sale"
       && !hasCancellation
       && receipt.status !== "cancelled"
       && receipt.status !== "credited"
@@ -843,7 +860,7 @@
     mainContent.innerHTML = `<section class="flow-page receipt-detail-page page-enter">
       <div class="flow-head compact-work-head">
         <button class="button button-back" type="button" data-route="receipts"><span aria-hidden="true">←</span> Zurück</button>
-        <p class="eyebrow">${receipt.type === "credit" ? "Gutschrift" : "Beleg"}</p>
+        <p class="eyebrow">${escapeHtml(receiptKindLabel(receipt))}</p>
         <h1 class="flow-title">${escapeHtml(receipt.number)}</h1>
         <p class="page-copy">${escapeHtml(receipt.date)} · ${escapeHtml(receipt.time)}</p>
       </div>
@@ -854,10 +871,18 @@
       </section>
 
       <section class="receipt-detail-card">
+        <div class="receipt-detail-row"><span>Belegart</span><strong>${escapeHtml(receiptKindLabel(receipt))}</strong></div>
         <div class="receipt-detail-row"><span>Kunde</span><strong>${escapeHtml(receiptCustomerLabel(receipt))}</strong></div>
         <div class="receipt-detail-row"><span>Zahlungsart</span><strong>${escapeHtml(receipt.payment)}</strong></div>
         ${receipt.reference ? `<div class="receipt-detail-row"><span>Bezug</span><button type="button" data-open-receipt="${escapeHtml(receipt.reference)}">${escapeHtml(receipt.reference)}</button></div>` : ""}
       </section>
+
+      ${receipt.receiptKind === "voucher-sale" ? `<section class="receipt-detail-card voucher-receipt-link">
+        <div class="receipt-section-title"><h2>Verknüpfter Gutschein</h2></div>
+        <p>Dieser Beleg und der Gutschein wurden gemeinsam in einem Verkauf erzeugt.</p>
+        <button class="button button-primary" type="button" data-open-linked-voucher="${escapeHtml(receipt.voucherReference || "")}">Gutschein öffnen</button>
+      </section>
+      <p class="prototype-note">Die steuerliche Behandlung des Gutscheinverkaufs ist in diesem UX-Prototyp ausdrücklich noch nicht festgelegt.</p>` : ""}
 
       <section class="receipt-detail-card">
         <div class="receipt-section-title"><h2>Positionen</h2><span>${receipt.items.length}</span></div>
@@ -892,7 +917,7 @@
       <section class="receipt-primary-actions">
         <button class="button button-secondary" type="button" data-action="receipt-preview-demo">Beleg anzeigen</button>
         <button class="button button-secondary" type="button" data-action="receipt-email-demo">Erneut per E-Mail senden</button>
-        <button class="button button-secondary" type="button" data-action="copy-receipt">Duplizieren</button>
+        ${receipt.receiptKind === "voucher-sale" ? "" : `<button class="button button-secondary" type="button" data-action="copy-receipt">Duplizieren</button>`}
       </section>
 
       ${canCorrect ? `<section class="receipt-correction-card">
@@ -987,6 +1012,11 @@
   }
 
   const voucherByReference = reference => data.vouchers.find(voucher => voucher.reference === reference) ?? null;
+  const linkedVoucherSaleReceipt = voucher => data.receipts.find(receipt =>
+    receipt.id === voucher.saleReceipt?.id
+      && receipt.number === voucher.saleReceipt?.number
+      && receipt.voucherReference === voucher.reference
+  ) ?? null;
   const voucherStatusLabel = voucher => {
     if (voucher.status === "redeemed") return "Vollständig eingelöst";
     if (voucher.status === "cancelled") return "Storniert";
@@ -1038,6 +1068,7 @@
 
   function renderVoucherHistory(voucher) {
     const events = Array.isArray(voucher.history) ? voucher.history : [];
+    const linkedReceipt = linkedVoucherSaleReceipt(voucher);
     return `<section class="voucher-history" aria-labelledby="voucherHistoryTitle">
       <div class="voucher-section-title"><h2 id="voucherHistoryTitle">Historie</h2><span>${events.length}</span></div>
       <div class="voucher-history-list">
@@ -1050,6 +1081,7 @@
               <div><dt>Restwert danach</dt><dd>${formatCurrency(event.balanceAfter)}</dd></div>
               ${event.receiptNumber ? `<div><dt>Beleg</dt><dd>${escapeHtml(event.receiptNumber)}</dd></div>` : ""}
             </dl>
+            ${linkedReceipt && event.type === "sold" && event.receiptNumber === linkedReceipt.number ? `<button class="voucher-history-receipt-link" type="button" data-open-receipt="${escapeHtml(linkedReceipt.number)}">Beleg öffnen</button>` : ""}
           </div>
         </article>`).join("") : `<p class="voucher-history-empty">Noch keine historischen Vorgänge vorhanden.</p>`}
       </div>
@@ -1219,7 +1251,7 @@
     return Array.from(bytes, value => VOUCHER_CODE_ALPHABET[value % VOUCHER_CODE_ALPHABET.length]).join("");
   }
 
-  function createPrototypeVoucher(amount) {
+  function createPrototypeVoucherSale(amount) {
     let code;
     do {
       code = `FRKA-${randomVoucherCodePart()}-${randomVoucherCodePart()}`;
@@ -1239,9 +1271,17 @@
     }).format(now);
     const soldTime = new Intl.DateTimeFormat("de-DE", { timeStyle: "short" }).format(now);
     const customer = data.customers.find(entry => entry.id === state.voucherSaleCustomerId) ?? null;
-    const saleReceiptId = `receipt_demo_${randomHex(8)}`;
-    const saleReceiptNumber = `DEMO-2026-${randomVoucherCodePart(4)}`;
-    return {
+    const saleReceiptId = `receipt_${randomHex(12)}`;
+    const saleReceiptNumber = nextReceiptNumber();
+    const customerSnapshot = customer ? {
+      id: customer.id,
+      name: customerName(customer),
+      email: customer.email || "",
+      street: customer.street || "",
+      zip: customer.zip || "",
+      city: customer.city || ""
+    } : null;
+    const voucher = {
       id: `voucher_${randomHex(12)}`,
       reference,
       code,
@@ -1252,7 +1292,7 @@
       soldTime,
       createdAt: now.toISOString(),
       payment: voucherSalePaymentLabel(),
-      customer: customer ? { id: customer.id, name: customerName(customer) } : null,
+      customer: customerSnapshot ? { id: customerSnapshot.id, name: customerSnapshot.name } : null,
       displayName: state.voucherSaleDisplayName.trim(),
       saleReceipt: {
         id: saleReceiptId,
@@ -1266,6 +1306,46 @@
         { type: "sold", date: soldAt, time: soldTime, amount: issuedValue, balanceAfter: issuedValue, receiptNumber: saleReceiptNumber }
       ]
     };
+    const receipt = {
+      id: saleReceiptId,
+      number: saleReceiptNumber,
+      type: "receipt",
+      receiptKind: "voucher-sale",
+      status: "completed",
+      date: soldAt,
+      time: soldTime,
+      sortKey: now.toISOString(),
+      payment: voucherSalePaymentLabel(),
+      customer: customerSnapshot,
+      voucherReference: voucher.reference,
+      items: [{ title: "Gutschein", type: "voucher-sale", quantity: 1, unitPrice: issuedValue, total: issuedValue }],
+      total: issuedValue,
+      taxTreatment: "undetermined-prototype",
+      activity: [
+        { label: "Gutscheinverkauf abgeschlossen", date: `${soldAt} · ${soldTime}` },
+        { label: `Gutschein ${voucher.code} verknüpft`, date: `${soldAt} · ${soldTime}` }
+      ]
+    };
+    return { voucher, receipt };
+  }
+
+  function commitPrototypeVoucherSale(amount) {
+    const sale = createPrototypeVoucherSale(amount);
+    let receiptInserted = false;
+    try {
+      data.receipts.unshift(sale.receipt);
+      receiptInserted = true;
+      data.vouchers.unshift(sale.voucher);
+      return sale;
+    } catch (error) {
+      const voucherIndex = data.vouchers.indexOf(sale.voucher);
+      if (voucherIndex >= 0) data.vouchers.splice(voucherIndex, 1);
+      if (receiptInserted) {
+        const receiptIndex = data.receipts.indexOf(sale.receipt);
+        if (receiptIndex >= 0) data.receipts.splice(receiptIndex, 1);
+      }
+      throw error;
+    }
   }
 
   function updateVoucherSaleSummary() {
@@ -1288,7 +1368,7 @@
         <p class="page-copy">Wert und Zahlungsart wählen. Kunde und Gutscheinname sind optional.</p>
       </div>
 
-      ${completedVoucher ? `<div class="voucher-notice" role="status">Dieser Gutschein wurde bereits erstellt. Eine erneute Bestätigung erzeugt keinen weiteren Gutschein.</div>` : ""}
+      ${completedVoucher ? `<div class="voucher-notice" role="status">Dieser Verkauf wurde bereits abgeschlossen. Eine erneute Bestätigung erzeugt weder Gutschein noch Beleg.</div>` : ""}
 
       <form id="voucherSaleForm" class="voucher-sale-form" novalidate>
         <section class="voucher-sale-section" aria-labelledby="voucherAmountTitle">
@@ -1323,14 +1403,14 @@
           <div><span>Zahlungsart</span><strong>${escapeHtml(voucherSalePaymentLabel())}</strong></div>
           <div><span>Kunde</span><strong>${saleCustomer ? escapeHtml(customerName(saleCustomer)) : "Ohne Kundenzuordnung"}</strong></div>
           ${state.voucherSaleDisplayName.trim() ? `<div><span>Name auf Gutschein</span><strong>${escapeHtml(state.voucherSaleDisplayName.trim())}</strong></div>` : ""}
-          <p>Nach der Bestätigung werden ein Gutscheincode und die zugehörige QR-Vorschau erzeugt.</p>
+          <p>Eine Bestätigung erzeugt gemeinsam den Verkaufsbeleg, den Gutscheincode und die QR-Vorschau.</p>
         </section>
 
         ${state.voucherSaleError ? `<div class="voucher-sale-error" role="alert">${escapeHtml(state.voucherSaleError)}</div>` : ""}
 
         <button class="button button-primary voucher-sale-submit" type="submit" ${state.voucherSaleSubmitting || completedVoucher ? "disabled" : ""}>${state.voucherSaleSubmitting ? "Gutschein wird erstellt …" : completedVoucher ? "Gutschein bereits erstellt" : "Gutschein jetzt verkaufen"}</button>
         ${completedVoucher ? `<button class="button button-secondary voucher-sale-completed-link" type="button" data-route="voucher-sale-success">Zum verkauften Gutschein</button>` : ""}
-        <p class="prototype-note">Nur Prototyp: Der Gutschein bleibt bis zum Neuladen im Arbeitsspeicher.</p>
+        <p class="prototype-note">Nur Prototyp: Gutschein und Verkaufsbeleg bleiben bis zum Neuladen im Arbeitsspeicher.</p>
       </form>
     </section>`;
 
@@ -1351,12 +1431,13 @@
       navigate("vouchers", false);
       return;
     }
+    const saleReceipt = linkedVoucherSaleReceipt(voucher);
     mainContent.innerHTML = `<section class="flow-page voucher-sale-success-page page-enter">
       <div class="voucher-sale-success-hero">
         <div class="success-mark" aria-hidden="true">✓</div>
         <p class="eyebrow">Verkauf abgeschlossen</p>
         <h1>Gutschein verkauft</h1>
-        <p>Der Gutschein wurde nur für diesen Prototyp im Arbeitsspeicher angelegt.</p>
+        <p>Gutschein und Verkaufsbeleg wurden gemeinsam im Arbeitsspeicher angelegt.</p>
       </div>
 
       ${state.voucherNotice ? `<div class="voucher-notice" role="status">${escapeHtml(state.voucherNotice)}</div>` : ""}
@@ -1369,13 +1450,14 @@
           <div><strong>QR-Code · Prototyp</strong><small>Code und QR-Vorschau gehören zu derselben stabilen Gutscheinidentität.</small></div>
         </div>
         <div class="voucher-sale-result-meta"><span>Status</span><strong class="voucher-status is-active">Aktiv</strong></div>
-        <div class="voucher-sale-result-meta"><span>Verkaufsbeleg</span><strong>${escapeHtml(voucher.saleReceipt?.number || "Demo-Bezug fehlt")}</strong></div>
+        <div class="voucher-sale-result-meta"><span>Verkaufsbeleg</span><strong>${escapeHtml(saleReceipt?.number || "Demo-Bezug fehlt")}</strong></div>
         ${voucher.customer ? `<div class="voucher-sale-result-meta"><span>Kunde</span><strong>${escapeHtml(voucher.customer.name)}</strong></div>` : ""}
         ${voucher.displayName ? `<div class="voucher-sale-result-meta"><span>Name auf Gutschein</span><strong>${escapeHtml(voucher.displayName)}</strong></div>` : ""}
       </section>
 
       <section class="voucher-sale-success-actions" aria-label="Aktionen nach dem Gutscheinverkauf">
         <button class="button button-primary" type="button" data-route="voucher-preview">Gutschein anzeigen</button>
+        ${saleReceipt ? `<button class="button button-secondary" type="button" data-open-receipt="${escapeHtml(saleReceipt.number)}">Beleg anzeigen</button>` : ""}
         <button class="button button-secondary" type="button" data-action="voucher-pdf">Als PDF speichern</button>
         <button class="button button-secondary" type="button" data-action="voucher-email">Per E-Mail senden</button>
         <button class="button button-ghost" type="button" data-route="vouchers">Zur Gutscheinübersicht</button>
@@ -1392,6 +1474,7 @@
     const appLink = voucherAppLink(voucher.reference);
     const presentation = voucherPresentation(voucher);
     const addressesMatch = sameVoucherAddress(presentation.issuer, presentation.redemptionLocation);
+    const saleReceipt = linkedVoucherSaleReceipt(voucher);
     mainContent.innerHTML = `<section class="flow-page voucher-detail-page page-enter">
       <div class="flow-head compact-flow-head">
         <button class="button button-back" type="button" data-route="vouchers"><span aria-hidden="true">←</span> Zurück</button>
@@ -1417,7 +1500,7 @@
         <div><span>Ursprünglicher Wert</span><strong>${formatCurrency(voucher.issuedValue)}</strong></div>
         <div><span>Verkauft am</span><strong>${escapeHtml([voucher.soldAt, voucher.soldTime].filter(Boolean).join(" · "))}</strong></div>
         <div><span>Zahlungsart beim Verkauf</span><strong>${escapeHtml(voucher.payment || "Nicht angegeben")}</strong></div>
-        ${voucher.saleReceipt?.number ? `<div><span>Verkaufsbeleg</span><strong>${escapeHtml(voucher.saleReceipt.number)}</strong></div>` : ""}
+        ${voucher.saleReceipt?.number ? `<div><span>Verkaufsbeleg</span>${saleReceipt ? `<button type="button" data-open-receipt="${escapeHtml(saleReceipt.number)}">${escapeHtml(saleReceipt.number)} · Beleg öffnen</button>` : `<strong>${escapeHtml(voucher.saleReceipt.number)}</strong>`}</div>` : ""}
         ${voucher.customer ? `<div><span>Zugeordneter Kunde</span><strong>${escapeHtml(voucher.customer.name)}</strong></div>` : ""}
         ${voucher.displayName ? `<div><span>Name auf dem Gutschein</span><strong>${escapeHtml(voucher.displayName)}</strong></div>` : ""}
       </section>
@@ -1691,6 +1774,15 @@
       renderReceipts();
       return;
     }
+    const openLinkedVoucher = event.target.closest("[data-open-linked-voucher]");
+    if (openLinkedVoucher) {
+      const voucher = voucherByReference(openLinkedVoucher.dataset.openLinkedVoucher);
+      if (!voucher) return;
+      state.voucherDetailReference = voucher.reference;
+      state.voucherNotice = "";
+      navigate("voucher-detail");
+      return;
+    }
     const openReceipt = event.target.closest("[data-open-receipt]");
     if (openReceipt) {
       state.receiptDetailNumber = openReceipt.dataset.openReceipt;
@@ -1880,7 +1972,7 @@
     }
     if (action === "copy-receipt") {
       const receipt = receiptByNumber(state.receiptDetailNumber);
-      if (receipt) {
+      if (receipt && receipt.receiptKind !== "voucher-sale") {
         state.cart = receipt.items.map((item, index) => ({
           id: `copy-${Date.now()}-${index}`,
           title: item.title,
@@ -1979,10 +2071,17 @@
         submitButton.textContent = "Gutschein wird erstellt …";
       }
 
-      const voucher = createPrototypeVoucher(amount);
-      data.vouchers.unshift(voucher);
-      state.voucherSaleCreatedReference = voucher.reference;
-      state.voucherDetailReference = voucher.reference;
+      let sale;
+      try {
+        sale = commitPrototypeVoucherSale(amount);
+      } catch (error) {
+        state.voucherSaleSubmitting = false;
+        state.voucherSaleError = "Gutschein und Verkaufsbeleg konnten nicht gemeinsam erstellt werden. Es wurde kein Verkauf bestätigt.";
+        renderVoucherSale();
+        return;
+      }
+      state.voucherSaleCreatedReference = sale.voucher.reference;
+      state.voucherDetailReference = sale.voucher.reference;
       state.voucherSaleSubmitting = false;
       state.voucherNotice = "";
       navigate("voucher-sale-success");
