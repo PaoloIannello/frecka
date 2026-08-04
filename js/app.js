@@ -30,11 +30,16 @@
     successNotice: "",
     qrVisible: false,
     voucherSearch: "",
+    voucherFilter: "open",
     voucherDetailReference: null,
     voucherNotice: "",
     voucherSaleAmountChoice: null,
     voucherSaleCustomAmount: "",
     voucherSalePaymentChoice: "cash",
+    voucherSaleCustomerId: null,
+    voucherSaleDisplayName: "",
+    voucherSaleReturnRoute: "vouchers",
+    customerPickerContext: "receipt",
     voucherSaleError: "",
     voucherSaleSubmitting: false,
     voucherSaleCreatedReference: null
@@ -534,8 +539,8 @@
     if (!q) return data.customers;
     return data.customers.filter(c => [customerName(c), c.phone, c.email].join(" ").toLowerCase().includes(q));
   }
-  function customerCard(c, selectable=false) {
-    return `<article class="customer-card ${state.selectedCustomerId===c.id?"is-selected":""}">
+  function customerCard(c, selectable=false, selectedId=state.selectedCustomerId) {
+    return `<article class="customer-card ${selectedId===c.id?"is-selected":""}">
       <button type="button" class="customer-card-main" ${selectable?`data-select-customer="${c.id}"`:`data-open-customer="${c.id}"`}>
         <span class="customer-avatar" aria-hidden="true">${escapeHtml(c.firstName[0]+c.lastName[0])}</span>
         <span class="customer-card-text"><strong>${escapeHtml(customerName(c))}</strong><small>${escapeHtml(c.phone || "Keine Telefonnummer")}</small><small>${escapeHtml(c.email || "Keine E-Mail")}</small></span>
@@ -546,13 +551,15 @@
   }
   function renderCustomers(selectable=false) {
     const list=filteredCustomers();
+    const voucherSelection=selectable && state.customerPickerContext === "voucher";
+    const selectedId=voucherSelection ? state.voucherSaleCustomerId : state.selectedCustomerId;
     const title=selectable?"Kunde auswählen":"Kunden";
-    const back=selectable?'checkout':'home';
+    const back=selectable?(voucherSelection?'voucher-sale':'checkout'):'home';
     mainContent.innerHTML=`<section class="flow-page customer-page page-enter">
-      <div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-route="${back}"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">${selectable?'Neuer Beleg':'Verwaltung'}</p><h1 class="flow-title">${title}</h1><p class="page-copy">Nach Name, Telefon oder E-Mail suchen.</p></div>
-      <div class="customer-toolbar"><label class="search-field"><span aria-hidden="true">⌕</span><input id="customerSearch" type="search" placeholder="Kunde suchen" value="${escapeHtml(state.customerSearch)}"></label><button class="button button-primary customer-new-button" type="button" data-route="customer-new">＋ Neuer Kunde</button></div>
+      <div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-route="${back}"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">${selectable?(voucherSelection?'Gutscheinverkauf':'Neuer Beleg'):'Verwaltung'}</p><h1 class="flow-title">${title}</h1><p class="page-copy">Nach Name, Telefon oder E-Mail suchen.</p></div>
+      <div class="customer-toolbar ${voucherSelection ? "is-picker-only" : ""}"><label class="search-field"><span aria-hidden="true">⌕</span><input id="customerSearch" type="search" placeholder="Kunde suchen" value="${escapeHtml(state.customerSearch)}"></label>${voucherSelection ? "" : `<button class="button button-primary customer-new-button" type="button" data-route="customer-new">＋ Neuer Kunde</button>`}</div>
       ${selectable?'<button class="customer-none" type="button" data-select-no-customer>Ohne Kunde fortfahren</button>':''}
-      <div class="customer-list">${list.length?list.map(c=>customerCard(c,selectable)).join(''):'<div class="empty-state">Keine passenden Kunden gefunden.</div>'}</div>
+      <div class="customer-list">${list.length?list.map(c=>customerCard(c,selectable,selectedId)).join(''):'<div class="empty-state">Keine passenden Kunden gefunden.</div>'}</div>
     </section>`;
     document.getElementById('customerSearch')?.addEventListener('input',e=>{state.customerSearch=e.target.value;renderCustomers(selectable);const i=document.getElementById('customerSearch');i?.focus();i?.setSelectionRange(state.customerSearch.length,state.customerSearch.length);});
   }
@@ -1081,14 +1088,20 @@
   }
 
   function filteredVouchers() {
-    const query = state.voucherSearch.trim().toLowerCase().replaceAll("-", "").replaceAll(" ", "");
-    if (!query) return data.vouchers;
-    return data.vouchers.filter(voucher => [voucher.code, voucher.reference, voucherStatusLabel(voucher)]
-      .join(" ")
-      .toLowerCase()
-      .replaceAll("-", "")
-      .replaceAll(" ", "")
-      .includes(query));
+    const normalize = value => String(value || "").toLocaleLowerCase("de-DE").replaceAll("-", "").replaceAll(" ", "");
+    const query = normalize(state.voucherSearch.trim());
+    if (query) {
+      return data.vouchers.filter(voucher => [
+        voucher.code,
+        voucher.customer?.name,
+        voucher.displayName,
+        voucher.saleReceipt?.number
+      ].some(value => normalize(value).includes(query)));
+    }
+    if (state.voucherFilter === "redeemed") return data.vouchers.filter(voucher => voucher.status === "redeemed");
+    if (state.voucherFilter === "cancelled") return data.vouchers.filter(voucher => voucher.status === "cancelled");
+    if (state.voucherFilter === "all") return data.vouchers;
+    return data.vouchers.filter(voucher => voucher.status === "active" && Number(voucher.currentValue) > 0);
   }
 
   function renderVouchers() {
@@ -1103,10 +1116,20 @@
       <button class="button button-primary voucher-sell-button" type="button" data-action="voucher-sell">＋ Gutschein verkaufen</button>
       ${state.voucherNotice ? `<div class="voucher-notice" role="status">${escapeHtml(state.voucherNotice)}</div>` : ""}
 
+      <div class="voucher-filters" role="group" aria-label="Gutscheine filtern">
+        ${[
+          ["open", "Offen"],
+          ["redeemed", "Eingelöst"],
+          ["cancelled", "Storniert"],
+          ["all", "Alle"]
+        ].map(([id, label]) => `<button class="voucher-filter ${state.voucherFilter === id ? "is-active" : ""}" type="button" data-voucher-filter="${id}" aria-pressed="${state.voucherFilter === id}">${label}</button>`).join("")}
+      </div>
+
       <label class="search-field voucher-search-field">
         <span aria-hidden="true">⌕</span>
-        <input id="voucherSearch" type="search" inputmode="search" autocomplete="off" placeholder="Gutscheincode suchen" value="${escapeHtml(state.voucherSearch)}">
+        <input id="voucherSearch" type="search" inputmode="search" autocomplete="off" placeholder="Code, Kunde, Name oder Beleg" value="${escapeHtml(state.voucherSearch)}">
       </label>
+      ${state.voucherSearch.trim() ? `<p class="voucher-search-note">Die Suche umfasst alle Gutscheine – unabhängig vom gewählten Filter.</p>` : ""}
 
       <div class="voucher-list" aria-label="Demo-Gutscheine">
         ${vouchers.length ? vouchers.map(voucher => `<button class="voucher-list-item" type="button" data-open-voucher="${escapeHtml(voucher.reference)}">
@@ -1117,7 +1140,7 @@
           </span>
           <span class="voucher-list-value ${voucher.status === "active" ? "" : "is-unavailable"}"><small>Restwert</small><strong>${formatCurrency(voucher.currentValue)}</strong></span>
           <span class="voucher-list-arrow" aria-hidden="true">›</span>
-        </button>`).join("") : `<div class="empty-state">Kein Gutschein zu diesem Code gefunden.</div>`}
+        </button>`).join("") : `<div class="empty-state">${state.voucherSearch.trim() ? "Keine passenden Gutscheine gefunden." : "Keine Gutscheine in diesem Filter."}</div>`}
       </div>
 
       <p class="prototype-note">Demo ohne dauerhafte Speicherung. Änderungen gehen beim Neuladen verloren.</p>
@@ -1139,10 +1162,26 @@
     state.voucherSaleAmountChoice = null;
     state.voucherSaleCustomAmount = "";
     state.voucherSalePaymentChoice = "cash";
+    state.voucherSaleCustomerId = null;
+    state.voucherSaleDisplayName = "";
     state.voucherSaleError = "";
     state.voucherSaleSubmitting = false;
     state.voucherSaleCreatedReference = null;
     state.voucherNotice = "";
+  }
+
+  function startVoucherSale(returnRoute = "vouchers", amount = null) {
+    resetVoucherSaleDraft();
+    state.voucherSaleReturnRoute = returnRoute;
+    if (amount !== null) {
+      const normalizedAmount = String(Number(amount));
+      if (["25", "50", "100"].includes(normalizedAmount)) state.voucherSaleAmountChoice = normalizedAmount;
+      else {
+        state.voucherSaleAmountChoice = "custom";
+        state.voucherSaleCustomAmount = normalizedAmount;
+      }
+    }
+    navigate("voucher-sale");
   }
 
   function voucherSaleAmount() {
@@ -1199,6 +1238,9 @@
       year: "numeric"
     }).format(now);
     const soldTime = new Intl.DateTimeFormat("de-DE", { timeStyle: "short" }).format(now);
+    const customer = data.customers.find(entry => entry.id === state.voucherSaleCustomerId) ?? null;
+    const saleReceiptId = `receipt_demo_${randomHex(8)}`;
+    const saleReceiptNumber = `DEMO-2026-${randomVoucherCodePart(4)}`;
     return {
       id: `voucher_${randomHex(12)}`,
       reference,
@@ -1210,9 +1252,18 @@
       soldTime,
       createdAt: now.toISOString(),
       payment: voucherSalePaymentLabel(),
+      customer: customer ? { id: customer.id, name: customerName(customer) } : null,
+      displayName: state.voucherSaleDisplayName.trim(),
+      saleReceipt: {
+        id: saleReceiptId,
+        number: saleReceiptNumber,
+        soldAt: now.toISOString(),
+        payment: voucherSalePaymentLabel(),
+        customerId: customer?.id ?? null
+      },
       presentationSnapshot: currentVoucherPresentationSnapshot(),
       history: [
-        { type: "sold", date: soldAt, time: soldTime, amount: issuedValue, balanceAfter: issuedValue }
+        { type: "sold", date: soldAt, time: soldTime, amount: issuedValue, balanceAfter: issuedValue, receiptNumber: saleReceiptNumber }
       ]
     };
   }
@@ -1227,13 +1278,14 @@
   function renderVoucherSale() {
     const amount = voucherSaleAmount();
     const completedVoucher = voucherByReference(state.voucherSaleCreatedReference);
+    const saleCustomer = data.customers.find(customer => customer.id === state.voucherSaleCustomerId) ?? null;
     const paymentChoices = data.paymentChoices.filter(choice => choice.id === "cash" || choice.id === "card");
     mainContent.innerHTML = `<section class="flow-page voucher-sale-page page-enter">
       <div class="flow-head compact-flow-head">
         <button class="button button-back" type="button" data-action="voucher-sale-cancel"><span aria-hidden="true">←</span> Abbrechen</button>
         <p class="eyebrow">Gutscheinverkauf</p>
         <h1 class="flow-title">Gutschein verkaufen</h1>
-        <p class="page-copy">Wert und Zahlungsart wählen. Weitere Angaben sind nicht nötig.</p>
+        <p class="page-copy">Wert und Zahlungsart wählen. Kunde und Gutscheinname sind optional.</p>
       </div>
 
       ${completedVoucher ? `<div class="voucher-notice" role="status">Dieser Gutschein wurde bereits erstellt. Eine erneute Bestätigung erzeugt keinen weiteren Gutschein.</div>` : ""}
@@ -1255,10 +1307,22 @@
           </div>
         </section>
 
+        <section class="voucher-sale-section" aria-labelledby="voucherCustomerTitle">
+          <h2 id="voucherCustomerTitle">3. Kunde <span>optional</span></h2>
+          ${saleCustomer ? `<div class="voucher-sale-customer"><div><strong>${escapeHtml(customerName(saleCustomer))}</strong><small>Bestehender Kunde zugeordnet</small></div><div><button class="text-action" type="button" data-action="voucher-customer-pick">Ändern</button><button class="text-action" type="button" data-action="voucher-customer-remove">Entfernen</button></div></div>` : `<button class="voucher-customer-choice" type="button" data-action="voucher-customer-pick"><span aria-hidden="true">◎</span><span><strong>Kunde auswählen</strong><small>Optional aus bestehenden Kunden</small></span><span aria-hidden="true">›</span></button>`}
+        </section>
+
+        <section class="voucher-sale-section" aria-labelledby="voucherNameTitle">
+          <h2 id="voucherNameTitle">4. Name auf dem Gutschein <span>optional</span></h2>
+          <label class="voucher-display-name"><span>Freier kurzer Text</span><input id="voucherDisplayName" name="voucherDisplayName" maxlength="60" autocomplete="off" placeholder="z. B. Für Maria" value="${escapeHtml(state.voucherSaleDisplayName)}" ${completedVoucher ? "disabled" : ""}><small>Wird nur auf Gutschein und Detailansicht gezeigt. Es wird kein Kunde angelegt.</small></label>
+        </section>
+
         <section class="voucher-sale-summary" aria-labelledby="voucherSummaryTitle">
           <h2 id="voucherSummaryTitle">Zusammenfassung</h2>
           <div><span>Gutscheinwert</span><strong id="voucherSaleSummaryAmount">${amount !== null && !validateVoucherSaleAmount() ? formatCurrency(amount) : "Noch nicht festgelegt"}</strong></div>
           <div><span>Zahlungsart</span><strong>${escapeHtml(voucherSalePaymentLabel())}</strong></div>
+          <div><span>Kunde</span><strong>${saleCustomer ? escapeHtml(customerName(saleCustomer)) : "Ohne Kundenzuordnung"}</strong></div>
+          ${state.voucherSaleDisplayName.trim() ? `<div><span>Name auf Gutschein</span><strong>${escapeHtml(state.voucherSaleDisplayName.trim())}</strong></div>` : ""}
           <p>Nach der Bestätigung werden ein Gutscheincode und die zugehörige QR-Vorschau erzeugt.</p>
         </section>
 
@@ -1275,6 +1339,9 @@
       state.voucherSaleError = "";
       document.querySelector(".voucher-sale-error")?.remove();
       updateVoucherSaleSummary();
+    });
+    document.getElementById("voucherDisplayName")?.addEventListener("input", event => {
+      state.voucherSaleDisplayName = event.target.value;
     });
   }
 
@@ -1302,6 +1369,9 @@
           <div><strong>QR-Code · Prototyp</strong><small>Code und QR-Vorschau gehören zu derselben stabilen Gutscheinidentität.</small></div>
         </div>
         <div class="voucher-sale-result-meta"><span>Status</span><strong class="voucher-status is-active">Aktiv</strong></div>
+        <div class="voucher-sale-result-meta"><span>Verkaufsbeleg</span><strong>${escapeHtml(voucher.saleReceipt?.number || "Demo-Bezug fehlt")}</strong></div>
+        ${voucher.customer ? `<div class="voucher-sale-result-meta"><span>Kunde</span><strong>${escapeHtml(voucher.customer.name)}</strong></div>` : ""}
+        ${voucher.displayName ? `<div class="voucher-sale-result-meta"><span>Name auf Gutschein</span><strong>${escapeHtml(voucher.displayName)}</strong></div>` : ""}
       </section>
 
       <section class="voucher-sale-success-actions" aria-label="Aktionen nach dem Gutscheinverkauf">
@@ -1347,6 +1417,9 @@
         <div><span>Ursprünglicher Wert</span><strong>${formatCurrency(voucher.issuedValue)}</strong></div>
         <div><span>Verkauft am</span><strong>${escapeHtml([voucher.soldAt, voucher.soldTime].filter(Boolean).join(" · "))}</strong></div>
         <div><span>Zahlungsart beim Verkauf</span><strong>${escapeHtml(voucher.payment || "Nicht angegeben")}</strong></div>
+        ${voucher.saleReceipt?.number ? `<div><span>Verkaufsbeleg</span><strong>${escapeHtml(voucher.saleReceipt.number)}</strong></div>` : ""}
+        ${voucher.customer ? `<div><span>Zugeordneter Kunde</span><strong>${escapeHtml(voucher.customer.name)}</strong></div>` : ""}
+        ${voucher.displayName ? `<div><span>Name auf dem Gutschein</span><strong>${escapeHtml(voucher.displayName)}</strong></div>` : ""}
       </section>
 
       <section class="voucher-parties" aria-labelledby="voucherPartiesTitle">
@@ -1403,13 +1476,14 @@
           <small>${escapeHtml(presentation.issuer.street)}</small>
           <small>${escapeHtml(presentation.issuer.city)}</small>
         </header>
+        ${voucher.displayName ? `<div class="voucher-sheet-recipient"><span>Name auf dem Gutschein</span><strong>${escapeHtml(voucher.displayName)}</strong></div>` : ""}
         <div class="voucher-sheet-value"><span>Wert</span><strong>${formatCurrency(voucher.issuedValue)}</strong></div>
-        <div class="voucher-sheet-status"><span>Status</span><strong class="voucher-status ${voucherStatusClass(voucher)}">${escapeHtml(voucherStatusLabel(voucher))}</strong></div>
-        <div class="voucher-sheet-code"><span>Gutscheincode</span><strong>${escapeHtml(voucher.code)}</strong></div>
         <div class="voucher-sheet-qr">
           ${voucherQrPlaceholder(voucher)}
           <small>QR-Code · technische Vorschau</small>
         </div>
+        <div class="voucher-sheet-status"><span>Status</span><strong class="voucher-status ${voucherStatusClass(voucher)}">${escapeHtml(voucherStatusLabel(voucher))}</strong></div>
+        <div class="voucher-sheet-code"><span>Gutscheincode</span><strong>${escapeHtml(voucher.code)}</strong></div>
         <div class="voucher-sheet-location ${addressesMatch ? "is-same" : ""}">
           <span>Einlösbar bei</span>
           ${addressesMatch ? `<strong>Ausstelleradresse</strong>` : `<strong>${escapeHtml(presentation.redemptionLocation.name || "Leistungsort")}</strong><small>${escapeHtml(presentation.redemptionLocation.street)}</small><small>${escapeHtml(presentation.redemptionLocation.city)}</small>`}
@@ -1496,6 +1570,12 @@
     navigate("catalog");
   }
   function toggleItem(id) {
+    const product = (data.catalog[state.activeBusinessArea] ?? []).find(item => item.id === id);
+    if (!product) return;
+    if (product.type === "voucher") {
+      startVoucherSale("catalog", product.price);
+      return;
+    }
     const existing = state.cart.find(item => item.id === id);
     if (existing) {
       state.cart = state.cart.filter(item => item.id !== id);
@@ -1503,8 +1583,6 @@
       renderCatalog();
       return;
     }
-    const product = (data.catalog[state.activeBusinessArea] ?? []).find(item => item.id === id);
-    if (!product) return;
     state.cart.push({
       ...product,
       quantity: 1,
@@ -1583,8 +1661,30 @@
       return;
     }
     const selectCustomer = event.target.closest("[data-select-customer]");
-    if (selectCustomer) { state.selectedCustomerId = selectCustomer.dataset.selectCustomer; state.customerChoice = "existing"; navigate("checkout"); return; }
-    if (event.target.closest("[data-select-no-customer]")) { state.selectedCustomerId = null; state.customerChoice = "none"; if(state.cart.length) navigate("checkout"); else renderCustomers(false); return; }
+    if (selectCustomer) {
+      if (state.customerPickerContext === "voucher") {
+        state.voucherSaleCustomerId = selectCustomer.dataset.selectCustomer;
+        state.customerSearch = "";
+        navigate("voucher-sale");
+      } else {
+        state.selectedCustomerId = selectCustomer.dataset.selectCustomer;
+        state.customerChoice = "existing";
+        navigate("checkout");
+      }
+      return;
+    }
+    if (event.target.closest("[data-select-no-customer]")) {
+      if (state.customerPickerContext === "voucher") {
+        state.voucherSaleCustomerId = null;
+        state.customerSearch = "";
+        navigate("voucher-sale");
+      } else {
+        state.selectedCustomerId = null;
+        state.customerChoice = "none";
+        if(state.cart.length) navigate("checkout"); else renderCustomers(false);
+      }
+      return;
+    }
     const receiptFilter = event.target.closest("[data-receipt-filter]");
     if (receiptFilter) {
       state.receiptFilter = receiptFilter.dataset.receiptFilter;
@@ -1691,6 +1791,12 @@
       renderVoucherSale();
       return;
     }
+    const voucherFilter = event.target.closest("[data-voucher-filter]");
+    if (voucherFilter) {
+      state.voucherFilter = voucherFilter.dataset.voucherFilter;
+      renderVouchers();
+      return;
+    }
     const openVoucher = event.target.closest("[data-open-voucher]");
     if (openVoucher) {
       state.voucherDetailReference = openVoucher.dataset.openVoucher;
@@ -1701,18 +1807,31 @@
     const route = event.target.closest("[data-route]");
     if (route) {
       if ((route.dataset.route === "checkout" || route.dataset.route === "edit-cart") && !cartCount()) return;
+      if (route.dataset.route === "customer-picker") {
+        state.customerPickerContext = state.route === "voucher-sale" ? "voucher" : "receipt";
+        state.customerSearch = "";
+      }
       if (["vouchers", "voucher-detail", "voucher-preview"].includes(route.dataset.route)) state.voucherNotice = "";
       navigate(route.dataset.route);
       return;
     }
     const action = event.target.closest("[data-action]")?.dataset.action;
     if (action === "voucher-sell") {
-      resetVoucherSaleDraft();
-      navigate("voucher-sale");
+      startVoucherSale("vouchers");
     }
     if (action === "voucher-sale-cancel") {
+      const returnRoute = state.voucherSaleReturnRoute;
       resetVoucherSaleDraft();
-      navigate("vouchers");
+      navigate(returnRoute);
+    }
+    if (action === "voucher-customer-pick") {
+      state.customerPickerContext = "voucher";
+      state.customerSearch = "";
+      navigate("customer-picker");
+    }
+    if (action === "voucher-customer-remove") {
+      state.voucherSaleCustomerId = null;
+      renderVoucherSale();
     }
     if (action === "voucher-pdf") {
       state.voucherNotice = "Noch wurde keine PDF-Datei erzeugt. In der Druckansicht kann der Browserdialog zum Speichern als PDF geöffnet werden.";

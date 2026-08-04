@@ -1,5 +1,5 @@
 window.PROTOTYPE_DATA = Object.freeze({
-  version: "UX-020c",
+  version: "UX-020d",
   build: "2026-08-04",
   company: {
     name: "Studio Beispiel",
@@ -232,6 +232,9 @@ window.PROTOTYPE_DATA = Object.freeze({
       soldAt: "28.07.2026",
       soldTime: "10:15",
       payment: "Bar",
+      customer: { id: "c-sabine", name: "Sabine Keller" },
+      displayName: "Für Familie Keller",
+      saleReceipt: { id: "receipt_demo_2026_000124", number: "2026-000124", soldAt: "2026-07-28T10:15:00", payment: "Bar", customerId: "c-sabine" },
       presentationSnapshot: {
         issuer: { name: "Studio Beispiel", owner: "Angel Luzolo", street: "Musterstraße 12", city: "12345 Musterstadt" },
         redemptionLocation: { name: "Studio Beispiel", street: "Musterstraße 12", city: "12345 Musterstadt" }
@@ -251,6 +254,9 @@ window.PROTOTYPE_DATA = Object.freeze({
       soldAt: "01.08.2026",
       soldTime: "09:30",
       payment: "Karte",
+      customer: null,
+      displayName: "Für Maria",
+      saleReceipt: { id: "receipt_demo_2026_000131", number: "2026-000131", soldAt: "2026-08-01T09:30:00", payment: "Karte", customerId: null },
       presentationSnapshot: {
         issuer: { name: "Studio Beispiel", owner: "Angel Luzolo", street: "Musterstraße 12", city: "12345 Musterstadt" },
         redemptionLocation: { name: "Studio Beispiel · Podologie", street: "Prüfeninger Straße 20", city: "93049 Regensburg" }
@@ -268,6 +274,9 @@ window.PROTOTYPE_DATA = Object.freeze({
       soldAt: "14.07.2026",
       soldTime: "16:40",
       payment: "Bar",
+      customer: { id: "c-anna", name: "Anna Müller" },
+      displayName: "",
+      saleReceipt: { id: "receipt_demo_2026_000118", number: "2026-000118", soldAt: "2026-07-14T16:40:00", payment: "Bar", customerId: "c-anna" },
       presentationSnapshot: {
         issuer: { name: "Studio Beispiel", owner: "Angel Luzolo", street: "Musterstraße 12", city: "12345 Musterstadt" },
         redemptionLocation: { name: "Studio Beispiel", street: "Musterstraße 12", city: "12345 Musterstadt" }
@@ -286,6 +295,9 @@ window.PROTOTYPE_DATA = Object.freeze({
       soldAt: "22.07.2026",
       soldTime: "14:05",
       payment: "Karte",
+      customer: null,
+      displayName: "",
+      saleReceipt: { id: "receipt_demo_2026_000121", number: "2026-000121", soldAt: "2026-07-22T14:05:00", payment: "Karte", customerId: null },
       presentationSnapshot: {
         issuer: { name: "Studio Beispiel", owner: "Angel Luzolo", street: "Musterstraße 12", city: "12345 Musterstadt" },
         redemptionLocation: { name: "Studio Beispiel · Podologie", street: "Prüfeninger Straße 20", city: "93049 Regensburg" }

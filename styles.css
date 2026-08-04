@@ -1506,7 +1506,7 @@ body.work-mode:not(.catalog-mode) .flow-page {
 }
 .voucher-sheet-qr {
   grid-column: 2;
-  grid-row: 3/5;
+  grid-row: auto;
   display: grid;
   justify-items: center;
   gap: 7px;
@@ -1992,5 +1992,138 @@ body.work-mode:not(.catalog-mode) .flow-page {
   }
   .voucher-history-main time {
     white-space: normal;
+  }
+}
+
+/* UX-020d – kanonischer Verkauf, Kundenzuordnung und mobile Filter */
+.voucher-filters {
+  margin: 12px 0 10px;
+  padding: 4px;
+  border-radius: 16px;
+  background: var(--surface-soft);
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 4px;
+}
+.voucher-filter {
+  min-height: 46px;
+  padding: 8px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: .78rem;
+  font-weight: 850;
+}
+.voucher-filter.is-active {
+  background: var(--surface);
+  color: var(--primary-strong);
+  box-shadow: 0 2px 8px rgba(19,50,44,.1);
+}
+.voucher-search-note {
+  margin: -3px 3px 10px;
+  color: var(--muted);
+  font-size: .7rem;
+  line-height: 1.4;
+}
+.voucher-sale-section h2 span {
+  color: var(--muted);
+  font-size: .72rem;
+  font-weight: 750;
+}
+.voucher-customer-choice {
+  width: 100%;
+  min-height: 58px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-soft);
+  color: var(--text);
+  display: grid;
+  grid-template-columns: 30px minmax(0,1fr) auto;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+}
+.voucher-customer-choice > span:nth-child(2),
+.voucher-sale-customer > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+.voucher-customer-choice small,
+.voucher-sale-customer small,
+.voucher-display-name small {
+  color: var(--muted);
+  font-size: .72rem;
+}
+.voucher-sale-customer {
+  padding: 13px 14px;
+  border: 1px solid var(--primary);
+  border-radius: 16px;
+  background: var(--primary-soft);
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+.voucher-sale-customer > div:last-child {
+  display: grid;
+  justify-items: end;
+  gap: 5px;
+}
+.voucher-display-name {
+  display: grid;
+  gap: 7px;
+}
+.voucher-display-name > span {
+  color: var(--muted);
+  font-size: .74rem;
+  font-weight: 800;
+}
+.voucher-display-name input {
+  width: 100%;
+  min-height: 50px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.customer-toolbar.is-picker-only {
+  grid-template-columns: 1fr;
+}
+.voucher-sheet-recipient {
+  grid-column: 1/-1;
+  padding: 14px;
+  border-radius: 8px;
+  background: #f1f5f3;
+  display: grid;
+  gap: 4px;
+}
+.voucher-sheet-recipient span {
+  color: #596560;
+  font-size: .67rem;
+  font-weight: 850;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.voucher-sheet-recipient strong {
+  font-size: 1.05rem;
+}
+@media(min-width:380px) {
+  .voucher-filters {
+    grid-template-columns: repeat(4,minmax(0,1fr));
+  }
+}
+@media(max-width:360px) {
+  .voucher-sale-customer {
+    align-items: start;
+    display: grid;
+  }
+  .voucher-sale-customer > div:last-child {
+    grid-auto-flow: column;
+    justify-content: start;
   }
 }
