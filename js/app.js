@@ -71,7 +71,7 @@
     catalogManagerAreaId: null,
     catalogManagerView: "items",
     catalogManagerSearch: "",
-    catalogManagerStatus: "active",
+    catalogManagerStatus: "all",
     catalogManagerCategory: "all",
     catalogEditingItemId: null,
     catalogEditingCategoryId: null,
@@ -121,6 +121,21 @@
   const catalogItemPrice = item => Number(item.priceCents || 0) / 100;
   const catalogItemName = item => item.name || item.title || "Eintrag";
 
+  function initialCatalogCategoryId(areaId, item) {
+    if (areaId === "hair") {
+      if (item.type === "product") return "hair-products";
+      const categoryByItemId = {
+        "wash-cut": "hair-cuts", "dry-cut": "hair-cuts", "mens-cut": "hair-cuts", "child-cut": "hair-cuts", beard: "hair-cuts",
+        color: "hair-color", highlights: "hair-color", balayage: "hair-color", toning: "hair-color", "root-color": "hair-color", "full-color": "hair-color", glossing: "hair-color", eyebrows: "hair-color", lashes: "hair-color", consultation: "hair-color",
+        "blow-dry": "hair-styling", perm: "hair-styling", updo: "hair-styling", bridal: "hair-styling", styling: "hair-styling",
+        "head-massage": "hair-care", care: "hair-care"
+      };
+      return categoryByItemId[item.id] || "hair-cuts";
+    }
+    if (areaId === "podiatry") return item.type === "product" ? "podiatry-products" : "podiatry-services";
+    return catalogCategories(areaId).find(category => category.type === item.type)?.id || null;
+  }
+
   function migratePrototypeCommerceModel() {
     data.receipts.forEach(receipt => {
       const isOpen = receipt.paymentStatus === "open" || (receipt.type === "receipt" && receipt.payment == null);
@@ -133,7 +148,6 @@
 
     Object.entries(data.catalog).forEach(([areaId, entries]) => {
       entries.forEach((item, index) => {
-        const defaultCategory = catalogCategories(areaId).find(category => category.type === item.type) ?? null;
         const legacyCategory = String(item.category || "");
         item.businessAreaId = areaId;
         item.name = item.name || item.title || "Eintrag";
@@ -143,7 +157,8 @@
         item.taxRate = Number(item.taxRate ?? data.taxSettings.defaultRate ?? 19);
         item.active = item.active !== false;
         item.favorite = item.favorite === true || legacyCategory === "Favoriten";
-        item.categoryId = item.categoryId ?? (item.type === "voucher" ? null : defaultCategory?.id ?? null);
+        item.categoryId = item.categoryId ?? (item.type === "voucher" ? null : initialCatalogCategoryId(areaId, item));
+        delete item.category;
         item.sortOrder = Number.isFinite(Number(item.sortOrder)) ? Number(item.sortOrder) : (index + 1) * 10;
         item.source = item.source || "manual";
         item.needsReview = item.needsReview === true;
@@ -790,6 +805,7 @@
       ?? receipt.presentationSnapshot?.issuer
       ?? data.company;
     const receiptServiceLocation = receipt.contextSnapshot?.serviceLocation ?? null;
+    const receiptBranding = receipt.contextSnapshot?.branding ?? receipt.presentationSnapshot?.branding ?? null;
 
     mainContent.innerHTML = `<section class="flow-page receipt-preview-page page-enter">
       <div class="flow-head compact-flow-head">
@@ -801,6 +817,8 @@
 
       <article class="receipt-paper ${isVoucherSale ? "is-voucher-sale" : ""}">
         <header>
+          ${brandingLogoMarkup(receiptBranding)}
+          ${receiptBranding?.visibleName ? `<em class="document-visible-name">${escapeHtml(receiptBranding.visibleName)}</em>` : ""}
           <strong>${escapeHtml(receiptIssuer.name)}</strong>
           <span>${escapeHtml(receiptIssuer.owner || "")}</span>
           <small>${escapeHtml(receiptIssuer.street || "")}</small>
@@ -1458,7 +1476,8 @@
       phone: data.company.phone || "",
       email: data.company.email || "",
       taxNumber: data.company.taxNumber || "",
-      vatId: data.company.vatId || ""
+      vatId: data.company.vatId || "",
+      logo: data.company.logo ? { ...data.company.logo } : null
     };
   }
 
@@ -1518,15 +1537,48 @@
 
   function businessAreaContextSnapshot(areaId = state.activeBusinessArea) {
     const area = data.businessAreas.find(entry => entry.id === areaId) ?? defaultBusinessArea();
-    return { id: area?.id || "", label: area?.label || "Geschäftsbereich" };
+    return {
+      id: area?.id || "",
+      label: area?.label || "Geschäftsbereich",
+      visibleName: area?.visibleName || "",
+      logoMode: ["company", "custom", "none"].includes(area?.logoMode) ? area.logoMode : "company",
+      logo: area?.logo ? { ...area.logo } : null
+    };
+  }
+
+  function brandingContextSnapshot(areaId = state.activeBusinessArea) {
+    const businessArea = businessAreaContextSnapshot(areaId);
+    const logoSource = businessArea.logoMode === "none"
+      ? null
+      : businessArea.logoMode === "custom" && businessArea.logo
+        ? "business-area"
+        : data.company.logo
+          ? "company"
+          : null;
+    return {
+      visibleName: businessArea.visibleName,
+      logoMode: businessArea.logoMode,
+      logo: logoSource ? {
+        source: logoSource,
+        label: logoSource === "business-area" ? "Geschäftsbereichslogo" : "Unternehmenslogo",
+        simulated: true
+      } : null
+    };
   }
 
   function buildContextSnapshot(areaId = state.activeBusinessArea) {
     return {
       company: companyContextSnapshot(),
       businessArea: businessAreaContextSnapshot(areaId),
-      serviceLocation: serviceLocationContextSnapshot(serviceLocationForBusinessArea(areaId) ?? currentServiceLocation(areaId))
+      serviceLocation: serviceLocationContextSnapshot(serviceLocationForBusinessArea(areaId) ?? currentServiceLocation(areaId)),
+      branding: brandingContextSnapshot(areaId)
     };
+  }
+
+  function brandingLogoMarkup(branding, compact = false) {
+    if (!branding?.logo) return "";
+    const isAreaLogo = branding.logo.source === "business-area";
+    return `<span class="document-brand-logo ${compact ? "is-compact" : ""}" aria-label="${escapeHtml(branding.logo.label || "Logo")}"><strong>${isAreaLogo ? "GB" : "UN"}</strong><small>${isAreaLogo ? "Bereich" : "Firma"}</small></span>`;
   }
 
   function cloneContextSnapshot(snapshot) {
@@ -1544,6 +1596,11 @@
 
   function migratePrototypeContextSnapshots() {
     data.company.useAsServiceLocation = data.company.useAsServiceLocation !== false;
+    data.businessAreas.forEach(area => {
+      if (area.visibleName === undefined) area.visibleName = "";
+      if (!["company", "custom", "none"].includes(area.logoMode)) area.logoMode = "company";
+      if (area.logo === undefined) area.logo = null;
+    });
     const allAreaIds = data.businessAreas.map(area => area.id);
     data.serviceLocations.forEach((location, index) => {
       if (!location.addressMode) location.addressMode = location.mode === "alternate" ? "own" : "company";
@@ -1566,6 +1623,9 @@
       const redemption = receipt.presentationSnapshot?.redemptionLocation;
       const inferredAreaId = String(redemption?.name || "").toLocaleLowerCase("de-DE").includes("podolog") ? "podiatry" : defaultBusinessArea()?.id;
       const context = buildContextSnapshot(inferredAreaId);
+      // Alte Demo-Dokumente erhalten nur ihre bereits bekannten Angaben. Branding
+      // wird ausschließlich bei neu abgeschlossenen Dokumenten eingefroren.
+      delete context.branding;
       if (issuer) context.company = { ...context.company, ...issuer };
       if (redemption) context.serviceLocation = redemption.mode === "issuer"
         ? serviceLocationContextSnapshot(serviceLocationForBusinessArea(inferredAreaId))
@@ -1577,6 +1637,7 @@
       const redemption = voucher.presentationSnapshot?.redemptionLocation;
       const inferredAreaId = String(redemption?.name || "").toLocaleLowerCase("de-DE").includes("podolog") ? "podiatry" : defaultBusinessArea()?.id;
       const context = buildContextSnapshot(inferredAreaId);
+      delete context.branding;
       if (voucher.presentationSnapshot?.issuer) context.company = { ...context.company, ...voucher.presentationSnapshot.issuer };
       if (redemption) context.serviceLocation = redemption.mode === "issuer"
         ? serviceLocationContextSnapshot(serviceLocationForBusinessArea(inferredAreaId))
@@ -1591,6 +1652,7 @@
     const location = context.serviceLocation;
     return {
       issuer,
+      branding: context.branding,
       redemptionLocation: {
         mode: "service-location",
         id: location.id,
@@ -1867,7 +1929,7 @@
         customerId: customer?.id ?? null
       },
       contextSnapshot: cloneContextSnapshot(contextSnapshot),
-      presentationSnapshot,
+      presentationSnapshot: cloneContextSnapshot(presentationSnapshot),
       history: [
         { type: "sold", date: soldAt, time: soldTime, amount: issuedValue, balanceAfter: issuedValue, receiptNumber: saleReceiptNumber }
       ]
@@ -1889,7 +1951,7 @@
       customer: customerSnapshot,
       contextSnapshot: cloneContextSnapshot(contextSnapshot),
       voucherReference: voucher.reference,
-      presentationSnapshot,
+      presentationSnapshot: cloneContextSnapshot(presentationSnapshot),
       items: [{ title: "Gutschein", type: "voucher-sale", quantity: 1, unitPrice: issuedValue, total: issuedValue }],
       total: issuedValue,
       taxTreatment: "undetermined-prototype",
@@ -2117,6 +2179,7 @@
       return;
     }
     const presentation = voucherPresentation(voucher);
+    const voucherBranding = presentation.branding ?? voucher.contextSnapshot?.branding ?? null;
     const addressesMatch = sameVoucherAddress(presentation.issuer, presentation.redemptionLocation);
     mainContent.innerHTML = `<section class="flow-page voucher-preview-page page-enter">
       <div class="flow-head compact-flow-head voucher-preview-controls">
@@ -2131,6 +2194,8 @@
       <article class="voucher-sheet">
         <header>
           <span>Gutschein</span>
+          ${brandingLogoMarkup(voucherBranding)}
+          ${voucherBranding?.visibleName ? `<em class="document-visible-name">${escapeHtml(voucherBranding.visibleName)}</em>` : ""}
           <small class="voucher-sheet-label">Aussteller</small>
           <strong>${escapeHtml(presentation.issuer.name)}</strong>
           ${presentation.issuer.owner ? `<small>${escapeHtml(presentation.issuer.owner)}</small>` : ""}
@@ -2327,15 +2392,19 @@
   }
 
   function openTemplateImportSuccess(areaId) {
+    const fromSetup = state.route === "setup-wizard";
     state.catalogManagerAreaId = areaId;
-    state.catalogManagerReturnRoute = state.route === "setup-wizard" ? "setup-wizard" : "settings-business-areas";
-    openBottomSheet("Vorlage angelegt", `<div class="template-import-success"><p>Vorlage wurde angelegt. Bitte prüfe jetzt Leistungen, Preise und Steuersätze.</p><button class="button button-primary" type="button" data-action="template-edit-catalog">Leistungen und Preise bearbeiten</button><button class="button button-ghost" type="button" data-action="template-later">Später</button></div>`);
+    state.catalogManagerReturnRoute = fromSetup ? "setup-wizard" : "settings-business-areas";
+    const message = fromSetup
+      ? "Die Vorlage wurde übernommen. Bitte prüfe anschließend Leistungen, Produkte, Preise und Steuersätze."
+      : "Vorlage wurde angelegt. Bitte prüfe jetzt Leistungen, Produkte, Preise und Steuersätze.";
+    openBottomSheet("Vorlage angelegt", `<div class="template-import-success"><p>${escapeHtml(message)}</p><button class="button button-primary" type="button" data-action="template-edit-catalog">Leistungen und Preise prüfen</button><button class="button button-secondary" type="button" data-action="template-later">Später</button></div>`);
   }
 
   function addBusinessArea(label, templateKey = null) {
     const id = `area-${Date.now()}`;
     const initialLocation = data.serviceLocations.find(serviceLocationAvailable) ?? null;
-    data.businessAreas.push({ id, label, active: true, isDefault: false, defaultServiceLocationId: initialLocation?.id ?? null });
+    data.businessAreas.push({ id, label, visibleName: "", logoMode: "company", logo: null, active: true, isDefault: false, defaultServiceLocationId: initialLocation?.id ?? null });
     if (initialLocation && !initialLocation.businessAreaIds.includes(id)) initialLocation.businessAreaIds.push(id);
     data.catalog[id] = [];
     const importResult = templateKey ? importBusinessTemplate(id, templateKey) : null;
@@ -2478,6 +2547,13 @@
       area.active = activeIds.includes(area.id);
       area.isDefault = area.id === defaultId;
       area.defaultServiceLocationId = locationDefaults.get(area.id) || area.defaultServiceLocationId || null;
+      const visibleNameField = `areaVisibleName:${area.id}`;
+      const logoModeField = `areaLogoMode:${area.id}`;
+      if (formData.has(visibleNameField)) area.visibleName = String(formData.get(visibleNameField) || "").trim();
+      if (formData.has(logoModeField)) {
+        const logoMode = String(formData.get(logoModeField) || "company");
+        area.logoMode = ["company", "custom", "none"].includes(logoMode) ? logoMode : "company";
+      }
     });
     if (!state.cart.length || !activeIds.includes(state.activeBusinessArea)) state.activeBusinessArea = defaultId;
     refreshBusinessSwitcher();
@@ -2504,6 +2580,7 @@
       </div>
       ${businessAreaServiceLocationField(area)}
       <div class="business-area-catalog-status ${status.ready ? "is-ready" : "needs-review"}"><strong>${status.ready ? "✓ Leistungen vollständig" : importedNeedsReview ? "⚠ Vorlage angelegt – Preise noch prüfen" : "⚠ Leistungen noch prüfen"}</strong><small>${status.reviewCount ? `${status.reviewCount} Preise oder Steuersätze sind unbestätigt.` : `${status.active} aktive Einträge im zentralen Katalog.`}</small><button type="button" data-setup-edit-catalog="${escapeHtml(area.id)}">Leistungen & Preise</button></div>
+      ${importedNeedsReview ? `<p class="setup-template-guidance">Die Vorlage wurde übernommen.<br>Bitte prüfe anschließend Leistungen, Produkte, Preise und Steuersätze.</p>` : ""}
     </section>`;
     }).join("");
   }
@@ -2513,6 +2590,81 @@
     return `<label class="setting-field business-area-location-field"><span>Standard-Leistungsort</span><select name="defaultServiceLocation:${escapeHtml(area.id)}" ${area.active !== false ? "required" : ""}>
       ${locations.length ? locations.map(location => `<option value="${escapeHtml(location.id)}" ${area.defaultServiceLocationId === location.id ? "selected" : ""}>${escapeHtml(location.name)}</option>`).join("") : `<option value="">Kein zugeordneter Leistungsort</option>`}
     </select><small>Nur diesem Geschäftsbereich zugeordnete aktive Orte.</small></label>`;
+  }
+
+  function businessAreaBrandingFields(area) {
+    const branding = brandingContextSnapshot(area.id);
+    const location = serviceLocationForBusinessArea(area.id);
+    const logoSource = branding.logo?.source || "none";
+    return `<section class="business-branding-card" data-business-branding="${escapeHtml(area.id)}">
+      <div class="business-branding-title"><div><h3>Branding auf Dokumenten</h3><p>Gilt für neue Belege und Gutscheine dieses Geschäftsbereichs.</p></div><span>Live-Vorschau</span></div>
+      <label class="setting-field full"><span>Sichtbare Geschäftsbezeichnung <small>optional</small></span><input name="areaVisibleName:${escapeHtml(area.id)}" maxlength="100" value="${escapeHtml(area.visibleName || "")}" placeholder="z. B. ${escapeHtml(area.label)} im Studio"></label>
+      <fieldset class="business-logo-options"><legend>Logo</legend>
+        <label><input type="radio" name="areaLogoMode:${escapeHtml(area.id)}" value="company" ${area.logoMode === "company" ? "checked" : ""}><span><strong>Unternehmenslogo verwenden</strong><small>Standard für diesen Geschäftsbereich</small></span></label>
+        <label><input type="radio" name="areaLogoMode:${escapeHtml(area.id)}" value="custom" ${area.logoMode === "custom" ? "checked" : ""}><span><strong>Eigenes Logo verwenden</strong><small>Überschreibt das Unternehmenslogo</small></span></label>
+        <label><input type="radio" name="areaLogoMode:${escapeHtml(area.id)}" value="none" ${area.logoMode === "none" ? "checked" : ""}><span><strong>Kein Logo anzeigen</strong><small>Dokumente bleiben ohne Logo</small></span></label>
+      </fieldset>
+      <div class="business-logo-simulation" data-business-logo-upload ${area.logoMode === "custom" ? "" : "hidden"}><button class="button button-secondary" type="button" data-action="business-logo-simulation">Logo auswählen (Simulation)</button><small data-business-logo-status>${area.logo ? "Simuliertes Logo ausgewählt. Keine Datei wird gespeichert." : "Noch kein eigenes Logo ausgewählt. Bis dahin gilt das Unternehmenslogo."}</small></div>
+      <article class="branding-live-preview" data-branding-preview="${escapeHtml(area.id)}" aria-label="Dokumentvorschau für ${escapeHtml(area.label)}">
+        <span class="branding-preview-label">Dokumentvorschau</span>
+        <div class="branding-preview-head">
+          <span class="document-brand-logo is-compact" data-preview-logo ${logoSource === "none" ? "hidden" : ""}><strong>${logoSource === "business-area" ? "GB" : "UN"}</strong><small>${logoSource === "business-area" ? "Bereich" : "Firma"}</small></span>
+          <div><em class="document-visible-name" data-preview-visible-name ${area.visibleName ? "" : "hidden"}>${escapeHtml(area.visibleName || "")}</em><strong data-preview-company>${escapeHtml(data.company.name || "Unternehmen")}</strong><small>${escapeHtml(data.company.street || "")}</small><small>${escapeHtml(addressCityLine(data.company))}</small></div>
+        </div>
+        <footer><span>Geschäftsbereich</span><strong data-preview-area>${escapeHtml(area.label)}</strong><span>Leistungsort</span><strong data-preview-location>${escapeHtml(location?.name || "Noch nicht festgelegt")}</strong></footer>
+      </article>
+    </section>`;
+  }
+
+  function attachBusinessBrandingBehavior() {
+    mainContent.querySelectorAll("[data-business-branding]").forEach(card => {
+      const areaId = card.dataset.businessBranding;
+      const visibleName = card.querySelector('input[name^="areaVisibleName:"]');
+      const areaName = card.closest(".business-area-row")?.querySelector('input[name^="areaLabel:"]');
+      const serviceLocation = card.closest(".business-area-row")?.querySelector('select[name^="defaultServiceLocation:"]');
+      const logoOptions = [...card.querySelectorAll('input[name^="areaLogoMode:"]')];
+      const upload = card.querySelector("[data-business-logo-upload]");
+      const previewLogo = card.querySelector("[data-preview-logo]");
+      const previewVisibleName = card.querySelector("[data-preview-visible-name]");
+      const previewArea = card.querySelector("[data-preview-area]");
+      const previewLocation = card.querySelector("[data-preview-location]");
+      const uploadStatus = card.querySelector("[data-business-logo-status]");
+      const update = () => {
+        const logoMode = logoOptions.find(option => option.checked)?.value || "company";
+        const area = data.businessAreas.find(entry => entry.id === areaId);
+        const effectiveLogoSource = logoMode === "none"
+          ? "none"
+          : logoMode === "custom" && area?.logo
+            ? "business-area"
+            : data.company.logo
+              ? "company"
+              : "none";
+        if (upload) upload.hidden = logoMode !== "custom";
+        if (uploadStatus) uploadStatus.textContent = area?.logo
+          ? "Simuliertes Logo ausgewählt. Keine Datei wird gespeichert."
+          : "Noch kein eigenes Logo ausgewählt. Bis dahin gilt das Unternehmenslogo.";
+        if (previewLogo) {
+          previewLogo.hidden = effectiveLogoSource === "none";
+          const isCustom = effectiveLogoSource === "business-area";
+          const shortLabel = previewLogo.querySelector("strong");
+          const sourceLabel = previewLogo.querySelector("small");
+          if (shortLabel) shortLabel.textContent = isCustom ? "GB" : "UN";
+          if (sourceLabel) sourceLabel.textContent = isCustom ? "Bereich" : "Firma";
+        }
+        if (previewVisibleName) {
+          previewVisibleName.textContent = visibleName?.value.trim() || "";
+          previewVisibleName.hidden = !previewVisibleName.textContent;
+        }
+        if (previewArea) previewArea.textContent = areaName?.value.trim() || "Geschäftsbereich";
+        if (previewLocation) previewLocation.textContent = serviceLocation?.selectedOptions[0]?.textContent || "Noch nicht festgelegt";
+      };
+      visibleName?.addEventListener("input", update);
+      areaName?.addEventListener("input", update);
+      serviceLocation?.addEventListener("change", update);
+      logoOptions.forEach(option => option.addEventListener("change", update));
+      card.addEventListener("branding-preview-change", update);
+      update();
+    });
   }
 
   function setupSummary() {
@@ -2550,6 +2702,7 @@
   function setupTestReceipt() {
     const defaultArea = defaultBusinessArea();
     const location = serviceLocationForBusinessArea(defaultArea?.id);
+    const branding = brandingContextSnapshot(defaultArea?.id);
     const taxRate = Number(data.taxSettings.defaultRate || 19);
     const payment = activeNormalPaymentChoices()[0]?.title || "Zahlungsart";
     const catalogItem = catalogEntries(defaultArea?.id).find(item => ["service", "product"].includes(item.type) && item.active !== false && item.needsReview !== true);
@@ -2557,6 +2710,8 @@
     const testItemPrice = catalogItem ? catalogItemPrice(catalogItem) : 10;
     return `<article class="setup-test-receipt" aria-label="Testbeleg Vorschau">
       <strong class="setup-test-label">TESTBELEG · VORSCHAU</strong>
+      ${brandingLogoMarkup(branding, true)}
+      ${branding.visibleName ? `<em class="document-visible-name">${escapeHtml(branding.visibleName)}</em>` : ""}
       <h3>${escapeHtml(data.company.name || "Unternehmen")}</h3>
       <p>${escapeHtml(data.company.street || "")}<br>${escapeHtml(addressCityLine(data.company))}</p>
       ${location ? `<p>Geschäftsbereich: ${escapeHtml(defaultArea?.label || "Geschäftsbereich")}<br>Leistungsort: ${escapeHtml(location.name || "Leistungsort")}</p>` : ""}
@@ -2591,7 +2746,7 @@
         <div class="setup-tax-rate" ${data.taxSettings.status === "vat" ? "" : "hidden"}><span>Standard-Steuersatz</span><div class="setup-choice-row"><label><input type="radio" name="defaultTaxRate" value="19" ${data.taxSettings.defaultRate === 19 ? "checked" : ""}><span>19 %</span></label><label><input type="radio" name="defaultTaxRate" value="7" ${data.taxSettings.defaultRate === 7 ? "checked" : ""}><span>7 %</span></label></div></div>
         <p class="settings-neutral-note">Bitte kläre Unsicherheiten mit deiner Steuerberatung. FRECKA trifft keine rechtliche Entscheidung.</p></section>${setupActions()}`;
       case 5: return `<section class="settings-form-card"><h2>Belegnummern</h2><label class="setting-field"><span>Jahrespräfix</span><input id="setupReceiptPrefix" name="yearPrefix" inputmode="numeric" maxlength="4" value="${escapeHtml(receipt.yearPrefix)}"></label><label class="setting-field"><span>Nächste Belegnummer</span><input id="setupReceiptNext" name="nextNumber" type="number" min="1" step="1" value="${escapeHtml(receipt.nextNumber)}"></label><div class="receipt-number-preview full"><span>Vorschau</span><strong id="setupReceiptPreview">${escapeHtml(receipt.yearPrefix)}-${String(receipt.nextNumber).padStart(6,"0")}</strong><small>Änderungen wirken nur auf neue Belege. Bestehende Belege bleiben unverändert.</small></div></section><p class="settings-neutral-note">Nach dem produktiven Start sollte der Nummernkreis nicht ohne fachliche Prüfung geändert werden.</p>${setupActions()}`;
-      case 6: return `<div class="payment-settings-list">${data.paymentChoices.map(choice => `<article class="payment-setting-row"><span class="payment-setting-icon" aria-hidden="true">${escapeHtml(choice.icon)}</span><span class="payment-setting-name"><strong>${escapeHtml(choice.title)}</strong><small>${choice.id === "voucher" ? "Gutscheinsystem" : "Normale Zahlungsart"}</small></span><label class="payment-setting-toggle"><input type="checkbox" data-payment-toggle="${escapeHtml(choice.id)}" ${choice.active !== false ? "checked" : ""}><span>${choice.active !== false ? "Aktiv" : "Inaktiv"}</span></label></article>`).join("")}</div><p class="prototype-note">Mindestens eine normale Zahlungsart muss aktiv bleiben. Offene Zahlungen werden getrennt im Checkout erfasst.</p>${setupActions()}`;
+      case 6: return `<div class="payment-settings-list">${data.paymentChoices.map(choice => `<article class="payment-setting-row"><span class="payment-setting-icon" aria-hidden="true">${escapeHtml(choice.icon)}</span><span class="payment-setting-name"><strong>${escapeHtml(choice.title)}</strong><small>${choice.id === "voucher" ? "Gutscheinsystem" : "Normale Zahlungsart"}</small></span><label class="payment-setting-toggle"><input type="checkbox" data-payment-toggle="${escapeHtml(choice.id)}" ${choice.active !== false ? "checked" : ""}><span>${choice.active !== false ? "Aktiv" : "Deaktiviert"}</span></label></article>`).join("")}</div><p class="prototype-note">Mindestens eine normale Zahlungsart muss aktiv bleiben. Offene Zahlungen werden getrennt im Checkout erfasst.</p>${setupActions()}`;
       case 7: return `<div class="business-model-note"><strong>Eine Instanz entspricht einer Filiale.</strong><span>Hier legst du nur fachliche Geschäftsbereiche fest.</span></div><div class="business-area-list">${setupBusinessAreaRows()}</div><button class="button button-secondary business-area-add" type="button" data-action="business-area-add">＋ Geschäftsbereich</button>${setupActions()}`;
       case 8: return `<section class="settings-form-card settings-single-column"><h2>Optionale Belegtexte</h2><label class="setting-field full"><span>Dankestext <small>optional</small></span><input name="thankYouText" maxlength="120" placeholder="z. B. Vielen Dank für deinen Besuch." value="${escapeHtml(receipt.thankYouText || "")}"></label><label class="setting-field full"><span>Fußtext <small>optional</small></span><textarea name="footerText" rows="3" maxlength="240" placeholder="z. B. Termine bitte 24 Stunden vorher absagen.">${escapeHtml(receipt.footerText || "")}</textarea></label></section>${setupActions("Weiter oder überspringen")}`;
       case 9: return `<div class="setup-info-card"><div class="setup-info-symbol" aria-hidden="true">T</div><h2>TSE kommt später</h2><p>FRECKA hat in diesem Prototyp noch keine TSE-Anbindung. Ob eine TSE erforderlich ist, wird hier nicht automatisch beurteilt.</p><p>Vor produktiver Nutzung als elektronisches Aufzeichnungssystem muss die konkrete Pflicht fachlich geprüft werden. Die spätere TSE-Einrichtung erhält einen eigenen Assistenten.</p><button class="button button-primary" type="button" data-setup-tse>Verstanden</button><button class="button button-secondary" type="button" data-setup-tse>Später in Einstellungen prüfen</button></div><div class="setup-actions"><button class="button button-secondary" type="button" data-setup-back>Zurück</button><button class="setup-cancel" type="button" data-setup-cancel>Assistent abbrechen</button></div>`;
@@ -2729,9 +2884,10 @@
           <label class="setting-field"><span>USt-IdNr. <small>optional</small></span><input name="vatId" autocomplete="off" value="${escapeHtml(company.vatId || "")}"></label>
         </section>
         <section class="settings-form-card settings-logo-card">
-          <div class="settings-logo-placeholder" aria-hidden="true">Logo</div>
+          <div class="settings-logo-placeholder" aria-hidden="true">${company.logo ? "Logo · simuliert" : "Logo"}</div>
           <div class="settings-logo-copy"><h2>Unternehmenslogo</h2><p>Der Upload wird in diesem Prototyp nur simuliert.</p><button class="button button-secondary logo-simulation-button" type="button" data-action="logo-simulation">Logo auswählen (Simulation)</button></div>
           <div class="logo-recommendations"><strong>Empfohlene Formate</strong><span>PNG · JPG · SVG</span><strong>Empfohlene Größe</strong><span>quadratisch · mindestens 600 × 600 Pixel · maximal 5 MB</span><small>Transparenter PNG-Hintergrund empfohlen.</small></div>
+          <p class="company-logo-default-note">Dieses Logo wird standardmäßig auf allen Belegen, Gutscheinen und PDF-Dokumenten verwendet.<br>Geschäftsbereiche mit eigenem Logo überschreiben diese Einstellung.</p>
         </section>
         <p class="prototype-note">Das Speichern gilt nur für diese Sitzung. Nach einem Reload stehen wieder die Demo-Daten bereit.</p>
         <button class="button button-primary settings-save" type="submit">Änderungen speichern</button>
@@ -2759,7 +2915,7 @@
         const assignedAreas = data.businessAreas.filter(area => location.businessAreaIds.includes(area.id));
         const unavailableCompany = location.addressMode === "company" && data.company.useAsServiceLocation === false;
         return `<article class="service-location-card ${serviceLocationAvailable(location) ? "is-active" : "is-inactive"}">
-          <div class="service-location-card-head"><div><span>${serviceLocationAvailable(location) ? "Aktiv" : unavailableCompany ? "Unternehmensanschrift deaktiviert" : "Inaktiv"}</span><h2>${escapeHtml(location.name)}</h2></div><button type="button" data-edit-service-location="${escapeHtml(location.id)}">Bearbeiten</button></div>
+          <div class="service-location-card-head"><div><span>${serviceLocationAvailable(location) ? "Aktiv" : unavailableCompany ? "Unternehmensanschrift deaktiviert" : "Deaktiviert"}</span><h2>${escapeHtml(location.name)}</h2></div><button type="button" data-edit-service-location="${escapeHtml(location.id)}">Bearbeiten</button></div>
           <p>${escapeHtml(snapshot.street || "Keine Straße angegeben")}<br>${escapeHtml(addressCityLine(snapshot))}</p>
           <div class="service-location-area-tags">${assignedAreas.length ? assignedAreas.map(area => `<span>${escapeHtml(area.label)}</span>`).join("") : `<em>Kein Geschäftsbereich</em>`}</div>
         </article>`;
@@ -2798,7 +2954,7 @@
         </fieldset>
         <section class="settings-form-card"><h2>Kontakt und Gutschein</h2><label class="setting-field full"><span>Telefon <small>optional</small></span><input name="phone" type="tel" value="${escapeHtml(location.phone)}"></label><label class="setting-field full"><span>Hinweis für Gutscheine <small>optional</small></span><textarea name="voucherNote" rows="3" placeholder="z. B. Einlösbar nach Terminvereinbarung">${escapeHtml(location.voucherNote)}</textarea></label></section>
         <section class="settings-form-card settings-single-column"><h2>Gilt für folgende Geschäftsbereiche</h2><div class="service-location-area-options">${activeBusinessAreas().map(area => `<label><input type="checkbox" name="businessAreaIds" value="${escapeHtml(area.id)}" ${location.businessAreaIds.includes(area.id) ? "checked" : ""}><span>${escapeHtml(area.label)}</span></label>`).join("")}</div><p class="settings-neutral-note">Mindestens ein Geschäftsbereich muss gewählt sein.</p></section>
-        <label class="service-location-active-toggle"><input type="checkbox" name="active" ${location.active !== false ? "checked" : ""}><span><strong>Leistungsort aktiv</strong><small>Inaktive Orte werden nicht als Standard angeboten.</small></span></label>
+        <label class="service-location-active-toggle"><input type="checkbox" name="active" ${location.active !== false ? "checked" : ""}><span><strong>Leistungsort aktiv</strong><small>Deaktivierte Orte werden nicht als Standard angeboten.</small></span></label>
         <button class="button button-primary settings-save" type="submit">Leistungsort speichern</button>
       </form>
     </section>`;
@@ -2893,7 +3049,7 @@
         ${data.paymentChoices.map((choice, index) => `<article class="payment-setting-row">
           <span class="payment-setting-icon" aria-hidden="true">${escapeHtml(choice.icon)}</span>
           <span class="payment-setting-name"><strong>${escapeHtml(choice.title)}</strong>${choice.id === "voucher" ? `<small>Gutschein aus dem Gutscheinsystem</small>` : `<small>Normale Zahlungsart</small>`}</span>
-          <label class="payment-setting-toggle"><input type="checkbox" data-payment-toggle="${escapeHtml(choice.id)}" ${choice.active !== false ? "checked" : ""}><span>${choice.active !== false ? "Aktiv" : "Inaktiv"}</span></label>
+          <label class="payment-setting-toggle"><input type="checkbox" data-payment-toggle="${escapeHtml(choice.id)}" ${choice.active !== false ? "checked" : ""}><span>${choice.active !== false ? "Aktiv" : "Deaktiviert"}</span></label>
           <span class="payment-order-actions">
             <button type="button" data-payment-move="${escapeHtml(choice.id)}" data-direction="up" aria-label="${escapeHtml(choice.title)} nach oben" ${index === 0 ? "disabled" : ""}>↑</button>
             <button type="button" data-payment-move="${escapeHtml(choice.id)}" data-direction="down" aria-label="${escapeHtml(choice.title)} nach unten" ${index === data.paymentChoices.length - 1 ? "disabled" : ""}>↓</button>
@@ -2924,6 +3080,7 @@
               <label><input type="radio" name="defaultBusinessArea" value="${escapeHtml(area.id)}" ${area.isDefault ? "checked" : ""}><span>Standard</span></label>
             </div>
             ${businessAreaServiceLocationField(area)}
+            ${businessAreaBrandingFields(area)}
           </section>`).join("")}
         </div>
         <button class="button button-secondary business-area-add" type="button" data-action="business-area-add">＋ Geschäftsbereich</button>
@@ -2931,6 +3088,7 @@
         <button class="button button-primary settings-save" type="submit">Geschäftsbereiche speichern</button>
       </form>
     </section>`;
+    attachBusinessBrandingBehavior();
   }
 
   function catalogManagerArea() {
@@ -2949,7 +3107,6 @@
       .filter(item => {
         if (state.catalogManagerStatus === "active") return item.active !== false;
         if (state.catalogManagerStatus === "inactive") return item.active === false;
-        if (state.catalogManagerStatus === "review") return item.needsReview === true;
         return true;
       })
       .filter(item => {
@@ -2967,7 +3124,7 @@
       total: entries.length,
       active: entries.filter(item => item.active !== false).length,
       reviewCount,
-      ready: reviewCount === 0
+      ready: entries.length > 0 && reviewCount === 0
     };
   }
 
@@ -2981,6 +3138,9 @@
       return;
     }
     const categories = catalogCategories(area.id).filter(category => category.type === type);
+    const selectedCategoryId = item
+      ? item.categoryId || ""
+      : categories.find(category => category.active !== false)?.id || "";
     const taxRates = data.taxSettings.rates.filter(rate => rate.active !== false);
     const price = item ? (Number(item.priceCents || 0) / 100).toFixed(2).replace(".", ",") : "";
     const requiresPriceConfirmation = item?.needsReview === true && item.priceConfirmed === false;
@@ -2990,7 +3150,7 @@
       ${state.catalogSettingsNotice ? `<div class="settings-save-notice is-error" role="alert">${escapeHtml(state.catalogSettingsNotice)}</div>` : ""}
       <form id="catalogItemForm" class="settings-form catalog-item-form" data-item-type="${type}">
         <label class="setting-field full"><span>Name</span><input name="name" required maxlength="100" value="${escapeHtml(item ? catalogItemName(item) : "")}"></label>
-        <label class="setting-field"><span>Kategorie <small>optional</small></span><select name="categoryId"><option value="">Ohne Kategorie</option>${categories.map(category => `<option value="${escapeHtml(category.id)}" ${item?.categoryId === category.id ? "selected" : ""}>${escapeHtml(category.name)}${category.active === false ? " · inaktiv" : ""}</option>`).join("")}</select></label>
+        <label class="setting-field"><span>Kategorie <small>optional</small></span><select name="categoryId"><option value="" ${selectedCategoryId ? "" : "selected"}>Ohne Kategorie</option>${categories.map(category => `<option value="${escapeHtml(category.id)}" ${selectedCategoryId === category.id ? "selected" : ""}>${escapeHtml(category.name)}${category.active === false ? " · deaktiviert" : ""}</option>`).join("")}</select><small>Neue Einträge starten mit einer passenden aktiven Kategorie. Genau eine Kategorie ist möglich.</small></label>
         <label class="setting-field"><span>Preis in Euro</span><input name="price" inputmode="decimal" required placeholder="0,00" value="${escapeHtml(price)}"></label>
         <label class="setting-field"><span>Steuersatz</span><select name="taxRate" required>${taxRates.map(rate => `<option value="${rate.rate}" ${Number(item?.taxRate ?? data.taxSettings.defaultRate) === Number(rate.rate) ? "selected" : ""}>${rate.rate} %</option>`).join("")}</select><small>Nur aktive Steuersätze.</small></label>
         ${type === "product" ? `<label class="setting-field"><span>Artikelnummer <small>optional</small></span><input name="sku" maxlength="60" value="${escapeHtml(item?.sku || "")}"></label><label class="setting-field"><span>Einheit</span><input value="Stück" disabled><input type="hidden" name="unit" value="Stück"></label>` : ""}
@@ -3032,7 +3192,7 @@
         <label class="setting-field full"><span>Name</span><input name="name" required maxlength="80" value="${escapeHtml(category?.name || "")}"></label>
         <fieldset class="settings-option-list full"><legend>Typ</legend><label><input type="radio" name="type" value="service" ${category?.type !== "product" ? "checked" : ""}><span><strong>Leistung</strong><small>Für Dienstleistungen</small></span></label><label><input type="radio" name="type" value="product" ${category?.type === "product" ? "checked" : ""}><span><strong>Produkt</strong><small>Für Verkaufsartikel</small></span></label></fieldset>
         <div class="catalog-check-list full"><label><input type="checkbox" name="active" ${category?.active !== false ? "checked" : ""}><span>Aktiv und im Beleg sichtbar</span></label></div>
-        <p class="prototype-note full">Eine inaktive Kategorie blendet ihre Einträge im Beleg aus. Die Einträge selbst werden nicht gelöscht.</p>
+        <p class="prototype-note full">Eine deaktivierte Kategorie blendet ihre Einträge im Beleg aus. Die Einträge selbst werden nicht gelöscht.</p>
         <div class="catalog-editor-actions full"><button class="button button-secondary" type="button" data-action="catalog-editor-cancel">Abbrechen</button><button class="button button-primary" type="submit">${category ? "Änderungen übernehmen" : "Kategorie anlegen"}</button></div>
       </form>
     </section>`;
@@ -3053,10 +3213,10 @@
       <div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-action="catalog-settings-back"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">Einstellungen</p><h1 class="flow-title">Leistungen & Produkte</h1><p class="page-copy">Zentraler Katalog je Geschäftsbereich. Änderungen erscheinen direkt bei neuen Belegen.</p></div>
       ${state.catalogSettingsNotice ? `<div class="settings-save-notice ${state.catalogSettingsNotice.startsWith("Bitte") ? "is-error" : ""}" role="status">${escapeHtml(state.catalogSettingsNotice)}</div>` : ""}
       <label class="setting-field catalog-area-picker"><span>Geschäftsbereich</span><select id="catalogManagerArea">${activeBusinessAreas().map(entry => `<option value="${escapeHtml(entry.id)}" ${entry.id === area.id ? "selected" : ""}>${escapeHtml(entry.label)}</option>`).join("")}</select></label>
-      <div class="catalog-readiness ${summary.ready ? "is-ready" : "needs-review"}"><strong>${summary.ready ? "✓ Katalog einsatzbereit" : `⚠ ${summary.reviewCount} Einträge prüfen`}</strong><span>${summary.active} aktive von ${summary.total} Leistungen und Produkten</span></div>
+      <div class="catalog-readiness ${summary.total === 0 ? "is-empty" : summary.ready ? "is-ready" : "needs-review"}"><strong>${summary.total === 0 ? "Katalog noch leer" : summary.ready ? "✓ Katalog vollständig eingerichtet" : `⚠ ${summary.reviewCount} Prüfungen offen`}</strong><span>${summary.total} Leistungen und Produkte · ${summary.total === 0 ? "Ersten Eintrag anlegen" : summary.ready ? "Keine offenen Prüfungen" : "Preise oder Steuersätze noch prüfen"}</span></div>
       <div class="catalog-manager-tabs" role="tablist"><button type="button" data-catalog-manager-view="items" class="${state.catalogManagerView === "items" ? "is-active" : ""}">Leistungen & Produkte</button><button type="button" data-catalog-manager-view="categories" class="${state.catalogManagerView === "categories" ? "is-active" : ""}">Kategorien</button></div>
-      ${state.catalogManagerView === "categories" ? `<div class="catalog-manager-toolbar"><div><h2>Kategorien</h2><p>Reihenfolge und Sichtbarkeit verwalten.</p></div><button class="button button-primary" type="button" data-action="catalog-new-category">＋ Kategorie</button></div><div class="catalog-admin-list">${categories.length ? categories.map((category, index) => `<article class="catalog-admin-row"><div class="catalog-admin-main"><strong>${escapeHtml(category.name)}</strong><span>${category.type === "product" ? "Produkt" : "Leistung"} · ${category.active === false ? "Inaktiv" : "Aktiv"}</span></div><div class="catalog-row-actions"><button type="button" data-catalog-toggle-category="${escapeHtml(category.id)}">${category.active === false ? "Aktivieren" : "Deaktivieren"}</button><button type="button" data-catalog-edit-category="${escapeHtml(category.id)}">Bearbeiten</button><span><button type="button" data-catalog-move-category="${escapeHtml(category.id)}" data-direction="up" aria-label="${escapeHtml(category.name)} nach oben" ${index === 0 ? "disabled" : ""}>↑</button><button type="button" data-catalog-move-category="${escapeHtml(category.id)}" data-direction="down" aria-label="${escapeHtml(category.name)} nach unten" ${index === categories.length - 1 ? "disabled" : ""}>↓</button></span></div></article>`).join("") : `<p class="empty-state">Noch keine Kategorien vorhanden.</p>`}</div>` : `<div class="catalog-manager-toolbar"><div><h2>Einträge</h2><p>Leistungen und Produkte bearbeiten.</p></div><div class="catalog-create-actions"><button class="button button-secondary" type="button" data-catalog-new-item="service">＋ Leistung</button><button class="button button-primary" type="button" data-catalog-new-item="product">＋ Produkt</button></div></div>
-        <div class="catalog-manager-filters"><label class="search-field"><span aria-hidden="true">⌕</span><input id="catalogManagerSearch" type="search" placeholder="Name suchen" value="${escapeHtml(state.catalogManagerSearch)}"></label><label><span>Status</span><select id="catalogManagerStatus"><option value="active" ${state.catalogManagerStatus === "active" ? "selected" : ""}>Aktiv</option><option value="inactive" ${state.catalogManagerStatus === "inactive" ? "selected" : ""}>Inaktiv</option><option value="review" ${state.catalogManagerStatus === "review" ? "selected" : ""}>Zu prüfen</option><option value="all" ${state.catalogManagerStatus === "all" ? "selected" : ""}>Alle</option></select></label><label><span>Kategorie</span><select id="catalogManagerCategory"><option value="all">Alle</option><option value="uncategorized" ${state.catalogManagerCategory === "uncategorized" ? "selected" : ""}>Ohne Kategorie</option>${categories.map(category => `<option value="${escapeHtml(category.id)}" ${state.catalogManagerCategory === category.id ? "selected" : ""}>${escapeHtml(category.name)}</option>`).join("")}</select></label></div>
+      ${state.catalogManagerView === "categories" ? `<div class="catalog-manager-toolbar"><div><h2>Kategorien</h2><p>Kategorien beschreiben Tätigkeiten oder Angebotsarten – keine Zielgruppen.</p></div><button class="button button-primary" type="button" data-action="catalog-new-category">＋ Kategorie</button></div><div class="catalog-admin-list">${categories.length ? categories.map((category, index) => `<article class="catalog-admin-row"><div class="catalog-admin-main"><strong>${escapeHtml(category.name)}</strong><span>${category.type === "product" ? "Produkt" : "Leistung"} · ${category.active === false ? "Deaktiviert" : "Aktiv"}</span></div><div class="catalog-row-actions"><button type="button" data-catalog-toggle-category="${escapeHtml(category.id)}">${category.active === false ? "Aktivieren" : "Deaktivieren"}</button><button type="button" data-catalog-edit-category="${escapeHtml(category.id)}">Bearbeiten</button><span><button type="button" data-catalog-move-category="${escapeHtml(category.id)}" data-direction="up" aria-label="${escapeHtml(category.name)} nach oben" ${index === 0 ? "disabled" : ""}>↑</button><button type="button" data-catalog-move-category="${escapeHtml(category.id)}" data-direction="down" aria-label="${escapeHtml(category.name)} nach unten" ${index === categories.length - 1 ? "disabled" : ""}>↓</button></span></div></article>`).join("") : `<p class="empty-state">Noch keine Kategorien vorhanden.</p>`}</div>` : `<div class="catalog-manager-toolbar"><div><h2>Einträge</h2><p>Leistungen und Produkte bearbeiten.</p></div><div class="catalog-create-actions"><button class="button button-secondary" type="button" data-catalog-new-item="service">＋ Leistung</button><button class="button button-primary" type="button" data-catalog-new-item="product">＋ Produkt</button></div></div>
+        <div class="catalog-manager-filters"><label class="search-field"><span aria-hidden="true">⌕</span><input id="catalogManagerSearch" type="search" placeholder="Name suchen" value="${escapeHtml(state.catalogManagerSearch)}"></label><label><span>Status</span><select id="catalogManagerStatus"><option value="all" ${state.catalogManagerStatus === "all" ? "selected" : ""}>Alle</option><option value="active" ${state.catalogManagerStatus === "active" ? "selected" : ""}>Aktiv</option><option value="inactive" ${state.catalogManagerStatus === "inactive" ? "selected" : ""}>Deaktiviert</option></select></label><label><span>Kategorie</span><select id="catalogManagerCategory"><option value="all">Alle</option><option value="uncategorized" ${state.catalogManagerCategory === "uncategorized" ? "selected" : ""}>Ohne Kategorie</option>${categories.map(category => `<option value="${escapeHtml(category.id)}" ${state.catalogManagerCategory === category.id ? "selected" : ""}>${escapeHtml(category.name)}</option>`).join("")}</select></label></div>
         <div class="catalog-admin-list">${items.length ? items.map((item, index) => { const category = categoryById(item.categoryId); return `<article class="catalog-admin-row ${item.needsReview ? "needs-review" : ""}"><div class="catalog-admin-main"><strong>${escapeHtml(catalogItemName(item))}</strong><span>${item.type === "product" ? "Produkt" : "Leistung"} · ${category ? escapeHtml(category.name) : "Ohne Kategorie"} · ${formatCurrency(catalogItemPrice(item))}</span>${item.needsReview ? `<em>⚠ Preis und Steuersatz prüfen</em>` : ""}</div><div class="catalog-row-actions"><button type="button" data-catalog-toggle-item="${escapeHtml(item.id)}">${item.active === false ? "Aktivieren" : "Deaktivieren"}</button><button type="button" data-catalog-edit-item="${escapeHtml(item.id)}">Bearbeiten</button><span><button type="button" data-catalog-move-item="${escapeHtml(item.id)}" data-direction="up" aria-label="${escapeHtml(catalogItemName(item))} nach oben" ${index === 0 ? "disabled" : ""}>↑</button><button type="button" data-catalog-move-item="${escapeHtml(item.id)}" data-direction="down" aria-label="${escapeHtml(catalogItemName(item))} nach unten" ${index === items.length - 1 ? "disabled" : ""}>↓</button></span></div></article>`; }).join("") : `<p class="empty-state">Für diesen Filter wurden keine Einträge gefunden.</p>`}</div>`}
       <p class="prototype-note">Keine Speicherung: Alle Änderungen bleiben ausschließlich im Arbeitsspeicher und gehen beim Neuladen verloren.</p>
     </section>`;
@@ -3410,7 +3570,7 @@
         item.active = item.active === false;
         item.updatedAt = new Date().toISOString();
         syncTemplateImportStatus(area.id);
-        state.catalogSettingsNotice = `${catalogItemName(item)} ist jetzt ${item.active ? "aktiv" : "inaktiv"}.`;
+        state.catalogSettingsNotice = `${catalogItemName(item)} ist jetzt ${item.active ? "aktiv" : "deaktiviert"}.`;
       }
       renderCatalogSettings();
       return;
@@ -3421,7 +3581,7 @@
       if (category) {
         category.active = category.active === false;
         category.updatedAt = new Date().toISOString();
-        state.catalogSettingsNotice = `${category.name} ist jetzt ${category.active ? "aktiv" : "inaktiv"}.`;
+        state.catalogSettingsNotice = `${category.name} ist jetzt ${category.active ? "aktiv" : "deaktiviert"}.`;
       }
       renderCatalogSettings();
       return;
@@ -3487,6 +3647,11 @@
     if (sheetAction === "template-edit-catalog") {
       closeBottomSheet();
       state.catalogManagerView = "items";
+      state.catalogManagerSearch = "";
+      state.catalogManagerStatus = "all";
+      state.catalogManagerCategory = "all";
+      state.catalogEditingItemId = null;
+      state.catalogEditingCategoryId = null;
       state.catalogSettingsNotice = "Vorlage angelegt – Preise und Steuersätze bitte prüfen.";
       navigate("settings-catalog");
       return;
@@ -3498,7 +3663,20 @@
       return;
     }
     if (sheetAction === "logo-simulation") {
-      openBottomSheet("Unternehmenslogo", `<div class="context-help-copy"><p>Die Dateiauswahl ist in diesem UX-Prototyp nur simuliert.</p><p>Es wird keine Datei geöffnet, übertragen oder gespeichert.</p></div>`);
+      data.company.logo = { id: `company-logo-${Date.now()}`, label: "Unternehmenslogo", simulated: true };
+      const companyLogoPlaceholder = mainContent.querySelector(".settings-logo-placeholder");
+      if (companyLogoPlaceholder) companyLogoPlaceholder.textContent = "Logo · simuliert";
+      openBottomSheet("Unternehmenslogo", `<div class="context-help-copy"><p>Das Unternehmenslogo wurde für diese Sitzung als Platzhalter ausgewählt.</p><p>Es wird keine Datei geöffnet, übertragen oder gespeichert.</p></div>`);
+      return;
+    }
+    if (sheetAction === "business-logo-simulation") {
+      const brandingCard = event.target.closest("[data-business-branding]");
+      const area = data.businessAreas.find(entry => entry.id === brandingCard?.dataset.businessBranding);
+      if (area) {
+        area.logo = { id: `business-logo-${area.id}-${Date.now()}`, label: "Geschäftsbereichslogo", simulated: true };
+        brandingCard.dispatchEvent(new Event("branding-preview-change"));
+      }
+      openBottomSheet("Geschäftsbereichslogo", `<div class="context-help-copy"><p>Das Geschäftsbereichslogo wurde für diese Sitzung als Platzhalter ausgewählt.</p><p>Es wird keine Datei geöffnet, übertragen oder gespeichert.</p><p>Die Dokumentvorschau wurde sofort aktualisiert.</p></div>`);
       return;
     }
     const category = event.target.closest("[data-category]");
@@ -3782,8 +3960,8 @@
       if (!activeNormalPaymentChoices().some(entry => entry.id === state.checkoutVoucherRemainderPayment)) state.checkoutVoucherRemainderPayment = preferredNormalPaymentId() || "cash";
       if (!activeNormalPaymentChoices().some(entry => entry.id === state.voucherSalePaymentChoice)) state.voucherSalePaymentChoice = preferredNormalPaymentId() || "cash";
       const label = paymentToggle.closest("label")?.querySelector("span");
-      if (label) label.textContent = wantsActive ? "Aktiv" : "Inaktiv";
-      showPaymentNotice(`${choice.title} ist für diese Sitzung ${wantsActive ? "aktiv" : "inaktiv"}.`);
+      if (label) label.textContent = wantsActive ? "Aktiv" : "Deaktiviert";
+      showPaymentNotice(`${choice.title} ist für diese Sitzung ${wantsActive ? "aktiv" : "deaktiviert"}.`);
       return;
     }
     const paymentMove = event.target.closest("[data-payment-move]");

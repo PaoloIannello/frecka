@@ -1,5 +1,5 @@
 window.PROTOTYPE_DATA = Object.freeze({
-  version: "UX-023",
+  version: "UX-024",
   build: "2026-08-06",
   company: {
     name: "Studio Beispiel",
@@ -14,7 +14,7 @@ window.PROTOTYPE_DATA = Object.freeze({
     vatId: "",
     defaultTaxRate: 19,
     useAsServiceLocation: true,
-    logo: null
+    logo: { id: "company-logo-demo", label: "Unternehmenslogo", simulated: true }
   },
   serviceLocations: [
     {
@@ -61,8 +61,8 @@ window.PROTOTYPE_DATA = Object.freeze({
     language: "Deutsch"
   },
   businessAreas: [
-    { id: "hair", label: "Friseur", active: true, isDefault: true, defaultServiceLocationId: "location-default" },
-    { id: "podiatry", label: "Podologie", active: true, isDefault: false, defaultServiceLocationId: "location-podiatry" }
+    { id: "hair", label: "Friseur", visibleName: "", logoMode: "company", logo: null, active: true, isDefault: true, defaultServiceLocationId: "location-default" },
+    { id: "podiatry", label: "Podologie", visibleName: "Podologie im Studio Beispiel", logoMode: "company", logo: null, active: true, isDefault: false, defaultServiceLocationId: "location-podiatry" }
   ],
   catalog: {
     hair: [
@@ -123,17 +123,20 @@ window.PROTOTYPE_DATA = Object.freeze({
     ]
   },
   categories: [
-    { id: "hair-services", businessAreaId: "hair", name: "Leistungen", type: "service", active: true, sortOrder: 10, source: "manual", createdAt: "2026-08-06T08:00:00.000Z", updatedAt: "2026-08-06T08:00:00.000Z" },
-    { id: "hair-products", businessAreaId: "hair", name: "Produkte", type: "product", active: true, sortOrder: 20, source: "manual", createdAt: "2026-08-06T08:00:00.000Z", updatedAt: "2026-08-06T08:00:00.000Z" },
-    { id: "podiatry-services", businessAreaId: "podiatry", name: "Leistungen", type: "service", active: true, sortOrder: 10, source: "manual", createdAt: "2026-08-06T08:00:00.000Z", updatedAt: "2026-08-06T08:00:00.000Z" },
-    { id: "podiatry-products", businessAreaId: "podiatry", name: "Produkte", type: "product", active: true, sortOrder: 20, source: "manual", createdAt: "2026-08-06T08:00:00.000Z", updatedAt: "2026-08-06T08:00:00.000Z" }
+    { id: "hair-cuts", businessAreaId: "hair", name: "Haarschnitt", type: "service", active: true, sortOrder: 10, source: "manual", createdAt: "2026-08-06T08:00:00.000Z", updatedAt: "2026-08-06T08:00:00.000Z" },
+    { id: "hair-color", businessAreaId: "hair", name: "Farbe", type: "service", active: true, sortOrder: 20, source: "manual", createdAt: "2026-08-06T08:00:00.000Z", updatedAt: "2026-08-06T08:00:00.000Z" },
+    { id: "hair-styling", businessAreaId: "hair", name: "Styling", type: "service", active: true, sortOrder: 30, source: "manual", createdAt: "2026-08-06T08:00:00.000Z", updatedAt: "2026-08-06T08:00:00.000Z" },
+    { id: "hair-care", businessAreaId: "hair", name: "Pflege", type: "service", active: true, sortOrder: 40, source: "manual", createdAt: "2026-08-06T08:00:00.000Z", updatedAt: "2026-08-06T08:00:00.000Z" },
+    { id: "hair-products", businessAreaId: "hair", name: "Produkte", type: "product", active: true, sortOrder: 50, source: "manual", createdAt: "2026-08-06T08:00:00.000Z", updatedAt: "2026-08-06T08:00:00.000Z" },
+    { id: "podiatry-services", businessAreaId: "podiatry", name: "Behandlungen", type: "service", active: true, sortOrder: 10, source: "manual", createdAt: "2026-08-06T08:00:00.000Z", updatedAt: "2026-08-06T08:00:00.000Z" },
+    { id: "podiatry-products", businessAreaId: "podiatry", name: "Pflegeprodukte", type: "product", active: true, sortOrder: 20, source: "manual", createdAt: "2026-08-06T08:00:00.000Z", updatedAt: "2026-08-06T08:00:00.000Z" }
   ],
   templateImportStatus: {},
   businessTemplates: {
     hair: {
       label: "Friseur",
       categories: [
-        ["cuts", "Haarschnitte", "service"], ["color", "Farbe", "service"], ["styling", "Styling", "service"],
+        ["cuts", "Haarschnitt", "service"], ["color", "Farbe", "service"], ["styling", "Styling", "service"],
         ["care", "Pflege", "service"], ["products", "Produkte", "product"]
       ],
       services: [
