@@ -55,7 +55,9 @@
     customerPickerContext: "receipt",
     voucherSaleError: "",
     voucherSaleSubmitting: false,
-    voucherSaleCreatedReference: null
+    voucherSaleCreatedReference: null,
+    settingsNotice: "",
+    serviceLocationNotice: ""
   };
 
   const mainContent = document.getElementById("mainContent");
@@ -68,11 +70,12 @@
   const confirmDiscard = document.getElementById("confirmDiscard");
   const dialogTitle = document.getElementById("dialogTitle");
   const dialogText = document.getElementById("dialogText");
-  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success"]);
+  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "settings-company", "settings-location"]);
   const validRoutes = new Set(["home", "receipts", "customers", "vouchers", "settings", ...flowRoutes]);
 
   const escapeHtml = value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
   const formatCurrency = value => new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(value);
+  const addressCityLine = address => [address?.zip || "", address?.city || ""].filter(Boolean).join(" ");
   const getAreaLabel = () => data.businessAreas.find(area => area.id === state.activeBusinessArea)?.label ?? "Geschäftsbereich";
   const cartTotal = () => state.cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const cartCount = () => state.cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -636,6 +639,9 @@
     const createdAt = receipt.createdAt || [receipt.date, receipt.time].filter(Boolean).join(" · ");
     const taxGroups = Array.isArray(receipt.taxGroups) ? receipt.taxGroups : [];
     const showTaxDetails = !isVoucherSale && Number.isFinite(Number(receipt.netTotal)) && taxGroups.length > 0;
+    const receiptIssuer = isVoucherSale && receipt.presentationSnapshot?.issuer
+      ? receipt.presentationSnapshot.issuer
+      : data.company;
 
     mainContent.innerHTML = `<section class="flow-page receipt-preview-page page-enter">
       <div class="flow-head compact-flow-head">
@@ -647,12 +653,12 @@
 
       <article class="receipt-paper ${isVoucherSale ? "is-voucher-sale" : ""}">
         <header>
-          <strong>${escapeHtml(data.company.name)}</strong>
-          <span>${escapeHtml(data.company.owner || "")}</span>
-          <small>${escapeHtml(data.company.street || "")}</small>
-          <small>${escapeHtml(data.company.city || "")}</small>
-          <small>Steuernummer: ${escapeHtml(data.company.taxNumber || "nicht hinterlegt")}</small>
-          ${data.company.vatId ? `<small>USt-IdNr.: ${escapeHtml(data.company.vatId)}</small>` : ""}
+          <strong>${escapeHtml(receiptIssuer.name)}</strong>
+          <span>${escapeHtml(receiptIssuer.owner || "")}</span>
+          <small>${escapeHtml(receiptIssuer.street || "")}</small>
+          <small>${escapeHtml(addressCityLine(receiptIssuer))}</small>
+          <small>Steuernummer: ${escapeHtml(receiptIssuer.taxNumber || "nicht hinterlegt")}</small>
+          ${receiptIssuer.vatId ? `<small>USt-IdNr.: ${escapeHtml(receiptIssuer.vatId)}</small>` : ""}
         </header>
 
         <div class="receipt-paper-meta">
@@ -1263,19 +1269,37 @@
     return [parts[0], "••••", parts.at(-1)].join("-");
   };
 
+  function currentServiceLocation() {
+    return data.serviceLocations.find(location => location.id === data.defaultServiceLocationId)
+      ?? data.serviceLocations[0]
+      ?? { id: "location-default", mode: "company" };
+  }
+
   function currentVoucherPresentationSnapshot() {
+    const location = currentServiceLocation();
+    const issuer = {
+      name: data.company.name,
+      owner: data.company.owner || "",
+      street: data.company.street || "",
+      zip: data.company.zip || "",
+      city: data.company.city || "",
+      country: data.company.country || "",
+      phone: data.company.phone || "",
+      email: data.company.email || "",
+      taxNumber: data.company.taxNumber || "",
+      vatId: data.company.vatId || ""
+    };
     return {
-      issuer: {
-        name: data.company.name,
-        owner: data.company.owner || "",
-        street: data.company.street || "",
-        city: data.company.city || ""
-      },
-      redemptionLocation: {
-        name: data.voucherDemoRedemptionLocation?.name || data.company.name,
-        street: data.voucherDemoRedemptionLocation?.street || data.company.street || "",
-        city: data.voucherDemoRedemptionLocation?.city || data.company.city || ""
-      }
+      issuer,
+      redemptionLocation: location.mode === "alternate" ? {
+        mode: "alternate",
+        name: location.name || "Leistungsort",
+        street: location.street || "",
+        zip: location.zip || "",
+        city: location.city || "",
+        phone: location.phone || "",
+        voucherNote: location.voucherNote || ""
+      } : { mode: "issuer" }
     };
   }
 
@@ -1284,8 +1308,10 @@
   }
 
   function sameVoucherAddress(issuer, redemptionLocation) {
+    if (redemptionLocation?.mode === "issuer") return true;
     const normalize = value => String(value || "").trim().toLocaleLowerCase("de-DE");
     return normalize(issuer.street) === normalize(redemptionLocation.street)
+      && normalize(issuer.zip || "") === normalize(redemptionLocation.zip || "")
       && normalize(issuer.city) === normalize(redemptionLocation.city);
   }
 
@@ -1508,6 +1534,7 @@
     const customer = data.customers.find(entry => entry.id === state.voucherSaleCustomerId) ?? null;
     const saleReceiptId = `receipt_${randomHex(12)}`;
     const saleReceiptNumber = nextReceiptNumber();
+    const presentationSnapshot = currentVoucherPresentationSnapshot();
     const customerSnapshot = customer ? {
       id: customer.id,
       name: customerName(customer),
@@ -1536,7 +1563,7 @@
         payment: voucherSalePaymentLabel(),
         customerId: customer?.id ?? null
       },
-      presentationSnapshot: currentVoucherPresentationSnapshot(),
+      presentationSnapshot,
       history: [
         { type: "sold", date: soldAt, time: soldTime, amount: issuedValue, balanceAfter: issuedValue, receiptNumber: saleReceiptNumber }
       ]
@@ -1553,6 +1580,7 @@
       payment: voucherSalePaymentLabel(),
       customer: customerSnapshot,
       voucherReference: voucher.reference,
+      presentationSnapshot,
       items: [{ title: "Gutschein", type: "voucher-sale", quantity: 1, unitPrice: issuedValue, total: issuedValue }],
       total: issuedValue,
       taxTreatment: "undetermined-prototype",
@@ -1747,13 +1775,14 @@
           <strong>${escapeHtml(presentation.issuer.name)}</strong>
           ${presentation.issuer.owner ? `<small>${escapeHtml(presentation.issuer.owner)}</small>` : ""}
           <small>${escapeHtml(presentation.issuer.street)}</small>
-          <small>${escapeHtml(presentation.issuer.city)}</small>
+          <small>${escapeHtml(addressCityLine(presentation.issuer))}</small>
         </div>
         ${addressesMatch ? `<div class="voucher-location-same"><span>Einlöseort</span><strong>Ausstelleradresse</strong><small>Einlösbar an der oben genannten Adresse.</small></div>` : `<div class="voucher-party-card is-redemption-location">
           <span>Einlösbar bei</span>
           <strong>${escapeHtml(presentation.redemptionLocation.name || "Leistungsort")}</strong>
           <small>${escapeHtml(presentation.redemptionLocation.street)}</small>
-          <small>${escapeHtml(presentation.redemptionLocation.city)}</small>
+          <small>${escapeHtml(addressCityLine(presentation.redemptionLocation))}</small>
+          ${presentation.redemptionLocation.voucherNote ? `<small>${escapeHtml(presentation.redemptionLocation.voucherNote)}</small>` : ""}
         </div>`}
       </section>
 
@@ -1792,7 +1821,7 @@
           <strong>${escapeHtml(presentation.issuer.name)}</strong>
           ${presentation.issuer.owner ? `<small>${escapeHtml(presentation.issuer.owner)}</small>` : ""}
           <small>${escapeHtml(presentation.issuer.street)}</small>
-          <small>${escapeHtml(presentation.issuer.city)}</small>
+          <small>${escapeHtml(addressCityLine(presentation.issuer))}</small>
         </header>
         ${voucher.displayName ? `<div class="voucher-sheet-recipient"><span>Name auf dem Gutschein</span><strong>${escapeHtml(voucher.displayName)}</strong></div>` : ""}
         <div class="voucher-sheet-value"><span>Wert</span><strong>${formatCurrency(voucher.issuedValue)}</strong></div>
@@ -1804,7 +1833,7 @@
         <div class="voucher-sheet-code"><span>Gutscheincode</span><strong>${escapeHtml(voucher.code)}</strong></div>
         <div class="voucher-sheet-location ${addressesMatch ? "is-same" : ""}">
           <span>Einlösbar bei</span>
-          ${addressesMatch ? `<strong>Ausstelleradresse</strong>` : `<strong>${escapeHtml(presentation.redemptionLocation.name || "Leistungsort")}</strong><small>${escapeHtml(presentation.redemptionLocation.street)}</small><small>${escapeHtml(presentation.redemptionLocation.city)}</small>`}
+          ${addressesMatch ? `<strong>Ausstelleradresse</strong>` : `<strong>${escapeHtml(presentation.redemptionLocation.name || "Leistungsort")}</strong><small>${escapeHtml(presentation.redemptionLocation.street)}</small><small>${escapeHtml(addressCityLine(presentation.redemptionLocation))}</small>${presentation.redemptionLocation.voucherNote ? `<small>${escapeHtml(presentation.redemptionLocation.voucherNote)}</small>` : ""}`}
         </div>
         <footer>Bitte Gutscheincode oder QR-Code bei der Einlösung vorzeigen.</footer>
       </article>
@@ -1812,6 +1841,120 @@
       <p class="prototype-note voucher-preview-controls">Die Vorlage enthält Demo-Daten. Der QR-Bereich ist technisch vorbereitet, aber in diesem UX-Block noch kein scanbarer Produktions-QR-Code.</p>
       <button class="button button-primary voucher-print-button voucher-preview-controls" type="button" data-action="voucher-print">Drucken / als PDF sichern</button>
     </section>`;
+  }
+
+  const settingsSections = [
+    { id: "settings-company", icon: "▣", title: "Unternehmensdaten", note: "Name, Anschrift und Kontaktdaten", available: true },
+    { id: "settings-location", icon: "⌖", title: "Leistungsort", note: "Standardort für Leistungen und Gutscheine", available: true },
+    { icon: "%", title: "Steuern und Belegangaben", note: "Noch nicht umgesetzt" },
+    { icon: "€", title: "Zahlungsarten", note: "Noch nicht umgesetzt" },
+    { icon: "◇", title: "Geschäftsbereiche", note: "Noch nicht umgesetzt" },
+    { icon: "◎", title: "Benutzer", note: "Noch nicht umgesetzt" },
+    { icon: "↥", title: "Backup und Wiederherstellung", note: "Noch nicht umgesetzt" },
+    { icon: "⇥", title: "Export", note: "Noch nicht umgesetzt" },
+    { icon: "↻", title: "Update", note: "Noch nicht umgesetzt" },
+    { icon: "T", title: "TSE-Vorbereitung", note: "Noch nicht umgesetzt" }
+  ];
+
+  function renderSettings() {
+    mainContent.innerHTML = `<section class="settings-overview page-enter">
+      <header class="settings-head">
+        <p class="eyebrow">Verwaltung</p>
+        <h1>Einstellungen</h1>
+        <p>Grunddaten des Betriebs zentral verwalten.</p>
+      </header>
+      <div class="settings-list" aria-label="Einstellungsbereiche">
+        ${settingsSections.map(section => section.available ? `<button class="settings-entry" type="button" data-route="${escapeHtml(section.id)}">
+          <span class="settings-entry-icon" aria-hidden="true">${escapeHtml(section.icon)}</span>
+          <span><strong>${escapeHtml(section.title)}</strong><small>${escapeHtml(section.note)}</small></span>
+          <span class="settings-entry-arrow" aria-hidden="true">›</span>
+        </button>` : `<article class="settings-entry is-pending" aria-label="${escapeHtml(section.title)} – noch nicht umgesetzt">
+          <span class="settings-entry-icon" aria-hidden="true">${escapeHtml(section.icon)}</span>
+          <span><strong>${escapeHtml(section.title)}</strong><small>${escapeHtml(section.note)}</small></span>
+          <span class="settings-pending-badge">Später</span>
+        </article>`).join("")}
+      </div>
+      <p class="prototype-note">Änderungen an den bedienbaren Bereichen bleiben nur bis zum Neuladen im Arbeitsspeicher.</p>
+    </section>`;
+  }
+
+  function renderCompanySettings() {
+    const company = data.company;
+    mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter">
+      <div class="flow-head compact-flow-head">
+        <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
+        <p class="eyebrow">Einstellungen</p>
+        <h1 class="flow-title">Unternehmensdaten</h1>
+        <p class="page-copy">Diese Angaben werden für neue Belege und Gutscheine vorbereitet.</p>
+      </div>
+      ${state.settingsNotice ? `<div class="settings-save-notice" role="status">${escapeHtml(state.settingsNotice)}</div>` : ""}
+      <form id="companySettingsForm" class="settings-form">
+        <section class="settings-form-card">
+          <h2>Unternehmen</h2>
+          <label class="setting-field full"><span>Firmenname oder Geschäftsbezeichnung</span><input name="name" autocomplete="organization" required value="${escapeHtml(company.name || "")}"></label>
+          <label class="setting-field full"><span>Vor- und Nachname des Inhabers</span><input name="owner" autocomplete="name" value="${escapeHtml(company.owner || "")}"></label>
+          <label class="setting-field full"><span>Straße und Hausnummer</span><input name="street" autocomplete="street-address" value="${escapeHtml(company.street || "")}"></label>
+          <label class="setting-field"><span>PLZ</span><input name="zip" inputmode="numeric" autocomplete="postal-code" value="${escapeHtml(company.zip || "")}"></label>
+          <label class="setting-field"><span>Ort</span><input name="city" autocomplete="address-level2" value="${escapeHtml(company.city || "")}"></label>
+          <label class="setting-field full"><span>Land</span><input name="country" autocomplete="country-name" value="${escapeHtml(company.country || "Deutschland")}"></label>
+        </section>
+        <section class="settings-form-card">
+          <h2>Kontakt und Belegangaben</h2>
+          <label class="setting-field"><span>Telefon <small>optional</small></span><input name="phone" type="tel" autocomplete="tel" value="${escapeHtml(company.phone || "")}"></label>
+          <label class="setting-field"><span>E-Mail <small>optional</small></span><input name="email" type="email" inputmode="email" autocomplete="email" value="${escapeHtml(company.email || "")}"></label>
+          <label class="setting-field"><span>Steuernummer</span><input name="taxNumber" autocomplete="off" value="${escapeHtml(company.taxNumber || "")}"></label>
+          <label class="setting-field"><span>USt-IdNr. <small>optional</small></span><input name="vatId" autocomplete="off" value="${escapeHtml(company.vatId || "")}"></label>
+        </section>
+        <section class="settings-form-card settings-logo-card">
+          <div class="settings-logo-placeholder" aria-hidden="true">Logo</div>
+          <div><h2>Unternehmenslogo</h2><p>Die Logoauswahl ist vorbereitet, in diesem Prototyp aber noch nicht verfügbar.</p></div>
+        </section>
+        <p class="prototype-note">Das Speichern gilt nur für diese Sitzung. Nach einem Reload stehen wieder die Demo-Daten bereit.</p>
+        <button class="button button-primary settings-save" type="submit">Änderungen speichern</button>
+      </form>
+    </section>`;
+  }
+
+  function renderServiceLocationSettings() {
+    const location = currentServiceLocation();
+    const alternate = location.mode === "alternate";
+    mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter">
+      <div class="flow-head compact-flow-head">
+        <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
+        <p class="eyebrow">Einstellungen</p>
+        <h1 class="flow-title">Leistungsort</h1>
+        <p class="page-copy">Für Version 1.0 wird genau ein Standard-Leistungsort verwendet.</p>
+      </div>
+      ${state.serviceLocationNotice ? `<div class="settings-save-notice" role="status">${escapeHtml(state.serviceLocationNotice)}</div>` : ""}
+      <form id="serviceLocationForm" class="settings-form">
+        <section class="settings-form-card">
+          <fieldset class="settings-location-choice">
+            <legend>Wo werden die Leistungen normalerweise erbracht?</legend>
+            <label><input type="radio" name="mode" value="company" ${alternate ? "" : "checked"}><span><strong>An der Unternehmensanschrift</strong><small>Gutscheine verwenden die hinterlegte Unternehmensanschrift.</small></span></label>
+            <label><input type="radio" name="mode" value="alternate" ${alternate ? "checked" : ""}><span><strong>An einem abweichenden Leistungsort</strong><small>Zum Beispiel in einem Salon oder einer Praxis.</small></span></label>
+          </fieldset>
+        </section>
+        <div class="settings-company-location-note" ${alternate ? "hidden" : ""}>Auf neuen Gutscheinen wird die Unternehmensanschrift als Einlöseort verwendet. Es wird keine zweite Adresse gespeichert.</div>
+        <fieldset class="settings-form-card settings-location-fields" ${alternate ? "" : "hidden"}>
+          <legend>Abweichender Leistungsort</legend>
+          <label class="setting-field full"><span>Bezeichnung des Ortes</span><input name="name" placeholder="z. B. Salon XY" value="${escapeHtml(location.name || "")}"></label>
+          <label class="setting-field full"><span>Straße und Hausnummer</span><input name="street" autocomplete="street-address" value="${escapeHtml(location.street || "")}"></label>
+          <label class="setting-field"><span>PLZ</span><input name="zip" inputmode="numeric" autocomplete="postal-code" value="${escapeHtml(location.zip || "")}"></label>
+          <label class="setting-field"><span>Ort</span><input name="city" autocomplete="address-level2" value="${escapeHtml(location.city || "")}"></label>
+          <label class="setting-field full"><span>Telefon <small>optional</small></span><input name="phone" type="tel" autocomplete="tel" value="${escapeHtml(location.phone || "")}"></label>
+          <label class="setting-field full"><span>Hinweis für Gutscheine <small>optional</small></span><textarea name="voucherNote" rows="3" placeholder="z. B. Einlösbar nach Terminvereinbarung">${escapeHtml(location.voucherNote || "")}</textarea></label>
+        </fieldset>
+        <p class="prototype-note">Keine Kartenintegration, Standortberechtigung oder Verwaltung mehrerer Orte. Änderungen gehen beim Neuladen verloren.</p>
+        <button class="button button-primary settings-save" type="submit">Leistungsort speichern</button>
+      </form>
+    </section>`;
+
+    const form = document.getElementById("serviceLocationForm");
+    form?.querySelectorAll('input[name="mode"]').forEach(input => input.addEventListener("change", () => {
+      const showAlternate = form.querySelector('input[name="mode"]:checked')?.value === "alternate";
+      form.querySelector(".settings-location-fields").hidden = !showAlternate;
+      form.querySelector(".settings-company-location-note").hidden = showAlternate;
+    }));
   }
 
   function renderPlaceholder(routeKey) {
@@ -1836,7 +1979,9 @@
       "voucher-detail",
       "voucher-preview",
       "voucher-sale",
-      "voucher-sale-success"
+      "voucher-sale-success",
+      "settings-company",
+      "settings-location"
     ].includes(state.route));
     if (state.route === "home") renderHome();
     else if (state.route === "receipts") renderReceipts();
@@ -1857,6 +2002,9 @@
     else if (state.route === "voucher-preview") renderVoucherPreview();
     else if (state.route === "voucher-sale") renderVoucherSale();
     else if (state.route === "voucher-sale-success") renderVoucherSaleSuccess();
+    else if (state.route === "settings") renderSettings();
+    else if (state.route === "settings-company") renderCompanySettings();
+    else if (state.route === "settings-location") renderServiceLocationSettings();
     else renderPlaceholder(state.route);
     const isFlow = flowRoutes.has(state.route);
     bottomNav.hidden = isFlow;
@@ -2172,6 +2320,8 @@
         state.customerPickerContext = state.route === "voucher-sale" ? "voucher" : "receipt";
         state.customerSearch = "";
       }
+      if (route.dataset.route === "settings-company" && state.route !== "settings-company") state.settingsNotice = "";
+      if (route.dataset.route === "settings-location" && state.route !== "settings-location") state.serviceLocationNotice = "";
       if (["vouchers", "voucher-detail", "voucher-preview"].includes(route.dataset.route)) state.voucherNotice = "";
       navigate(route.dataset.route);
       return;
@@ -2338,6 +2488,51 @@
   });
 
   document.addEventListener("submit", event => {
+    const companySettingsForm = event.target.closest("#companySettingsForm");
+    if (companySettingsForm) {
+      event.preventDefault();
+      const formData = new FormData(companySettingsForm);
+      Object.assign(data.company, {
+        name: String(formData.get("name") || "").trim(),
+        owner: String(formData.get("owner") || "").trim(),
+        street: String(formData.get("street") || "").trim(),
+        zip: String(formData.get("zip") || "").trim(),
+        city: String(formData.get("city") || "").trim(),
+        country: String(formData.get("country") || "Deutschland").trim() || "Deutschland",
+        phone: String(formData.get("phone") || "").trim(),
+        email: String(formData.get("email") || "").trim(),
+        taxNumber: String(formData.get("taxNumber") || "").trim(),
+        vatId: String(formData.get("vatId") || "").trim()
+      });
+      companyName.textContent = data.company.name;
+      state.settingsNotice = "Änderungen wurden für diese Sitzung übernommen. Nach einem Reload gehen sie verloren.";
+      renderCompanySettings();
+      return;
+    }
+
+    const serviceLocationForm = event.target.closest("#serviceLocationForm");
+    if (serviceLocationForm) {
+      event.preventDefault();
+      const formData = new FormData(serviceLocationForm);
+      const mode = formData.get("mode") === "alternate" ? "alternate" : "company";
+      const location = mode === "alternate" ? {
+        id: data.defaultServiceLocationId,
+        mode,
+        name: String(formData.get("name") || "").trim(),
+        street: String(formData.get("street") || "").trim(),
+        zip: String(formData.get("zip") || "").trim(),
+        city: String(formData.get("city") || "").trim(),
+        phone: String(formData.get("phone") || "").trim(),
+        voucherNote: String(formData.get("voucherNote") || "").trim()
+      } : { id: data.defaultServiceLocationId, mode: "company" };
+      const locationIndex = data.serviceLocations.findIndex(entry => entry.id === data.defaultServiceLocationId);
+      if (locationIndex >= 0) data.serviceLocations.splice(locationIndex, 1, location);
+      else data.serviceLocations.push(location);
+      state.serviceLocationNotice = "Leistungsort wurde für diese Sitzung übernommen. Nach einem Reload geht die Änderung verloren.";
+      renderServiceLocationSettings();
+      return;
+    }
+
     const voucherSaleForm = event.target.closest("#voucherSaleForm");
     if (voucherSaleForm) {
       event.preventDefault();

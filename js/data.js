@@ -1,21 +1,24 @@
 window.PROTOTYPE_DATA = Object.freeze({
-  version: "UX-021",
-  build: "2026-08-04",
+  version: "UX-022a",
+  build: "2026-08-06",
   company: {
     name: "Studio Beispiel",
     owner: "Angel Luzolo",
     street: "Musterstraße 12",
-    city: "12345 Musterstadt",
+    zip: "12345",
+    city: "Musterstadt",
+    country: "Deutschland",
+    phone: "0941 123456",
+    email: "studio@example.de",
     taxNumber: "123/456/78901",
     vatId: "",
     defaultTaxRate: 19,
     logo: null
   },
-  voucherDemoRedemptionLocation: {
-    name: "Studio Beispiel",
-    street: "Musterstraße 12",
-    city: "12345 Musterstadt"
-  },
+  defaultServiceLocationId: "location-default",
+  serviceLocations: [
+    { id: "location-default", mode: "company" }
+  ],
   businessAreas: [
     { id: "hair", label: "Friseur" },
     { id: "podiatry", label: "Podologie" }
@@ -313,6 +316,6 @@ window.PROTOTYPE_DATA = Object.freeze({
   placeholders: {
     receipts: { title: "Belege", icon: "▤", note: "Die Belegübersicht folgt in einem späteren UX-Block." },
     customers: { title: "Kunden", icon: "◎", note: "Kunden suchen, auswählen und neu anlegen." },
-    settings: { title: "Einstellungen", icon: "⚙", note: "Die Einstellungen folgen in einem späteren UX-Block." }
+    settings: { title: "Einstellungen", icon: "⚙", note: "Unternehmensdaten und Leistungsort können im Arbeitsspeicher bearbeitet werden." }
   }
 });
