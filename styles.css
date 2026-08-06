@@ -316,6 +316,7 @@ body.catalog-mode .main-content {
 }
 
 .catalog-product-grid .product-tile {
+  min-width: 0;
   min-height: 148px;
   padding: 15px;
   border-radius: 20px;
@@ -328,6 +329,8 @@ body.catalog-mode .main-content {
 }
 
 .catalog-product-grid .product-title {
+  max-width: 100%;
+  overflow-wrap: anywhere;
   font-size: 1rem;
 }
 
@@ -4243,4 +4246,71 @@ button.settings-entry:active {
   .service-location-active-toggle {
     padding-inline: 10px;
   }
+}
+
+/* PERSIST-001a – lokale Einstellungspersistenz */
+.persistence-loading {
+  min-height: min(58vh, 420px);
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  text-align: left;
+}
+.persistence-loading-spinner {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border: 3px solid var(--primary-soft);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: persistence-spin .7s linear infinite;
+}
+.persistence-loading strong { display: block; }
+.persistence-loading p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: .82rem;
+}
+@keyframes persistence-spin { to { transform: rotate(360deg); } }
+
+.settings-reset-card {
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid #f0c4c0;
+  border-radius: 18px;
+  background: #fffafa;
+  display: grid;
+  gap: 8px;
+}
+.settings-reset-card h2,
+.settings-reset-card p { margin: 0; }
+.settings-reset-card h2 { font-size: .95rem; }
+.settings-reset-card p {
+  color: var(--muted);
+  font-size: .76rem;
+  line-height: 1.45;
+}
+.settings-reset-card small {
+  color: var(--muted);
+  font-size: .7rem;
+  line-height: 1.4;
+}
+.settings-reset-card .button {
+  width: 100%;
+  margin-top: 4px;
+}
+.button:disabled,
+button:disabled {
+  cursor: wait;
+  opacity: .62;
+}
+
+@media (prefers-reduced-motion:reduce) {
+  .persistence-loading-spinner { animation: none; }
 }

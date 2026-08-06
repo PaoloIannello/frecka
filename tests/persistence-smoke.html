@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FRECKA – PERSIST-001a Smoke-Test</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f4f5f7;
+      color: #202329;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 24px 16px 48px;
+    }
+
+    main {
+      width: min(760px, 100%);
+      margin: 0 auto;
+    }
+
+    h1 { margin: 0 0 8px; font-size: clamp(1.55rem, 5vw, 2.2rem); }
+    p { line-height: 1.5; }
+
+    .panel {
+      margin-top: 18px;
+      padding: 18px;
+      border: 1px solid #d9dde4;
+      border-radius: 14px;
+      background: #fff;
+      box-shadow: 0 8px 28px rgba(25, 32, 45, 0.06);
+    }
+
+    .run-meta {
+      display: grid;
+      gap: 5px;
+      overflow-wrap: anywhere;
+    }
+
+    .run-meta code { font-size: 0.82rem; }
+
+    button {
+      min-height: 46px;
+      margin-top: 14px;
+      padding: 10px 16px;
+      border: 0;
+      border-radius: 10px;
+      background: #243750;
+      color: #fff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:disabled { cursor: wait; opacity: 0.62; }
+
+    .summary {
+      margin: 0;
+      font-weight: 750;
+    }
+
+    .summary.is-pass { color: #17633a; }
+    .summary.is-fail { color: #a32a2a; }
+
+    .results {
+      display: grid;
+      gap: 10px;
+      margin: 16px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .result {
+      padding: 12px 14px;
+      border: 1px solid #d9dde4;
+      border-left-width: 5px;
+      border-radius: 10px;
+      background: #fafbfc;
+    }
+
+    .result.is-pass { border-left-color: #278354; }
+    .result.is-fail { border-left-color: #c13e3e; }
+    .result strong { display: block; }
+
+    details { margin-top: 8px; }
+    pre {
+      max-width: 100%;
+      overflow: auto;
+      padding: 10px;
+      border-radius: 8px;
+      background: #eef0f3;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-size: 0.78rem;
+    }
+
+    .note { color: #59616d; font-size: 0.92rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>PERSIST-001a Smoke-Test</h1>
+    <p>Native Browserprüfung der zentralen IndexedDB-Persistenz. Es werden ausschließlich zufällig benannte Testdatenbanken verwendet und am Ende des Laufs wieder gelöscht.</p>
+
+    <section class="panel run-meta" aria-label="Testlauf">
+      <strong>Produktionsdatenbank bleibt unberührt</strong>
+      <span>Produktiv: <code>frecka</code></span>
+      <span>Aktueller Test: <code id="databaseName">noch nicht gestartet</code></span>
+      <button id="runTests" type="button">Tests erneut ausführen</button>
+    </section>
+
+    <section class="panel" aria-labelledby="resultTitle">
+      <h2 id="resultTitle">Ergebnis</h2>
+      <p id="summary" class="summary" aria-live="polite">Testlauf wird vorbereitet …</p>
+      <ol id="results" class="results"></ol>
+      <p id="cleanupNote" class="note"></p>
+    </section>
+  </main>
+
+  <script src="../js/persistence.js"></script>
+  <script src="persistence-smoke.js"></script>
+</body>
+</html>

@@ -63,7 +63,7 @@ Neue Funktionen werden nur aufgenommen, wenn sie den einfachen Kernablauf für d
 - Web App Manifest;
 - statische Auslieferung.
 
-Der Prototyp besitzt derzeit keine echte Datenbank und simuliert Geschäftsdaten im Arbeitsspeicher. Diese Einschränkung darf nicht mit der Zielarchitektur verwechselt werden.
+Seit PERSIST-001a speichert der Prototyp die vollständigen Einstellungen über eine zentrale, versionierte IndexedDB-Schicht. Kunden, Belege, Gutscheine, Historien, Entwürfe und Kataloge bleiben bis zu ihren jeweiligen Persistenzblöcken ausschließlich im Arbeitsspeicher. Dieser Zwischenstand darf nicht mit der vollständigen Zielarchitektur verwechselt werden.
 
 ### Verbindliche Zielbasis
 
@@ -88,7 +88,7 @@ Ein Build-System, Framework, eine UI-Bibliothek oder zusätzliche Backend-Kompon
 
 ## 7. Datenhaltung
 
-IndexedDB ist die zukünftige Hauptdatenbank. Sie enthält alle operativen Geschäftsdaten, darunter insbesondere Einstellungen, Kataloge, Kunden, Belegentwürfe, abgeschlossene Belege, Gutscheine und erforderliche Änderungsinformationen.
+IndexedDB ist die verbindliche Hauptdatenbank. Einstellungen werden seit PERSIST-001a darin gespeichert; Kataloge, Kunden, Belegentwürfe, abgeschlossene Belege, Gutscheine und erforderliche Änderungsinformationen folgen in getrennten, ausdrücklich beauftragten Persistenzblöcken.
 
 Verbindliche Regeln:
 

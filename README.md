@@ -1,26 +1,28 @@
-# Mobiles Beleg-Tool – UX-004b
+# FRECKA – PERSIST-001a
 
-Klickbarer UX-Prototyp für den schnellen Arbeitsmodus.
+Klickbarer UX-Prototyp mit lokaler IndexedDB-Persistenz für die vollständigen Einstellungen.
 
 ## Start
 
-`index.html` im Browser bzw. die ZIP-Datei bei Netlify Drop veröffentlichen.
+Über einen lokalen HTTP-Server oder ein HTTPS-Testdeployment öffnen. Ein direkter `file://`-Start ist für verlässliche IndexedDB-Tests nicht vorgesehen.
 
 ## Kernablauf
 
 Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufklappen und bearbeiten → Weiter → Kunde optional und Zahlungsart simulieren → Demo abschließen.
 
-## Neu
+## Neu in PERSIST-001a
 
-- Live-Beleg mit Mengensteuerung
-- direktes Entfernen von Positionen
-- gewählte Mengen auf den Leistungskacheln
-- Kunde und Zahlungsart auf einer gemeinsamen Abschlussseite
-- keine künstliche Schrittanzeige
+- zentrale, versionierte IndexedDB-Schicht für Einstellungen
+- asynchroner Start mit Lade- und Fehlerzustand
+- dauerhafte Unternehmens-, Leistungsort-, Steuer-, Beleg-, Zahlungsarten- und Geschäftsbereichseinstellungen
+- persistierter Ersteinrichtungsstatus
+- sicherer Reset ausschließlich der gespeicherten Einstellungen
 
 ## Nicht umgesetzt
 
-Keine Datenbank, Speicherung, echte Kundensuche, Zahlung, PDF, E-Mail, QR-Code oder Fiskalisierung.
+Noch keine Persistenz für Kunden, Belege, Gutscheine, Historien, Entwürfe oder Kataloge. Keine echte Zahlung, PDF-Erzeugung, E-Mail, produktiver QR-Scan, TSE oder Fiskalisierung.
+
+Der Datenbankvertrag, Fehlerpfade und die ausführbaren Prüfungen sind in `docs/persistence.md` dokumentiert.
 
 
 ## Ergänzung UX-004b

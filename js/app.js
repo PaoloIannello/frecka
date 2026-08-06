@@ -1,17 +1,13 @@
-(() => {
+(async () => {
   "use strict";
   const data = window.PROTOTYPE_DATA;
-  const receiptNumberPrefix = String(data.receiptSettings?.yearPrefix || new Date().getFullYear());
-  const initialReceiptCounter = [...data.receipts, ...data.vouchers.map(voucher => ({ number: voucher.saleReceipt?.number }))].reduce((highest, receipt) => {
-    const [prefix, sequence] = String(receipt.number || "").split("-");
-    const match = prefix === receiptNumberPrefix && /^\d{6}$/.test(sequence || "") ? Number(sequence) : null;
-    return match !== null ? Math.max(highest, match) : highest;
-  }, Math.max(0, Number(data.receiptSettings?.nextNumber || 1) - 1));
+  const persistence = globalThis.FRECKA_PERSISTENCE;
+  const defaultSettingsRecord = persistence?.snapshotSettings
+    ? persistence.snapshotSettings(data, "not-started")
+    : null;
   const state = {
     route: "home",
-    activeBusinessArea: data.businessAreas.find(area => area.active !== false && area.isDefault)?.id
-      ?? data.businessAreas.find(area => area.active !== false)?.id
-      ?? null,
+    activeBusinessArea: null,
     activeCategory: "favorites",
     search: "",
     openReceiptVisible: Boolean(data.openReceipt?.exists),
@@ -40,7 +36,7 @@
     receiptDetailNumber: null,
     receiptPreviewNumber: null,
     receiptPreviewReturnRoute: "receipt-success",
-    receiptCounter: initialReceiptCounter,
+    receiptCounter: 0,
     creditMode: "full",
     creditAmount: "",
     creditText: "Korrektur / Kulanz",
@@ -80,9 +76,12 @@
     setupStep: 1,
     setupNotice: "",
     setupFirstStartVisible: true,
-    setupCompleted: false,
+    setup: { status: "not-started" },
     setupTestPreviewVisible: false,
-    pendingBusinessTemplate: ""
+    pendingBusinessTemplate: "",
+    settingsReady: false,
+    settingsStorageNotice: "",
+    settingsStorageNoticeIsError: false
   };
 
   const mainContent = document.getElementById("mainContent");
@@ -112,6 +111,149 @@
 
   const activeBusinessAreas = () => data.businessAreas.filter(area => area.active !== false);
   const defaultBusinessArea = () => activeBusinessAreas().find(area => area.isDefault) ?? activeBusinessAreas()[0] ?? null;
+
+  const validSetupStatuses = new Set(["not-started", "started", "completed"]);
+  let pendingSettingsWrites = 0;
+  let currentHistoryIndex = Number.isInteger(history.state?.freckaIndex) ? history.state.freckaIndex : 0;
+
+  function cloneSettingsValue(value) {
+    if (typeof structuredClone === "function") return structuredClone(value);
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function replaceSettingsArray(target, source) {
+    target.splice(0, target.length, ...source.map(entry => cloneSettingsValue(entry)));
+  }
+
+  function applySettingsRecord(record) {
+    const existingAreaLogos = new Map(data.businessAreas.map(area => [area.id, area.logo ?? null]));
+    Object.assign(data.company, cloneSettingsValue(record.company));
+    replaceSettingsArray(data.serviceLocations, record.serviceLocations);
+    replaceSettingsArray(data.businessAreas, record.businessAreas.map(area => ({
+      ...area,
+      logo: existingAreaLogos.get(area.id) ?? null
+    })));
+    data.businessAreas.forEach(area => {
+      if (!Array.isArray(data.catalog[area.id])) data.catalog[area.id] = [];
+    });
+    Object.assign(data.taxSettings, {
+      status: record.taxSettings.status,
+      defaultRate: record.taxSettings.defaultRate
+    });
+    replaceSettingsArray(data.taxSettings.rates, record.taxSettings.rates);
+    Object.assign(data.receiptSettings, cloneSettingsValue(record.receiptSettings));
+    replaceSettingsArray(data.paymentChoices, record.paymentChoices);
+    state.setup.status = validSetupStatuses.has(record.setup?.status) ? record.setup.status : "not-started";
+  }
+
+  function calculateReceiptCounter() {
+    const prefix = String(data.receiptSettings?.yearPrefix || new Date().getFullYear());
+    return [...data.receipts, ...data.vouchers.map(voucher => ({ number: voucher.saleReceipt?.number }))].reduce((highest, receipt) => {
+      const [receiptPrefix, sequence] = String(receipt.number || "").split("-");
+      const match = receiptPrefix === prefix && /^\d{6}$/.test(sequence || "") ? Number(sequence) : null;
+      return match !== null ? Math.max(highest, match) : highest;
+    }, Math.max(0, Number(data.receiptSettings?.nextNumber || 1) - 1));
+  }
+
+  function refreshSettingsDerivedState() {
+    state.receiptCounter = calculateReceiptCounter();
+    state.activeBusinessArea = defaultBusinessArea()?.id ?? null;
+    state.catalogManagerAreaId = state.activeBusinessArea;
+    state.paymentChoice = preferredNormalPaymentId() || activePaymentChoices()[0]?.id || "cash";
+    state.checkoutVoucherRemainderPayment = preferredNormalPaymentId() || "cash";
+    state.voucherSalePaymentChoice = preferredNormalPaymentId() || "cash";
+    state.setupFirstStartVisible = state.setup.status !== "completed";
+    if (state.setup.status === "completed") state.setupStep = setupSteps.length;
+  }
+
+  function settingsWriteControls() {
+    return [...document.querySelectorAll([
+      ".settings-form button", ".settings-form input", ".settings-form select", ".settings-form textarea",
+      "[data-payment-toggle]", "[data-payment-move]", "[data-setup-back]", "[data-setup-cancel]",
+      "[data-action='business-area-add']", "[data-template-choice]", "[data-action='template-use']",
+      "[data-action='template-empty']", "[data-action='settings-reset']", "[data-route]",
+      "#businessSwitcher", "#bottomSheetClose", "#cancelDiscard", "#confirmDiscard"
+    ].join(","))];
+  }
+
+  function setSettingsWritePending(pending) {
+    settingsWriteControls().forEach(control => {
+      if (pending) {
+        if (!control.hasAttribute("data-settings-disabled-before-write")) {
+          control.dataset.settingsDisabledBeforeWrite = control.disabled ? "true" : "false";
+        }
+        control.disabled = true;
+        control.setAttribute("aria-busy", "true");
+        return;
+      }
+      if (!control.hasAttribute("data-settings-disabled-before-write")) return;
+      control.disabled = control.dataset.settingsDisabledBeforeWrite === "true";
+      delete control.dataset.settingsDisabledBeforeWrite;
+      control.removeAttribute("aria-busy");
+    });
+  }
+
+  document.addEventListener("click", event => {
+    if (!pendingSettingsWrites) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, true);
+
+  function persistenceErrorMessage(error, fallback = "Die Einstellungen konnten nicht lokal gespeichert werden.") {
+    return typeof error?.userMessage === "string" && error.userMessage ? error.userMessage : fallback;
+  }
+
+  function logPersistenceError(operation, error) {
+    console.error(`[FRECKA] ${operation}: ${error?.code || error?.name || "UNKNOWN"}`);
+  }
+
+  async function persistCurrentSettings() {
+    if (!persistence?.snapshotSettings || !persistence?.normalizeSettingsRecord || !persistence?.writeSettings || !defaultSettingsRecord) {
+      const error = new Error("Lokale Speicherung ist derzeit nicht verfügbar.");
+      error.name = "PersistenceUnavailableError";
+      error.code = "PERSISTENCE_UNAVAILABLE";
+      error.userMessage = "Lokale Speicherung ist derzeit nicht verfügbar. Deine Eingaben bleiben bis zum Schließen der App erhalten.";
+      throw error;
+    }
+    pendingSettingsWrites += 1;
+    setSettingsWritePending(true);
+    try {
+      const snapshot = persistence.snapshotSettings(data, state.setup.status);
+      const normalizedRecord = persistence.normalizeSettingsRecord(snapshot, defaultSettingsRecord, persistence.tenantId).record;
+      const writtenRecord = await persistence.writeSettings(normalizedRecord);
+      applySettingsRecord(normalizedRecord);
+      state.settingsStorageNotice = "";
+      state.settingsStorageNoticeIsError = false;
+      return writtenRecord;
+    } catch (error) {
+      logPersistenceError("Einstellungen speichern fehlgeschlagen", error);
+      throw error;
+    } finally {
+      pendingSettingsWrites = Math.max(0, pendingSettingsWrites - 1);
+      if (!pendingSettingsWrites) setSettingsWritePending(false);
+    }
+  }
+
+  function renderSettingsLoading() {
+    mainContent.setAttribute("aria-busy", "true");
+    bottomNav.setAttribute("aria-busy", "true");
+    bottomNav.querySelectorAll("button").forEach(button => { button.disabled = true; });
+    mainContent.innerHTML = `<section class="persistence-loading" role="status" aria-live="polite" aria-busy="true"><span class="persistence-loading-spinner" aria-hidden="true"></span><div><strong>FRECKA wird vorbereitet</strong><p>Lokale Einstellungen werden geladen …</p></div></section>`;
+  }
+
+  async function loadSettingsForStart() {
+    if (!persistence?.openDatabase || !persistence?.readSettings || !persistence?.normalizeSettingsRecord || !defaultSettingsRecord) {
+      const error = new Error("Die Persistenzschicht wurde nicht geladen.");
+      error.code = "PERSISTENCE_UNAVAILABLE";
+      error.userMessage = "Lokale Einstellungen konnten nicht geladen werden. FRECKA verwendet sichere Standardwerte.";
+      throw error;
+    }
+    await persistence.openDatabase();
+    const savedRecord = await persistence.readSettings();
+    const normalized = persistence.normalizeSettingsRecord(savedRecord, defaultSettingsRecord, persistence.tenantId);
+    applySettingsRecord(normalized.record);
+    return { firstStart: savedRecord === null, repairs: normalized.repairs };
+  }
 
   const catalogCategories = (areaId, activeOnly = false) => data.categories
     .filter(category => category.businessAreaId === areaId && (!activeOnly || category.active !== false))
@@ -186,6 +328,10 @@
   function initHeader() {
     refreshBusinessSwitcher();
     switcher.addEventListener("change", event => {
+      if (pendingSettingsWrites) {
+        event.target.value = state.activeBusinessArea || "";
+        return;
+      }
       state.activeBusinessArea = event.target.value;
       state.activeCategory = "favorites";
       state.cart = [];
@@ -200,7 +346,7 @@
       <p>${data.openReceipt.itemCount} Positionen · ${escapeHtml(data.openReceipt.customer)} · ${escapeHtml(data.openReceipt.lastEdited)}</p>
       <div class="open-receipt-actions"><button class="button button-secondary" type="button" data-action="resume-receipt">Weiter bearbeiten</button><button class="button button-ghost" type="button" data-action="discard-receipt">Verwerfen</button></div>
     </section>` : "";
-    mainContent.innerHTML = `<div class="home-layout page-enter">${state.setupFirstStartVisible ? setupStartHint() : ""}<section class="hero-card"><p class="eyebrow">${escapeHtml(getAreaLabel())}</p><h1>Was möchtest du erfassen?</h1><p class="hero-copy">Leistungen und Produkte direkt auswählen.</p><button class="button button-primary" type="button" data-action="new-receipt"><span aria-hidden="true">＋</span><span>Neuer Beleg</span></button></section>${openReceipt}</div>`;
+    mainContent.innerHTML = `<div class="home-layout page-enter">${state.settingsStorageNotice ? `<div class="settings-save-notice ${state.settingsStorageNoticeIsError ? "is-error" : ""}" role="${state.settingsStorageNoticeIsError ? "alert" : "status"}">${escapeHtml(state.settingsStorageNotice)}</div>` : ""}${state.setupFirstStartVisible ? setupStartHint() : ""}<section class="hero-card"><p class="eyebrow">${escapeHtml(getAreaLabel())}</p><h1>Was möchtest du erfassen?</h1><p class="hero-copy">Leistungen und Produkte direkt auswählen.</p><button class="button button-primary" type="button" data-action="new-receipt"><span aria-hidden="true">＋</span><span>Neuer Beleg</span></button></section>${openReceipt}</div>`;
   }
 
   function catalogItems() {
@@ -2223,7 +2369,7 @@
   }
 
   const helpTopics = {
-    company: ["Unternehmensdaten", ["Diese Angaben erscheinen auf neuen Belegen und Gutscheinen.", "Pflichtangaben sollten vor dem ersten echten Beleg vollständig geprüft werden.", "Änderungen gelten im Prototyp nur bis zum Neuladen."]],
+    company: ["Unternehmensdaten", ["Diese Angaben erscheinen auf neuen Belegen und Gutscheinen.", "Pflichtangaben sollten vor dem ersten echten Beleg vollständig geprüft werden.", "Änderungen werden lokal auf diesem Gerät gespeichert."]],
     location: ["Leistungsorte", ["Leistungsorte beschreiben, wo deine Leistungen tatsächlich erbracht werden.", "Die Unternehmensanschrift bleibt unabhängig davon bestehen."]],
     taxes: ["Steuerstatus", ["Wähle den Status, der für dein Unternehmen fachlich bestätigt wurde.", "FRECKA nimmt keine steuerliche Bewertung vor.", "Unsichere Angaben solltest du mit Steuerberatung oder Finanzamt klären."]],
     business: ["Geschäftsbereiche", ["Geschäftsbereiche trennen unterschiedliche Angebote innerhalb derselben Instanz.", "Mindestens ein Bereich muss aktiv und als Standard gewählt sein.", "Sie sind keine Filialen und besitzen keine eigene Rechteverwaltung."]],
@@ -2401,9 +2547,10 @@
     openBottomSheet("Vorlage angelegt", `<div class="template-import-success"><p>${escapeHtml(message)}</p><button class="button button-primary" type="button" data-action="template-edit-catalog">Leistungen und Preise prüfen</button><button class="button button-secondary" type="button" data-action="template-later">Später</button></div>`);
   }
 
-  function addBusinessArea(label, templateKey = null) {
+  async function addBusinessArea(label, templateKey = null) {
     const id = `area-${Date.now()}`;
     const initialLocation = data.serviceLocations.find(serviceLocationAvailable) ?? null;
+    if (initialLocation && !initialLocation.businessAreaIds.includes(id)) initialLocation.businessAreaIds.push(id);
     data.businessAreas.push({ id, label, visibleName: "", logoMode: "company", logo: null, active: true, isDefault: false, defaultServiceLocationId: initialLocation?.id ?? null });
     if (initialLocation && !initialLocation.businessAreaIds.includes(id)) initialLocation.businessAreaIds.push(id);
     data.catalog[id] = [];
@@ -2411,6 +2558,20 @@
     const message = importResult
       ? `${label} wurde mit ${importResult.itemsAdded} Startereinträgen angelegt. Preise und Steuersätze müssen noch geprüft werden.`
       : `${label} wurde ohne Vorlage angelegt. Name und Standard können jetzt angepasst werden.`;
+    try {
+      await persistCurrentSettings();
+    } catch (error) {
+      const errorMessage = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`;
+      closeBottomSheet();
+      if (state.route === "setup-wizard") {
+        state.setupNotice = errorMessage;
+        renderSetupWizard();
+      } else {
+        state.businessAreaSettingsNotice = errorMessage;
+        renderBusinessAreaSettings();
+      }
+      return false;
+    }
     if (state.route === "setup-wizard") {
       state.setupNotice = "";
       state.businessAreaSettingsNotice = message;
@@ -2421,6 +2582,7 @@
       if (templateKey) openTemplateImportSuccess(id);
       else { closeBottomSheet(); renderBusinessAreaSettings(); }
     }
+    return true;
   }
 
   const settingsSections = [
@@ -2752,7 +2914,7 @@
       case 9: return `<div class="setup-info-card"><div class="setup-info-symbol" aria-hidden="true">T</div><h2>TSE kommt später</h2><p>FRECKA hat in diesem Prototyp noch keine TSE-Anbindung. Ob eine TSE erforderlich ist, wird hier nicht automatisch beurteilt.</p><p>Vor produktiver Nutzung als elektronisches Aufzeichnungssystem muss die konkrete Pflicht fachlich geprüft werden. Die spätere TSE-Einrichtung erhält einen eigenen Assistenten.</p><button class="button button-primary" type="button" data-setup-tse>Verstanden</button><button class="button button-secondary" type="button" data-setup-tse>Später in Einstellungen prüfen</button></div><div class="setup-actions"><button class="button button-secondary" type="button" data-setup-back>Zurück</button><button class="setup-cancel" type="button" data-setup-cancel>Assistent abbrechen</button></div>`;
       case 10: return `${setupSummary()}${setupActions("Weiter zum Testbeleg")}`;
       case 11: return `<div class="setup-info-card"><h2>Jetzt einen Testbeleg erstellen</h2><p>Die Vorschau verwendet deine aktuellen Angaben, erzeugt aber keinen echten Beleg.</p><button class="button button-secondary" type="button" data-setup-test>${state.setupTestPreviewVisible ? "Vorschau aktualisieren" : "Testbeleg-Vorschau anzeigen"}</button></div>${state.setupTestPreviewVisible ? setupTestReceipt() : ""}${setupActions(state.setupTestPreviewVisible ? "Einrichtung abschließen" : "Testbeleg überspringen")}`;
-      case 12: return `<div class="setup-finished"><div class="setup-welcome-symbol" aria-hidden="true">✓</div><h2>FRECKA ist startklar.</h2><p>Du kannst jetzt direkt deinen ersten Beleg erstellen.</p><small>Die Daten werden in diesem Prototyp nach einem Reload zurückgesetzt.</small><button class="button button-primary" type="button" data-action="new-receipt">Jetzt ersten Beleg erstellen</button><button class="button button-secondary" type="button" data-route="settings">Einstellungen öffnen</button></div>`;
+      case 12: return `<div class="setup-finished"><div class="setup-welcome-symbol" aria-hidden="true">✓</div><h2>FRECKA ist startklar.</h2><p>Du kannst jetzt direkt deinen ersten Beleg erstellen.</p><small>Deine Einstellungen sind lokal auf diesem Gerät gespeichert.</small><button class="button button-primary" type="button" data-action="new-receipt">Jetzt ersten Beleg erstellen</button><button class="button button-secondary" type="button" data-route="settings">Einstellungen öffnen</button></div>`;
       default: return "";
     }
   }
@@ -2838,8 +3000,9 @@
         <h1>Einstellungen</h1>
         <p>Grunddaten des Betriebs zentral verwalten.</p>
       </header>
+      ${state.settingsStorageNotice ? `<div class="settings-save-notice ${state.settingsStorageNoticeIsError ? "is-error" : ""}" role="${state.settingsStorageNoticeIsError ? "alert" : "status"}">${escapeHtml(state.settingsStorageNotice)}</div>` : ""}
       ${state.setupFirstStartVisible ? setupStartHint() : ""}
-      <button class="button button-secondary setup-restart" type="button" data-action="setup-start">${state.setupCompleted ? "Ersteinrichtung erneut starten" : "Ersteinrichtung starten"}</button>
+      <button class="button button-secondary setup-restart" type="button" data-action="setup-start">${state.setup.status === "completed" ? "Ersteinrichtung erneut starten" : state.setup.status === "started" ? "Ersteinrichtung fortsetzen" : "Ersteinrichtung starten"}</button>
       <div class="settings-list" aria-label="Einstellungsbereiche">
         ${settingsSections.map(section => section.available ? `<button class="settings-entry" type="button" data-route="${escapeHtml(section.id)}">
           <span class="settings-entry-icon" aria-hidden="true">${escapeHtml(section.icon)}</span>
@@ -2851,7 +3014,8 @@
           <span class="settings-entry-tools">${section.help ? helpButton(section.help, section.title) : ""}<span class="settings-pending-badge">Geplant</span></span>
         </article>`).join("")}
       </div>
-      <p class="prototype-note">Änderungen an den bedienbaren Bereichen bleiben nur bis zum Neuladen im Arbeitsspeicher.</p>
+      <section class="settings-reset-card"><h2>Lokale Einstellungen</h2><p>Unternehmensdaten, Leistungsorte, Steuern, Zahlungsarten und Geschäftsbereiche werden ausschließlich auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="settings-reset">Gespeicherte Einstellungen zurücksetzen</button><small>Kunden, Belege, Gutscheine und Kataloge werden dadurch nicht gelöscht.</small></section>
+      <p class="prototype-note">Kunden, Belege, Gutscheine und Kataloge bleiben in diesem Entwicklungsblock weiterhin im Arbeitsspeicher.</p>
     </section>`;
   }
 
@@ -2864,7 +3028,7 @@
         <h1 class="flow-title">Unternehmensdaten</h1>
         <p class="page-copy">Diese Angaben werden für neue Belege und Gutscheine vorbereitet.</p>
       </div>
-      ${state.settingsNotice ? `<div class="settings-save-notice ${state.settingsNotice.startsWith("Bitte") ? "is-error" : ""}" role="status">${escapeHtml(state.settingsNotice)}</div>` : ""}
+      ${state.settingsNotice ? `<div class="settings-save-notice ${state.settingsNotice.startsWith("Bitte") || state.settingsNotice.startsWith("Lokales") ? "is-error" : ""}" role="status">${escapeHtml(state.settingsNotice)}</div>` : ""}
       <form id="companySettingsForm" class="settings-form">
         <section class="settings-form-card">
           ${cardTitle("Unternehmensdaten", "company")}
@@ -2889,7 +3053,7 @@
           <div class="logo-recommendations"><strong>Empfohlene Formate</strong><span>PNG · JPG · SVG</span><strong>Empfohlene Größe</strong><span>quadratisch · mindestens 600 × 600 Pixel · maximal 5 MB</span><small>Transparenter PNG-Hintergrund empfohlen.</small></div>
           <p class="company-logo-default-note">Dieses Logo wird standardmäßig auf allen Belegen, Gutscheinen und PDF-Dokumenten verwendet.<br>Geschäftsbereiche mit eigenem Logo überschreiben diese Einstellung.</p>
         </section>
-        <p class="prototype-note">Das Speichern gilt nur für diese Sitzung. Nach einem Reload stehen wieder die Demo-Daten bereit.</p>
+        <p class="prototype-note">Unternehmensdaten werden lokal auf diesem Gerät gespeichert. Die Logoauswahl bleibt eine nicht gespeicherte Simulation.</p>
         <button class="button button-primary settings-save" type="submit">Änderungen speichern</button>
       </form>
     </section>`;
@@ -2907,7 +3071,7 @@
         <h1 class="flow-title">Leistungsorte</h1>
         <p class="page-copy">Orte verwalten und den passenden Geschäftsbereichen zuordnen.</p>
       </div>
-      ${state.serviceLocationNotice ? `<div class="settings-save-notice" role="status">${escapeHtml(state.serviceLocationNotice)}</div>` : ""}
+      ${state.serviceLocationNotice ? `<div class="settings-save-notice ${state.serviceLocationNotice.startsWith("Lokales") ? "is-error" : ""}" role="status">${escapeHtml(state.serviceLocationNotice)}</div>` : ""}
       <section class="service-location-explanation">${cardTitle("Leistungsorte", "location")}<p>Leistungsorte beschreiben, wo deine Leistungen tatsächlich erbracht werden. Die Unternehmensanschrift bleibt unabhängig davon bestehen.</p></section>
       <div class="company-location-state ${data.company.useAsServiceLocation !== false ? "is-active" : "is-inactive"}"><strong>${data.company.useAsServiceLocation !== false ? "✓ Unternehmensanschrift kann als Leistungsort verwendet werden" : "Unternehmensanschrift wird nur als Unternehmensanschrift verwendet"}</strong><button type="button" data-route="settings-company">Ändern</button></div>
       <div class="service-location-list">${data.serviceLocations.map(location => {
@@ -2921,7 +3085,7 @@
         </article>`;
       }).join("")}</div>
       <button class="button button-primary service-location-add" type="button" data-action="service-location-add">＋ Leistungsort anlegen</button>
-      <p class="prototype-note">Keine Karten, GPS-Daten, Standortberechtigungen oder Filialverwaltung. Änderungen gelten nur in dieser Sitzung.</p>
+      <p class="prototype-note">Keine Karten, GPS-Daten, Standortberechtigungen oder Filialverwaltung. Leistungsorte werden lokal auf diesem Gerät gespeichert.</p>
     </section>`;
   }
 
@@ -2938,7 +3102,7 @@
     const ownAddress = location.addressMode === "own";
     mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter">
       <div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-action="service-location-editor-cancel"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">Leistungsorte</p><h1 class="flow-title">${isNew ? "Leistungsort anlegen" : "Leistungsort bearbeiten"}</h1><p class="page-copy">Adresse und Geschäftsbereiche zentral festlegen.</p></div>
-      ${state.serviceLocationNotice ? `<div class="settings-save-notice ${state.serviceLocationNotice.startsWith("Bitte") || state.serviceLocationNotice.startsWith("Für") ? "is-error" : ""}" role="status">${escapeHtml(state.serviceLocationNotice)}</div>` : ""}
+      ${state.serviceLocationNotice ? `<div class="settings-save-notice ${state.serviceLocationNotice.startsWith("Bitte") || state.serviceLocationNotice.startsWith("Für") || state.serviceLocationNotice.startsWith("Lokales") ? "is-error" : ""}" role="status">${escapeHtml(state.serviceLocationNotice)}</div>` : ""}
       <form id="serviceLocationForm" class="settings-form">
         <input type="hidden" name="_locationEditor" value="true"><input type="hidden" name="locationId" value="${escapeHtml(location.id)}">
         <section class="settings-form-card settings-single-column">${cardTitle("Adresse", "location")}
@@ -2976,7 +3140,7 @@
         <h1 class="flow-title">Steuern und Belegangaben</h1>
         <p class="page-copy">Zentrale Vorgaben für neue Belege. Keine automatische rechtliche Bewertung.</p>
       </div>
-      ${state.taxSettingsNotice ? `<div class="settings-save-notice ${state.taxSettingsNotice.startsWith("Bitte") ? "is-error" : ""}" role="status">${escapeHtml(state.taxSettingsNotice)}</div>` : ""}
+      ${state.taxSettingsNotice ? `<div class="settings-save-notice ${state.taxSettingsNotice.startsWith("Bitte") || state.taxSettingsNotice.startsWith("Lokales") ? "is-error" : ""}" role="status">${escapeHtml(state.taxSettingsNotice)}</div>` : ""}
       <form id="taxSettingsForm" class="settings-form">
         <section class="settings-form-card settings-single-column">
           ${cardTitle("Steuerstatus", "taxes")}
@@ -3020,7 +3184,7 @@
           <div><span>Sprache</span><strong>Deutsch</strong></div>
         </section>
         <div class="settings-tse-note">TSE-Einrichtung folgt in einem eigenen Assistenten.</div>
-        <p class="prototype-note">Nur In-Memory-Prototyp. Keine Steuerautomatik, Fiskalisierung oder TSE-Verbindung.</p>
+        <p class="prototype-note">Einstellungen werden lokal gespeichert. Keine Steuerautomatik, Fiskalisierung oder TSE-Verbindung.</p>
         <button class="button button-primary settings-save" type="submit">Einstellungen speichern</button>
       </form>
     </section>`;
@@ -3041,9 +3205,9 @@
         <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
         <p class="eyebrow">Einstellungen</p>
         <h1 class="flow-title">Zahlungsarten</h1>
-        <p class="page-copy">Aktive Zahlungsarten erscheinen im aktuellen Browserlauf im Belegabschluss.</p>
+        <p class="page-copy">Aktive Zahlungsarten erscheinen im Belegabschluss und werden lokal gespeichert.</p>
       </div>
-      ${state.paymentSettingsNotice ? `<div class="settings-save-notice ${state.paymentSettingsNotice.startsWith("Mindestens") ? "is-error" : ""}" role="status">${escapeHtml(state.paymentSettingsNotice)}</div>` : ""}
+      ${state.paymentSettingsNotice ? `<div class="settings-save-notice ${state.paymentSettingsNotice.startsWith("Mindestens") || state.paymentSettingsNotice.startsWith("Lokales") ? "is-error" : ""}" role="status">${escapeHtml(state.paymentSettingsNotice)}</div>` : ""}
       <div class="settings-standalone-title">${cardTitle("Zahlungsarten", "payments")}</div>
       <div class="payment-settings-list" aria-label="Zahlungsarten und Reihenfolge">
         ${data.paymentChoices.map((choice, index) => `<article class="payment-setting-row">
@@ -3068,7 +3232,7 @@
         <h1 class="flow-title">Geschäftsbereiche</h1>
         <p class="page-copy">Fachliche Bereiche innerhalb dieser gebuchten Instanz verwalten.</p>
       </div>
-      ${state.businessAreaSettingsNotice ? `<div class="settings-save-notice ${state.businessAreaSettingsNotice.startsWith("Bitte") || state.businessAreaSettingsNotice.startsWith("Mindestens") ? "is-error" : ""}" role="status">${escapeHtml(state.businessAreaSettingsNotice)}</div>` : ""}
+      ${state.businessAreaSettingsNotice ? `<div class="settings-save-notice ${state.businessAreaSettingsNotice.startsWith("Bitte") || state.businessAreaSettingsNotice.startsWith("Mindestens") || state.businessAreaSettingsNotice.startsWith("Lokales") ? "is-error" : ""}" role="status">${escapeHtml(state.businessAreaSettingsNotice)}</div>` : ""}
       <div class="settings-standalone-title">${cardTitle("Geschäftsbereiche", "business")}</div>
       <div class="business-model-note"><strong>Eine Instanz entspricht einer Filiale.</strong><span>Friseur, Podologie oder weitere Angebote sind Geschäftsbereiche – keine Filialen.</span></div>
       <form id="businessAreaSettingsForm" class="settings-form">
@@ -3424,6 +3588,9 @@
     else if (state.route === "settings-help") renderHelpLearning();
     else if (state.route === "setup-wizard") renderSetupWizard();
     else renderPlaceholder(state.route);
+    if (state.settingsStorageNotice && !["home", "settings"].includes(state.route)) {
+      mainContent.insertAdjacentHTML("afterbegin", `<div class="settings-save-notice ${state.settingsStorageNoticeIsError ? "is-error" : ""}" role="${state.settingsStorageNoticeIsError ? "alert" : "status"}">${escapeHtml(state.settingsStorageNotice)}</div>`);
+    }
     const isFlow = flowRoutes.has(state.route);
     bottomNav.hidden = isFlow;
     document.querySelector(".app-shell").style.paddingBottom = isFlow ? "calc(24px + var(--safe-bottom))" : "calc(88px + var(--safe-bottom))";
@@ -3436,13 +3603,18 @@
     window.scrollTo({ top: 0, behavior: "auto" });
     if (pushHistory) {
       const hash = `#/${state.route}`;
-      if (window.location.hash !== hash) history.pushState({ route: state.route }, "", hash);
+      if (window.location.hash !== hash) {
+        currentHistoryIndex += 1;
+        history.pushState({ route: state.route, freckaIndex: currentHistoryIndex }, "", hash);
+      }
     }
   }
 
   function navigate(route, pushHistory = true) {
+    if (pendingSettingsWrites) return false;
     state.route = validRoutes.has(route) ? route : "home";
     renderRoute(pushHistory);
+    return true;
   }
   function startNewReceipt() {
     state.cart = [];
@@ -3522,7 +3694,8 @@
     document.body.style.overflow = "";
   }
 
-  document.addEventListener("click", event => {
+  document.addEventListener("click", async event => {
+    if (!state.settingsReady) return;
     const catalogView = event.target.closest("[data-catalog-manager-view]");
     if (catalogView) {
       state.catalogManagerView = catalogView.dataset.catalogManagerView;
@@ -3534,6 +3707,14 @@
     if (setupEditCatalog) {
       const form = document.getElementById("setupWizardForm");
       if (form) saveSetupStep(new FormData(form), false);
+      if (state.setup.status !== "completed") state.setup.status = "started";
+      try {
+        await persistCurrentSettings();
+      } catch (error) {
+        state.setupNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`;
+        renderSetupWizard();
+        return;
+      }
       state.catalogManagerAreaId = setupEditCatalog.dataset.setupEditCatalog;
       state.catalogManagerReturnRoute = "setup-wizard";
       state.catalogManagerView = "items";
@@ -3625,7 +3806,7 @@
     const templateChoice = event.target.closest("[data-template-choice]");
     if (templateChoice) {
       const choice = templateChoice.dataset.templateChoice;
-      if (choice === "custom") addBusinessArea("Neuer Geschäftsbereich");
+      if (choice === "custom") await addBusinessArea("Neuer Geschäftsbereich");
       else openBusinessTemplateConfirmation(choice);
       return;
     }
@@ -3636,12 +3817,12 @@
     }
     if (sheetAction === "template-use") {
       const template = data.businessTemplates[state.pendingBusinessTemplate];
-      addBusinessArea(template?.label || "Neuer Geschäftsbereich", state.pendingBusinessTemplate || null);
+      await addBusinessArea(template?.label || "Neuer Geschäftsbereich", state.pendingBusinessTemplate || null);
       return;
     }
     if (sheetAction === "template-empty") {
       const template = data.businessTemplates[state.pendingBusinessTemplate];
-      addBusinessArea(template?.label || "Neuer Geschäftsbereich");
+      await addBusinessArea(template?.label || "Neuer Geschäftsbereich");
       return;
     }
     if (sheetAction === "template-edit-catalog") {
@@ -3900,7 +4081,13 @@
     if (setupBack) {
       const form = document.getElementById("setupWizardForm");
       if (form) saveSetupStep(new FormData(form), false);
-      state.setupNotice = "";
+      if (state.setup.status !== "completed") state.setup.status = "started";
+      try {
+        await persistCurrentSettings();
+        state.setupNotice = "";
+      } catch (error) {
+        state.setupNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`;
+      }
       state.setupStep = Math.max(1, state.setupStep - 1);
       renderSetupWizard();
       return;
@@ -3909,7 +4096,14 @@
     if (setupCancel) {
       const form = document.getElementById("setupWizardForm");
       if (form) saveSetupStep(new FormData(form), false);
-      state.setupNotice = "";
+      if (state.setup.status !== "completed") state.setup.status = "started";
+      try {
+        await persistCurrentSettings();
+        state.setupNotice = "";
+      } catch (error) {
+        state.settingsStorageNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`;
+        state.settingsStorageNoticeIsError = true;
+      }
       navigate("settings");
       return;
     }
@@ -3961,7 +4155,12 @@
       if (!activeNormalPaymentChoices().some(entry => entry.id === state.voucherSalePaymentChoice)) state.voucherSalePaymentChoice = preferredNormalPaymentId() || "cash";
       const label = paymentToggle.closest("label")?.querySelector("span");
       if (label) label.textContent = wantsActive ? "Aktiv" : "Deaktiviert";
-      showPaymentNotice(`${choice.title} ist für diese Sitzung ${wantsActive ? "aktiv" : "deaktiviert"}.`);
+      try {
+        await persistCurrentSettings();
+        showPaymentNotice(`${choice.title} wurde lokal als ${wantsActive ? "aktiv" : "deaktiviert"} gespeichert.`);
+      } catch (error) {
+        showPaymentNotice(`Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`, true);
+      }
       return;
     }
     const paymentMove = event.target.closest("[data-payment-move]");
@@ -3971,7 +4170,12 @@
       if (index < 0 || targetIndex < 0 || targetIndex >= data.paymentChoices.length) return;
       const [choice] = data.paymentChoices.splice(index, 1);
       data.paymentChoices.splice(targetIndex, 0, choice);
-      state.paymentSettingsNotice = "Reihenfolge wurde für diese Sitzung geändert.";
+      try {
+        await persistCurrentSettings();
+        state.paymentSettingsNotice = "Reihenfolge wurde lokal gespeichert.";
+      } catch (error) {
+        state.paymentSettingsNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`;
+      }
       renderPaymentSettings();
       return;
     }
@@ -4006,6 +4210,15 @@
       return;
     }
     const action = event.target.closest("[data-action]")?.dataset.action;
+    if (action === "settings-reset") {
+      openConfirmDialog({
+        title: "Gespeicherte Einstellungen zurücksetzen?",
+        text: "Unternehmensdaten, Leistungsorte, Steuern, Zahlungsarten, Geschäftsbereiche und der Einrichtungsstatus werden auf sichere Standardwerte zurückgesetzt. Kunden, Belege, Gutscheine und Kataloge bleiben unverändert.",
+        confirmLabel: "Einstellungen zurücksetzen",
+        action: "reset-saved-settings"
+      });
+      return;
+    }
     if (action === "catalog-settings-back") {
       state.catalogEditingItemId = null;
       state.catalogEditingCategoryId = null;
@@ -4053,10 +4266,16 @@
       return;
     }
     if (action === "setup-start") {
-      state.setupStep = 1;
+      if (state.setup.status !== "started") state.setupStep = 1;
+      state.setup.status = "started";
       state.setupNotice = "";
       state.setupTestPreviewVisible = false;
       state.setupFirstStartVisible = false;
+      try {
+        await persistCurrentSettings();
+      } catch (error) {
+        state.setupNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`;
+      }
       navigate("setup-wizard");
       return;
     }
@@ -4069,6 +4288,14 @@
       if (state.route === "setup-wizard") {
         const form = document.getElementById("setupWizardForm");
         if (form) saveSetupStep(new FormData(form), false);
+        if (state.setup.status !== "completed") state.setup.status = "started";
+        try {
+          await persistCurrentSettings();
+        } catch (error) {
+          state.setupNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`;
+          renderSetupWizard();
+          return;
+        }
       }
       openBusinessTemplatePicker();
       return;
@@ -4233,7 +4460,11 @@
     }
   });
 
-  document.addEventListener("submit", event => {
+  document.addEventListener("submit", async event => {
+    if (!state.settingsReady || pendingSettingsWrites) {
+      event.preventDefault();
+      return;
+    }
     const setupWizardForm = event.target.closest("#setupWizardForm");
     if (setupWizardForm) {
       event.preventDefault();
@@ -4244,12 +4475,20 @@
         renderSetupWizard();
         return;
       }
-      state.setupNotice = "";
-      state.setupStep += 1;
-      if (state.setupStep === setupSteps.length) {
-        state.setupCompleted = true;
-        state.setupFirstStartVisible = false;
+      const previousSetupStatus = state.setup.status;
+      const nextSetupStep = state.setupStep + 1;
+      state.setup.status = nextSetupStep === setupSteps.length ? "completed" : "started";
+      try {
+        await persistCurrentSettings();
+      } catch (persistenceError) {
+        state.setup.status = previousSetupStatus;
+        state.setupNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(persistenceError)}`;
+        renderSetupWizard();
+        return;
       }
+      state.setupNotice = "";
+      state.setupStep = nextSetupStep;
+      state.setupFirstStartVisible = state.setup.status !== "completed";
       renderSetupWizard();
       return;
     }
@@ -4264,7 +4503,12 @@
         renderCompanySettings();
         return;
       }
-      state.settingsNotice = "Änderungen wurden für diese Sitzung übernommen. Nach einem Reload gehen sie verloren.";
+      try {
+        await persistCurrentSettings();
+        state.settingsNotice = "Änderungen wurden lokal auf diesem Gerät gespeichert.";
+      } catch (persistenceError) {
+        state.settingsNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(persistenceError)}`;
+      }
       renderCompanySettings();
       return;
     }
@@ -4280,7 +4524,12 @@
         return;
       }
       state.serviceLocationEditingId = null;
-      state.serviceLocationNotice = "Leistungsort und Geschäftsbereichszuordnung wurden für diese Sitzung übernommen.";
+      try {
+        await persistCurrentSettings();
+        state.serviceLocationNotice = "Leistungsort und Geschäftsbereichszuordnung wurden lokal gespeichert.";
+      } catch (persistenceError) {
+        state.serviceLocationNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(persistenceError)}`;
+      }
       renderServiceLocationSettings();
       return;
     }
@@ -4317,7 +4566,12 @@
         language: "Deutsch"
       });
       state.receiptCounter = nextNumber - 1;
-      state.taxSettingsNotice = "Steuer- und Belegangaben wurden für diese Sitzung übernommen. Bestehende Belege bleiben unverändert.";
+      try {
+        await persistCurrentSettings();
+        state.taxSettingsNotice = "Steuer- und Belegangaben wurden lokal gespeichert. Bestehende Belege bleiben unverändert.";
+      } catch (persistenceError) {
+        state.taxSettingsNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(persistenceError)}`;
+      }
       renderTaxSettings();
       return;
     }
@@ -4332,7 +4586,12 @@
         renderBusinessAreaSettings();
         return;
       }
-      state.businessAreaSettingsNotice = "Geschäftsbereiche wurden für diese Sitzung übernommen. Leistungen und Belege wurden nicht verschoben.";
+      try {
+        await persistCurrentSettings();
+        state.businessAreaSettingsNotice = "Geschäftsbereiche wurden lokal gespeichert. Leistungen und Belege wurden nicht verschoben.";
+      } catch (persistenceError) {
+        state.businessAreaSettingsNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(persistenceError)}`;
+      }
       renderBusinessAreaSettings();
       return;
     }
@@ -4489,8 +4748,48 @@
   });
 
   cancelDiscard.addEventListener("click", closeDiscardDialog);
-  confirmDiscard.addEventListener("click", () => {
+  confirmDiscard.addEventListener("click", async () => {
     const pendingAction = state.pendingDialogAction;
+
+    if (pendingAction === "reset-saved-settings") {
+      pendingSettingsWrites += 1;
+      setSettingsWritePending(true);
+      try {
+        if (!persistence?.deleteSettings || !persistence?.normalizeSettingsRecord || !defaultSettingsRecord) {
+          const unavailableError = new Error("Lokale Speicherung ist derzeit nicht verfügbar.");
+          unavailableError.code = "PERSISTENCE_UNAVAILABLE";
+          unavailableError.userMessage = "Gespeicherte Einstellungen konnten nicht zurückgesetzt werden, weil die lokale Speicherung nicht verfügbar ist.";
+          throw unavailableError;
+        }
+        await persistence.deleteSettings();
+        const normalizedDefaults = persistence.normalizeSettingsRecord(defaultSettingsRecord, defaultSettingsRecord, persistence.tenantId);
+        applySettingsRecord(normalizedDefaults.record);
+        state.setupStep = 1;
+        state.setupTestPreviewVisible = false;
+        state.setupNotice = "";
+        state.settingsNotice = "";
+        state.serviceLocationNotice = "";
+        state.taxSettingsNotice = "";
+        state.paymentSettingsNotice = "";
+        state.businessAreaSettingsNotice = "";
+        refreshSettingsDerivedState();
+        refreshBusinessSwitcher();
+        closeDiscardDialog();
+        state.settingsStorageNotice = "Gespeicherte Einstellungen wurden zurückgesetzt. Sichere Standardwerte sind jetzt aktiv.";
+        state.settingsStorageNoticeIsError = false;
+        renderSettings();
+      } catch (error) {
+        logPersistenceError("Einstellungen zurücksetzen fehlgeschlagen", error);
+        closeDiscardDialog();
+        state.settingsStorageNotice = persistenceErrorMessage(error, "Gespeicherte Einstellungen konnten nicht zurückgesetzt werden.");
+        state.settingsStorageNoticeIsError = true;
+        renderSettings();
+      } finally {
+        pendingSettingsWrites = Math.max(0, pendingSettingsWrites - 1);
+        if (!pendingSettingsWrites) setSettingsWritePending(false);
+      }
+      return;
+    }
 
     if (pendingAction === "discard-open-receipt") {
       state.openReceiptVisible = false;
@@ -4577,7 +4876,21 @@
   bottomSheetBackdrop.addEventListener("click", event => {
     if (event.target === bottomSheetBackdrop) closeBottomSheet();
   });
-  window.addEventListener("popstate", event => navigate(event.state?.route ?? (window.location.hash.replace("#/", "") || "home"), false));
+  window.addEventListener("popstate", event => {
+    if (!state.settingsReady) return;
+    const targetHistoryIndex = Number.isInteger(event.state?.freckaIndex) ? event.state.freckaIndex : null;
+    if (pendingSettingsWrites) {
+      if (targetHistoryIndex === null) {
+        history.pushState({ route: state.route, freckaIndex: currentHistoryIndex }, "", `#/${state.route}`);
+      } else {
+        const correction = currentHistoryIndex - targetHistoryIndex;
+        if (correction) history.go(correction);
+      }
+      return;
+    }
+    if (targetHistoryIndex !== null) currentHistoryIndex = targetHistoryIndex;
+    navigate(event.state?.route ?? (window.location.hash.replace("#/", "") || "home"), false);
+  });
 
   // Prototype deployments must always show the latest Netlify upload.
   // Remove service workers and caches left by older UX builds.
@@ -4614,10 +4927,28 @@
     window.visualViewport.addEventListener("scroll", updateBrowserBottomOffset, { passive: true });
   }
 
+  renderSettingsLoading();
+  try {
+    await loadSettingsForStart();
+  } catch (error) {
+    logPersistenceError("Einstellungen laden fehlgeschlagen", error);
+    if (persistence?.normalizeSettingsRecord && defaultSettingsRecord) {
+      const normalizedDefaults = persistence.normalizeSettingsRecord(defaultSettingsRecord, defaultSettingsRecord, persistence.tenantId);
+      applySettingsRecord(normalizedDefaults.record);
+    }
+    state.settingsStorageNotice = persistenceErrorMessage(error, "Lokale Einstellungen konnten nicht geladen werden. FRECKA verwendet sichere Standardwerte.");
+    state.settingsStorageNoticeIsError = true;
+  }
   migratePrototypeCommerceModel();
   migratePrototypeContextSnapshots();
+  refreshSettingsDerivedState();
+  state.settingsReady = true;
+  mainContent.removeAttribute("aria-busy");
+  bottomNav.removeAttribute("aria-busy");
+  bottomNav.querySelectorAll("button").forEach(button => { button.disabled = false; });
+  bottomNav.hidden = false;
   initHeader();
   const initialRoute = validRoutes.has(window.location.hash.replace("#/", "")) ? window.location.hash.replace("#/", "") : "home";
-  history.replaceState({ route: initialRoute }, "", `#/${initialRoute}`);
+  history.replaceState({ route: initialRoute, freckaIndex: currentHistoryIndex }, "", `#/${initialRoute}`);
   navigate(initialRoute, false);
 })();
