@@ -33,11 +33,13 @@ IndexedDB ist die verbindliche lokale Persistenztechnologie für strukturierte G
 Der erste umgesetzte Datenbankvertrag lautet:
 
 - Datenbank: `frecka`
-- Datenbankschema-Version: `1`
-- Object Store: `settings`
+- Datenbankschema-Version: `3`
+- Object Stores: `settings`, `catalog` und `customers`
 - Key Path: `tenantId`
 - Standardschlüssel: `local-default`
 - Einstellungsformat-Version: `1`
+- Katalogformat-Version: `1`
+- Kundenformat-Version: `1`
 
 Dieser konkrete Vertrag beschreibt den aktuellen Stand. Künftige Stores und Versionen erweitern ihn nur über ausdrücklich definierte Migrationen.
 
@@ -84,9 +86,9 @@ Die lokale Persistenz ändert nichts an der Datenschutzgrenze aus ADR-0001: Kund
 
 ## Aktueller Umsetzungsstand
 
-Mit PERSIST-001a ist eine zentrale, versionierte IndexedDB-Persistenzschicht umgesetzt. Persistiert werden aktuell ausschließlich die vollständigen zentralen Einstellungen, einschließlich Unternehmensdaten, Leistungsorten, Geschäftsbereichszuordnungen, Steuern, Belegangaben, Zahlungsarten und Einrichtungsstatus.
+Mit PERSIST-001a ist eine zentrale, versionierte IndexedDB-Persistenzschicht umgesetzt. PERSIST-002 ergänzt einen getrennten Katalogstore, PERSIST-003 einen getrennten Kundenstore. Persistiert werden damit die vollständigen zentralen Einstellungen, der Katalog und die Kundenstammdaten.
 
-Kataloge, Kunden, Belege, Gutscheine, Historien, Entwürfe, Stornos und Gutschriften bleiben noch im Arbeitsspeicher. Backup und Restore sind noch nicht umgesetzt. Auch ein kalter Offline-Start mit abschließendem Service-Worker- und Update-Lebenszyklus ist noch nicht vollständig realisiert.
+Belege, Gutscheine, Historien, Entwürfe, Stornos und Gutschriften bleiben noch im Arbeitsspeicher. Backup und Restore sind noch nicht umgesetzt. Auch ein kalter Offline-Start mit abschließendem Service-Worker- und Update-Lebenszyklus ist noch nicht vollständig realisiert.
 
 ## Alternativen
 

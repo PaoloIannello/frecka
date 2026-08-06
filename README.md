@@ -1,6 +1,6 @@
-# FRECKA – PERSIST-001a
+# FRECKA – PERSIST-003
 
-Klickbarer UX-Prototyp mit lokaler IndexedDB-Persistenz für die vollständigen Einstellungen.
+Klickbarer UX-Prototyp mit lokaler IndexedDB-Persistenz für Einstellungen, Katalog und Kundenstammdaten.
 
 ## Start
 
@@ -10,17 +10,18 @@ Klickbarer UX-Prototyp mit lokaler IndexedDB-Persistenz für die vollständigen 
 
 Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufklappen und bearbeiten → Weiter → Kunde optional und Zahlungsart simulieren → Demo abschließen.
 
-## Neu in PERSIST-001a
+## Neu in PERSIST-003
 
-- zentrale, versionierte IndexedDB-Schicht für Einstellungen
+- Datenbankschema 3 mit getrennten Stores für Einstellungen, Katalog und Kunden
 - asynchroner Start mit Lade- und Fehlerzustand
-- dauerhafte Unternehmens-, Leistungsort-, Steuer-, Beleg-, Zahlungsarten- und Geschäftsbereichseinstellungen
-- persistierter Ersteinrichtungsstatus
-- sicherer Reset ausschließlich der gespeicherten Einstellungen
+- dauerhafte Kundenstammdaten mit stabilen IDs
+- Suche nach Name, Firma, Telefon, Mobilnummer und E-Mail ohne separaten Index
+- zentral serialisierte Kundenänderungen
+- getrennte, sichere Resetaktionen für Einstellungen, Katalog und Kunden
 
 ## Nicht umgesetzt
 
-Noch keine Persistenz für Kunden, Belege, Gutscheine, Historien, Entwürfe oder Kataloge. Keine echte Zahlung, PDF-Erzeugung, E-Mail, produktiver QR-Scan, TSE oder Fiskalisierung.
+Noch keine Persistenz für Belege, Gutscheine, Historien oder Entwürfe. Keine echte Zahlung, PDF-Erzeugung, E-Mail, produktiver QR-Scan, TSE oder Fiskalisierung.
 
 Der Datenbankvertrag, Fehlerpfade und die ausführbaren Prüfungen sind in `docs/persistence.md` dokumentiert.
 

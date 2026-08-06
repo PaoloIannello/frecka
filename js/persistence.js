@@ -3,16 +3,39 @@
 
   const constants = Object.freeze({
     databaseName: "frecka",
-    databaseVersion: 1,
+    databaseVersion: 3,
     storeName: "settings",
+    settingsStoreName: "settings",
+    catalogStoreName: "catalog",
+    customersStoreName: "customers",
     tenantId: "local-default",
-    formatVersion: 1
+    formatVersion: 1,
+    settingsFormatVersion: 1,
+    catalogFormatVersion: 1,
+    customersFormatVersion: 1
   });
 
   const forbiddenRootKeys = new Set([
     "catalog", "categories", "businessTemplates", "templateImportStatus",
     "customers", "customerChoices", "receipts", "vouchers", "histories",
     "openReceipt", "drafts", "cancellations", "credits"
+  ]);
+  const catalogForbiddenRootKeys = new Set([
+    "company", "serviceLocations", "businessAreas", "taxSettings", "receiptSettings",
+    "paymentChoices", "setup", "catalog", "businessTemplates", "templateImportStatus",
+    "customers", "customerChoices", "receipts", "vouchers", "histories", "openReceipt",
+    "drafts", "cancellations", "credits", "images", "logos"
+  ]);
+  const customersForbiddenRootKeys = new Set([
+    "company", "serviceLocations", "businessAreas", "taxSettings", "receiptSettings",
+    "paymentChoices", "setup", "catalog", "categories", "businessTemplates",
+    "templateImportStatus", "customerChoices", "receipts", "vouchers", "histories",
+    "openReceipt", "drafts", "cancellations", "credits", "emailStatus"
+  ]);
+  const customerForbiddenKeys = new Set([
+    "history", "histories", "receipts", "vouchers", "openPayments", "drafts",
+    "cancellations", "credits", "emailStatus", "receiptCount", "lastVisit", "totalTurnover",
+    "zip", "note"
   ]);
   const dangerousKeys = new Set(["__proto__", "prototype", "constructor"]);
   const sensitiveKeyPattern = /(password|passphrase|credential|secret|access.?token|refresh.?token|private.?key)/i;
@@ -54,19 +77,42 @@
     } catch (cause) {
       throw new PersistenceError(
         "SERIALIZE_FAILED",
-        "Die Einstellungen konnten nicht für die lokale Speicherung vorbereitet werden.",
+        "Die Daten konnten nicht für die lokale Speicherung vorbereitet werden.",
         cause
       );
     }
   }
 
   const stringValue = (value, fallback = "") => typeof value === "string" ? value : fallback;
+  const trimmedString = (value, fallback = "") => stringValue(value, fallback).trim();
   const booleanValue = (value, fallback = false) => typeof value === "boolean" ? value : fallback;
   const finiteNumber = (value, fallback = 0) => typeof value === "number" && Number.isFinite(value) ? value : fallback;
   const nullableStringId = value => typeof value === "string" && value.trim() ? value : null;
   const uniqueStrings = values => [...new Set((Array.isArray(values) ? values : []).filter(value => typeof value === "string" && value.trim()))];
+  const nonNegativeInteger = (value, fallback = 0) => Number.isInteger(value) && value >= 0 ? value : fallback;
   const validLogoMode = value => ["company", "custom", "none"].includes(value) ? value : "company";
   const validSetupStatus = value => setupStatuses.has(value) ? value : "not-started";
+  const epochIso = "1970-01-01T00:00:00.000Z";
+
+  function customerMatchesSearch(customer, query) {
+    if (!isPlainObject(customer)) return false;
+    const normalizedQuery = trimmedString(query).toLocaleLowerCase("de-DE");
+    if (!normalizedQuery) return true;
+    const searchableText = [
+      customer.firstName,
+      customer.lastName,
+      customer.companyName,
+      customer.phone,
+      customer.mobile,
+      customer.email
+    ].map(value => stringValue(value).toLocaleLowerCase("de-DE")).join(" ");
+    if (searchableText.includes(normalizedQuery)) return true;
+    const phoneQuery = normalizedQuery.replace(/[^0-9+]/g, "").replace(/(?!^)\+/g, "");
+    if (!phoneQuery) return false;
+    return [customer.phone, customer.mobile].some(value => (
+      stringValue(value).replace(/[^0-9+]/g, "").replace(/(?!^)\+/g, "").includes(phoneQuery)
+    ));
+  }
 
   function snapshotSettings(runtimeData, setupStatus = "not-started", tenantId = constants.tenantId) {
     if (!runtimeData || !isPlainObject(runtimeData.company)) {
@@ -143,6 +189,368 @@
     };
 
     return cloneSafe(snapshot);
+  }
+
+  function snapshotCatalog(runtimeData, tenantId = constants.tenantId) {
+    if (!runtimeData || !Array.isArray(runtimeData.categories) || !isPlainObject(runtimeData.catalog)) {
+      throw new PersistenceError("INVALID_DATA", "Die zentralen Katalogdaten sind nicht verfügbar.");
+    }
+
+    const categories = runtimeData.categories.map(category => ({
+      id: category.id,
+      businessAreaId: category.businessAreaId,
+      name: stringValue(category.name),
+      type: ["service", "product"].includes(category.type) ? category.type : "service",
+      active: category.active !== false,
+      sortOrder: finiteNumber(category.sortOrder),
+      source: category.source === "template" ? "template" : "manual",
+      createdAt: stringValue(category.createdAt, epochIso),
+      updatedAt: stringValue(category.updatedAt, stringValue(category.createdAt, epochIso))
+    })).filter(category => nullableStringId(category.id) && nullableStringId(category.businessAreaId));
+
+    const items = Object.entries(runtimeData.catalog).flatMap(([businessAreaId, entries]) => (
+      Array.isArray(entries) ? entries : []
+    ).filter(item => ["service", "product"].includes(item?.type)).map(item => {
+      const type = item.type;
+      const priceCents = nonNegativeInteger(item.priceCents, Math.max(0, Math.round(finiteNumber(item.price) * 100)));
+      const record = {
+        id: item.id,
+        type,
+        businessAreaId: nullableStringId(item.businessAreaId) || businessAreaId,
+        categoryId: nullableStringId(item.categoryId),
+        name: stringValue(item.name, stringValue(item.title, "Eintrag")),
+        priceCents,
+        taxRate: finiteNumber(item.taxRate),
+        active: item.active !== false,
+        favorite: item.favorite === true,
+        sortOrder: finiteNumber(item.sortOrder),
+        source: item.source === "template" ? "template" : "manual",
+        needsReview: item.needsReview === true,
+        priceConfirmed: item.priceConfirmed !== false,
+        taxRateConfirmed: item.taxRateConfirmed !== false,
+        description: stringValue(item.description),
+        quantityAdjustable: type === "product" ? item.quantityAdjustable !== false : false,
+        icon: stringValue(item.icon, type === "product" ? "▣" : "✦"),
+        createdAt: stringValue(item.createdAt, epochIso),
+        updatedAt: stringValue(item.updatedAt, stringValue(item.createdAt, epochIso))
+      };
+      if (type === "product") {
+        record.sku = nullableStringId(item.sku);
+        record.unit = stringValue(item.unit, "Stück");
+      }
+      return record;
+    }).filter(item => nullableStringId(item.id) && nullableStringId(item.businessAreaId)));
+
+    const templateImports = Object.entries(isPlainObject(runtimeData.templateImportStatus) ? runtimeData.templateImportStatus : {}).flatMap(([businessAreaId, status]) => {
+      if (!isPlainObject(status) || !nullableStringId(status.templateKey) || !nullableStringId(businessAreaId)) return [];
+      const categoryIds = uniqueStrings(status.categoryIds).length
+        ? uniqueStrings(status.categoryIds)
+        : categories.filter(category => category.businessAreaId === businessAreaId && category.source === "template").map(category => category.id);
+      const itemIds = uniqueStrings(status.itemIds).length
+        ? uniqueStrings(status.itemIds)
+        : items.filter(item => item.businessAreaId === businessAreaId && item.source === "template").map(item => item.id);
+      return [{
+        templateId: status.templateKey,
+        businessAreaId,
+        importedAt: stringValue(status.importedAt, epochIso),
+        lastCheckedAt: stringValue(status.lastCheckedAt, stringValue(status.importedAt, epochIso)),
+        version: Number.isInteger(status.version) && status.version > 0 ? status.version : 1,
+        status: status.status === "ready" ? "ready" : "needs-review",
+        needsReviewCount: nonNegativeInteger(status.needsReviewCount),
+        categoryIds,
+        itemIds
+      }];
+    });
+
+    return stripExcludedCatalogData({
+      formatVersion: constants.catalogFormatVersion,
+      tenantId: nullableStringId(tenantId) || constants.tenantId,
+      updatedAt: new Date().toISOString(),
+      categories,
+      items,
+      templateImports
+    });
+  }
+
+  function snapshotCustomers(runtimeData, tenantId = constants.tenantId) {
+    if (!runtimeData || !Array.isArray(runtimeData.customers)) {
+      throw new PersistenceError("INVALID_DATA", "Die zentralen Kundendaten sind nicht verfügbar.");
+    }
+
+    const customers = runtimeData.customers.map(customer => ({
+      id: customer.id,
+      firstName: trimmedString(customer.firstName),
+      lastName: trimmedString(customer.lastName),
+      companyName: trimmedString(customer.companyName),
+      street: trimmedString(customer.street),
+      postalCode: trimmedString(customer.postalCode, trimmedString(customer.zip)),
+      city: trimmedString(customer.city),
+      phone: trimmedString(customer.phone),
+      mobile: trimmedString(customer.mobile),
+      email: trimmedString(customer.email),
+      notes: trimmedString(customer.notes, trimmedString(customer.note)),
+      active: customer.active !== false,
+      createdAt: trimmedString(customer.createdAt, epochIso),
+      updatedAt: trimmedString(customer.updatedAt, trimmedString(customer.createdAt, epochIso))
+    })).filter(customer => nullableStringId(customer.id));
+
+    return stripExcludedCustomersData({
+      formatVersion: constants.customersFormatVersion,
+      tenantId: nullableStringId(tenantId) || constants.tenantId,
+      updatedAt: new Date().toISOString(),
+      customers
+    });
+  }
+
+  function normalizeCustomersRecord(rawRecord, defaultsInput, expectedTenantId = constants.tenantId) {
+    if (!isPlainObject(defaultsInput)) {
+      throw new PersistenceError("INVALID_DATA", "Die sicheren Standard-Kundendaten sind nicht verfügbar.");
+    }
+    const defaults = Array.isArray(defaultsInput.customers)
+      ? cloneSafe(defaultsInput)
+      : snapshotCustomers(defaultsInput, expectedTenantId);
+    if (!Array.isArray(defaults?.customers)) {
+      throw new PersistenceError("INVALID_DATA", "Die sicheren Standard-Kundendaten sind unvollständig.");
+    }
+    const raw = rawRecord == null ? defaults : rawRecord;
+    if (!isPlainObject(raw)) {
+      throw new PersistenceError("INVALID_DATA", "Der gespeicherte Kundendatensatz ist ungültig.");
+    }
+
+    const repairs = new Set();
+    if (rawRecord == null) repairs.add("CUSTOMERS_DEFAULTED");
+    const hasFormatVersion = raw.formatVersion != null;
+    if (hasFormatVersion && (typeof raw.formatVersion !== "number" || !Number.isInteger(raw.formatVersion) || raw.formatVersion < 1)) {
+      throw new PersistenceError("INVALID_DATA", "Die gespeicherten Kundendaten besitzen keine gültige Formatversion.");
+    }
+    const rawFormatVersion = hasFormatVersion ? raw.formatVersion : constants.customersFormatVersion;
+    if (rawFormatVersion !== constants.customersFormatVersion) {
+      throw new PersistenceError(
+        "UNSUPPORTED_FORMAT",
+        rawFormatVersion > constants.customersFormatVersion
+          ? "Die gespeicherten Kundendaten stammen aus einer neueren FRECKA-Version und wurden nicht verändert."
+          : "Für diese ältere Kundenformatversion ist noch keine Migration verfügbar."
+      );
+    }
+    if (!hasFormatVersion) repairs.add("FORMAT_VERSION_ADDED");
+
+    const defaultById = new Map(defaults.customers.filter(customer => nullableStringId(customer.id)).map(customer => [customer.id, customer]));
+    const source = Array.isArray(raw.customers) ? raw.customers : defaults.customers;
+    if (!Array.isArray(raw.customers)) repairs.add("CUSTOMERS_DEFAULTED");
+    const seenIds = new Set();
+    const customers = source.flatMap(entry => {
+      if (!isPlainObject(entry) || !nullableStringId(entry.id)) {
+        repairs.add("CUSTOMER_REMOVED");
+        return [];
+      }
+      if (seenIds.has(entry.id)) {
+        repairs.add("CUSTOMER_DUPLICATE_REMOVED");
+        return [];
+      }
+      seenIds.add(entry.id);
+      const fallback = defaultById.get(entry.id) || {};
+      const firstName = trimmedString(entry.firstName, trimmedString(fallback.firstName));
+      const lastName = trimmedString(entry.lastName, trimmedString(fallback.lastName));
+      if (!firstName || !lastName) repairs.add("CUSTOMER_NAME_REPAIRED");
+      return [{
+        id: entry.id,
+        firstName: firstName || "Unbekannt",
+        lastName: lastName || "Unbekannt",
+        companyName: trimmedString(entry.companyName, trimmedString(fallback.companyName)),
+        street: trimmedString(entry.street, trimmedString(fallback.street)),
+        postalCode: trimmedString(entry.postalCode, trimmedString(entry.zip, trimmedString(fallback.postalCode, trimmedString(fallback.zip)))),
+        city: trimmedString(entry.city, trimmedString(fallback.city)),
+        phone: trimmedString(entry.phone, trimmedString(fallback.phone)),
+        mobile: trimmedString(entry.mobile, trimmedString(fallback.mobile)),
+        email: trimmedString(entry.email, trimmedString(fallback.email)),
+        notes: trimmedString(entry.notes, trimmedString(entry.note, trimmedString(fallback.notes, trimmedString(fallback.note)))),
+        active: booleanValue(entry.active, fallback.active !== false),
+        createdAt: trimmedString(entry.createdAt, trimmedString(fallback.createdAt, epochIso)),
+        updatedAt: trimmedString(entry.updatedAt, trimmedString(fallback.updatedAt, trimmedString(entry.createdAt, epochIso)))
+      }];
+    });
+
+    const normalizedKnownFields = {
+      formatVersion: constants.customersFormatVersion,
+      tenantId: nullableStringId(expectedTenantId) || constants.tenantId,
+      updatedAt: trimmedString(raw.updatedAt),
+      customers
+    };
+    return {
+      record: stripExcludedCustomersData(mergePreservingUnknown(raw, normalizedKnownFields)),
+      repairs: [...repairs]
+    };
+  }
+
+  function normalizeCatalogRecord(rawRecord, defaultsInput, businessAreasInput = [], expectedTenantId = constants.tenantId) {
+    if (!isPlainObject(defaultsInput)) {
+      throw new PersistenceError("INVALID_DATA", "Die sicheren Standard-Katalogdaten sind nicht verfügbar.");
+    }
+    const defaults = Array.isArray(defaultsInput.categories) && Array.isArray(defaultsInput.items)
+      ? cloneSafe(defaultsInput)
+      : snapshotCatalog(defaultsInput, expectedTenantId);
+    if (!Array.isArray(defaults?.categories) || !Array.isArray(defaults?.items) || !Array.isArray(defaults?.templateImports)) {
+      throw new PersistenceError("INVALID_DATA", "Die sicheren Standard-Katalogdaten sind unvollständig.");
+    }
+    const raw = rawRecord == null ? defaults : rawRecord;
+    if (!isPlainObject(raw)) {
+      throw new PersistenceError("INVALID_DATA", "Der gespeicherte Katalogdatensatz ist ungültig.");
+    }
+
+    const repairs = new Set();
+    if (rawRecord == null) repairs.add("CATALOG_DEFAULTED");
+    const hasFormatVersion = raw.formatVersion != null;
+    if (hasFormatVersion && (typeof raw.formatVersion !== "number" || !Number.isInteger(raw.formatVersion) || raw.formatVersion < 1)) {
+      throw new PersistenceError("INVALID_DATA", "Der gespeicherte Katalog besitzt keine gültige Formatversion.");
+    }
+    const rawFormatVersion = hasFormatVersion ? raw.formatVersion : constants.catalogFormatVersion;
+    if (rawFormatVersion !== constants.catalogFormatVersion) {
+      throw new PersistenceError(
+        "UNSUPPORTED_FORMAT",
+        rawFormatVersion > constants.catalogFormatVersion
+          ? "Der gespeicherte Katalog stammt aus einer neueren FRECKA-Version und wurde nicht verändert."
+          : "Für diese ältere Katalogformatversion ist noch keine Migration verfügbar."
+      );
+    }
+    if (!hasFormatVersion) repairs.add("FORMAT_VERSION_ADDED");
+
+    const businessAreaIds = new Set((Array.isArray(businessAreasInput) ? businessAreasInput : [])
+      .map(area => typeof area === "string" ? area : area?.id)
+      .filter(nullableStringId));
+    const defaultCategoryByKey = new Map(defaults.categories.map(category => [`${category.businessAreaId}\u0000${category.id}`, category]));
+    const categorySource = Array.isArray(raw.categories) ? raw.categories : defaults.categories;
+    if (!Array.isArray(raw.categories)) repairs.add("CATEGORIES_DEFAULTED");
+    const seenCategoryIds = new Set();
+    const categories = categorySource.flatMap((entry, index) => {
+      if (!isPlainObject(entry) || !nullableStringId(entry.id) || !nullableStringId(entry.businessAreaId)) {
+        repairs.add("CATEGORY_REMOVED");
+        return [];
+      }
+      const key = `${entry.businessAreaId}\u0000${entry.id}`;
+      if (seenCategoryIds.has(entry.id)) {
+        repairs.add("CATEGORY_DUPLICATE_REMOVED");
+        return [];
+      }
+      seenCategoryIds.add(entry.id);
+      const fallback = defaultCategoryByKey.get(key) || {};
+      const areaExists = businessAreaIds.has(entry.businessAreaId);
+      if (!areaExists) repairs.add("CATEGORY_BUSINESS_AREA_MISSING");
+      return [{
+        id: entry.id,
+        businessAreaId: entry.businessAreaId,
+        name: stringValue(entry.name, stringValue(fallback.name, "Kategorie")),
+        type: ["service", "product"].includes(entry.type) ? entry.type : (["service", "product"].includes(fallback.type) ? fallback.type : "service"),
+        active: areaExists && booleanValue(entry.active, fallback.active !== false),
+        sortOrder: finiteNumber(entry.sortOrder, finiteNumber(fallback.sortOrder, (index + 1) * 10)),
+        source: entry.source === "template" ? "template" : (fallback.source === "template" ? "template" : "manual"),
+        createdAt: stringValue(entry.createdAt, stringValue(fallback.createdAt, epochIso)),
+        updatedAt: stringValue(entry.updatedAt, stringValue(fallback.updatedAt, stringValue(entry.createdAt, epochIso)))
+      }];
+    });
+
+    const categoryByKey = new Map(categories.map(category => [`${category.businessAreaId}\u0000${category.id}`, category]));
+    const defaultItemByKey = new Map(defaults.items.map(item => [`${item.businessAreaId}\u0000${item.id}`, item]));
+    const itemSource = Array.isArray(raw.items) ? raw.items : defaults.items;
+    if (!Array.isArray(raw.items)) repairs.add("ITEMS_DEFAULTED");
+    const seenItemKeys = new Set();
+    const items = itemSource.flatMap((entry, index) => {
+      if (!isPlainObject(entry) || !nullableStringId(entry.id) || !nullableStringId(entry.businessAreaId) || !["service", "product"].includes(entry.type)) {
+        repairs.add("ITEM_REMOVED");
+        return [];
+      }
+      const key = `${entry.businessAreaId}\u0000${entry.id}`;
+      if (seenItemKeys.has(key)) {
+        repairs.add("ITEM_DUPLICATE_REMOVED");
+        return [];
+      }
+      seenItemKeys.add(key);
+      const fallback = defaultItemByKey.get(key) || {};
+      const areaExists = businessAreaIds.has(entry.businessAreaId);
+      if (!areaExists) repairs.add("ITEM_BUSINESS_AREA_MISSING");
+      let categoryId = nullableStringId(entry.categoryId);
+      const category = categoryId ? categoryByKey.get(`${entry.businessAreaId}\u0000${categoryId}`) : null;
+      if (categoryId && (!category || category.type !== entry.type)) {
+        categoryId = null;
+        repairs.add("ITEM_CATEGORY_REPAIRED");
+      }
+      const fallbackPrice = nonNegativeInteger(fallback.priceCents);
+      const priceCents = nonNegativeInteger(entry.priceCents, fallbackPrice);
+      if (priceCents !== entry.priceCents) repairs.add("ITEM_PRICE_REPAIRED");
+      const fallbackTaxRate = finiteNumber(fallback.taxRate);
+      const requestedTaxRate = finiteNumber(entry.taxRate, fallbackTaxRate);
+      const taxRate = requestedTaxRate >= 0 && requestedTaxRate <= 100 ? requestedTaxRate : fallbackTaxRate;
+      if (taxRate !== entry.taxRate) repairs.add("ITEM_TAX_RATE_REPAIRED");
+      const item = {
+        id: entry.id,
+        type: entry.type,
+        businessAreaId: entry.businessAreaId,
+        categoryId,
+        name: stringValue(entry.name, stringValue(fallback.name, "Eintrag")),
+        priceCents,
+        taxRate,
+        active: areaExists && booleanValue(entry.active, fallback.active !== false),
+        favorite: booleanValue(entry.favorite, fallback.favorite === true),
+        sortOrder: finiteNumber(entry.sortOrder, finiteNumber(fallback.sortOrder, (index + 1) * 10)),
+        source: entry.source === "template" ? "template" : (fallback.source === "template" ? "template" : "manual"),
+        needsReview: booleanValue(entry.needsReview, fallback.needsReview === true),
+        priceConfirmed: booleanValue(entry.priceConfirmed, fallback.priceConfirmed !== false),
+        taxRateConfirmed: booleanValue(entry.taxRateConfirmed, fallback.taxRateConfirmed !== false),
+        description: stringValue(entry.description, stringValue(fallback.description)),
+        quantityAdjustable: entry.type === "product" && booleanValue(entry.quantityAdjustable, fallback.quantityAdjustable !== false),
+        icon: stringValue(entry.icon, stringValue(fallback.icon, entry.type === "product" ? "▣" : "✦")),
+        createdAt: stringValue(entry.createdAt, stringValue(fallback.createdAt, epochIso)),
+        updatedAt: stringValue(entry.updatedAt, stringValue(fallback.updatedAt, stringValue(entry.createdAt, epochIso)))
+      };
+      if (entry.type === "product") {
+        item.sku = nullableStringId(entry.sku);
+        item.unit = stringValue(entry.unit, stringValue(fallback.unit, "Stück"));
+      }
+      return [item];
+    });
+
+    const itemByKey = new Map(items.map(item => [`${item.businessAreaId}\u0000${item.id}`, item]));
+    const importSource = Array.isArray(raw.templateImports) ? raw.templateImports : defaults.templateImports;
+    if (!Array.isArray(raw.templateImports)) repairs.add("TEMPLATE_IMPORTS_DEFAULTED");
+    const seenImportAreas = new Set();
+    const templateImports = importSource.flatMap(entry => {
+      if (!isPlainObject(entry) || !nullableStringId(entry.templateId) || !nullableStringId(entry.businessAreaId)) {
+        repairs.add("TEMPLATE_IMPORT_REMOVED");
+        return [];
+      }
+      if (seenImportAreas.has(entry.businessAreaId)) {
+        repairs.add("TEMPLATE_IMPORT_DUPLICATE_REMOVED");
+        return [];
+      }
+      seenImportAreas.add(entry.businessAreaId);
+      if (!businessAreaIds.has(entry.businessAreaId)) repairs.add("TEMPLATE_IMPORT_BUSINESS_AREA_MISSING");
+      const categoryIds = uniqueStrings(entry.categoryIds).filter(id => categoryByKey.has(`${entry.businessAreaId}\u0000${id}`));
+      const itemIds = uniqueStrings(entry.itemIds).filter(id => itemByKey.has(`${entry.businessAreaId}\u0000${id}`));
+      const needsReviewCount = items.filter(item => item.businessAreaId === entry.businessAreaId && item.active && item.needsReview).length;
+      return [{
+        templateId: entry.templateId,
+        businessAreaId: entry.businessAreaId,
+        importedAt: stringValue(entry.importedAt, epochIso),
+        lastCheckedAt: stringValue(entry.lastCheckedAt, stringValue(entry.importedAt, epochIso)),
+        version: Number.isInteger(entry.version) && entry.version > 0 ? entry.version : 1,
+        status: needsReviewCount ? "needs-review" : "ready",
+        needsReviewCount,
+        categoryIds,
+        itemIds
+      }];
+    });
+
+    const normalizedKnownFields = {
+      formatVersion: constants.catalogFormatVersion,
+      tenantId: nullableStringId(expectedTenantId) || constants.tenantId,
+      updatedAt: stringValue(raw.updatedAt),
+      categories,
+      items,
+      templateImports
+    };
+    return {
+      record: stripExcludedCatalogData(mergePreservingUnknown(raw, normalizedKnownFields)),
+      repairs: [...repairs]
+    };
   }
 
   function normalizeSettingsRecord(rawRecord, defaultsInput, expectedTenantId = constants.tenantId) {
@@ -397,10 +805,16 @@
   function mergePreservingUnknown(existing, next) {
     if (Array.isArray(next)) {
       if (!Array.isArray(existing)) return cloneSafe(next);
-      const keyed = next.every(entry => isPlainObject(entry) && nullableStringId(entry.id));
+      const identity = entry => {
+        if (!isPlainObject(entry)) return null;
+        if (nullableStringId(entry.id)) return `${nullableStringId(entry.businessAreaId) || ""}\u0000${entry.id}`;
+        if (nullableStringId(entry.templateId) && nullableStringId(entry.businessAreaId)) return `${entry.businessAreaId}\u0000${entry.templateId}`;
+        return null;
+      };
+      const keyed = next.every(entry => identity(entry));
       if (!keyed) return cloneSafe(next);
-      const existingById = new Map(existing.filter(entry => isPlainObject(entry) && nullableStringId(entry.id)).map(entry => [entry.id, entry]));
-      return next.map(entry => mergePreservingUnknown(existingById.get(entry.id), entry));
+      const existingById = new Map(existing.filter(entry => identity(entry)).map(entry => [identity(entry), entry]));
+      return next.map(entry => mergePreservingUnknown(existingById.get(identity(entry)), entry));
     }
     if (!isPlainObject(next)) return cloneSafe(next);
     const result = isPlainObject(existing) ? cloneSafe(existing) : {};
@@ -430,6 +844,33 @@
     return cleaned;
   }
 
+  function stripExcludedCatalogData(record) {
+    const cleaned = cloneSafe(record) || {};
+    catalogForbiddenRootKeys.forEach(key => { delete cleaned[key]; });
+    [cleaned.categories, cleaned.items].forEach(entries => {
+      if (!Array.isArray(entries)) return;
+      entries.forEach(entry => {
+        if (!isPlainObject(entry)) return;
+        Object.keys(entry).forEach(key => {
+          if (/^(image|logo)/i.test(key)) delete entry[key];
+        });
+      });
+    });
+    return cleaned;
+  }
+
+  function stripExcludedCustomersData(record) {
+    const cleaned = cloneSafe(record) || {};
+    customersForbiddenRootKeys.forEach(key => { delete cleaned[key]; });
+    if (Array.isArray(cleaned.customers)) {
+      cleaned.customers.forEach(customer => {
+        if (!isPlainObject(customer)) return;
+        customerForbiddenKeys.forEach(key => { delete customer[key]; });
+      });
+    }
+    return cleaned;
+  }
+
   function createSettingsPersistence(options = {}) {
     const indexedDBFactory = Object.prototype.hasOwnProperty.call(options, "indexedDBFactory")
       ? options.indexedDBFactory
@@ -437,6 +878,8 @@
     const databaseName = options.databaseName || constants.databaseName;
     const databaseVersion = Number(options.databaseVersion || constants.databaseVersion);
     const storeName = options.storeName || constants.storeName;
+    const catalogStoreName = options.catalogStoreName || constants.catalogStoreName;
+    const customersStoreName = options.customersStoreName || constants.customersStoreName;
     const tenantId = nullableStringId(options.tenantId) || constants.tenantId;
     let databasePromise = null;
     let writeQueue = Promise.resolve();
@@ -467,6 +910,8 @@
         request.onupgradeneeded = () => {
           const database = request.result;
           if (!database.objectStoreNames.contains(storeName)) database.createObjectStore(storeName, { keyPath: "tenantId" });
+          if (!database.objectStoreNames.contains(catalogStoreName)) database.createObjectStore(catalogStoreName, { keyPath: "tenantId" });
+          if (!database.objectStoreNames.contains(customersStoreName)) database.createObjectStore(customersStoreName, { keyPath: "tenantId" });
         };
         request.onsuccess = () => {
           const database = request.result;
@@ -474,10 +919,12 @@
             database.close();
             return;
           }
-          if (!database.objectStoreNames.contains(storeName)) {
+          if (!database.objectStoreNames.contains(storeName)
+            || !database.objectStoreNames.contains(catalogStoreName)
+            || !database.objectStoreNames.contains(customersStoreName)) {
             settled = true;
             database.close();
-            reject(new PersistenceError("SCHEMA_MISSING", "Die lokale Datenbank besitzt nicht das erwartete Einstellungsschema."));
+            reject(new PersistenceError("SCHEMA_MISSING", "Die lokale Datenbank besitzt nicht das erwartete FRECKA-Schema."));
             return;
           }
           settled = true;
@@ -661,13 +1108,334 @@
       });
     }
 
+    async function readCatalog() {
+      const database = await openDatabase();
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        let result = null;
+        let transaction;
+        try {
+          transaction = database.transaction(catalogStoreName, "readonly");
+          const request = transaction.objectStore(catalogStoreName).get(tenantId);
+          request.onsuccess = () => { result = request.result || null; };
+          request.onerror = () => {
+            if (settled) return;
+            settled = true;
+            reject(new PersistenceError("CATALOG_READ_FAILED", "Der gespeicherte Katalog konnte nicht gelesen werden.", request.error));
+          };
+        } catch (cause) {
+          reject(new PersistenceError("CATALOG_READ_FAILED", "Der gespeicherte Katalog konnte nicht gelesen werden.", cause));
+          return;
+        }
+        transaction.oncomplete = () => {
+          if (settled) return;
+          settled = true;
+          resolve(result);
+        };
+        transaction.onabort = () => {
+          if (settled) return;
+          settled = true;
+          reject(new PersistenceError("TRANSACTION_ABORTED", "Das Lesen des Katalogs wurde abgebrochen.", transaction.error));
+        };
+        transaction.onerror = () => {};
+      });
+    }
+
+    function writeCatalog(record) {
+      let requestedSnapshot;
+      try {
+        requestedSnapshot = stripExcludedCatalogData(cloneSerializable(record));
+      } catch (error) {
+        return Promise.reject(error);
+      }
+      if (!isPlainObject(requestedSnapshot) || requestedSnapshot.formatVersion !== constants.catalogFormatVersion) {
+        return Promise.reject(new PersistenceError("INVALID_DATA", "Der Katalogdatensatz besitzt kein unterstütztes Format."));
+      }
+      if (nullableStringId(requestedSnapshot.tenantId) && requestedSnapshot.tenantId !== tenantId) {
+        return Promise.reject(new PersistenceError("INVALID_DATA", "Der Katalogdatensatz gehört zu einer anderen Instanz."));
+      }
+      requestedSnapshot.tenantId = tenantId;
+
+      return queued(async () => {
+        const database = await openDatabase();
+        return new Promise((resolve, reject) => {
+          let settled = false;
+          let writtenRecord = null;
+          let transactionFailure = null;
+          let transaction;
+          try {
+            transaction = database.transaction(catalogStoreName, "readwrite");
+            const store = transaction.objectStore(catalogStoreName);
+            const readRequest = store.get(tenantId);
+            readRequest.onerror = () => {
+              transactionFailure = new PersistenceError("CATALOG_WRITE_FAILED", "Der Katalog konnte nicht lokal gespeichert werden.", readRequest.error);
+            };
+            readRequest.onsuccess = () => {
+              try {
+                const existing = readRequest.result;
+                if (existing?.formatVersion != null
+                  && (typeof existing.formatVersion !== "number" || !Number.isInteger(existing.formatVersion) || existing.formatVersion < 1)) {
+                  throw new PersistenceError("INVALID_DATA", "Der gespeicherte Katalog besitzt keine gültige Formatversion.");
+                }
+                if (existing?.formatVersion > constants.catalogFormatVersion) {
+                  throw new PersistenceError(
+                    "UNSUPPORTED_FORMAT",
+                    "Der gespeicherte Katalog stammt aus einer neueren FRECKA-Version und wurde nicht überschrieben."
+                  );
+                }
+                if (existing?.formatVersion != null && existing.formatVersion < constants.catalogFormatVersion) {
+                  throw new PersistenceError("UNSUPPORTED_FORMAT", "Für diese ältere Katalogformatversion ist noch keine Migration verfügbar.");
+                }
+                writtenRecord = stripExcludedCatalogData(mergePreservingUnknown(existing, requestedSnapshot));
+                writtenRecord.formatVersion = constants.catalogFormatVersion;
+                writtenRecord.tenantId = tenantId;
+                writtenRecord.updatedAt = new Date().toISOString();
+                const putRequest = store.put(writtenRecord);
+                putRequest.onerror = () => {
+                  transactionFailure = new PersistenceError("CATALOG_WRITE_FAILED", "Der Katalog konnte nicht lokal gespeichert werden.", putRequest.error);
+                };
+              } catch (error) {
+                if (settled) return;
+                transactionFailure = error instanceof PersistenceError
+                  ? error
+                  : new PersistenceError("CATALOG_WRITE_FAILED", "Der Katalog konnte nicht lokal gespeichert werden.", error);
+                try { transaction.abort(); } catch (abortError) {
+                  settled = true;
+                  reject(transactionFailure);
+                }
+              }
+            };
+          } catch (cause) {
+            reject(new PersistenceError("CATALOG_WRITE_FAILED", "Der Katalog konnte nicht lokal gespeichert werden.", cause));
+            return;
+          }
+          transaction.oncomplete = () => {
+            if (settled) return;
+            settled = true;
+            if (transactionFailure) reject(transactionFailure);
+            else resolve(cloneSafe(writtenRecord));
+          };
+          transaction.onabort = () => {
+            if (settled) return;
+            settled = true;
+            reject(transactionFailure || new PersistenceError("TRANSACTION_ABORTED", "Das Speichern des Katalogs wurde abgebrochen.", transaction.error));
+          };
+          transaction.onerror = () => {
+            if (!transactionFailure) transactionFailure = new PersistenceError("CATALOG_WRITE_FAILED", "Der Katalog konnte nicht lokal gespeichert werden.", transaction.error);
+          };
+        });
+      });
+    }
+
+    function deleteCatalog() {
+      return queued(async () => {
+        const database = await openDatabase();
+        return new Promise((resolve, reject) => {
+          let settled = false;
+          let transactionFailure = null;
+          let transaction;
+          try {
+            transaction = database.transaction(catalogStoreName, "readwrite");
+            const request = transaction.objectStore(catalogStoreName).delete(tenantId);
+            request.onerror = () => {
+              transactionFailure = new PersistenceError("CATALOG_DELETE_FAILED", "Der gespeicherte Katalog konnte nicht zurückgesetzt werden.", request.error);
+            };
+          } catch (cause) {
+            reject(new PersistenceError("CATALOG_DELETE_FAILED", "Der gespeicherte Katalog konnte nicht zurückgesetzt werden.", cause));
+            return;
+          }
+          transaction.oncomplete = () => {
+            if (settled) return;
+            settled = true;
+            if (transactionFailure) reject(transactionFailure);
+            else resolve();
+          };
+          transaction.onabort = () => {
+            if (settled) return;
+            settled = true;
+            reject(transactionFailure || new PersistenceError("TRANSACTION_ABORTED", "Das Zurücksetzen des Katalogs wurde abgebrochen.", transaction.error));
+          };
+          transaction.onerror = () => {
+            if (!transactionFailure) transactionFailure = new PersistenceError("CATALOG_DELETE_FAILED", "Der gespeicherte Katalog konnte nicht zurückgesetzt werden.", transaction.error);
+          };
+        });
+      });
+    }
+
+    async function readCustomers() {
+      const database = await openDatabase();
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        let result = null;
+        let transaction;
+        try {
+          transaction = database.transaction(customersStoreName, "readonly");
+          const request = transaction.objectStore(customersStoreName).get(tenantId);
+          request.onsuccess = () => { result = request.result || null; };
+          request.onerror = () => {
+            if (settled) return;
+            settled = true;
+            reject(new PersistenceError("CUSTOMERS_READ_FAILED", "Die gespeicherten Kundendaten konnten nicht gelesen werden.", request.error));
+          };
+        } catch (cause) {
+          reject(new PersistenceError("CUSTOMERS_READ_FAILED", "Die gespeicherten Kundendaten konnten nicht gelesen werden.", cause));
+          return;
+        }
+        transaction.oncomplete = () => {
+          if (settled) return;
+          settled = true;
+          resolve(result);
+        };
+        transaction.onabort = () => {
+          if (settled) return;
+          settled = true;
+          reject(new PersistenceError("TRANSACTION_ABORTED", "Das Lesen der Kundendaten wurde abgebrochen.", transaction.error));
+        };
+        transaction.onerror = () => {};
+      });
+    }
+
+    function writeCustomers(record) {
+      let requestedSnapshot;
+      try {
+        requestedSnapshot = stripExcludedCustomersData(cloneSerializable(record));
+      } catch (error) {
+        return Promise.reject(error);
+      }
+      if (!isPlainObject(requestedSnapshot) || requestedSnapshot.formatVersion !== constants.customersFormatVersion) {
+        return Promise.reject(new PersistenceError("INVALID_DATA", "Der Kundendatensatz besitzt kein unterstütztes Format."));
+      }
+      if (nullableStringId(requestedSnapshot.tenantId) && requestedSnapshot.tenantId !== tenantId) {
+        return Promise.reject(new PersistenceError("INVALID_DATA", "Der Kundendatensatz gehört zu einer anderen Instanz."));
+      }
+      requestedSnapshot.tenantId = tenantId;
+
+      return queued(async () => {
+        const database = await openDatabase();
+        return new Promise((resolve, reject) => {
+          let settled = false;
+          let writtenRecord = null;
+          let transactionFailure = null;
+          let transaction;
+          try {
+            transaction = database.transaction(customersStoreName, "readwrite");
+            const store = transaction.objectStore(customersStoreName);
+            const readRequest = store.get(tenantId);
+            readRequest.onerror = () => {
+              transactionFailure = new PersistenceError("CUSTOMERS_WRITE_FAILED", "Die Kundendaten konnten nicht lokal gespeichert werden.", readRequest.error);
+            };
+            readRequest.onsuccess = () => {
+              try {
+                const existing = readRequest.result;
+                if (existing?.formatVersion != null
+                  && (typeof existing.formatVersion !== "number" || !Number.isInteger(existing.formatVersion) || existing.formatVersion < 1)) {
+                  throw new PersistenceError("INVALID_DATA", "Die gespeicherten Kundendaten besitzen keine gültige Formatversion.");
+                }
+                if (existing?.formatVersion > constants.customersFormatVersion) {
+                  throw new PersistenceError(
+                    "UNSUPPORTED_FORMAT",
+                    "Die gespeicherten Kundendaten stammen aus einer neueren FRECKA-Version und wurden nicht überschrieben."
+                  );
+                }
+                if (existing?.formatVersion != null && existing.formatVersion < constants.customersFormatVersion) {
+                  throw new PersistenceError("UNSUPPORTED_FORMAT", "Für diese ältere Kundenformatversion ist noch keine Migration verfügbar.");
+                }
+                writtenRecord = stripExcludedCustomersData(mergePreservingUnknown(existing, requestedSnapshot));
+                writtenRecord.formatVersion = constants.customersFormatVersion;
+                writtenRecord.tenantId = tenantId;
+                writtenRecord.updatedAt = new Date().toISOString();
+                const putRequest = store.put(writtenRecord);
+                putRequest.onerror = () => {
+                  transactionFailure = new PersistenceError("CUSTOMERS_WRITE_FAILED", "Die Kundendaten konnten nicht lokal gespeichert werden.", putRequest.error);
+                };
+              } catch (error) {
+                if (settled) return;
+                transactionFailure = error instanceof PersistenceError
+                  ? error
+                  : new PersistenceError("CUSTOMERS_WRITE_FAILED", "Die Kundendaten konnten nicht lokal gespeichert werden.", error);
+                try { transaction.abort(); } catch (abortError) {
+                  settled = true;
+                  reject(transactionFailure);
+                }
+              }
+            };
+          } catch (cause) {
+            reject(new PersistenceError("CUSTOMERS_WRITE_FAILED", "Die Kundendaten konnten nicht lokal gespeichert werden.", cause));
+            return;
+          }
+          transaction.oncomplete = () => {
+            if (settled) return;
+            settled = true;
+            if (transactionFailure) reject(transactionFailure);
+            else resolve(cloneSafe(writtenRecord));
+          };
+          transaction.onabort = () => {
+            if (settled) return;
+            settled = true;
+            reject(transactionFailure || new PersistenceError("TRANSACTION_ABORTED", "Das Speichern der Kundendaten wurde abgebrochen.", transaction.error));
+          };
+          transaction.onerror = () => {
+            if (!transactionFailure) transactionFailure = new PersistenceError("CUSTOMERS_WRITE_FAILED", "Die Kundendaten konnten nicht lokal gespeichert werden.", transaction.error);
+          };
+        });
+      });
+    }
+
+    function deleteCustomers() {
+      return queued(async () => {
+        const database = await openDatabase();
+        return new Promise((resolve, reject) => {
+          let settled = false;
+          let transactionFailure = null;
+          let transaction;
+          try {
+            transaction = database.transaction(customersStoreName, "readwrite");
+            const request = transaction.objectStore(customersStoreName).delete(tenantId);
+            request.onerror = () => {
+              transactionFailure = new PersistenceError("CUSTOMERS_DELETE_FAILED", "Die gespeicherten Kundendaten konnten nicht zurückgesetzt werden.", request.error);
+            };
+          } catch (cause) {
+            reject(new PersistenceError("CUSTOMERS_DELETE_FAILED", "Die gespeicherten Kundendaten konnten nicht zurückgesetzt werden.", cause));
+            return;
+          }
+          transaction.oncomplete = () => {
+            if (settled) return;
+            settled = true;
+            if (transactionFailure) reject(transactionFailure);
+            else resolve();
+          };
+          transaction.onabort = () => {
+            if (settled) return;
+            settled = true;
+            reject(transactionFailure || new PersistenceError("TRANSACTION_ABORTED", "Das Zurücksetzen der Kundendaten wurde abgebrochen.", transaction.error));
+          };
+          transaction.onerror = () => {
+            if (!transactionFailure) transactionFailure = new PersistenceError("CUSTOMERS_DELETE_FAILED", "Die gespeicherten Kundendaten konnten nicht zurückgesetzt werden.", transaction.error);
+          };
+        });
+      });
+    }
+
     function closeDatabase() {
       if (!databasePromise) return;
       databasePromise.then(database => database.close()).catch(() => {});
       databasePromise = null;
     }
 
-    return Object.freeze({ openDatabase, readSettings, writeSettings, deleteSettings, closeDatabase, tenantId });
+    return Object.freeze({
+      openDatabase,
+      readSettings,
+      writeSettings,
+      deleteSettings,
+      readCatalog,
+      writeCatalog,
+      deleteCatalog,
+      readCustomers,
+      writeCustomers,
+      deleteCustomers,
+      closeDatabase,
+      tenantId
+    });
   }
 
   const defaultPersistence = createSettingsPersistence();
@@ -676,6 +1444,11 @@
     createSettingsPersistence,
     snapshotSettings,
     normalizeSettingsRecord,
+    snapshotCatalog,
+    normalizeCatalogRecord,
+    snapshotCustomers,
+    normalizeCustomersRecord,
+    customerMatchesSearch,
     PersistenceError,
     constants
   });

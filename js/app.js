@@ -5,6 +5,8 @@
   const defaultSettingsRecord = persistence?.snapshotSettings
     ? persistence.snapshotSettings(data, "not-started")
     : null;
+  let defaultCatalogRecord = null;
+  let defaultCustomersRecord = null;
   const state = {
     route: "home",
     activeBusinessArea: null,
@@ -28,6 +30,8 @@
     customerDetailId: null,
     customerHistoryExpanded: false,
     customerHistoryOpenNumber: null,
+    customerNotice: "",
+    customerNoticeIsError: false,
     receiptInternalNote: "",
     pendingDialogAction: null,
     editingCustomerId: null,
@@ -146,6 +150,66 @@
     state.setup.status = validSetupStatuses.has(record.setup?.status) ? record.setup.status : "not-started";
   }
 
+  function applyCatalogRecord(record) {
+    const vouchersByArea = new Map(Object.entries(data.catalog).map(([areaId, entries]) => [
+      areaId,
+      (Array.isArray(entries) ? entries : []).filter(item => item.type === "voucher").map(item => cloneSettingsValue(item))
+    ]));
+    replaceSettingsArray(data.categories, record.categories);
+    const areaIds = new Set([
+      ...Object.keys(data.catalog),
+      ...data.businessAreas.map(area => area.id),
+      ...record.items.map(item => item.businessAreaId),
+      ...record.templateImports.map(entry => entry.businessAreaId)
+    ]);
+    areaIds.forEach(areaId => {
+      if (!Array.isArray(data.catalog[areaId])) data.catalog[areaId] = [];
+      const items = record.items.filter(item => item.businessAreaId === areaId).map(item => ({
+        ...cloneSettingsValue(item),
+        title: item.name,
+        price: Number(item.priceCents || 0) / 100,
+        sku: item.type === "product" ? item.sku || "" : undefined,
+        unit: item.type === "product" ? item.unit || "Stück" : undefined
+      }));
+      replaceSettingsArray(data.catalog[areaId], [...items, ...(vouchersByArea.get(areaId) || [])]);
+    });
+    Object.keys(data.templateImportStatus).forEach(areaId => { delete data.templateImportStatus[areaId]; });
+    record.templateImports.forEach(entry => {
+      data.templateImportStatus[entry.businessAreaId] = {
+        templateKey: entry.templateId,
+        importedAt: entry.importedAt,
+        lastCheckedAt: entry.lastCheckedAt,
+        version: entry.version,
+        status: entry.status,
+        needsReviewCount: entry.needsReviewCount,
+        categoryIds: [...entry.categoryIds],
+        itemIds: [...entry.itemIds]
+      };
+    });
+  }
+
+  function applyCustomersRecord(record) {
+    const runtimeMetadataById = new Map(data.customers.map(customer => [customer.id, {
+      history: Array.isArray(customer.history) ? cloneSettingsValue(customer.history) : undefined,
+      receiptCount: Number.isFinite(Number(customer.receiptCount)) ? Number(customer.receiptCount) : undefined,
+      lastVisit: typeof customer.lastVisit === "string" ? customer.lastVisit : undefined,
+      totalTurnover: Number.isFinite(Number(customer.totalTurnover)) ? Number(customer.totalTurnover) : undefined
+    }]));
+    const customers = record.customers.map(customer => {
+      const metadata = runtimeMetadataById.get(customer.id) || {};
+      return {
+        ...cloneSettingsValue(customer),
+        zip: customer.postalCode || "",
+        note: customer.notes || "",
+        ...(metadata.history ? { history: metadata.history } : {}),
+        ...(metadata.receiptCount !== undefined ? { receiptCount: metadata.receiptCount } : {}),
+        ...(metadata.lastVisit !== undefined ? { lastVisit: metadata.lastVisit } : {}),
+        ...(metadata.totalTurnover !== undefined ? { totalTurnover: metadata.totalTurnover } : {})
+      };
+    });
+    replaceSettingsArray(data.customers, customers);
+  }
+
   function calculateReceiptCounter() {
     const prefix = String(data.receiptSettings?.yearPrefix || new Date().getFullYear());
     return [...data.receipts, ...data.vouchers.map(voucher => ({ number: voucher.saleReceipt?.number }))].reduce((highest, receipt) => {
@@ -171,7 +235,10 @@
       ".settings-form button", ".settings-form input", ".settings-form select", ".settings-form textarea",
       "[data-payment-toggle]", "[data-payment-move]", "[data-setup-back]", "[data-setup-cancel]",
       "[data-action='business-area-add']", "[data-template-choice]", "[data-action='template-use']",
-      "[data-action='template-empty']", "[data-action='settings-reset']", "[data-route]",
+      "[data-action='template-empty']", "[data-action='settings-reset']", "[data-action='catalog-reset']",
+      "[data-action='customers-reset']", ".customer-form button", ".customer-form input", ".customer-form textarea",
+      "[data-catalog-toggle-item]", "[data-catalog-toggle-category]", "[data-catalog-move-item]",
+      "[data-catalog-move-category]", "[data-route]",
       "#businessSwitcher", "#bottomSheetClose", "#cancelDiscard", "#confirmDiscard"
     ].join(","))];
   }
@@ -234,11 +301,85 @@
     }
   }
 
+  async function persistCurrentCatalog() {
+    if (!persistence?.snapshotCatalog || !persistence?.normalizeCatalogRecord || !persistence?.writeCatalog || !defaultCatalogRecord) {
+      const error = new Error("Lokale Katalogspeicherung ist derzeit nicht verfügbar.");
+      error.name = "PersistenceUnavailableError";
+      error.code = "PERSISTENCE_UNAVAILABLE";
+      error.userMessage = "Der Katalog kann derzeit nicht lokal gespeichert werden. Deine Änderungen bleiben bis zum Schließen der App erhalten.";
+      throw error;
+    }
+    pendingSettingsWrites += 1;
+    setSettingsWritePending(true);
+    try {
+      const snapshot = persistence.snapshotCatalog(data, persistence.tenantId);
+      const normalizedRecord = persistence.normalizeCatalogRecord(snapshot, defaultCatalogRecord, data.businessAreas, persistence.tenantId).record;
+      const writtenRecord = await persistence.writeCatalog(normalizedRecord);
+      applyCatalogRecord(normalizedRecord);
+      return writtenRecord;
+    } catch (error) {
+      logPersistenceError("Katalog speichern fehlgeschlagen", error);
+      throw error;
+    } finally {
+      pendingSettingsWrites = Math.max(0, pendingSettingsWrites - 1);
+      if (!pendingSettingsWrites) setSettingsWritePending(false);
+    }
+  }
+
+  async function persistCatalogMutation(successMessage) {
+    try {
+      await persistCurrentCatalog();
+      state.catalogSettingsNotice = successMessage;
+      return true;
+    } catch (error) {
+      state.catalogSettingsNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error, "Der Katalog konnte nicht lokal gespeichert werden.")}`;
+      return false;
+    }
+  }
+
+  async function persistCurrentCustomers() {
+    if (!persistence?.snapshotCustomers || !persistence?.normalizeCustomersRecord || !persistence?.writeCustomers || !defaultCustomersRecord) {
+      const error = new Error("Lokale Kundenspeicherung ist derzeit nicht verfügbar.");
+      error.name = "PersistenceUnavailableError";
+      error.code = "PERSISTENCE_UNAVAILABLE";
+      error.userMessage = "Die Kundendaten können derzeit nicht lokal gespeichert werden. Deine Eingaben bleiben bis zum Schließen der App erhalten.";
+      throw error;
+    }
+    pendingSettingsWrites += 1;
+    setSettingsWritePending(true);
+    try {
+      const snapshot = persistence.snapshotCustomers(data, persistence.tenantId);
+      const normalizedRecord = persistence.normalizeCustomersRecord(snapshot, defaultCustomersRecord, persistence.tenantId).record;
+      const writtenRecord = await persistence.writeCustomers(normalizedRecord);
+      applyCustomersRecord(normalizedRecord);
+      return writtenRecord;
+    } catch (error) {
+      logPersistenceError("Kundendaten speichern fehlgeschlagen", error);
+      throw error;
+    } finally {
+      pendingSettingsWrites = Math.max(0, pendingSettingsWrites - 1);
+      if (!pendingSettingsWrites) setSettingsWritePending(false);
+    }
+  }
+
+  async function persistCustomerMutation(successMessage) {
+    try {
+      await persistCurrentCustomers();
+      state.customerNotice = successMessage;
+      state.customerNoticeIsError = false;
+      return true;
+    } catch (error) {
+      state.customerNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error, "Die Kundendaten konnten nicht lokal gespeichert werden.")}`;
+      state.customerNoticeIsError = true;
+      return false;
+    }
+  }
+
   function renderSettingsLoading() {
     mainContent.setAttribute("aria-busy", "true");
     bottomNav.setAttribute("aria-busy", "true");
     bottomNav.querySelectorAll("button").forEach(button => { button.disabled = true; });
-    mainContent.innerHTML = `<section class="persistence-loading" role="status" aria-live="polite" aria-busy="true"><span class="persistence-loading-spinner" aria-hidden="true"></span><div><strong>FRECKA wird vorbereitet</strong><p>Lokale Einstellungen werden geladen …</p></div></section>`;
+    mainContent.innerHTML = `<section class="persistence-loading" role="status" aria-live="polite" aria-busy="true"><span class="persistence-loading-spinner" aria-hidden="true"></span><div><strong>FRECKA wird vorbereitet</strong><p>Lokale Einstellungen, Katalog- und Kundendaten werden geladen …</p></div></section>`;
   }
 
   async function loadSettingsForStart() {
@@ -253,6 +394,34 @@
     const normalized = persistence.normalizeSettingsRecord(savedRecord, defaultSettingsRecord, persistence.tenantId);
     applySettingsRecord(normalized.record);
     return { firstStart: savedRecord === null, repairs: normalized.repairs };
+  }
+
+  async function loadCatalogForStart() {
+    if (!persistence?.readCatalog || !persistence?.normalizeCatalogRecord || !defaultCatalogRecord) {
+      const error = new Error("Die Katalogpersistenz wurde nicht geladen.");
+      error.code = "PERSISTENCE_UNAVAILABLE";
+      error.userMessage = "Der lokale Katalog konnte nicht geladen werden. FRECKA verwendet sichere Standarddaten.";
+      throw error;
+    }
+    const savedRecord = await persistence.readCatalog();
+    if (savedRecord === null) return { firstStart: true, repairs: [] };
+    const normalized = persistence.normalizeCatalogRecord(savedRecord, defaultCatalogRecord, data.businessAreas, persistence.tenantId);
+    applyCatalogRecord(normalized.record);
+    return { firstStart: false, repairs: normalized.repairs };
+  }
+
+  async function loadCustomersForStart() {
+    if (!persistence?.readCustomers || !persistence?.normalizeCustomersRecord || !defaultCustomersRecord) {
+      const error = new Error("Die Kundenpersistenz wurde nicht geladen.");
+      error.code = "PERSISTENCE_UNAVAILABLE";
+      error.userMessage = "Die lokalen Kundendaten konnten nicht geladen werden. FRECKA verwendet sichere Demodaten.";
+      throw error;
+    }
+    const savedRecord = await persistence.readCustomers();
+    if (savedRecord === null) return { firstStart: true, repairs: [] };
+    const normalized = persistence.normalizeCustomersRecord(savedRecord, defaultCustomersRecord, persistence.tenantId);
+    applyCustomersRecord(normalized.record);
+    return { firstStart: false, repairs: normalized.repairs };
   }
 
   const catalogCategories = (areaId, activeOnly = false) => data.categories
@@ -1082,22 +1251,48 @@
   }
 
 
-  const customerName = customer => `${customer.firstName} ${customer.lastName}`.trim();
+  const customerName = customer => `${customer.firstName || ""} ${customer.lastName || ""}`.trim() || customer.companyName || "Unbekannter Kunde";
+  const customerInitials = customer => `${customer.firstName?.[0] || ""}${customer.lastName?.[0] || ""}` || customer.companyName?.[0] || "?";
   const customerAddressLines = customer => [
     customer.street || "",
     [customer.zip || "", customer.city || ""].filter(Boolean).join(" ")
   ].filter(Boolean);
+  const customerNoticeMarkup = () => state.customerNotice
+    ? `<div class="settings-save-notice ${state.customerNoticeIsError ? "is-error" : ""}" role="${state.customerNoticeIsError ? "alert" : "status"}">${escapeHtml(state.customerNotice)}</div>`
+    : "";
+  const createCustomerId = () => globalThis.crypto?.randomUUID
+    ? `c-${globalThis.crypto.randomUUID()}`
+    : `c-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  function showCustomerFormPersistenceNotice(form) {
+    const page = form.closest(".customer-form-page");
+    page?.querySelectorAll(":scope > .settings-save-notice").forEach(notice => notice.remove());
+    const notice = document.createElement("div");
+    notice.className = `settings-save-notice ${state.customerNoticeIsError ? "is-error" : ""}`;
+    notice.setAttribute("role", state.customerNoticeIsError ? "alert" : "status");
+    notice.textContent = state.customerNotice;
+    form.before(notice);
+  }
+  const normalizePhoneSearch = value => String(value || "").replace(/[^0-9+]/g, "").replace(/(?!^)\+/g, "");
   function filteredCustomers() {
     const q = state.customerSearch.trim().toLowerCase();
     if (!q) return data.customers;
-    return data.customers.filter(c => [customerName(c), c.phone, c.email].join(" ").toLowerCase().includes(q));
+    return data.customers.filter(c => {
+      if (persistence?.customerMatchesSearch) return persistence.customerMatchesSearch(c, q);
+      const phoneQuery = normalizePhoneSearch(q);
+      const textMatch = [customerName(c), c.companyName, c.phone, c.mobile, c.email].join(" ").toLowerCase().includes(q);
+      const phoneMatch = phoneQuery && [c.phone, c.mobile].some(value => normalizePhoneSearch(value).includes(phoneQuery));
+      return textMatch || phoneMatch;
+    });
   }
   function customerCard(c, selectable=false, selectedId=state.selectedCustomerId) {
+    const receiptHistory = customerReceipts(c).filter(receipt => receipt.type === "receipt");
+    const receiptCount = receiptHistory.length || Number(c.receiptCount || 0);
+    const lastVisit = receiptHistory[0]?.date || c.lastVisit || "Noch kein Besuch";
     return `<article class="customer-card ${selectedId===c.id?"is-selected":""}">
       <button type="button" class="customer-card-main" ${selectable?`data-select-customer="${c.id}"`:`data-open-customer="${c.id}"`}>
-        <span class="customer-avatar" aria-hidden="true">${escapeHtml(c.firstName[0]+c.lastName[0])}</span>
-        <span class="customer-card-text"><strong>${escapeHtml(customerName(c))}</strong><small>${escapeHtml(c.phone || "Keine Telefonnummer")}</small><small>${escapeHtml(c.email || "Keine E-Mail")}</small></span>
-        <span class="customer-card-meta">${c.receiptCount} Belege<br>${escapeHtml(c.lastVisit)}</span>
+        <span class="customer-avatar" aria-hidden="true">${escapeHtml(customerInitials(c))}</span>
+        <span class="customer-card-text"><strong>${escapeHtml(customerName(c))}</strong>${c.companyName ? `<small>${escapeHtml(c.companyName)}</small>` : ""}<small>${escapeHtml(c.phone || c.mobile || "Keine Telefonnummer")}</small><small>${escapeHtml(c.email || "Keine E-Mail")}</small></span>
+        <span class="customer-card-meta">${receiptCount} Belege<br>${escapeHtml(lastVisit)}</span>
       </button>
       ${selectable ? "" : `<button class="customer-card-edit" type="button" data-edit-customer="${c.id}">Bearbeiten</button>`}
     </article>`;
@@ -1109,7 +1304,8 @@
     const title=selectable?"Kunde auswählen":"Kunden";
     const back=selectable?(voucherSelection?'voucher-sale':'checkout'):'home';
     mainContent.innerHTML=`<section class="flow-page customer-page page-enter">
-      <div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-route="${back}"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">${selectable?(voucherSelection?'Gutscheinverkauf':'Neuer Beleg'):'Verwaltung'}</p><h1 class="flow-title">${title}</h1><p class="page-copy">Nach Name, Telefon oder E-Mail suchen.</p></div>
+      ${customerNoticeMarkup()}
+      <div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-route="${back}"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">${selectable?(voucherSelection?'Gutscheinverkauf':'Neuer Beleg'):'Verwaltung'}</p><h1 class="flow-title">${title}</h1><p class="page-copy">Nach Name, Firma, Telefon oder E-Mail suchen.</p></div>
       <div class="customer-toolbar ${voucherSelection ? "is-picker-only" : ""}"><label class="search-field"><span aria-hidden="true">⌕</span><input id="customerSearch" type="search" placeholder="Kunde suchen" value="${escapeHtml(state.customerSearch)}"></label>${voucherSelection ? "" : `<button class="button button-primary customer-new-button" type="button" data-route="customer-new">＋ Neuer Kunde</button>`}</div>
       ${selectable?'<button class="customer-none" type="button" data-select-no-customer>Ohne Kunde fortfahren</button>':''}
       <div class="customer-list">${list.length?list.map(c=>customerCard(c,selectable,selectedId)).join(''):'<div class="empty-state">Keine passenden Kunden gefunden.</div>'}</div>
@@ -1125,11 +1321,14 @@
         <h1 class="flow-title">${isEdit ? "Kunde bearbeiten" : "Neuer Kunde"}</h1>
         <p class="page-copy">${isEdit ? "Kontaktdaten aktualisieren." : "Nur Vor- und Nachname sind erforderlich."}</p>
       </div>
+      ${customerNoticeMarkup()}
       <form class="customer-form" id="customerForm" data-mode="${isEdit ? "edit" : "new"}">
         <div class="form-grid">
           <label><span>Vorname *</span><input name="firstName" required autocomplete="given-name" value="${escapeHtml(customer?.firstName || "")}"></label>
           <label><span>Nachname *</span><input name="lastName" required autocomplete="family-name" value="${escapeHtml(customer?.lastName || "")}"></label>
+          <label class="full"><span>Firma <small>optional</small></span><input name="companyName" autocomplete="organization" value="${escapeHtml(customer?.companyName || "")}"></label>
           <label><span>Telefon</span><input name="phone" type="tel" inputmode="tel" value="${escapeHtml(customer?.phone || "")}"></label>
+          <label><span>Mobil</span><input name="mobile" type="tel" inputmode="tel" value="${escapeHtml(customer?.mobile || "")}"></label>
           <label><span>E-Mail</span><input name="email" type="email" inputmode="email" value="${escapeHtml(customer?.email || "")}"></label>
           <label class="full"><span>Straße</span><input name="street" value="${escapeHtml(customer?.street || "")}"></label>
           <label><span>PLZ</span><input name="zip" inputmode="numeric" value="${escapeHtml(customer?.zip || "")}"></label>
@@ -1193,8 +1392,8 @@
     const visibleHistory = allHistory.slice(0, 8);
     const turnover = customerEconomicTurnover(c);
     const latestOriginal = allHistory.find(receipt => receipt.type === "receipt");
-    const lastVisit = latestOriginal?.date || c.lastVisit;
-    const originalReceiptCount = allHistory.filter(receipt => receipt.type === "receipt").length || c.receiptCount;
+    const lastVisit = latestOriginal?.date || c.lastVisit || "Noch kein Besuch";
+    const originalReceiptCount = allHistory.filter(receipt => receipt.type === "receipt").length || Number(c.receiptCount || 0);
 
     const historyMarkup = allHistory.length
       ? `<section class="customer-history customer-history-accordion ${state.customerHistoryExpanded ? "is-expanded" : ""}">
@@ -1247,6 +1446,7 @@
       : "";
 
     mainContent.innerHTML = `<section class="flow-page customer-detail-page page-enter">
+      ${customerNoticeMarkup()}
       <div class="flow-head compact-work-head">
         <button class="button button-back" type="button" data-route="customers"><span aria-hidden="true">←</span> Zurück</button>
         <p class="eyebrow">Kunde</p>
@@ -1254,9 +1454,10 @@
       </div>
 
       <section class="customer-detail-card">
-        <div class="customer-avatar large">${escapeHtml(c.firstName[0] + c.lastName[0])}</div>
+        <div class="customer-avatar large">${escapeHtml(customerInitials(c))}</div>
         <div>
           <strong>${escapeHtml(customerName(c))}</strong>
+          ${c.companyName ? `<p>${escapeHtml(c.companyName)}</p>` : ""}
           ${address.map(line => `<p>${escapeHtml(line)}</p>`).join("")}
           <p>${escapeHtml(c.phone || "Keine Telefonnummer")}</p>
           <p>${escapeHtml(c.email || "Keine E-Mail")}</p>
@@ -2519,6 +2720,7 @@
       templateKey,
       importedAt: data.templateImportStatus[areaId]?.importedAt || now,
       lastCheckedAt: now,
+      version: data.templateImportStatus[areaId]?.version || 1,
       status: "needs-review"
     };
     syncTemplateImportStatus(areaId);
@@ -2535,6 +2737,9 @@
     status.needsReviewCount = catalogReviewCount(areaId);
     status.status = status.needsReviewCount ? "needs-review" : "ready";
     status.lastCheckedAt = new Date().toISOString();
+    status.version = Number.isInteger(status.version) && status.version > 0 ? status.version : 1;
+    status.categoryIds = data.categories.filter(category => category.businessAreaId === areaId && category.source === "template").map(category => category.id);
+    status.itemIds = catalogEntries(areaId).filter(item => ["service", "product"].includes(item.type) && item.source === "template").map(item => item.id);
   }
 
   function openTemplateImportSuccess(areaId) {
@@ -2560,6 +2765,7 @@
       : `${label} wurde ohne Vorlage angelegt. Name und Standard können jetzt angepasst werden.`;
     try {
       await persistCurrentSettings();
+      await persistCurrentCatalog();
     } catch (error) {
       const errorMessage = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`;
       closeBottomSheet();
@@ -3015,7 +3221,9 @@
         </article>`).join("")}
       </div>
       <section class="settings-reset-card"><h2>Lokale Einstellungen</h2><p>Unternehmensdaten, Leistungsorte, Steuern, Zahlungsarten und Geschäftsbereiche werden ausschließlich auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="settings-reset">Gespeicherte Einstellungen zurücksetzen</button><small>Kunden, Belege, Gutscheine und Kataloge werden dadurch nicht gelöscht.</small></section>
-      <p class="prototype-note">Kunden, Belege, Gutscheine und Kataloge bleiben in diesem Entwicklungsblock weiterhin im Arbeitsspeicher.</p>
+      <section class="settings-reset-card"><h2>Lokaler Katalog</h2><p>Kategorien, Leistungen, Produkte und Vorlagenimporte werden getrennt von den Einstellungen auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="catalog-reset">Gespeicherten Katalog zurücksetzen</button><small>Einstellungen, Kunden, Belege und Gutscheine werden dadurch nicht gelöscht.</small></section>
+      <section class="settings-reset-card"><h2>Lokale Kunden</h2><p>Kundenstammdaten werden getrennt von Einstellungen und Katalog ausschließlich auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="customers-reset">Gespeicherte Kunden zurücksetzen</button><small>Einstellungen, Katalog, Belege und Gutscheine werden dadurch nicht gelöscht.</small></section>
+      <p class="prototype-note">Belege, Gutscheine und Historien bleiben in diesem Entwicklungsblock weiterhin im Arbeitsspeicher.</p>
     </section>`;
   }
 
@@ -3375,14 +3583,14 @@
     const summary = catalogStatusSummary(area.id);
     mainContent.innerHTML = `<section class="flow-page settings-form-page catalog-manager-page page-enter">
       <div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-action="catalog-settings-back"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">Einstellungen</p><h1 class="flow-title">Leistungen & Produkte</h1><p class="page-copy">Zentraler Katalog je Geschäftsbereich. Änderungen erscheinen direkt bei neuen Belegen.</p></div>
-      ${state.catalogSettingsNotice ? `<div class="settings-save-notice ${state.catalogSettingsNotice.startsWith("Bitte") ? "is-error" : ""}" role="status">${escapeHtml(state.catalogSettingsNotice)}</div>` : ""}
+      ${state.catalogSettingsNotice ? `<div class="settings-save-notice ${/^(Bitte|Lokales Speichern fehlgeschlagen)/.test(state.catalogSettingsNotice) ? "is-error" : ""}" role="${state.catalogSettingsNotice.startsWith("Lokales Speichern fehlgeschlagen") ? "alert" : "status"}">${escapeHtml(state.catalogSettingsNotice)}</div>` : ""}
       <label class="setting-field catalog-area-picker"><span>Geschäftsbereich</span><select id="catalogManagerArea">${activeBusinessAreas().map(entry => `<option value="${escapeHtml(entry.id)}" ${entry.id === area.id ? "selected" : ""}>${escapeHtml(entry.label)}</option>`).join("")}</select></label>
       <div class="catalog-readiness ${summary.total === 0 ? "is-empty" : summary.ready ? "is-ready" : "needs-review"}"><strong>${summary.total === 0 ? "Katalog noch leer" : summary.ready ? "✓ Katalog vollständig eingerichtet" : `⚠ ${summary.reviewCount} Prüfungen offen`}</strong><span>${summary.total} Leistungen und Produkte · ${summary.total === 0 ? "Ersten Eintrag anlegen" : summary.ready ? "Keine offenen Prüfungen" : "Preise oder Steuersätze noch prüfen"}</span></div>
       <div class="catalog-manager-tabs" role="tablist"><button type="button" data-catalog-manager-view="items" class="${state.catalogManagerView === "items" ? "is-active" : ""}">Leistungen & Produkte</button><button type="button" data-catalog-manager-view="categories" class="${state.catalogManagerView === "categories" ? "is-active" : ""}">Kategorien</button></div>
       ${state.catalogManagerView === "categories" ? `<div class="catalog-manager-toolbar"><div><h2>Kategorien</h2><p>Kategorien beschreiben Tätigkeiten oder Angebotsarten – keine Zielgruppen.</p></div><button class="button button-primary" type="button" data-action="catalog-new-category">＋ Kategorie</button></div><div class="catalog-admin-list">${categories.length ? categories.map((category, index) => `<article class="catalog-admin-row"><div class="catalog-admin-main"><strong>${escapeHtml(category.name)}</strong><span>${category.type === "product" ? "Produkt" : "Leistung"} · ${category.active === false ? "Deaktiviert" : "Aktiv"}</span></div><div class="catalog-row-actions"><button type="button" data-catalog-toggle-category="${escapeHtml(category.id)}">${category.active === false ? "Aktivieren" : "Deaktivieren"}</button><button type="button" data-catalog-edit-category="${escapeHtml(category.id)}">Bearbeiten</button><span><button type="button" data-catalog-move-category="${escapeHtml(category.id)}" data-direction="up" aria-label="${escapeHtml(category.name)} nach oben" ${index === 0 ? "disabled" : ""}>↑</button><button type="button" data-catalog-move-category="${escapeHtml(category.id)}" data-direction="down" aria-label="${escapeHtml(category.name)} nach unten" ${index === categories.length - 1 ? "disabled" : ""}>↓</button></span></div></article>`).join("") : `<p class="empty-state">Noch keine Kategorien vorhanden.</p>`}</div>` : `<div class="catalog-manager-toolbar"><div><h2>Einträge</h2><p>Leistungen und Produkte bearbeiten.</p></div><div class="catalog-create-actions"><button class="button button-secondary" type="button" data-catalog-new-item="service">＋ Leistung</button><button class="button button-primary" type="button" data-catalog-new-item="product">＋ Produkt</button></div></div>
         <div class="catalog-manager-filters"><label class="search-field"><span aria-hidden="true">⌕</span><input id="catalogManagerSearch" type="search" placeholder="Name suchen" value="${escapeHtml(state.catalogManagerSearch)}"></label><label><span>Status</span><select id="catalogManagerStatus"><option value="all" ${state.catalogManagerStatus === "all" ? "selected" : ""}>Alle</option><option value="active" ${state.catalogManagerStatus === "active" ? "selected" : ""}>Aktiv</option><option value="inactive" ${state.catalogManagerStatus === "inactive" ? "selected" : ""}>Deaktiviert</option></select></label><label><span>Kategorie</span><select id="catalogManagerCategory"><option value="all">Alle</option><option value="uncategorized" ${state.catalogManagerCategory === "uncategorized" ? "selected" : ""}>Ohne Kategorie</option>${categories.map(category => `<option value="${escapeHtml(category.id)}" ${state.catalogManagerCategory === category.id ? "selected" : ""}>${escapeHtml(category.name)}</option>`).join("")}</select></label></div>
         <div class="catalog-admin-list">${items.length ? items.map((item, index) => { const category = categoryById(item.categoryId); return `<article class="catalog-admin-row ${item.needsReview ? "needs-review" : ""}"><div class="catalog-admin-main"><strong>${escapeHtml(catalogItemName(item))}</strong><span>${item.type === "product" ? "Produkt" : "Leistung"} · ${category ? escapeHtml(category.name) : "Ohne Kategorie"} · ${formatCurrency(catalogItemPrice(item))}</span>${item.needsReview ? `<em>⚠ Preis und Steuersatz prüfen</em>` : ""}</div><div class="catalog-row-actions"><button type="button" data-catalog-toggle-item="${escapeHtml(item.id)}">${item.active === false ? "Aktivieren" : "Deaktivieren"}</button><button type="button" data-catalog-edit-item="${escapeHtml(item.id)}">Bearbeiten</button><span><button type="button" data-catalog-move-item="${escapeHtml(item.id)}" data-direction="up" aria-label="${escapeHtml(catalogItemName(item))} nach oben" ${index === 0 ? "disabled" : ""}>↑</button><button type="button" data-catalog-move-item="${escapeHtml(item.id)}" data-direction="down" aria-label="${escapeHtml(catalogItemName(item))} nach unten" ${index === items.length - 1 ? "disabled" : ""}>↓</button></span></div></article>`; }).join("") : `<p class="empty-state">Für diesen Filter wurden keine Einträge gefunden.</p>`}</div>`}
-      <p class="prototype-note">Keine Speicherung: Alle Änderungen bleiben ausschließlich im Arbeitsspeicher und gehen beim Neuladen verloren.</p>
+      <p class="prototype-note">Kategorien, Leistungen, Produkte und Vorlagenstatus werden ausschließlich lokal auf diesem Gerät gespeichert.</p>
     </section>`;
     document.getElementById("catalogManagerArea")?.addEventListener("change", event => {
       state.catalogManagerAreaId = event.target.value;
@@ -3455,7 +3663,10 @@
       updatedAt: now
     };
     if (existing) Object.assign(existing, values);
-    else entries.push(values);
+    else {
+      entries.push(values);
+      state.catalogEditingItemId = values.id;
+    }
     syncTemplateImportStatus(area.id);
     return "";
   }
@@ -3483,7 +3694,10 @@
       updatedAt: now
     };
     if (existing) Object.assign(existing, values);
-    else data.categories.push(values);
+    else {
+      data.categories.push(values);
+      state.catalogEditingCategoryId = values.id;
+    }
     return "";
   }
 
@@ -3751,7 +3965,7 @@
         item.active = item.active === false;
         item.updatedAt = new Date().toISOString();
         syncTemplateImportStatus(area.id);
-        state.catalogSettingsNotice = `${catalogItemName(item)} ist jetzt ${item.active ? "aktiv" : "deaktiviert"}.`;
+        await persistCatalogMutation(`${catalogItemName(item)} wurde lokal als ${item.active ? "aktiv" : "deaktiviert"} gespeichert.`);
       }
       renderCatalogSettings();
       return;
@@ -3762,7 +3976,7 @@
       if (category) {
         category.active = category.active === false;
         category.updatedAt = new Date().toISOString();
-        state.catalogSettingsNotice = `${category.name} ist jetzt ${category.active ? "aktiv" : "deaktiviert"}.`;
+        await persistCatalogMutation(`${category.name} wurde lokal als ${category.active ? "aktiv" : "deaktiviert"} gespeichert.`);
       }
       renderCatalogSettings();
       return;
@@ -3772,6 +3986,7 @@
       const area = catalogManagerArea();
       const current = catalogEntries(area?.id).find(item => item.id === moveCatalogItemButton.dataset.catalogMoveItem);
       moveCatalogEntry(catalogManagerItems(area?.id).filter(item => item.type === current?.type), moveCatalogItemButton.dataset.catalogMoveItem, moveCatalogItemButton.dataset.direction);
+      await persistCatalogMutation("Reihenfolge der Einträge wurde lokal gespeichert.");
       renderCatalogSettings();
       return;
     }
@@ -3779,6 +3994,7 @@
     if (moveCatalogCategoryButton) {
       const area = catalogManagerArea();
       moveCatalogEntry(catalogCategories(area?.id), moveCatalogCategoryButton.dataset.catalogMoveCategory, moveCatalogCategoryButton.dataset.direction);
+      await persistCatalogMutation("Reihenfolge der Kategorien wurde lokal gespeichert.");
       renderCatalogSettings();
       return;
     }
@@ -3872,6 +4088,8 @@
     if (remove) { removeItem(remove.dataset.removeItem); return; }
     const editCustomer = event.target.closest("[data-edit-customer]");
     if (editCustomer) {
+      state.customerNotice = "";
+      state.customerNoticeIsError = false;
       state.editingCustomerId = editCustomer.dataset.editCustomer;
       state.customerDetailId = editCustomer.dataset.editCustomer;
       navigate("customer-edit");
@@ -3879,6 +4097,8 @@
     }
     const openCustomer = event.target.closest("[data-open-customer]");
     if (openCustomer) {
+      state.customerNotice = "";
+      state.customerNoticeIsError = false;
       state.customerDetailId = openCustomer.dataset.openCustomer;
       state.customerHistoryExpanded = false;
       state.customerHistoryOpenNumber = null;
@@ -4190,6 +4410,10 @@
         state.customerPickerContext = state.route === "voucher-sale" ? "voucher" : "receipt";
         state.customerSearch = "";
       }
+      if (["customers", "customer-new"].includes(route.dataset.route) && state.route !== route.dataset.route) {
+        state.customerNotice = "";
+        state.customerNoticeIsError = false;
+      }
       if (route.dataset.route === "settings-company" && state.route !== "settings-company") state.settingsNotice = "";
       if (route.dataset.route === "settings-location" && state.route !== "settings-location") {
         state.serviceLocationNotice = "";
@@ -4216,6 +4440,24 @@
         text: "Unternehmensdaten, Leistungsorte, Steuern, Zahlungsarten, Geschäftsbereiche und der Einrichtungsstatus werden auf sichere Standardwerte zurückgesetzt. Kunden, Belege, Gutscheine und Kataloge bleiben unverändert.",
         confirmLabel: "Einstellungen zurücksetzen",
         action: "reset-saved-settings"
+      });
+      return;
+    }
+    if (action === "catalog-reset") {
+      openConfirmDialog({
+        title: "Gespeicherten Katalog zurücksetzen?",
+        text: "Kategorien, Leistungen, Produkte und Vorlagenimportstatus werden auf sichere Standarddaten zurückgesetzt. Einstellungen, Kunden, Belege und Gutscheine bleiben unverändert.",
+        confirmLabel: "Katalog zurücksetzen",
+        action: "reset-saved-catalog"
+      });
+      return;
+    }
+    if (action === "customers-reset") {
+      openConfirmDialog({
+        title: "Gespeicherte Kunden zurücksetzen?",
+        text: "Kundenstammdaten werden auf sichere Demodaten zurückgesetzt. Einstellungen, Katalog, Belege und Gutscheine bleiben unverändert.",
+        confirmLabel: "Kunden zurücksetzen",
+        action: "reset-saved-customers"
       });
       return;
     }
@@ -4604,8 +4846,8 @@
         showCatalogEditorError(catalogItemForm, error);
         return;
       }
-      state.catalogEditingItemId = null;
-      state.catalogSettingsNotice = "Eintrag wurde für diese Sitzung im zentralen Katalog übernommen.";
+      const saved = await persistCatalogMutation("Eintrag wurde lokal im zentralen Katalog gespeichert.");
+      if (saved) state.catalogEditingItemId = null;
       renderCatalogSettings();
       return;
     }
@@ -4618,8 +4860,8 @@
         showCatalogEditorError(catalogCategoryForm, error);
         return;
       }
-      state.catalogEditingCategoryId = null;
-      state.catalogSettingsNotice = "Kategorie wurde für diese Sitzung übernommen.";
+      const saved = await persistCatalogMutation("Kategorie wurde lokal im zentralen Katalog gespeichert.");
+      if (saved) state.catalogEditingCategoryId = null;
       renderCatalogSettings();
       return;
     }
@@ -4669,28 +4911,51 @@
       const values = {
         firstName: String(fd.get("firstName")||"").trim(),
         lastName: String(fd.get("lastName")||"").trim(),
+        companyName: String(fd.get("companyName")||"").trim(),
         phone: String(fd.get("phone")||"").trim(),
+        mobile: String(fd.get("mobile")||"").trim(),
         email: String(fd.get("email")||"").trim(),
         street: String(fd.get("street")||"").trim(),
         zip: String(fd.get("zip")||"").trim(),
+        postalCode: String(fd.get("zip")||"").trim(),
         city: String(fd.get("city")||"").trim(),
-        note: String(fd.get("note")||"").trim()
+        note: String(fd.get("note")||"").trim(),
+        notes: String(fd.get("note")||"").trim()
       };
       if (!values.firstName || !values.lastName) return;
 
-      if (customerForm.dataset.mode === "edit") {
-        const existing = data.customers.find(c => c.id === state.editingCustomerId);
+      const isEditMode = customerForm.dataset.mode === "edit";
+      const existingId = isEditMode ? state.editingCustomerId : customerForm.dataset.customerId;
+      const existing = existingId ? data.customers.find(c => c.id === existingId) : null;
+      const now = new Date().toISOString();
+      if (isEditMode || existing) {
         if (!existing) return;
-        Object.assign(existing, values);
+        Object.assign(existing, values, {
+          active: existing.active !== false,
+          createdAt: existing.createdAt || now,
+          updatedAt: now
+        });
         state.customerDetailId = existing.id;
-        state.editingCustomerId = null;
-        navigate(state.cart.length && state.selectedCustomerId === existing.id ? "checkout" : "customer-detail");
       } else {
-        const c = { id:`c-${Date.now()}`, ...values, lastVisit:"Heute", receiptCount:0 };
+        const c = { id: createCustomerId(), ...values, active: true, createdAt: now, updatedAt: now };
         data.customers.unshift(c);
-        state.selectedCustomerId=c.id;
-        state.customerChoice="new";
-        navigate(state.cart.length?"checkout":"customers");
+        customerForm.dataset.customerId = c.id;
+        state.selectedCustomerId = c.id;
+        state.customerChoice = "new";
+        state.customerDetailId = c.id;
+      }
+
+      const saved = await persistCustomerMutation(isEditMode ? "Kundendaten wurden lokal gespeichert." : "Kunde wurde lokal gespeichert.");
+      if (!saved) {
+        showCustomerFormPersistenceNotice(customerForm);
+        return;
+      }
+      if (isEditMode) {
+        const savedId = state.editingCustomerId;
+        state.editingCustomerId = null;
+        navigate(state.cart.length && state.selectedCustomerId === savedId ? "checkout" : "customer-detail");
+      } else {
+        navigate(state.cart.length ? "checkout" : "customers");
       }
       return;
     }
@@ -4750,6 +5015,76 @@
   cancelDiscard.addEventListener("click", closeDiscardDialog);
   confirmDiscard.addEventListener("click", async () => {
     const pendingAction = state.pendingDialogAction;
+
+    if (pendingAction === "reset-saved-customers") {
+      pendingSettingsWrites += 1;
+      setSettingsWritePending(true);
+      try {
+        if (!persistence?.deleteCustomers || !persistence?.normalizeCustomersRecord || !defaultCustomersRecord) {
+          const unavailableError = new Error("Lokale Kundenspeicherung ist derzeit nicht verfügbar.");
+          unavailableError.code = "PERSISTENCE_UNAVAILABLE";
+          unavailableError.userMessage = "Die gespeicherten Kundendaten konnten nicht zurückgesetzt werden, weil die lokale Speicherung nicht verfügbar ist.";
+          throw unavailableError;
+        }
+        await persistence.deleteCustomers();
+        const normalizedDefaults = persistence.normalizeCustomersRecord(defaultCustomersRecord, defaultCustomersRecord, persistence.tenantId);
+        applyCustomersRecord(normalizedDefaults.record);
+        state.selectedCustomerId = null;
+        state.voucherSaleCustomerId = null;
+        state.customerDetailId = null;
+        state.editingCustomerId = null;
+        state.customerSearch = "";
+        state.customerNotice = "";
+        state.customerNoticeIsError = false;
+        closeDiscardDialog();
+        state.settingsStorageNotice = "Die gespeicherten Kundendaten wurden zurückgesetzt. Sichere Demodaten sind jetzt aktiv.";
+        state.settingsStorageNoticeIsError = false;
+        renderSettings();
+      } catch (error) {
+        logPersistenceError("Kundendaten zurücksetzen fehlgeschlagen", error);
+        closeDiscardDialog();
+        state.settingsStorageNotice = persistenceErrorMessage(error, "Die gespeicherten Kundendaten konnten nicht zurückgesetzt werden.");
+        state.settingsStorageNoticeIsError = true;
+        renderSettings();
+      } finally {
+        pendingSettingsWrites = Math.max(0, pendingSettingsWrites - 1);
+        if (!pendingSettingsWrites) setSettingsWritePending(false);
+      }
+      return;
+    }
+
+    if (pendingAction === "reset-saved-catalog") {
+      pendingSettingsWrites += 1;
+      setSettingsWritePending(true);
+      try {
+        if (!persistence?.deleteCatalog || !persistence?.normalizeCatalogRecord || !defaultCatalogRecord) {
+          const unavailableError = new Error("Lokale Katalogspeicherung ist derzeit nicht verfügbar.");
+          unavailableError.code = "PERSISTENCE_UNAVAILABLE";
+          unavailableError.userMessage = "Der gespeicherte Katalog konnte nicht zurückgesetzt werden, weil die lokale Speicherung nicht verfügbar ist.";
+          throw unavailableError;
+        }
+        await persistence.deleteCatalog();
+        const normalizedDefaults = persistence.normalizeCatalogRecord(defaultCatalogRecord, defaultCatalogRecord, data.businessAreas, persistence.tenantId);
+        applyCatalogRecord(normalizedDefaults.record);
+        state.catalogEditingItemId = null;
+        state.catalogEditingCategoryId = null;
+        state.catalogSettingsNotice = "";
+        closeDiscardDialog();
+        state.settingsStorageNotice = "Der gespeicherte Katalog wurde zurückgesetzt. Sichere Standarddaten sind jetzt aktiv.";
+        state.settingsStorageNoticeIsError = false;
+        renderSettings();
+      } catch (error) {
+        logPersistenceError("Katalog zurücksetzen fehlgeschlagen", error);
+        closeDiscardDialog();
+        state.settingsStorageNotice = persistenceErrorMessage(error, "Der gespeicherte Katalog konnte nicht zurückgesetzt werden.");
+        state.settingsStorageNoticeIsError = true;
+        renderSettings();
+      } finally {
+        pendingSettingsWrites = Math.max(0, pendingSettingsWrites - 1);
+        if (!pendingSettingsWrites) setSettingsWritePending(false);
+      }
+      return;
+    }
 
     if (pendingAction === "reset-saved-settings") {
       pendingSettingsWrites += 1;
@@ -4940,6 +5275,26 @@
     state.settingsStorageNoticeIsError = true;
   }
   migratePrototypeCommerceModel();
+  try {
+    if (!persistence?.snapshotCatalog) throw new Error("Die Katalogpersistenz wurde nicht geladen.");
+    defaultCatalogRecord = persistence.snapshotCatalog(data, persistence.tenantId);
+    await loadCatalogForStart();
+  } catch (error) {
+    logPersistenceError("Katalog laden fehlgeschlagen", error);
+    const message = persistenceErrorMessage(error, "Der lokale Katalog konnte nicht geladen werden. FRECKA verwendet sichere Standarddaten.");
+    state.settingsStorageNotice = state.settingsStorageNotice ? `${state.settingsStorageNotice} ${message}` : message;
+    state.settingsStorageNoticeIsError = true;
+  }
+  try {
+    if (!persistence?.snapshotCustomers) throw new Error("Die Kundenpersistenz wurde nicht geladen.");
+    defaultCustomersRecord = persistence.snapshotCustomers(data, persistence.tenantId);
+    await loadCustomersForStart();
+  } catch (error) {
+    logPersistenceError("Kundendaten laden fehlgeschlagen", error);
+    const message = persistenceErrorMessage(error, "Die lokalen Kundendaten konnten nicht geladen werden. FRECKA verwendet sichere Demodaten.");
+    state.settingsStorageNotice = state.settingsStorageNotice ? `${state.settingsStorageNotice} ${message}` : message;
+    state.settingsStorageNoticeIsError = true;
+  }
   migratePrototypeContextSnapshots();
   refreshSettingsDerivedState();
   state.settingsReady = true;
