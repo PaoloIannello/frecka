@@ -1,13 +1,17 @@
 (() => {
   "use strict";
   const data = window.PROTOTYPE_DATA;
+  const receiptNumberPrefix = String(data.receiptSettings?.yearPrefix || new Date().getFullYear());
   const initialReceiptCounter = [...data.receipts, ...data.vouchers.map(voucher => ({ number: voucher.saleReceipt?.number }))].reduce((highest, receipt) => {
-    const match = /^2026-(\d{6})$/.exec(receipt.number || "");
-    return match ? Math.max(highest, Number(match[1])) : highest;
-  }, 0);
+    const [prefix, sequence] = String(receipt.number || "").split("-");
+    const match = prefix === receiptNumberPrefix && /^\d{6}$/.test(sequence || "") ? Number(sequence) : null;
+    return match !== null ? Math.max(highest, match) : highest;
+  }, Math.max(0, Number(data.receiptSettings?.nextNumber || 1) - 1));
   const state = {
     route: "home",
-    activeBusinessArea: data.businessAreas[0]?.id ?? null,
+    activeBusinessArea: data.businessAreas.find(area => area.active !== false && area.isDefault)?.id
+      ?? data.businessAreas.find(area => area.active !== false)?.id
+      ?? null,
     activeCategory: "Favoriten",
     search: "",
     openReceiptVisible: Boolean(data.openReceipt?.exists),
@@ -57,7 +61,10 @@
     voucherSaleSubmitting: false,
     voucherSaleCreatedReference: null,
     settingsNotice: "",
-    serviceLocationNotice: ""
+    serviceLocationNotice: "",
+    taxSettingsNotice: "",
+    paymentSettingsNotice: "",
+    businessAreaSettingsNotice: ""
   };
 
   const mainContent = document.getElementById("mainContent");
@@ -70,7 +77,7 @@
   const confirmDiscard = document.getElementById("confirmDiscard");
   const dialogTitle = document.getElementById("dialogTitle");
   const dialogText = document.getElementById("dialogText");
-  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "settings-company", "settings-location"]);
+  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "settings-company", "settings-location", "settings-taxes", "settings-payments", "settings-business-areas"]);
   const validRoutes = new Set(["home", "receipts", "customers", "vouchers", "settings", ...flowRoutes]);
 
   const escapeHtml = value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -80,20 +87,27 @@
   const cartTotal = () => state.cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const cartCount = () => state.cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  function initHeader() {
+  const activeBusinessAreas = () => data.businessAreas.filter(area => area.active !== false);
+  const defaultBusinessArea = () => activeBusinessAreas().find(area => area.isDefault) ?? activeBusinessAreas()[0] ?? null;
+
+  function refreshBusinessSwitcher() {
     companyName.textContent = data.company.name;
-    if (data.businessAreas.length > 1) {
-      switcherWrap.hidden = false;
-      switcher.innerHTML = data.businessAreas.map(area => `<option value="${escapeHtml(area.id)}">${escapeHtml(area.label)}</option>`).join("");
-      switcher.value = state.activeBusinessArea;
-      switcher.addEventListener("change", event => {
-        state.activeBusinessArea = event.target.value;
-        state.activeCategory = "Favoriten";
-        state.cart = [];
-        state.search = "";
-        renderRoute(false);
-      });
-    }
+    const areas = activeBusinessAreas();
+    if (!areas.some(area => area.id === state.activeBusinessArea)) state.activeBusinessArea = defaultBusinessArea()?.id ?? null;
+    switcherWrap.hidden = areas.length <= 1;
+    switcher.innerHTML = areas.map(area => `<option value="${escapeHtml(area.id)}">${escapeHtml(area.label)}</option>`).join("");
+    switcher.value = state.activeBusinessArea || "";
+  }
+
+  function initHeader() {
+    refreshBusinessSwitcher();
+    switcher.addEventListener("change", event => {
+      state.activeBusinessArea = event.target.value;
+      state.activeCategory = "Favoriten";
+      state.cart = [];
+      state.search = "";
+      renderRoute(false);
+    });
   }
 
   function renderHome() {
@@ -317,6 +331,13 @@
     return data.customers.find(customer => customer.id === state.selectedCustomerId) ?? null;
   }
 
+  const activePaymentChoices = () => data.paymentChoices.filter(choice => choice.active !== false);
+  const isNormalPaymentChoice = choice => !["voucher", "later"].includes(choice.id);
+  const activeNormalPaymentChoices = () => activePaymentChoices().filter(isNormalPaymentChoice);
+  const preferredNormalPaymentId = () => activeNormalPaymentChoices()[0]?.id ?? null;
+  const receiptNumberExists = number => data.receipts.some(receipt => receipt.number === number)
+    || data.vouchers.some(voucher => voucher.saleReceipt?.number === number);
+
   function paymentLabel() {
     return data.paymentChoices.find(choice => choice.id === state.paymentChoice)?.title ?? "Nicht angegeben";
   }
@@ -330,7 +351,7 @@
     state.checkoutVoucherReference = null;
     state.checkoutVoucherError = "";
     state.checkoutVoucherPickerOpen = false;
-    state.checkoutVoucherRemainderPayment = "cash";
+    state.checkoutVoucherRemainderPayment = preferredNormalPaymentId() || "cash";
   }
 
   function chooseCheckoutVoucher(voucher) {
@@ -387,16 +408,23 @@
 
   function nextReceiptNumber() {
     let number;
+    const prefix = String(data.receiptSettings.yearPrefix || new Date().getFullYear()).trim();
     do {
       state.receiptCounter += 1;
-      number = `2026-${String(state.receiptCounter).padStart(6, "0")}`;
-    } while (data.receipts.some(receipt => receipt.number === number));
+      number = `${prefix}-${String(state.receiptCounter).padStart(6, "0")}`;
+    } while (receiptNumberExists(number));
+    data.receiptSettings.nextNumber = state.receiptCounter + 1;
     return number;
   }
 
   function finishReceipt() {
     if (state.checkoutSubmitting) return;
     const customer = selectedCustomer();
+    if (!activePaymentChoices().some(choice => choice.id === state.paymentChoice)) {
+      state.paymentChoice = preferredNormalPaymentId() || activePaymentChoices()[0]?.id || "cash";
+      renderCheckout();
+      return;
+    }
     const voucher = state.paymentChoice === "voucher" ? selectedCheckoutVoucher() : null;
     if (state.paymentChoice === "voucher" && (!voucher || !isVoucherOpen(voucher))) {
       state.checkoutVoucherError = voucher?.status === "cancelled"
@@ -408,13 +436,13 @@
       return;
     }
     const voucherAmounts = voucher ? checkoutVoucherAmounts(voucher) : null;
-    if (voucherAmounts?.remainder > 0 && !["cash", "card"].includes(state.checkoutVoucherRemainderPayment)) {
-      state.checkoutVoucherError = "Bitte Bar oder Karte für die Restzahlung auswählen.";
+    if (voucherAmounts?.remainder > 0 && !activeNormalPaymentChoices().some(choice => choice.id === state.checkoutVoucherRemainderPayment)) {
+      state.checkoutVoucherError = "Bitte eine aktive Zahlungsart für die Restzahlung auswählen.";
       renderCheckout();
       return;
     }
     state.checkoutSubmitting = true;
-    const defaultTaxRate = Number(data.company.defaultTaxRate || 19);
+    const defaultTaxRate = Number(data.taxSettings.defaultRate || data.company.defaultTaxRate || 19);
 
     const items = state.cart.map(item => {
       const quantity = Number(item.quantity || 1);
@@ -519,7 +547,11 @@
       activity: [
         { label: "Beleg erstellt", date: `${receiptDate} · ${receiptTime}` },
         ...(voucher ? [{ label: `Mit Gutschein ${voucher.code} bezahlt`, date: `${receiptDate} · ${receiptTime}` }] : [])
-      ]
+      ],
+      receiptTextSnapshot: {
+        footerText: data.receiptSettings.footerText || "",
+        thankYouText: data.receiptSettings.thankYouText ?? "Vielen Dank für Ihren Besuch."
+      }
     };
     const previousVoucher = voucher ? {
       currentValue: voucher.currentValue,
@@ -692,7 +724,7 @@
         </div>` : ""}
 
         <div class="receipt-paper-total"><span>${isVoucherSale ? "Gesamtbetrag" : "Gesamt brutto"}</span><strong>${formatCurrency(receipt.total)}</strong></div>
-        <footer>Vielen Dank für Ihren Besuch.</footer>
+        <footer>${receipt.receiptTextSnapshot ? escapeHtml(receipt.receiptTextSnapshot.thankYouText || "") : "Vielen Dank für Ihren Besuch."}${receipt.receiptTextSnapshot?.footerText ? `<small>${escapeHtml(receipt.receiptTextSnapshot.footerText)}</small>` : ""}</footer>
       </article>
 
       <button class="button button-primary preview-download" type="button" data-action="receipt-print">Drucken / als PDF sichern</button>
@@ -708,7 +740,7 @@
     const customerCards = selectedCustomer
       ? `<div class="selected-customer"><div><strong>${escapeHtml(customerName(selectedCustomer))}</strong>${customerAddressLines(selectedCustomer).map(line => `<small>${escapeHtml(line)}</small>`).join("")}<small>${escapeHtml(selectedCustomer.phone || selectedCustomer.email || "Kunde ausgewählt")}</small></div><div class="selected-customer-actions"><button class="text-action" type="button" data-edit-customer="${selectedCustomer.id}">Bearbeiten</button><button class="text-action" type="button" data-route="customer-picker">Ändern</button></div></div>`
       : `<button class="mini-choice ${state.customerChoice === "none" ? "is-selected" : ""}" type="button" data-select-no-customer><span class="mini-choice-icon" aria-hidden="true">→</span><span><strong>Ohne Kunde</strong><small>Keine persönlichen Daten</small></span></button><button class="mini-choice" type="button" data-route="customer-picker"><span class="mini-choice-icon" aria-hidden="true">◎</span><span><strong>Kunde auswählen</strong><small>Suchen oder neu anlegen</small></span></button>`;
-    const paymentCards = data.paymentChoices.map(choice => `<button class="payment-choice ${state.paymentChoice === choice.id ? "is-selected" : ""}" type="button" data-payment-choice="${choice.id}"><span aria-hidden="true">${choice.icon}</span><strong>${escapeHtml(choice.title)}</strong></button>`).join("");
+    const paymentCards = activePaymentChoices().map(choice => `<button class="payment-choice ${state.paymentChoice === choice.id ? "is-selected" : ""}" type="button" data-payment-choice="${choice.id}"><span aria-hidden="true">${choice.icon}</span><strong>${escapeHtml(choice.title)}</strong></button>`).join("");
     mainContent.innerHTML = `<section class="flow-page checkout-page page-enter">
       <div class="flow-head compact-work-head"><button class="button button-back" type="button" data-route="catalog"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">Neuer Beleg</p><h1 class="flow-title">Beleg abschließen</h1><p class="page-copy">Prüfen, optional Kunde wählen und Zahlungsart simulieren.</p></div>
       <section class="checkout-section"><div class="section-title-row"><h2>Positionen</h2><button class="text-action" type="button" data-route="edit-cart">Bearbeiten</button></div><div class="checkout-items">${state.cart.map(item => `<div class="checkout-item"><span><strong>${escapeHtml(item.title)}</strong><small>${item.quantity} × ${formatCurrency(item.price)}</small></span><strong>${formatCurrency(item.price * item.quantity)}</strong></div>`).join("")}</div></section>
@@ -742,7 +774,7 @@
             ${voucherAmounts.balanceAfter <= 0 ? `<div><span>Status danach</span><strong>Vollständig eingelöst</strong></div>` : ""}
             ${voucherAmounts.remainder > 0 ? `<div class="checkout-voucher-remainder"><span>Restzahlung</span><strong>${formatCurrency(voucherAmounts.remainder)}</strong></div>` : ""}
           </div>
-          ${voucherAmounts.remainder > 0 ? `<div class="checkout-remainder-payment"><span>Restzahlung mit</span><div role="group" aria-label="Zahlungsart für Restzahlung">${data.paymentChoices.filter(choice => ["cash", "card"].includes(choice.id)).map(choice => `<button class="${state.checkoutVoucherRemainderPayment === choice.id ? "is-selected" : ""}" type="button" data-voucher-remainder-payment="${choice.id}" aria-pressed="${state.checkoutVoucherRemainderPayment === choice.id}"><span aria-hidden="true">${choice.icon}</span><strong>${choice.title}</strong></button>`).join("")}</div></div>` : ""}
+          ${voucherAmounts.remainder > 0 ? `<div class="checkout-remainder-payment"><span>Restzahlung mit</span><div role="group" aria-label="Zahlungsart für Restzahlung">${activeNormalPaymentChoices().map(choice => `<button class="${state.checkoutVoucherRemainderPayment === choice.id ? "is-selected" : ""}" type="button" data-voucher-remainder-payment="${choice.id}" aria-pressed="${state.checkoutVoucherRemainderPayment === choice.id}"><span aria-hidden="true">${choice.icon}</span><strong>${choice.title}</strong></button>`).join("")}</div></div>` : ""}
         </div>` : ""}
       </section>` : ""}
       <section class="checkout-total"><span>Gesamt</span><strong>${formatCurrency(cartTotal())}</strong></section>
@@ -1454,7 +1486,7 @@
   function resetVoucherSaleDraft() {
     state.voucherSaleAmountChoice = null;
     state.voucherSaleCustomAmount = "";
-    state.voucherSalePaymentChoice = "cash";
+    state.voucherSalePaymentChoice = preferredNormalPaymentId() || "cash";
     state.voucherSaleCustomerId = null;
     state.voucherSaleDisplayName = "";
     state.voucherSaleError = "";
@@ -1497,7 +1529,7 @@
   }
 
   function voucherSalePaymentLabel() {
-    return data.paymentChoices.find(choice => choice.id === state.voucherSalePaymentChoice)?.title ?? "Bar";
+    return activeNormalPaymentChoices().find(choice => choice.id === state.voucherSalePaymentChoice)?.title ?? activeNormalPaymentChoices()[0]?.title ?? "Nicht angegeben";
   }
 
   function randomHex(byteCount) {
@@ -1622,7 +1654,7 @@
     const amount = voucherSaleAmount();
     const completedVoucher = voucherByReference(state.voucherSaleCreatedReference);
     const saleCustomer = data.customers.find(customer => customer.id === state.voucherSaleCustomerId) ?? null;
-    const paymentChoices = data.paymentChoices.filter(choice => choice.id === "cash" || choice.id === "card");
+    const paymentChoices = activeNormalPaymentChoices();
     mainContent.innerHTML = `<section class="flow-page voucher-sale-page page-enter">
       <div class="flow-head compact-flow-head">
         <button class="button button-back" type="button" data-action="voucher-sale-cancel"><span aria-hidden="true">←</span> Abbrechen</button>
@@ -1846,9 +1878,9 @@
   const settingsSections = [
     { id: "settings-company", icon: "▣", title: "Unternehmensdaten", note: "Name, Anschrift und Kontaktdaten", available: true },
     { id: "settings-location", icon: "⌖", title: "Leistungsort", note: "Standardort für Leistungen und Gutscheine", available: true },
-    { icon: "%", title: "Steuern und Belegangaben", note: "Noch nicht umgesetzt" },
-    { icon: "€", title: "Zahlungsarten", note: "Noch nicht umgesetzt" },
-    { icon: "◇", title: "Geschäftsbereiche", note: "Noch nicht umgesetzt" },
+    { id: "settings-taxes", icon: "%", title: "Steuern und Belegangaben", note: "Steuerstatus, Nummern und Belegtexte", available: true },
+    { id: "settings-payments", icon: "€", title: "Zahlungsarten", note: "Aktive Arten und Reihenfolge", available: true },
+    { id: "settings-business-areas", icon: "◇", title: "Geschäftsbereiche", note: "Fachbereiche und Standardauswahl", available: true },
     { icon: "◎", title: "Benutzer", note: "Noch nicht umgesetzt" },
     { icon: "↥", title: "Backup und Wiederherstellung", note: "Noch nicht umgesetzt" },
     { icon: "⇥", title: "Export", note: "Noch nicht umgesetzt" },
@@ -1957,6 +1989,126 @@
     }));
   }
 
+  function renderTaxSettings() {
+    const settings = data.taxSettings;
+    const receiptSettings = data.receiptSettings;
+    const previewNumber = `${receiptSettings.yearPrefix}-${String(receiptSettings.nextNumber).padStart(6, "0")}`;
+    mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter">
+      <div class="flow-head compact-flow-head">
+        <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
+        <p class="eyebrow">Einstellungen</p>
+        <h1 class="flow-title">Steuern und Belegangaben</h1>
+        <p class="page-copy">Zentrale Vorgaben für neue Belege. Keine automatische rechtliche Bewertung.</p>
+      </div>
+      ${state.taxSettingsNotice ? `<div class="settings-save-notice ${state.taxSettingsNotice.startsWith("Bitte") ? "is-error" : ""}" role="status">${escapeHtml(state.taxSettingsNotice)}</div>` : ""}
+      <form id="taxSettingsForm" class="settings-form">
+        <section class="settings-form-card settings-single-column">
+          <fieldset class="settings-option-list">
+            <legend>Steuerstatus</legend>
+            ${[
+              ["vat", "Umsatzsteuer wird berechnet"],
+              ["small-business", "Kleinunternehmerregelung"],
+              ["undecided", "Noch nicht festgelegt / mit Steuerberatung klären"]
+            ].map(([value, label]) => `<label><input type="radio" name="taxStatus" value="${value}" ${settings.status === value ? "checked" : ""}><span>${label}</span></label>`).join("")}
+          </fieldset>
+          <p class="settings-neutral-note">Bitte die Auswahl mit der Steuerberatung abstimmen. FRECKA trifft keine rechtliche Entscheidung.</p>
+        </section>
+
+        <section class="settings-form-card settings-single-column">
+          <h2>Standard-Steuersätze</h2>
+          <div class="tax-rate-list">
+            ${settings.rates.map(rate => `<div class="tax-rate-row">
+              <label><input type="checkbox" name="activeTaxRate" value="${rate.rate}" ${rate.active ? "checked" : ""}><span>${rate.rate} % aktiv</span></label>
+              <label><input type="radio" name="defaultTaxRate" value="${rate.rate}" ${settings.defaultRate === rate.rate ? "checked" : ""}><span>Standard</span></label>
+            </div>`).join("")}
+          </div>
+          <p class="settings-neutral-note">Gutscheinverkäufe bleiben steuerlich offen und werden hier nicht automatisch bewertet.</p>
+        </section>
+
+        <section class="settings-form-card">
+          <h2>Belegnummern</h2>
+          <label class="setting-field"><span>Jahrespräfix</span><input id="receiptYearPrefix" name="yearPrefix" inputmode="numeric" maxlength="4" value="${escapeHtml(receiptSettings.yearPrefix)}"></label>
+          <label class="setting-field"><span>Nächste Belegnummer</span><input id="receiptNextNumber" name="nextNumber" type="number" min="1" step="1" value="${escapeHtml(receiptSettings.nextNumber)}"></label>
+          <div class="receipt-number-preview full"><span>Vorschau</span><strong id="receiptNumberPreview">${escapeHtml(previewNumber)}</strong><small>Normale Belege und Gutscheinverkäufe verwenden denselben Nummernkreis.</small></div>
+        </section>
+
+        <section class="settings-form-card settings-single-column">
+          <h2>Beleghinweise</h2>
+          <label class="setting-field full"><span>Fußtext <small>optional</small></span><textarea name="footerText" rows="3" maxlength="240" placeholder="Kurzer Hinweis am Belegende">${escapeHtml(receiptSettings.footerText || "")}</textarea></label>
+          <label class="setting-field full"><span>Dankestext <small>optional</small></span><input name="thankYouText" maxlength="120" value="${escapeHtml(receiptSettings.thankYouText || "")}"></label>
+        </section>
+
+        <section class="settings-fixed-values">
+          <div><span>Währung</span><strong>EUR</strong></div>
+          <div><span>Sprache</span><strong>Deutsch</strong></div>
+        </section>
+        <div class="settings-tse-note">TSE-Einrichtung folgt in einem eigenen Assistenten.</div>
+        <p class="prototype-note">Nur In-Memory-Prototyp. Keine Steuerautomatik, Fiskalisierung oder TSE-Verbindung.</p>
+        <button class="button button-primary settings-save" type="submit">Einstellungen speichern</button>
+      </form>
+    </section>`;
+
+    const updateReceiptNumberPreview = () => {
+      const prefix = String(document.getElementById("receiptYearPrefix")?.value || "").trim() || "–";
+      const next = Math.max(1, Number(document.getElementById("receiptNextNumber")?.value || 1));
+      const preview = document.getElementById("receiptNumberPreview");
+      if (preview) preview.textContent = `${prefix}-${String(Math.trunc(next)).padStart(6, "0")}`;
+    };
+    document.getElementById("receiptYearPrefix")?.addEventListener("input", updateReceiptNumberPreview);
+    document.getElementById("receiptNextNumber")?.addEventListener("input", updateReceiptNumberPreview);
+  }
+
+  function renderPaymentSettings() {
+    mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter">
+      <div class="flow-head compact-flow-head">
+        <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
+        <p class="eyebrow">Einstellungen</p>
+        <h1 class="flow-title">Zahlungsarten</h1>
+        <p class="page-copy">Aktive Zahlungsarten erscheinen im aktuellen Browserlauf im Belegabschluss.</p>
+      </div>
+      ${state.paymentSettingsNotice ? `<div class="settings-save-notice ${state.paymentSettingsNotice.startsWith("Mindestens") ? "is-error" : ""}" role="status">${escapeHtml(state.paymentSettingsNotice)}</div>` : ""}
+      <div class="payment-settings-list" aria-label="Zahlungsarten und Reihenfolge">
+        ${data.paymentChoices.map((choice, index) => `<article class="payment-setting-row ${choice.id === "later" ? "is-later" : ""}">
+          <span class="payment-setting-icon" aria-hidden="true">${escapeHtml(choice.icon)}</span>
+          <span class="payment-setting-name"><strong>${escapeHtml(choice.title)}</strong>${choice.id === "later" ? `<small>Getrennter Fall: Zahlung erfolgt später</small>` : choice.id === "voucher" ? `<small>Gutschein aus dem Gutscheinsystem</small>` : `<small>Normale Zahlungsart</small>`}</span>
+          <label class="payment-setting-toggle"><input type="checkbox" data-payment-toggle="${escapeHtml(choice.id)}" ${choice.active !== false ? "checked" : ""}><span>${choice.active !== false ? "Aktiv" : "Inaktiv"}</span></label>
+          <span class="payment-order-actions">
+            <button type="button" data-payment-move="${escapeHtml(choice.id)}" data-direction="up" aria-label="${escapeHtml(choice.title)} nach oben" ${index === 0 ? "disabled" : ""}>↑</button>
+            <button type="button" data-payment-move="${escapeHtml(choice.id)}" data-direction="down" aria-label="${escapeHtml(choice.title)} nach unten" ${index === data.paymentChoices.length - 1 ? "disabled" : ""}>↓</button>
+          </span>
+        </article>`).join("")}
+      </div>
+      <p class="prototype-note">Mindestens eine normale Zahlungsart bleibt aktiv. Keine Verbindung zu Zahlungsanbietern.</p>
+    </section>`;
+  }
+
+  function renderBusinessAreaSettings() {
+    mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter">
+      <div class="flow-head compact-flow-head">
+        <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
+        <p class="eyebrow">Einstellungen</p>
+        <h1 class="flow-title">Geschäftsbereiche</h1>
+        <p class="page-copy">Fachliche Bereiche innerhalb dieser gebuchten Instanz verwalten.</p>
+      </div>
+      ${state.businessAreaSettingsNotice ? `<div class="settings-save-notice ${state.businessAreaSettingsNotice.startsWith("Bitte") || state.businessAreaSettingsNotice.startsWith("Mindestens") ? "is-error" : ""}" role="status">${escapeHtml(state.businessAreaSettingsNotice)}</div>` : ""}
+      <div class="business-model-note"><strong>Eine Instanz entspricht einer Filiale.</strong><span>Friseur, Podologie oder weitere Angebote sind Geschäftsbereiche – keine Filialen.</span></div>
+      <form id="businessAreaSettingsForm" class="settings-form">
+        <div class="business-area-list">
+          ${data.businessAreas.map(area => `<section class="business-area-row">
+            <label class="setting-field"><span>Name</span><input name="areaLabel:${escapeHtml(area.id)}" value="${escapeHtml(area.label)}" required></label>
+            <div class="business-area-controls">
+              <label><input type="checkbox" name="activeBusinessArea" value="${escapeHtml(area.id)}" ${area.active !== false ? "checked" : ""}><span>Aktiv</span></label>
+              <label><input type="radio" name="defaultBusinessArea" value="${escapeHtml(area.id)}" ${area.isDefault ? "checked" : ""}><span>Standard</span></label>
+            </div>
+          </section>`).join("")}
+        </div>
+        <button class="button button-secondary business-area-add" type="button" data-action="business-area-add">＋ Geschäftsbereich anlegen</button>
+        <p class="prototype-note">Leistungen, Produkte und vorhandene Belege bleiben ihrem bisherigen Bereich zugeordnet. Keine Filial- oder Rechteverwaltung.</p>
+        <button class="button button-primary settings-save" type="submit">Geschäftsbereiche speichern</button>
+      </form>
+    </section>`;
+  }
+
   function renderPlaceholder(routeKey) {
     const page = data.placeholders[routeKey];
     const tools = routeKey === "settings" ? `<div class="prototype-tools"><label><input id="toggleOpenReceipt" type="checkbox" ${state.openReceiptVisible ? "checked" : ""}> Offenen Beleg auf der Startseite simulieren</label></div>` : "";
@@ -1981,7 +2133,10 @@
       "voucher-sale",
       "voucher-sale-success",
       "settings-company",
-      "settings-location"
+      "settings-location",
+      "settings-taxes",
+      "settings-payments",
+      "settings-business-areas"
     ].includes(state.route));
     if (state.route === "home") renderHome();
     else if (state.route === "receipts") renderReceipts();
@@ -2005,6 +2160,9 @@
     else if (state.route === "settings") renderSettings();
     else if (state.route === "settings-company") renderCompanySettings();
     else if (state.route === "settings-location") renderServiceLocationSettings();
+    else if (state.route === "settings-taxes") renderTaxSettings();
+    else if (state.route === "settings-payments") renderPaymentSettings();
+    else if (state.route === "settings-business-areas") renderBusinessAreaSettings();
     else renderPlaceholder(state.route);
     const isFlow = flowRoutes.has(state.route);
     bottomNav.hidden = isFlow;
@@ -2030,7 +2188,7 @@
     state.cart = [];
     state.customerChoice = "none";
     state.selectedCustomerId = null;
-    state.paymentChoice = "cash";
+    state.paymentChoice = preferredNormalPaymentId() || activePaymentChoices()[0]?.id || "cash";
     resetCheckoutVoucher();
     state.checkoutSubmitting = false;
     state.activeCategory = "Favoriten";
@@ -2309,6 +2467,49 @@
       navigate("voucher-detail");
       return;
     }
+    const paymentToggle = event.target.closest("[data-payment-toggle]");
+    if (paymentToggle) {
+      const choice = data.paymentChoices.find(entry => entry.id === paymentToggle.dataset.paymentToggle);
+      if (!choice) return;
+      const showPaymentNotice = (message, isError = false) => {
+        state.paymentSettingsNotice = message;
+        let notice = document.querySelector(".settings-save-notice");
+        if (!notice) {
+          notice = document.createElement("div");
+          notice.className = "settings-save-notice";
+          notice.setAttribute("role", "status");
+          document.querySelector(".payment-settings-list")?.before(notice);
+        }
+        notice.classList.toggle("is-error", isError);
+        notice.textContent = message;
+      };
+      const wantsActive = paymentToggle.checked;
+      const remainingNormal = data.paymentChoices.filter(entry => entry.id !== choice.id && entry.active !== false && isNormalPaymentChoice(entry));
+      if (!wantsActive && isNormalPaymentChoice(choice) && remainingNormal.length === 0) {
+        paymentToggle.checked = true;
+        showPaymentNotice("Mindestens eine normale Zahlungsart muss aktiv bleiben.", true);
+        return;
+      }
+      choice.active = wantsActive;
+      if (!activePaymentChoices().some(entry => entry.id === state.paymentChoice)) state.paymentChoice = preferredNormalPaymentId() || activePaymentChoices()[0]?.id || "cash";
+      if (!activeNormalPaymentChoices().some(entry => entry.id === state.checkoutVoucherRemainderPayment)) state.checkoutVoucherRemainderPayment = preferredNormalPaymentId() || "cash";
+      if (!activeNormalPaymentChoices().some(entry => entry.id === state.voucherSalePaymentChoice)) state.voucherSalePaymentChoice = preferredNormalPaymentId() || "cash";
+      const label = paymentToggle.closest("label")?.querySelector("span");
+      if (label) label.textContent = wantsActive ? "Aktiv" : "Inaktiv";
+      showPaymentNotice(`${choice.title} ist für diese Sitzung ${wantsActive ? "aktiv" : "inaktiv"}.`);
+      return;
+    }
+    const paymentMove = event.target.closest("[data-payment-move]");
+    if (paymentMove) {
+      const index = data.paymentChoices.findIndex(choice => choice.id === paymentMove.dataset.paymentMove);
+      const targetIndex = paymentMove.dataset.direction === "up" ? index - 1 : index + 1;
+      if (index < 0 || targetIndex < 0 || targetIndex >= data.paymentChoices.length) return;
+      const [choice] = data.paymentChoices.splice(index, 1);
+      data.paymentChoices.splice(targetIndex, 0, choice);
+      state.paymentSettingsNotice = "Reihenfolge wurde für diese Sitzung geändert.";
+      renderPaymentSettings();
+      return;
+    }
     const route = event.target.closest("[data-route]");
     if (route) {
       if ((route.dataset.route === "checkout" || route.dataset.route === "edit-cart") && !cartCount()) return;
@@ -2322,11 +2523,22 @@
       }
       if (route.dataset.route === "settings-company" && state.route !== "settings-company") state.settingsNotice = "";
       if (route.dataset.route === "settings-location" && state.route !== "settings-location") state.serviceLocationNotice = "";
+      if (route.dataset.route === "settings-taxes" && state.route !== "settings-taxes") state.taxSettingsNotice = "";
+      if (route.dataset.route === "settings-payments" && state.route !== "settings-payments") state.paymentSettingsNotice = "";
+      if (route.dataset.route === "settings-business-areas" && state.route !== "settings-business-areas") state.businessAreaSettingsNotice = "";
       if (["vouchers", "voucher-detail", "voucher-preview"].includes(route.dataset.route)) state.voucherNotice = "";
       navigate(route.dataset.route);
       return;
     }
     const action = event.target.closest("[data-action]")?.dataset.action;
+    if (action === "business-area-add") {
+      const id = `area-${Date.now()}`;
+      data.businessAreas.push({ id, label: "Neuer Geschäftsbereich", active: true, isDefault: false });
+      data.catalog[id] = [];
+      state.businessAreaSettingsNotice = "Neuer Geschäftsbereich wurde für diese Sitzung angelegt. Name und Standard können jetzt angepasst werden.";
+      renderBusinessAreaSettings();
+      return;
+    }
     if (action === "checkout-voucher-code") {
       chooseCheckoutVoucherByCode();
       renderCheckout();
@@ -2530,6 +2742,82 @@
       else data.serviceLocations.push(location);
       state.serviceLocationNotice = "Leistungsort wurde für diese Sitzung übernommen. Nach einem Reload geht die Änderung verloren.";
       renderServiceLocationSettings();
+      return;
+    }
+
+    const taxSettingsForm = event.target.closest("#taxSettingsForm");
+    if (taxSettingsForm) {
+      event.preventDefault();
+      const formData = new FormData(taxSettingsForm);
+      const activeRates = formData.getAll("activeTaxRate").map(Number);
+      const defaultRate = Number(formData.get("defaultTaxRate"));
+      const yearPrefix = String(formData.get("yearPrefix") || "").trim();
+      const nextNumber = Number(formData.get("nextNumber"));
+      if (!activeRates.length || !activeRates.includes(defaultRate)) {
+        state.taxSettingsNotice = "Bitte mindestens einen aktiven Steuersatz wählen und diesen als Standard festlegen.";
+        renderTaxSettings();
+        return;
+      }
+      if (!/^\d{4}$/.test(yearPrefix) || !Number.isInteger(nextNumber) || nextNumber < 1) {
+        state.taxSettingsNotice = "Bitte ein vierstelliges Jahrespräfix und eine gültige nächste Belegnummer eingeben.";
+        renderTaxSettings();
+        return;
+      }
+      const candidateNumber = `${yearPrefix}-${String(nextNumber).padStart(6, "0")}`;
+      if (receiptNumberExists(candidateNumber)) {
+        state.taxSettingsNotice = "Bitte eine noch nicht vergebene nächste Belegnummer wählen.";
+        renderTaxSettings();
+        return;
+      }
+      data.taxSettings.status = ["vat", "small-business", "undecided"].includes(formData.get("taxStatus")) ? formData.get("taxStatus") : "undecided";
+      data.taxSettings.rates.forEach(rate => { rate.active = activeRates.includes(rate.rate); });
+      data.taxSettings.defaultRate = defaultRate;
+      data.company.defaultTaxRate = defaultRate;
+      Object.assign(data.receiptSettings, {
+        yearPrefix,
+        nextNumber,
+        footerText: String(formData.get("footerText") || "").trim(),
+        thankYouText: String(formData.get("thankYouText") || "").trim(),
+        currency: "EUR",
+        language: "Deutsch"
+      });
+      state.receiptCounter = nextNumber - 1;
+      state.taxSettingsNotice = "Steuer- und Belegangaben wurden für diese Sitzung übernommen. Bestehende Belege bleiben unverändert.";
+      renderTaxSettings();
+      return;
+    }
+
+    const businessAreaSettingsForm = event.target.closest("#businessAreaSettingsForm");
+    if (businessAreaSettingsForm) {
+      event.preventDefault();
+      const formData = new FormData(businessAreaSettingsForm);
+      const activeIds = formData.getAll("activeBusinessArea").map(String);
+      const defaultId = String(formData.get("defaultBusinessArea") || "");
+      const labels = new Map(data.businessAreas.map(area => [area.id, String(formData.get(`areaLabel:${area.id}`) || "").trim()]));
+      if ([...labels.values()].some(label => !label)) {
+        state.businessAreaSettingsNotice = "Bitte für jeden Geschäftsbereich einen Namen eingeben.";
+        renderBusinessAreaSettings();
+        return;
+      }
+      if (!activeIds.length) {
+        state.businessAreaSettingsNotice = "Mindestens ein Geschäftsbereich muss aktiv bleiben.";
+        renderBusinessAreaSettings();
+        return;
+      }
+      if (!activeIds.includes(defaultId)) {
+        state.businessAreaSettingsNotice = "Bitte einen aktiven Geschäftsbereich als Standard festlegen.";
+        renderBusinessAreaSettings();
+        return;
+      }
+      data.businessAreas.forEach(area => {
+        area.label = labels.get(area.id);
+        area.active = activeIds.includes(area.id);
+        area.isDefault = area.id === defaultId;
+      });
+      if (!state.cart.length || !activeIds.includes(state.activeBusinessArea)) state.activeBusinessArea = defaultId;
+      refreshBusinessSwitcher();
+      state.businessAreaSettingsNotice = "Geschäftsbereiche wurden für diese Sitzung übernommen. Leistungen und Belege wurden nicht verschoben.";
+      renderBusinessAreaSettings();
       return;
     }
 

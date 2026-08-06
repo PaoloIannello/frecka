@@ -1819,6 +1819,272 @@ body.work-mode:not(.catalog-mode) .flow-page {
   }
 }
 
+/* UX-022b – Steuern, Zahlungsarten und Geschäftsbereiche */
+.settings-save-notice.is-error {
+  background: #fff1f0;
+  color: var(--danger);
+}
+.settings-single-column {
+  grid-template-columns: 1fr;
+}
+.settings-option-list {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 8px;
+}
+.settings-option-list legend {
+  margin-bottom: 10px;
+  padding: 0;
+  font-weight: 900;
+}
+.settings-option-list label {
+  min-height: 54px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: grid;
+  grid-template-columns: 22px minmax(0,1fr);
+  gap: 10px;
+  align-items: center;
+}
+.settings-option-list label:has(input:checked) {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.settings-option-list input,
+.tax-rate-row input,
+.payment-setting-toggle input,
+.business-area-controls input {
+  width: 21px;
+  height: 21px;
+  accent-color: var(--primary);
+}
+.settings-neutral-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: .73rem;
+  line-height: 1.45;
+}
+.tax-rate-list {
+  display: grid;
+  gap: 8px;
+}
+.tax-rate-row {
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+.tax-rate-row label {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .8rem;
+  font-weight: 800;
+}
+.receipt-number-preview {
+  padding: 14px;
+  border-radius: 15px;
+  background: var(--primary-soft);
+  display: grid;
+  gap: 4px;
+}
+.receipt-number-preview.full {
+  grid-column: 1/-1;
+}
+.receipt-number-preview span,
+.receipt-number-preview small {
+  color: var(--muted);
+  font-size: .69rem;
+}
+.receipt-number-preview strong {
+  color: var(--primary-strong);
+  font-size: 1.15rem;
+  letter-spacing: .02em;
+}
+.settings-fixed-values {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+}
+.settings-fixed-values > div {
+  min-height: 60px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 3px;
+}
+.settings-fixed-values > div + div {
+  border-left: 1px solid var(--border);
+}
+.settings-fixed-values span {
+  color: var(--muted);
+  font-size: .7rem;
+}
+.settings-tse-note,
+.business-model-note {
+  padding: 13px 14px;
+  border-radius: 15px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: .76rem;
+  font-weight: 800;
+  line-height: 1.45;
+}
+.payment-settings-list,
+.business-area-list {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.payment-setting-row {
+  min-height: 76px;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: 42px minmax(0,1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+}
+.payment-setting-row:last-child,
+.business-area-row:last-child {
+  border-bottom: 0;
+}
+.payment-setting-row.is-later {
+  background: var(--surface-soft);
+}
+.payment-setting-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  display: grid;
+  place-items: center;
+  font-weight: 950;
+}
+.payment-setting-name {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.payment-setting-name small {
+  color: var(--muted);
+  font-size: .66rem;
+  line-height: 1.3;
+}
+.payment-setting-toggle {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .7rem;
+  font-weight: 850;
+}
+.payment-order-actions {
+  display: grid;
+  grid-template-columns: repeat(2,40px);
+  gap: 5px;
+}
+.payment-order-actions button {
+  width: 40px;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: var(--primary-strong);
+  font-size: 1rem;
+  font-weight: 900;
+}
+.payment-order-actions button:disabled {
+  opacity: .3;
+}
+.business-model-note {
+  margin-bottom: 12px;
+  display: grid;
+  gap: 3px;
+}
+.business-model-note strong {
+  color: var(--text);
+}
+.business-area-row {
+  padding: 14px;
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+.business-area-controls {
+  display: grid;
+  gap: 7px;
+}
+.business-area-controls label {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .72rem;
+  font-weight: 850;
+}
+.business-area-add {
+  width: 100%;
+}
+.receipt-paper footer small {
+  display: block;
+  margin-top: 7px;
+  line-height: 1.4;
+}
+@media(max-width:520px) {
+  .payment-setting-row {
+    grid-template-columns: 40px minmax(0,1fr) auto;
+  }
+  .payment-setting-icon {
+    width: 40px;
+    height: 40px;
+  }
+  .payment-order-actions {
+    grid-column: 2/-1;
+    justify-content: end;
+  }
+}
+@media(max-width:380px) {
+  .payment-setting-row {
+    grid-template-columns: 38px minmax(0,1fr);
+  }
+  .payment-setting-toggle {
+    grid-column: 2;
+  }
+  .payment-order-actions {
+    grid-column: 2;
+    justify-content: start;
+  }
+  .business-area-row {
+    grid-template-columns: 1fr;
+  }
+  .business-area-controls {
+    grid-template-columns: repeat(2,minmax(0,1fr));
+  }
+  .settings-fixed-values {
+    grid-template-columns: 1fr;
+  }
+  .settings-fixed-values > div + div {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+}
+
 /* UX-020c – konsolidierte Gutscheindetails und Historie */
 .voucher-status.is-cancelled {
   color: var(--danger);

@@ -1,5 +1,5 @@
 window.PROTOTYPE_DATA = Object.freeze({
-  version: "UX-022a",
+  version: "UX-022b",
   build: "2026-08-06",
   company: {
     name: "Studio Beispiel",
@@ -19,9 +19,25 @@ window.PROTOTYPE_DATA = Object.freeze({
   serviceLocations: [
     { id: "location-default", mode: "company" }
   ],
+  taxSettings: {
+    status: "undecided",
+    rates: [
+      { id: "tax-19", rate: 19, active: true },
+      { id: "tax-7", rate: 7, active: false }
+    ],
+    defaultRate: 19
+  },
+  receiptSettings: {
+    yearPrefix: "2026",
+    nextNumber: 132,
+    footerText: "",
+    thankYouText: "Vielen Dank für Ihren Besuch.",
+    currency: "EUR",
+    language: "Deutsch"
+  },
   businessAreas: [
-    { id: "hair", label: "Friseur" },
-    { id: "podiatry", label: "Podologie" }
+    { id: "hair", label: "Friseur", active: true, isDefault: true },
+    { id: "podiatry", label: "Podologie", active: true, isDefault: false }
   ],
   catalog: {
     hair: [
@@ -221,10 +237,14 @@ window.PROTOTYPE_DATA = Object.freeze({
     { id: "new", title: "Neuer Kunde", note: "Erfassung folgt später", icon: "+" }
   ],
   paymentChoices: [
-    { id: "cash", title: "Bar", icon: "€" },
-    { id: "card", title: "Karte", icon: "▣" },
-    { id: "voucher", title: "Gutschein", icon: "◇" },
-    { id: "later", title: "Später", icon: "…" }
+    { id: "cash", title: "Bar", icon: "€", active: true },
+    { id: "ec", title: "EC", icon: "▣", active: true },
+    { id: "visa", title: "Visa", icon: "V", active: false },
+    { id: "mastercard", title: "Mastercard", icon: "M", active: false },
+    { id: "paypal", title: "PayPal", icon: "P", active: false },
+    { id: "transfer", title: "Überweisung", icon: "↗", active: false },
+    { id: "voucher", title: "Gutschein", icon: "◇", active: true },
+    { id: "later", title: "Später", icon: "…", active: true }
   ],
   vouchers: [
     {
