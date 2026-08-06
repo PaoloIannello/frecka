@@ -12,7 +12,7 @@
     activeBusinessArea: data.businessAreas.find(area => area.active !== false && area.isDefault)?.id
       ?? data.businessAreas.find(area => area.active !== false)?.id
       ?? null,
-    activeCategory: "Favoriten",
+    activeCategory: "favorites",
     search: "",
     openReceiptVisible: Boolean(data.openReceipt?.exists),
     cart: [],
@@ -25,6 +25,7 @@
     checkoutVoucherPickerOpen: false,
     checkoutVoucherRemainderPayment: "cash",
     checkoutSubmitting: false,
+    checkoutOpenPaymentConfirm: false,
     priceEditorId: null,
     customerSearch: "",
     selectedCustomerId: null,
@@ -62,9 +63,20 @@
     voucherSaleCreatedReference: null,
     settingsNotice: "",
     serviceLocationNotice: "",
+    serviceLocationEditingId: null,
     taxSettingsNotice: "",
     paymentSettingsNotice: "",
     businessAreaSettingsNotice: "",
+    paymentCaptureReceiptNumber: null,
+    catalogManagerAreaId: null,
+    catalogManagerView: "items",
+    catalogManagerSearch: "",
+    catalogManagerStatus: "active",
+    catalogManagerCategory: "all",
+    catalogEditingItemId: null,
+    catalogEditingCategoryId: null,
+    catalogSettingsNotice: "",
+    catalogManagerReturnRoute: "settings",
     setupStep: 1,
     setupNotice: "",
     setupFirstStartVisible: true,
@@ -88,7 +100,7 @@
   const bottomSheetTitle = document.getElementById("bottomSheetTitle");
   const bottomSheetContent = document.getElementById("bottomSheetContent");
   const bottomSheetClose = document.getElementById("bottomSheetClose");
-  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "settings-company", "settings-location", "settings-taxes", "settings-payments", "settings-business-areas", "settings-help", "setup-wizard"]);
+  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "settings-company", "settings-location", "settings-taxes", "settings-payments", "settings-business-areas", "settings-catalog", "settings-help", "setup-wizard"]);
   const validRoutes = new Set(["home", "receipts", "customers", "vouchers", "settings", ...flowRoutes]);
 
   const escapeHtml = value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -100,6 +112,52 @@
 
   const activeBusinessAreas = () => data.businessAreas.filter(area => area.active !== false);
   const defaultBusinessArea = () => activeBusinessAreas().find(area => area.isDefault) ?? activeBusinessAreas()[0] ?? null;
+
+  const catalogCategories = (areaId, activeOnly = false) => data.categories
+    .filter(category => category.businessAreaId === areaId && (!activeOnly || category.active !== false))
+    .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+  const categoryById = id => data.categories.find(category => category.id === id) ?? null;
+  const catalogEntries = areaId => data.catalog[areaId] ?? [];
+  const catalogItemPrice = item => Number(item.priceCents || 0) / 100;
+  const catalogItemName = item => item.name || item.title || "Eintrag";
+
+  function migratePrototypeCommerceModel() {
+    data.receipts.forEach(receipt => {
+      const isOpen = receipt.paymentStatus === "open" || (receipt.type === "receipt" && receipt.payment == null);
+      receipt.paymentStatus = isOpen ? "open" : "paid";
+      receipt.paymentMethod = isOpen ? null : (receipt.paymentMethod || receipt.payment || null);
+      receipt.paymentRecordedAt = isOpen ? null : (receipt.paymentRecordedAt || receipt.sortKey || null);
+      receipt.paymentEvents = Array.isArray(receipt.paymentEvents) ? receipt.paymentEvents : [];
+      receipt.payment = receipt.paymentMethod;
+    });
+
+    Object.entries(data.catalog).forEach(([areaId, entries]) => {
+      entries.forEach((item, index) => {
+        const defaultCategory = catalogCategories(areaId).find(category => category.type === item.type) ?? null;
+        const legacyCategory = String(item.category || "");
+        item.businessAreaId = areaId;
+        item.name = item.name || item.title || "Eintrag";
+        item.title = item.name;
+        item.priceCents = Number.isInteger(item.priceCents) ? item.priceCents : Math.round(Number(item.price || 0) * 100);
+        item.price = catalogItemPrice(item);
+        item.taxRate = Number(item.taxRate ?? data.taxSettings.defaultRate ?? 19);
+        item.active = item.active !== false;
+        item.favorite = item.favorite === true || legacyCategory === "Favoriten";
+        item.categoryId = item.categoryId ?? (item.type === "voucher" ? null : defaultCategory?.id ?? null);
+        item.sortOrder = Number.isFinite(Number(item.sortOrder)) ? Number(item.sortOrder) : (index + 1) * 10;
+        item.source = item.source || "manual";
+        item.needsReview = item.needsReview === true;
+        item.priceConfirmed = item.priceConfirmed !== false;
+        item.taxRateConfirmed = item.taxRateConfirmed !== false;
+        item.createdAt = item.createdAt || "2026-08-06T08:00:00.000Z";
+        item.updatedAt = item.updatedAt || item.createdAt;
+        if (item.type === "product") {
+          item.sku = item.sku || "";
+          item.unit = item.unit || "Stück";
+        }
+      });
+    });
+  }
 
   function refreshBusinessSwitcher() {
     companyName.textContent = data.company.name;
@@ -114,7 +172,7 @@
     refreshBusinessSwitcher();
     switcher.addEventListener("change", event => {
       state.activeBusinessArea = event.target.value;
-      state.activeCategory = "Favoriten";
+      state.activeCategory = "favorites";
       state.cart = [];
       state.search = "";
       renderRoute(false);
@@ -131,9 +189,21 @@
   }
 
   function catalogItems() {
-    const entries = data.catalog[state.activeBusinessArea] ?? [];
+    const entries = catalogEntries(state.activeBusinessArea).filter(item => {
+      if (item.active === false) return false;
+      if (item.type === "voucher" || !item.categoryId) return true;
+      return categoryById(item.categoryId)?.active !== false;
+    });
     const query = state.search.trim().toLowerCase();
-    return entries.filter(item => query ? item.title.toLowerCase().includes(query) : item.category === state.activeCategory);
+    return entries
+      .filter(item => {
+        if (query) return catalogItemName(item).toLocaleLowerCase("de-DE").includes(query);
+        if (state.activeCategory === "favorites") return item.favorite === true;
+        if (state.activeCategory === "vouchers") return item.type === "voucher";
+        if (state.activeCategory === "uncategorized") return !item.categoryId && item.type !== "voucher";
+        return item.categoryId === state.activeCategory;
+      })
+      .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
   }
 
   function quantityFor(id) { return state.cart.find(item => item.id === id)?.quantity ?? 0; }
@@ -156,6 +226,13 @@
     const count = cartCount();
     const total = cartTotal();
     const areaLabel = getAreaLabel();
+    const tabs = [
+      { id: "favorites", name: "Favoriten" },
+      ...catalogCategories(state.activeBusinessArea, true).map(category => ({ id: category.id, name: category.name })),
+      ...(catalogEntries(state.activeBusinessArea).some(item => item.active !== false && !item.categoryId && item.type !== "voucher") ? [{ id: "uncategorized", name: "Ohne Kategorie" }] : []),
+      ...(catalogEntries(state.activeBusinessArea).some(item => item.type === "voucher" && item.active !== false) ? [{ id: "vouchers", name: "Gutscheine" }] : [])
+    ];
+    if (!tabs.some(tab => tab.id === state.activeCategory)) state.activeCategory = tabs[0]?.id || "favorites";
 
     mainContent.innerHTML = `<section class="flow-page catalog-page">
       <header class="catalog-work-header">
@@ -181,7 +258,7 @@
         </label>
 
         <div class="category-tabs catalog-category-tabs" role="tablist" aria-label="Kategorien">
-          ${data.categories.map(category => `<button class="category-tab ${state.activeCategory === category && !state.search ? "is-active" : ""}" type="button" data-category="${escapeHtml(category)}">${escapeHtml(category)}</button>`).join("")}
+          ${tabs.map(category => `<button class="category-tab ${state.activeCategory === category.id && !state.search ? "is-active" : ""}" type="button" data-category="${escapeHtml(category.id)}">${escapeHtml(category.name)}</button>`).join("")}
         </div>
       </header>
 
@@ -189,8 +266,9 @@
         ${items.length ? items.map(item => `<button class="product-tile ${quantityFor(item.id) ? "is-in-cart" : ""}" type="button" data-toggle-item="${escapeHtml(item.id)}" aria-pressed="${quantityFor(item.id) ? "true" : "false"}">
           <span class="product-icon" aria-hidden="true">${escapeHtml(item.icon)}</span>
           ${quantityFor(item.id) ? `<span class="tile-selected" aria-hidden="true">✓</span>` : ""}
-          <span class="product-title">${escapeHtml(item.title)}</span>
-          <span class="product-price">${formatCurrency(item.price)}</span>
+          <span class="product-title">${escapeHtml(catalogItemName(item))}</span>
+          <span class="product-price">${formatCurrency(catalogItemPrice(item))}</span>
+          ${item.needsReview ? `<small class="product-review-flag">Preis / Steuer prüfen</small>` : ""}
         </button>`).join("") : `<div class="empty-state">Keine passenden Einträge gefunden.</div>`}
       </div>
     </section>
@@ -343,7 +421,7 @@
   }
 
   const activePaymentChoices = () => data.paymentChoices.filter(choice => choice.active !== false);
-  const isNormalPaymentChoice = choice => !["voucher", "later"].includes(choice.id);
+  const isNormalPaymentChoice = choice => choice.id !== "voucher";
   const activeNormalPaymentChoices = () => activePaymentChoices().filter(isNormalPaymentChoice);
   const preferredNormalPaymentId = () => activeNormalPaymentChoices()[0]?.id ?? null;
   const receiptNumberExists = number => data.receipts.some(receipt => receipt.number === number)
@@ -428,16 +506,21 @@
     return number;
   }
 
-  function finishReceipt() {
+  function finishReceipt(leavePaymentOpen = false) {
     if (state.checkoutSubmitting) return;
     const customer = selectedCustomer();
-    if (!activePaymentChoices().some(choice => choice.id === state.paymentChoice)) {
+    if (!leavePaymentOpen && !activePaymentChoices().some(choice => choice.id === state.paymentChoice)) {
       state.paymentChoice = preferredNormalPaymentId() || activePaymentChoices()[0]?.id || "cash";
       renderCheckout();
       return;
     }
-    const voucher = state.paymentChoice === "voucher" ? selectedCheckoutVoucher() : null;
-    if (state.paymentChoice === "voucher" && (!voucher || !isVoucherOpen(voucher))) {
+    if (!serviceLocationForBusinessArea(state.activeBusinessArea)) {
+      state.checkoutVoucherError = "Bitte zuerst einen Standard-Leistungsort für den gewählten Geschäftsbereich festlegen.";
+      renderCheckout();
+      return;
+    }
+    const voucher = !leavePaymentOpen && state.paymentChoice === "voucher" ? selectedCheckoutVoucher() : null;
+    if (!leavePaymentOpen && state.paymentChoice === "voucher" && (!voucher || !isVoucherOpen(voucher))) {
       state.checkoutVoucherError = voucher?.status === "cancelled"
         ? "Dieser Gutschein wurde storniert."
         : voucher?.status === "redeemed" || Number(voucher?.currentValue || 0) <= 0
@@ -517,9 +600,11 @@
     const remainderPayment = voucherAmounts?.remainder > 0
       ? data.paymentChoices.find(choice => choice.id === state.checkoutVoucherRemainderPayment)?.title || "Bar"
       : null;
-    const receiptPayment = voucher
+    const receiptPaymentMethod = leavePaymentOpen ? null : voucher
       ? voucherAmounts.remainder > 0 ? `Gutschein + ${remainderPayment}` : "Gutschein"
       : paymentLabel();
+    const paymentStatus = leavePaymentOpen ? "open" : "paid";
+    const paymentRecordedAt = leavePaymentOpen ? null : now.toISOString();
     const customerSnapshot = customer ? {
       id: customer.id,
       name: customerName(customer),
@@ -528,6 +613,7 @@
       zip: customer.zip || "",
       city: customer.city || ""
     } : null;
+    const contextSnapshot = buildContextSnapshot(state.activeBusinessArea);
     const receipt = {
       id: `receipt_${crypto.randomUUID?.() || Date.now()}`,
       number: receiptNumber,
@@ -542,8 +628,20 @@
       netTotal,
       taxTotal,
       taxGroups,
-      payment: receiptPayment,
+      payment: receiptPaymentMethod,
+      paymentStatus,
+      paymentMethod: receiptPaymentMethod,
+      paymentRecordedAt,
+      paymentEvents: leavePaymentOpen ? [] : [{
+        type: "payment_recorded",
+        recordedAt: paymentRecordedAt,
+        date: receiptDate,
+        time: receiptTime,
+        paymentMethod: receiptPaymentMethod,
+        amount: total
+      }],
       customer: customerSnapshot,
+      contextSnapshot,
       customerEmail: customer?.email || "",
       createdAt: new Intl.DateTimeFormat("de-DE", { dateStyle: "short", timeStyle: "short" }).format(new Date()),
       items,
@@ -557,7 +655,11 @@
       remainderPayment: voucherAmounts?.remainder > 0 ? { method: remainderPayment, amount: voucherAmounts.remainder } : null,
       activity: [
         { label: "Beleg erstellt", date: `${receiptDate} · ${receiptTime}` },
-        ...(voucher ? [{ label: `Mit Gutschein ${voucher.code} bezahlt`, date: `${receiptDate} · ${receiptTime}` }] : [])
+        ...(leavePaymentOpen
+          ? [{ label: "Zahlung offen gelassen", date: `${receiptDate} · ${receiptTime}` }]
+          : voucher
+            ? [{ label: `Mit Gutschein ${voucher.code} bezahlt`, date: `${receiptDate} · ${receiptTime}` }]
+            : [{ label: "Zahlung erfasst", date: `${receiptDate} · ${receiptTime}`, detail: `${receiptPaymentMethod} · ${formatCurrency(total)}` }])
       ],
       receiptTextSnapshot: {
         footerText: data.receiptSettings.footerText || "",
@@ -603,6 +705,7 @@
       return;
     }
     state.checkoutSubmitting = false;
+    state.checkoutOpenPaymentConfirm = false;
     state.successNotice = "";
     state.qrVisible = false;
     state.openReceiptVisible = false;
@@ -634,7 +737,8 @@
         <div><span>Belegnummer</span><strong>${escapeHtml(receipt.number)}</strong></div>
         <div><span>Gesamt</span><strong>${formatCurrency(receipt.total)}</strong></div>
         ${receipt.customer ? `<div><span>Kunde</span><strong>${escapeHtml(receipt.customer.name)}</strong>${customerAddressLines(receipt.customer).map(line => `<small>${escapeHtml(line)}</small>`).join("")}</div>` : ""}
-        <div><span>Zahlungsart</span><strong>${escapeHtml(receipt.payment)}</strong></div>
+        <div><span>Zahlungsstatus</span><strong>${receipt.paymentStatus === "open" ? "Offen" : "Bezahlt"}</strong></div>
+        ${receipt.paymentStatus === "open" ? "" : `<div><span>Zahlungsart</span><strong>${escapeHtml(receiptPaymentMethodLabel(receipt))}</strong></div>`}
         ${receipt.voucherPayment ? `<div><span>Mit Gutschein bezahlt</span><strong>${formatCurrency(receipt.voucherPayment.amount)}</strong><small>${escapeHtml(receipt.voucherPayment.code)}</small></div>` : ""}
         ${receipt.remainderPayment ? `<div><span>Restzahlung</span><strong>${formatCurrency(receipt.remainderPayment.amount)}</strong><small>${escapeHtml(receipt.remainderPayment.method)}</small></div>` : ""}
       </section>
@@ -682,9 +786,10 @@
     const createdAt = receipt.createdAt || [receipt.date, receipt.time].filter(Boolean).join(" · ");
     const taxGroups = Array.isArray(receipt.taxGroups) ? receipt.taxGroups : [];
     const showTaxDetails = !isVoucherSale && Number.isFinite(Number(receipt.netTotal)) && taxGroups.length > 0;
-    const receiptIssuer = isVoucherSale && receipt.presentationSnapshot?.issuer
-      ? receipt.presentationSnapshot.issuer
-      : data.company;
+    const receiptIssuer = receipt.contextSnapshot?.company
+      ?? receipt.presentationSnapshot?.issuer
+      ?? data.company;
+    const receiptServiceLocation = receipt.contextSnapshot?.serviceLocation ?? null;
 
     mainContent.innerHTML = `<section class="flow-page receipt-preview-page page-enter">
       <div class="flow-head compact-flow-head">
@@ -709,6 +814,7 @@
           <span>${escapeHtml(createdAt)}</span>
         </div>
         <div class="receipt-paper-kind"><span>Belegart</span><strong>${escapeHtml(receiptKindLabel(receipt))}</strong></div>
+        ${receiptServiceLocation ? `<div class="receipt-paper-row"><span>Leistungsort · ${escapeHtml(receipt.contextSnapshot?.businessArea?.label || "Geschäftsbereich")}</span><strong>${escapeHtml(receiptServiceLocation.name || "Leistungsort")}</strong></div>` : ""}
 
         <div class="receipt-paper-items">
           ${receipt.items.map(item => `<div class="receipt-paper-item">
@@ -722,7 +828,8 @@
         </div>
 
         ${receipt.customer ? `<div class="receipt-paper-customer"><span>Kunde</span><strong>${escapeHtml(receipt.customer.name)}</strong>${customerAddressLines(receipt.customer).map(line => `<small>${escapeHtml(line)}</small>`).join("")}</div>` : ""}
-        <div class="receipt-paper-row"><span>Zahlungsart</span><strong>${escapeHtml(receipt.payment)}</strong></div>
+        <div class="receipt-paper-row"><span>Zahlungsstatus</span><strong>${receipt.paymentStatus === "open" ? "Offen" : "Bezahlt"}</strong></div>
+        ${receipt.paymentStatus === "open" ? "" : `<div class="receipt-paper-row"><span>Zahlungsart</span><strong>${escapeHtml(receiptPaymentMethodLabel(receipt))}</strong></div>`}
         ${receipt.voucherPayment ? `<div class="receipt-paper-voucher-payment"><span><small>Bezahlt mit Gutschein</small><strong>${escapeHtml(maskVoucherCode(receipt.voucherPayment.code))}</strong></span><strong>${formatCurrency(receipt.voucherPayment.amount)}</strong></div>` : ""}
         ${receipt.remainderPayment ? `<div class="receipt-paper-row"><span>Restzahlung · ${escapeHtml(receipt.remainderPayment.method)}</span><strong>${formatCurrency(receipt.remainderPayment.amount)}</strong></div>` : ""}
         ${linkedVoucher ? `<div class="receipt-paper-voucher-link"><span>Verknüpfter Gutschein</span><strong>${escapeHtml(maskVoucherCode(linkedVoucher.code))}</strong></div>` : ""}
@@ -757,6 +864,7 @@
       <section class="checkout-section"><div class="section-title-row"><h2>Positionen</h2><button class="text-action" type="button" data-route="edit-cart">Bearbeiten</button></div><div class="checkout-items">${state.cart.map(item => `<div class="checkout-item"><span><strong>${escapeHtml(item.title)}</strong><small>${item.quantity} × ${formatCurrency(item.price)}</small></span><strong>${formatCurrency(item.price * item.quantity)}</strong></div>`).join("")}</div></section>
       <section class="checkout-section"><h2>Kunde <span>optional</span></h2><div class="mini-choice-grid">${customerCards}</div></section>
       <section class="checkout-section"><h2>Zahlungsart <span>nur Simulation</span></h2><div class="payment-grid">${paymentCards}</div></section>
+      ${state.checkoutVoucherError && state.paymentChoice !== "voucher" ? `<p class="checkout-voucher-error" role="alert">${escapeHtml(state.checkoutVoucherError)}</p>` : ""}
       ${state.paymentChoice === "voucher" ? `<section class="checkout-section checkout-voucher-section" aria-labelledby="checkoutVoucherTitle">
         <div class="section-title-row"><h2 id="checkoutVoucherTitle">Gutschein einlösen</h2><span>1 Gutschein pro Beleg</span></div>
         <div class="checkout-voucher-code-row">
@@ -789,6 +897,10 @@
         </div>` : ""}
       </section>` : ""}
       <section class="checkout-total"><span>Gesamt</span><strong>${formatCurrency(cartTotal())}</strong></section>
+      <section class="checkout-open-payment ${state.checkoutOpenPaymentConfirm ? "is-confirming" : ""}">
+        <div><strong>Zahlung offen lassen</strong><small>Nur verwenden, wenn der Kunde später bezahlt.</small></div>
+        ${state.checkoutOpenPaymentConfirm ? `<div class="checkout-open-confirm"><p>Beleg abschließen und Zahlung als offen markieren?</p><button class="button button-secondary" type="button" data-action="open-payment-cancel">Zurück</button><button class="button button-primary" type="button" data-action="open-payment-confirm">Als offen abschließen</button></div>` : `<button class="button button-secondary" type="button" data-action="open-payment-request">Zahlung offen lassen</button>`}
+      </section>
       <p class="prototype-note">Keine echte Zahlung, Speicherung, QR-, Steuer- oder Fiskalisierungsfunktion.</p>
       <div class="checkout-action"><button class="button button-primary" type="button" data-action="finish-demo" ${state.checkoutSubmitting ? "disabled" : ""}>${state.checkoutSubmitting ? "Wird abgeschlossen …" : "Demo abschließen"}</button></div>
     </section>`;
@@ -904,7 +1016,7 @@
     if (receipt.status === "cancelled") return { label: "Storniert", className: "is-cancelled" };
     if (receipt.status === "credited") return { label: "Vollständig gutgeschrieben", className: "is-credit" };
     if (receipt.status === "partially-credited") return { label: "Teilgutschrift", className: "is-partial" };
-    if (receipt.payment === "Später") return { label: "Offen", className: "is-open" };
+    if (receipt.paymentStatus === "open") return { label: "Offen", className: "is-open" };
     return { label: "Bezahlt", className: "is-paid" };
   }
 
@@ -1009,15 +1121,19 @@
     if (receipt.status === "credited") return "Gutgeschrieben";
     if (receipt.status === "partially-credited") return "Teilgutschrift";
     if (receipt.type === "credit") return "Gutschrift";
-    return receipt.payment === "Später" ? "Offen" : "Bezahlt";
+    return receipt.paymentStatus === "open" ? "Offen" : "Bezahlt";
   }
 
   function receiptStatusClass(receipt) {
     if (receipt.status === "cancelled") return "is-cancelled";
     if (receipt.status === "credited" || receipt.type === "credit") return "is-credit";
     if (receipt.status === "partially-credited") return "is-partial";
-    if (receipt.payment === "Später") return "is-open";
+    if (receipt.paymentStatus === "open") return "is-open";
     return "is-paid";
+  }
+
+  function receiptPaymentMethodLabel(receipt) {
+    return receipt.paymentMethod || receipt.payment || "Noch nicht erfasst";
   }
 
   function receiptCustomerLabel(receipt) {
@@ -1039,10 +1155,10 @@
     const search = state.receiptSearch.trim().toLowerCase();
     return data.receipts
       .filter(receipt => {
-        if (state.receiptFilter === "completed") return receipt.type !== "credit" && receipt.status !== "cancelled";
+        if (state.receiptFilter === "completed") return receipt.type !== "credit" && receipt.status !== "cancelled" && receipt.paymentStatus !== "open";
         if (state.receiptFilter === "cancelled") return receipt.status === "cancelled";
         if (state.receiptFilter === "credits") return receipt.type === "credit";
-        if (state.receiptFilter === "open") return receipt.payment === "Später" && receipt.status !== "cancelled";
+        if (state.receiptFilter === "open") return receipt.type === "receipt" && receipt.paymentStatus === "open" && receipt.status !== "cancelled";
         return true;
       })
       .filter(receipt => {
@@ -1074,12 +1190,14 @@
           ${[
             ["all", "Alle"],
             ["completed", "Abgeschlossen"],
-            ["open", "Offen"],
+            ["open", "Offene Zahlungen"],
             ["cancelled", "Storniert"],
             ["credits", "Gutschriften"]
           ].map(([key, label]) => `<button type="button" data-receipt-filter="${key}" class="${state.receiptFilter === key ? "is-active" : ""}">${label}</button>`).join("")}
         </div>
       </header>
+
+      ${state.receiptFilter === "open" ? `<section class="open-payments-help"><div><strong>Offene Zahlungen</strong><p>Nur für Ausnahmefälle, wenn ein Kunde später bezahlt.</p></div>${helpButton("openPayments", "Offene Zahlungen")}</section>` : ""}
 
       <div class="receipt-list-summary">
         <span>${receipts.length} ${receipts.length === 1 ? "Eintrag" : "Einträge"}</span>
@@ -1087,18 +1205,24 @@
       </div>
 
       <div class="receipt-admin-list">
-        ${receipts.length ? receipts.map(receipt => `<button class="receipt-admin-card" type="button" data-open-receipt="${escapeHtml(receipt.number)}">
+        ${receipts.length ? receipts.map(receipt => state.receiptFilter === "open" ? `<article class="open-payment-card">
+          <button class="open-payment-card-main" type="button" data-open-receipt="${escapeHtml(receipt.number)}">
+            <span><small>${escapeHtml(receipt.number)} · ${escapeHtml(receipt.date)}</small><strong>${escapeHtml(receiptCustomerLabel(receipt))}</strong><em>${escapeHtml(receipt.contextSnapshot?.businessArea?.label || "Geschäftsbereich")}</em>${receipt.internalNote ? `<span>${escapeHtml(receipt.internalNote)}</span>` : ""}</span>
+            <strong>${formatCurrency(receipt.total)}</strong>
+          </button>
+          <button class="button button-primary" type="button" data-record-payment="${escapeHtml(receipt.number)}">Zahlung erfassen</button>
+        </article>` : `<button class="receipt-admin-card" type="button" data-open-receipt="${escapeHtml(receipt.number)}">
           <span class="receipt-card-main">
             <span class="receipt-card-number">${escapeHtml(receipt.number)}</span>
             ${receipt.receiptKind === "voucher-sale" ? `<span class="receipt-card-kind">Gutscheinverkauf</span>` : ""}
             <strong>${escapeHtml(receiptCustomerLabel(receipt))}</strong>
-            <small>${escapeHtml(receipt.date)} · ${escapeHtml(receipt.time)} · ${escapeHtml(receipt.payment)}</small>
+            <small>${escapeHtml(receipt.date)} · ${escapeHtml(receipt.time)} · ${escapeHtml(receiptPaymentMethodLabel(receipt))}</small>
           </span>
           <span class="receipt-card-side">
             <strong>${formatCurrency(receipt.total)}</strong>
             <span class="receipt-status ${receiptStatusClass(receipt)}">${escapeHtml(receiptStatusLabel(receipt))}</span>
           </span>
-        </button>`).join("") : `<div class="empty-state receipt-empty">Keine Belege gefunden.</div>`}
+        </button>`).join("") : `<div class="empty-state receipt-empty">${state.receiptFilter === "open" ? "Keine offenen Zahlungen vorhanden." : "Keine Belege gefunden."}</div>`}
       </div>
     </section>`;
 
@@ -1122,6 +1246,7 @@
       .reduce((sum, item) => sum + Math.abs(Number(item.total || 0)), 0);
     const remainingCredit = Math.max(0, Number(receipt.total || 0) - relatedCreditsTotal);
     const hasCancellation = data.receipts.some(item => item.reference === receipt.number && item.type === "cancellation");
+    const canRecordPayment = receipt.type === "receipt" && receipt.paymentStatus === "open" && receipt.status !== "cancelled";
     const canCorrect = receipt.type === "receipt"
       && receipt.receiptKind !== "voucher-sale"
       && !receipt.voucherPayment
@@ -1144,8 +1269,11 @@
 
       <section class="receipt-detail-card">
         <div class="receipt-detail-row"><span>Belegart</span><strong>${escapeHtml(receiptKindLabel(receipt))}</strong></div>
+        ${receipt.contextSnapshot?.businessArea ? `<div class="receipt-detail-row"><span>Geschäftsbereich</span><strong>${escapeHtml(receipt.contextSnapshot.businessArea.label)}</strong></div>` : ""}
+        ${receipt.contextSnapshot?.serviceLocation ? `<div class="receipt-detail-row"><span>Leistungsort</span><strong>${escapeHtml(receipt.contextSnapshot.serviceLocation.name)}</strong></div>` : ""}
         <div class="receipt-detail-row"><span>Kunde</span><strong>${escapeHtml(receiptCustomerLabel(receipt))}</strong></div>
-        <div class="receipt-detail-row"><span>Zahlungsart</span><strong>${escapeHtml(receipt.payment)}</strong></div>
+        <div class="receipt-detail-row"><span>Zahlungsstatus</span><strong>${receipt.paymentStatus === "open" ? "Offen" : "Bezahlt"}</strong></div>
+        ${receipt.paymentStatus === "open" ? "" : `<div class="receipt-detail-row"><span>Zahlungsart</span><strong>${escapeHtml(receiptPaymentMethodLabel(receipt))}</strong></div>`}
         ${receipt.voucherPayment ? `<div class="receipt-detail-row"><span>Bezahlt mit Gutschein</span><strong>${formatCurrency(receipt.voucherPayment.amount)}</strong></div><div class="receipt-detail-row"><span>Gutscheincode</span><strong>${escapeHtml(receipt.voucherPayment.code)}</strong></div>` : ""}
         ${receipt.remainderPayment ? `<div class="receipt-detail-row"><span>Restzahlung · ${escapeHtml(receipt.remainderPayment.method)}</span><strong>${formatCurrency(receipt.remainderPayment.amount)}</strong></div>` : ""}
         ${receipt.reference ? `<div class="receipt-detail-row"><span>Bezug</span><button type="button" data-open-receipt="${escapeHtml(receipt.reference)}">${escapeHtml(receipt.reference)}</button></div>` : ""}
@@ -1181,8 +1309,10 @@
 
       <section class="receipt-detail-card activity-log">
         <div class="receipt-section-title"><h2>Aktivität</h2></div>
-        ${(receipt.activity || []).map(entry => `<div><span>${escapeHtml(entry.label)}</span><small>${escapeHtml(entry.date)}</small></div>`).join("")}
+        ${(receipt.activity || []).map(entry => `<div><span>${escapeHtml(entry.label)}${entry.detail ? `<em>${escapeHtml(entry.detail)}</em>` : ""}</span><small>${escapeHtml(entry.date)}</small></div>`).join("")}
       </section>
+
+      ${canRecordPayment ? `<section class="receipt-open-payment-action"><div><strong>Zahlung ist noch offen</strong><p>Erfasse die tatsächliche Zahlungsart, sobald der vollständige Betrag bezahlt wurde.</p></div><button class="button button-primary" type="button" data-record-payment="${escapeHtml(receipt.number)}">Zahlung erfassen</button></section>` : ""}
 
       <section class="receipt-detail-card receipt-internal-notes">
         <div class="receipt-section-title"><h2>Interne Notiz</h2></div>
@@ -1268,6 +1398,11 @@
       sortKey: `2026-08-02T10:22:${data.receipts.length}`,
       customer: receipt.customer,
       payment: receipt.payment,
+      paymentStatus: receipt.paymentStatus,
+      paymentMethod: receipt.paymentMethod,
+      paymentRecordedAt: receipt.paymentRecordedAt,
+      paymentEvents: Array.isArray(receipt.paymentEvents) ? receipt.paymentEvents.map(event => ({ ...event })) : [],
+      contextSnapshot: cloneContextSnapshot(receipt.contextSnapshot),
       items,
       total: -Math.abs(amount),
       activity: [
@@ -1312,15 +1447,8 @@
     return [parts[0], "••••", parts.at(-1)].join("-");
   };
 
-  function currentServiceLocation() {
-    return data.serviceLocations.find(location => location.id === data.defaultServiceLocationId)
-      ?? data.serviceLocations[0]
-      ?? { id: "location-default", mode: "company" };
-  }
-
-  function currentVoucherPresentationSnapshot() {
-    const location = currentServiceLocation();
-    const issuer = {
+  function companyContextSnapshot() {
+    return {
       name: data.company.name,
       owner: data.company.owner || "",
       street: data.company.street || "",
@@ -1332,17 +1460,147 @@
       taxNumber: data.company.taxNumber || "",
       vatId: data.company.vatId || ""
     };
+  }
+
+  function serviceLocationAvailable(location) {
+    return Boolean(location)
+      && location.active !== false
+      && (location.addressMode !== "company" || data.company.useAsServiceLocation !== false);
+  }
+
+  function uncoveredBusinessAreaForCompanyLocationChoice(useCompanyAddress) {
+    return activeBusinessAreas().find(area => !data.serviceLocations.some(location =>
+      Array.isArray(location.businessAreaIds)
+      && location.businessAreaIds.includes(area.id)
+      && location.active !== false
+      && (location.addressMode !== "company" || useCompanyAddress)
+    ));
+  }
+
+  function serviceLocationsForBusinessArea(areaId, activeOnly = true) {
+    return data.serviceLocations.filter(location =>
+      Array.isArray(location.businessAreaIds)
+      && location.businessAreaIds.includes(areaId)
+      && (!activeOnly || serviceLocationAvailable(location))
+    );
+  }
+
+  function serviceLocationForBusinessArea(areaId = state.activeBusinessArea) {
+    const area = data.businessAreas.find(entry => entry.id === areaId) ?? defaultBusinessArea();
+    const eligible = serviceLocationsForBusinessArea(area?.id);
+    return eligible.find(location => location.id === area?.defaultServiceLocationId)
+      ?? eligible[0]
+      ?? null;
+  }
+
+  function currentServiceLocation(areaId = state.activeBusinessArea) {
+    return serviceLocationForBusinessArea(areaId)
+      ?? { id: "location-missing", name: "Kein Leistungsort", addressMode: "own", street: "", houseNumber: "", zip: "", city: "", active: false, businessAreaIds: [] };
+  }
+
+  function serviceLocationContextSnapshot(location = currentServiceLocation()) {
+    const usesCompanyAddress = location.addressMode === "company";
+    const streetName = usesCompanyAddress ? data.company.street || "" : location.street || "";
+    const houseNumber = usesCompanyAddress ? "" : location.houseNumber || "";
+    return {
+      id: location.id || "",
+      name: location.name || (usesCompanyAddress ? data.company.name : "Leistungsort"),
+      addressMode: usesCompanyAddress ? "company" : "own",
+      street: usesCompanyAddress ? streetName : [streetName, houseNumber].filter(Boolean).join(" "),
+      streetName,
+      houseNumber,
+      zip: usesCompanyAddress ? data.company.zip || "" : location.zip || "",
+      city: usesCompanyAddress ? data.company.city || "" : location.city || "",
+      phone: location.phone || (usesCompanyAddress ? data.company.phone || "" : ""),
+      voucherNote: location.voucherNote || ""
+    };
+  }
+
+  function businessAreaContextSnapshot(areaId = state.activeBusinessArea) {
+    const area = data.businessAreas.find(entry => entry.id === areaId) ?? defaultBusinessArea();
+    return { id: area?.id || "", label: area?.label || "Geschäftsbereich" };
+  }
+
+  function buildContextSnapshot(areaId = state.activeBusinessArea) {
+    return {
+      company: companyContextSnapshot(),
+      businessArea: businessAreaContextSnapshot(areaId),
+      serviceLocation: serviceLocationContextSnapshot(serviceLocationForBusinessArea(areaId) ?? currentServiceLocation(areaId))
+    };
+  }
+
+  function cloneContextSnapshot(snapshot) {
+    return snapshot ? JSON.parse(JSON.stringify(snapshot)) : null;
+  }
+
+  function repairBusinessAreaLocationDefaults() {
+    data.businessAreas.forEach(area => {
+      const eligible = serviceLocationsForBusinessArea(area.id);
+      if (!eligible.some(location => location.id === area.defaultServiceLocationId)) {
+        area.defaultServiceLocationId = eligible[0]?.id ?? null;
+      }
+    });
+  }
+
+  function migratePrototypeContextSnapshots() {
+    data.company.useAsServiceLocation = data.company.useAsServiceLocation !== false;
+    const allAreaIds = data.businessAreas.map(area => area.id);
+    data.serviceLocations.forEach((location, index) => {
+      if (!location.addressMode) location.addressMode = location.mode === "alternate" ? "own" : "company";
+      if (!location.name) location.name = location.addressMode === "company" ? data.company.name : `Leistungsort ${index + 1}`;
+      if (location.houseNumber === undefined) location.houseNumber = "";
+      if (location.street === undefined) location.street = "";
+      if (location.zip === undefined) location.zip = "";
+      if (location.city === undefined) location.city = "";
+      if (location.phone === undefined) location.phone = "";
+      if (location.voucherNote === undefined) location.voucherNote = "";
+      if (location.active === undefined) location.active = true;
+      if (!Array.isArray(location.businessAreaIds)) location.businessAreaIds = [...allAreaIds];
+      delete location.mode;
+    });
+    repairBusinessAreaLocationDefaults();
+
+    data.receipts.forEach(receipt => {
+      if (receipt.contextSnapshot) return;
+      const issuer = receipt.presentationSnapshot?.issuer;
+      const redemption = receipt.presentationSnapshot?.redemptionLocation;
+      const inferredAreaId = String(redemption?.name || "").toLocaleLowerCase("de-DE").includes("podolog") ? "podiatry" : defaultBusinessArea()?.id;
+      const context = buildContextSnapshot(inferredAreaId);
+      if (issuer) context.company = { ...context.company, ...issuer };
+      if (redemption) context.serviceLocation = redemption.mode === "issuer"
+        ? serviceLocationContextSnapshot(serviceLocationForBusinessArea(inferredAreaId))
+        : { ...context.serviceLocation, ...redemption };
+      receipt.contextSnapshot = context;
+    });
+    data.vouchers.forEach(voucher => {
+      if (voucher.contextSnapshot) return;
+      const redemption = voucher.presentationSnapshot?.redemptionLocation;
+      const inferredAreaId = String(redemption?.name || "").toLocaleLowerCase("de-DE").includes("podolog") ? "podiatry" : defaultBusinessArea()?.id;
+      const context = buildContextSnapshot(inferredAreaId);
+      if (voucher.presentationSnapshot?.issuer) context.company = { ...context.company, ...voucher.presentationSnapshot.issuer };
+      if (redemption) context.serviceLocation = redemption.mode === "issuer"
+        ? serviceLocationContextSnapshot(serviceLocationForBusinessArea(inferredAreaId))
+        : { ...context.serviceLocation, ...redemption };
+      voucher.contextSnapshot = context;
+    });
+  }
+
+  function currentVoucherPresentationSnapshot(areaId = state.activeBusinessArea) {
+    const context = buildContextSnapshot(areaId);
+    const issuer = context.company;
+    const location = context.serviceLocation;
     return {
       issuer,
-      redemptionLocation: location.mode === "alternate" ? {
-        mode: "alternate",
+      redemptionLocation: {
+        mode: "service-location",
+        id: location.id,
         name: location.name || "Leistungsort",
         street: location.street || "",
         zip: location.zip || "",
         city: location.city || "",
         phone: location.phone || "",
         voucherNote: location.voucherNote || ""
-      } : { mode: "issuer" }
+      }
     };
   }
 
@@ -1530,6 +1788,7 @@
   }
 
   function validateVoucherSaleAmount() {
+    if (!serviceLocationForBusinessArea(state.activeBusinessArea)) return "Bitte zuerst einen Standard-Leistungsort für den gewählten Geschäftsbereich festlegen.";
     if (!state.voucherSaleAmountChoice) return "Bitte einen Gutscheinwert auswählen.";
     const amount = voucherSaleAmount();
     if (amount === null) return "Bitte einen gültigen Betrag eingeben.";
@@ -1577,7 +1836,8 @@
     const customer = data.customers.find(entry => entry.id === state.voucherSaleCustomerId) ?? null;
     const saleReceiptId = `receipt_${randomHex(12)}`;
     const saleReceiptNumber = nextReceiptNumber();
-    const presentationSnapshot = currentVoucherPresentationSnapshot();
+    const contextSnapshot = buildContextSnapshot(state.activeBusinessArea);
+    const presentationSnapshot = currentVoucherPresentationSnapshot(state.activeBusinessArea);
     const customerSnapshot = customer ? {
       id: customer.id,
       name: customerName(customer),
@@ -1606,6 +1866,7 @@
         payment: voucherSalePaymentLabel(),
         customerId: customer?.id ?? null
       },
+      contextSnapshot: cloneContextSnapshot(contextSnapshot),
       presentationSnapshot,
       history: [
         { type: "sold", date: soldAt, time: soldTime, amount: issuedValue, balanceAfter: issuedValue, receiptNumber: saleReceiptNumber }
@@ -1621,7 +1882,12 @@
       time: soldTime,
       sortKey: now.toISOString(),
       payment: voucherSalePaymentLabel(),
+      paymentStatus: "paid",
+      paymentMethod: voucherSalePaymentLabel(),
+      paymentRecordedAt: now.toISOString(),
+      paymentEvents: [{ type: "payment_recorded", recordedAt: now.toISOString(), date: soldAt, time: soldTime, paymentMethod: voucherSalePaymentLabel(), amount: issuedValue }],
       customer: customerSnapshot,
+      contextSnapshot: cloneContextSnapshot(contextSnapshot),
       voucherReference: voucher.reference,
       presentationSnapshot,
       items: [{ title: "Gutschein", type: "voucher-sale", quantity: 1, unitPrice: issuedValue, total: issuedValue }],
@@ -1666,6 +1932,8 @@
     const completedVoucher = voucherByReference(state.voucherSaleCreatedReference);
     const saleCustomer = data.customers.find(customer => customer.id === state.voucherSaleCustomerId) ?? null;
     const paymentChoices = activeNormalPaymentChoices();
+    const saleArea = businessAreaContextSnapshot(state.activeBusinessArea);
+    const saleLocation = serviceLocationForBusinessArea(state.activeBusinessArea);
     mainContent.innerHTML = `<section class="flow-page voucher-sale-page page-enter">
       <div class="flow-head compact-flow-head">
         <button class="button button-back" type="button" data-action="voucher-sale-cancel"><span aria-hidden="true">←</span> Abbrechen</button>
@@ -1708,6 +1976,8 @@
           <div><span>Gutscheinwert</span><strong id="voucherSaleSummaryAmount">${amount !== null && !validateVoucherSaleAmount() ? formatCurrency(amount) : "Noch nicht festgelegt"}</strong></div>
           <div><span>Zahlungsart</span><strong>${escapeHtml(voucherSalePaymentLabel())}</strong></div>
           <div><span>Kunde</span><strong>${saleCustomer ? escapeHtml(customerName(saleCustomer)) : "Ohne Kundenzuordnung"}</strong></div>
+          <div><span>Geschäftsbereich</span><strong>${escapeHtml(saleArea.label)}</strong></div>
+          <div><span>Leistungsort</span><strong>${escapeHtml(saleLocation?.name || "Nicht festgelegt")}</strong></div>
           ${state.voucherSaleDisplayName.trim() ? `<div><span>Name auf Gutschein</span><strong>${escapeHtml(state.voucherSaleDisplayName.trim())}</strong></div>` : ""}
           <p>Eine Bestätigung erzeugt gemeinsam den Verkaufsbeleg, den Gutscheincode und die QR-Vorschau.</p>
         </section>
@@ -1806,6 +2076,7 @@
         <div><span>Ursprünglicher Wert</span><strong>${formatCurrency(voucher.issuedValue)}</strong></div>
         <div><span>Verkauft am</span><strong>${escapeHtml([voucher.soldAt, voucher.soldTime].filter(Boolean).join(" · "))}</strong></div>
         <div><span>Zahlungsart beim Verkauf</span><strong>${escapeHtml(voucher.payment || "Nicht angegeben")}</strong></div>
+        ${voucher.contextSnapshot?.businessArea ? `<div><span>Geschäftsbereich beim Verkauf</span><strong>${escapeHtml(voucher.contextSnapshot.businessArea.label)}</strong></div>` : ""}
         ${voucher.saleReceipt?.number ? `<div><span>Verkaufsbeleg</span>${saleReceipt ? `<button type="button" data-open-receipt="${escapeHtml(saleReceipt.number)}">${escapeHtml(saleReceipt.number)} · Verkaufsbeleg öffnen</button>` : `<strong>${escapeHtml(voucher.saleReceipt.number)}</strong>`}</div>` : ""}
         ${voucher.customer ? `<div><span>Zugeordneter Kunde</span><strong>${escapeHtml(voucher.customer.name)}</strong></div>` : ""}
         ${voucher.displayName ? `<div><span>Name auf dem Gutschein</span><strong>${escapeHtml(voucher.displayName)}</strong></div>` : ""}
@@ -1888,10 +2159,11 @@
 
   const helpTopics = {
     company: ["Unternehmensdaten", ["Diese Angaben erscheinen auf neuen Belegen und Gutscheinen.", "Pflichtangaben sollten vor dem ersten echten Beleg vollständig geprüft werden.", "Änderungen gelten im Prototyp nur bis zum Neuladen."]],
-    location: ["Leistungsort", ["Der Leistungsort zeigt, wo deine Leistungen normalerweise erbracht werden.", "Bei gleicher Anschrift wird keine zweite Adresse geführt.", "Der Ort wird auch für neue Gutscheine verwendet."]],
+    location: ["Leistungsorte", ["Leistungsorte beschreiben, wo deine Leistungen tatsächlich erbracht werden.", "Die Unternehmensanschrift bleibt unabhängig davon bestehen."]],
     taxes: ["Steuerstatus", ["Wähle den Status, der für dein Unternehmen fachlich bestätigt wurde.", "FRECKA nimmt keine steuerliche Bewertung vor.", "Unsichere Angaben solltest du mit Steuerberatung oder Finanzamt klären."]],
     business: ["Geschäftsbereiche", ["Geschäftsbereiche trennen unterschiedliche Angebote innerhalb derselben Instanz.", "Mindestens ein Bereich muss aktiv und als Standard gewählt sein.", "Sie sind keine Filialen und besitzen keine eigene Rechteverwaltung."]],
     payments: ["Zahlungsarten", ["Aktive Zahlungsarten erscheinen beim Belegabschluss.", "Mindestens eine normale Zahlungsart muss aktiv bleiben.", "Es besteht keine Verbindung zu Zahlungsanbietern."]],
+    openPayments: ["Offene Zahlungen", ["Offene Zahlungen sind nur für Ausnahmefälle gedacht, wenn ein Kunde später bezahlt.", "FRECKA ersetzt keine Buchhaltung und überwacht keine Bankkonten.", "Teilzahlungen und Mahnungen werden nicht verwaltet."]],
     receiptTexts: ["Belegtexte", ["Dankes- und Fußtext sind freiwillig.", "Sie werden als Momentaufnahme in neue Belege übernommen.", "Bereits erstellte Belege ändern sich nicht rückwirkend."]],
     backup: ["Backup", ["Backups werden später verschlüsselt in einem Speicher des Kunden abgelegt.", "In diesem Prototyp ist noch keine Sicherung möglich.", "FRECKA speichert keine Kundendaten zentral."]],
     export: ["Export", ["Exporte werden später aus den lokalen Daten erzeugt.", "Format und Zeitraum sollen vor dem Export klar auswählbar sein.", "Aktuell wird noch keine Datei erstellt."]],
@@ -1899,7 +2171,7 @@
     tse: ["TSE", ["Dieser Prototyp besitzt keine TSE-Anbindung.", "Ob eine TSE erforderlich ist, wird nicht automatisch beurteilt.", "Vor produktiver Nutzung muss die konkrete Pflicht fachlich geprüft werden.", "Die spätere Einrichtung erhält einen eigenen Assistenten."]]
   };
 
-  const businessTemplateNames = ["Friseur", "Podologie", "Kosmetik", "Nagelstudio", "Fußpflege", "Massage", "Coaching", "Therapie", "Hundesalon"];
+  const businessTemplateEntries = () => Object.entries(data.businessTemplates);
 
   function helpButton(topic, label) {
     return `<button class="context-help" type="button" data-help="${escapeHtml(topic)}" aria-label="Hilfe zu ${escapeHtml(label)}">ⓘ</button>`;
@@ -1930,48 +2202,165 @@
     openBottomSheet(title, `<div class="context-help-copy">${sentences.slice(0, 5).map(sentence => `<p>${escapeHtml(sentence)}</p>`).join("")}</div>`);
   }
 
+  function openPaymentCapture(receipt) {
+    if (!receipt || receipt.type !== "receipt" || receipt.paymentStatus !== "open" || receipt.status === "cancelled") return;
+    state.paymentCaptureReceiptNumber = receipt.number;
+    openBottomSheet("Zahlung erfassen", `<div class="payment-capture-sheet">
+      <p><strong>${escapeHtml(receipt.number)}</strong><span>${escapeHtml(receiptCustomerLabel(receipt))} · ${formatCurrency(receipt.total)}</span></p>
+      <div role="group" aria-label="Tatsächliche Zahlungsart">
+        ${activeNormalPaymentChoices().map(choice => `<button type="button" data-payment-capture-method="${escapeHtml(choice.id)}"><span aria-hidden="true">${escapeHtml(choice.icon)}</span><strong>${escapeHtml(choice.title)}</strong></button>`).join("")}
+      </div>
+      <small>Der vollständige Betrag wird als bezahlt markiert. Teilzahlungen und automatische Bankprüfungen sind nicht enthalten.</small>
+    </div>`);
+  }
+
+  function recordOpenPayment(methodId) {
+    const receipt = receiptByNumber(state.paymentCaptureReceiptNumber);
+    const method = activeNormalPaymentChoices().find(choice => choice.id === methodId);
+    if (!receipt || receipt.type !== "receipt" || receipt.paymentStatus !== "open" || !method) return false;
+    const now = new Date();
+    const date = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }).format(now);
+    const time = new Intl.DateTimeFormat("de-DE", { timeStyle: "short" }).format(now);
+    receipt.paymentStatus = "paid";
+    receipt.paymentMethod = method.title;
+    receipt.payment = method.title;
+    receipt.paymentRecordedAt = now.toISOString();
+    receipt.paymentEvents = Array.isArray(receipt.paymentEvents) ? receipt.paymentEvents : [];
+    receipt.paymentEvents.push({ type: "payment_recorded", recordedAt: receipt.paymentRecordedAt, date, time, paymentMethod: method.title, amount: Number(receipt.total || 0) });
+    receipt.activity = Array.isArray(receipt.activity) ? receipt.activity : [];
+    receipt.activity.push({ label: "Zahlung erfasst", date: `${date} · ${time}`, detail: `${method.title} · ${formatCurrency(receipt.total)}` });
+    return true;
+  }
+
   function openBusinessTemplatePicker() {
     openBottomSheet("Welchen Geschäftsbereich möchtest du anlegen?", `<div class="template-choice-list">
       <button type="button" data-template-choice="custom"><strong>Eigenen Geschäftsbereich erstellen</strong><small>Mit einem leeren Bereich beginnen</small></button>
-      ${businessTemplateNames.map(name => `<button type="button" data-template-choice="${escapeHtml(name)}"><strong>${escapeHtml(name)}</strong><small>Vorlage zunächst nur ansehen</small></button>`).join("")}
+      ${businessTemplateEntries().map(([key, template]) => `<button type="button" data-template-choice="${escapeHtml(key)}"><strong>${escapeHtml(template.label)}</strong><small>Starterdaten vor Verwendung ansehen</small></button>`).join("")}
     </div>`, "business-template-sheet");
   }
 
-  function openBusinessTemplateConfirmation(name, previewVisible = false) {
-    state.pendingBusinessTemplate = name;
-    openBottomSheet(name, `<div class="template-confirmation">
+  function openBusinessTemplateConfirmation(templateKey, previewVisible = false) {
+    const template = data.businessTemplates[templateKey];
+    if (!template) return;
+    state.pendingBusinessTemplate = templateKey;
+    openBottomSheet(template.label, `<div class="template-confirmation">
       <p>Für diesen Geschäftsbereich stehen vorbereitete Kategorien und Leistungen bereit.</p>
-      ${previewVisible ? `<div class="template-preview-simulation"><strong>Vorschau der Vorbereitung</strong><span>Kategorien</span><span>Leistungen</span><span>Produkte</span><small>Nur Simulation – es werden noch keine Inhalte importiert.</small></div>` : ""}
+      ${previewVisible ? `<div class="template-data-preview">
+        <section><strong>Kategorien</strong><p>${template.categories.map(([, name]) => escapeHtml(name)).join(" · ")}</p></section>
+        <section><strong>Leistungen</strong><p>${template.services.map(([, name]) => escapeHtml(name)).join(" · ")}</p></section>
+        <section><strong>Produkte</strong><p>${template.products.length ? template.products.map(([, name]) => escapeHtml(name)).join(" · ") : "Keine Starterprodukte"}</p></section>
+        <small>Bitte nach dem Import Preise und vorgeschlagene Steuersätze prüfen. Alle Einträge bleiben bearbeitbar und deaktivierbar.</small>
+      </div>` : ""}
       ${previewVisible ? "" : `<button class="button button-secondary" type="button" data-action="template-preview">Vorlage ansehen</button>`}
       <button class="button button-primary" type="button" data-action="template-use">Vorlage verwenden</button>
       <button class="button button-ghost" type="button" data-action="template-empty">Ohne Vorlage starten</button>
     </div>`, "business-template-sheet");
   }
 
-  function addBusinessArea(label, templateSimulated = false) {
+  function importBusinessTemplate(areaId, templateKey) {
+    const template = data.businessTemplates[templateKey];
+    if (!template) return { categoriesAdded: 0, itemsAdded: 0 };
+    const now = new Date().toISOString();
+    let categoriesAdded = 0;
+    let itemsAdded = 0;
+    const categoryIds = new Map();
+    template.categories.forEach(([key, name, type], index) => {
+      const id = `tpl-${areaId}-cat-${key}`;
+      categoryIds.set(key, id);
+      if (data.categories.some(category => category.id === id)) return;
+      data.categories.push({ id, businessAreaId: areaId, name, type, active: true, sortOrder: (index + 1) * 10, source: "template", createdAt: now, updatedAt: now });
+      categoriesAdded += 1;
+    });
+    const entries = catalogEntries(areaId);
+    const importItems = (items, type, offset) => items.forEach(([key, name, categoryKey], index) => {
+      const id = `tpl-${areaId}-${type}-${key}`;
+      if (entries.some(item => item.id === id)) return;
+      entries.push({
+        id,
+        type,
+        businessAreaId: areaId,
+        categoryId: categoryIds.get(categoryKey) || null,
+        name,
+        title: name,
+        priceCents: 0,
+        price: 0,
+        taxRate: Number(data.taxSettings.defaultRate || 19),
+        active: true,
+        favorite: index < 2,
+        sortOrder: offset + (index + 1) * 10,
+        source: "template",
+        needsReview: true,
+        priceConfirmed: false,
+        taxRateConfirmed: false,
+        description: "",
+        sku: type === "product" ? "" : undefined,
+        unit: type === "product" ? "Stück" : undefined,
+        quantityAdjustable: type === "product",
+        icon: type === "product" ? "▣" : "✦",
+        createdAt: now,
+        updatedAt: now
+      });
+      itemsAdded += 1;
+    });
+    importItems(template.services, "service", 0);
+    importItems(template.products, "product", 1000);
+    data.templateImportStatus[areaId] = {
+      templateKey,
+      importedAt: data.templateImportStatus[areaId]?.importedAt || now,
+      lastCheckedAt: now,
+      status: "needs-review"
+    };
+    syncTemplateImportStatus(areaId);
+    return { categoriesAdded, itemsAdded };
+  }
+
+  function catalogReviewCount(areaId) {
+    return catalogEntries(areaId).filter(item => ["service", "product"].includes(item.type) && item.active !== false && item.needsReview).length;
+  }
+
+  function syncTemplateImportStatus(areaId) {
+    const status = data.templateImportStatus[areaId];
+    if (!status) return;
+    status.needsReviewCount = catalogReviewCount(areaId);
+    status.status = status.needsReviewCount ? "needs-review" : "ready";
+    status.lastCheckedAt = new Date().toISOString();
+  }
+
+  function openTemplateImportSuccess(areaId) {
+    state.catalogManagerAreaId = areaId;
+    state.catalogManagerReturnRoute = state.route === "setup-wizard" ? "setup-wizard" : "settings-business-areas";
+    openBottomSheet("Vorlage angelegt", `<div class="template-import-success"><p>Vorlage wurde angelegt. Bitte prüfe jetzt Leistungen, Preise und Steuersätze.</p><button class="button button-primary" type="button" data-action="template-edit-catalog">Leistungen und Preise bearbeiten</button><button class="button button-ghost" type="button" data-action="template-later">Später</button></div>`);
+  }
+
+  function addBusinessArea(label, templateKey = null) {
     const id = `area-${Date.now()}`;
-    data.businessAreas.push({ id, label, active: true, isDefault: false });
+    const initialLocation = data.serviceLocations.find(serviceLocationAvailable) ?? null;
+    data.businessAreas.push({ id, label, active: true, isDefault: false, defaultServiceLocationId: initialLocation?.id ?? null });
+    if (initialLocation && !initialLocation.businessAreaIds.includes(id)) initialLocation.businessAreaIds.push(id);
     data.catalog[id] = [];
-    closeBottomSheet();
-    const message = templateSimulated
-      ? `${label} wurde angelegt. Die Branchenvorlage ist in diesem UX-Prototyp nur simuliert; es wurden keine Leistungen importiert.`
+    const importResult = templateKey ? importBusinessTemplate(id, templateKey) : null;
+    const message = importResult
+      ? `${label} wurde mit ${importResult.itemsAdded} Startereinträgen angelegt. Preise und Steuersätze müssen noch geprüft werden.`
       : `${label} wurde ohne Vorlage angelegt. Name und Standard können jetzt angepasst werden.`;
     if (state.route === "setup-wizard") {
       state.setupNotice = "";
       state.businessAreaSettingsNotice = message;
-      renderSetupWizard();
+      if (templateKey) openTemplateImportSuccess(id);
+      else { closeBottomSheet(); renderSetupWizard(); }
     } else {
       state.businessAreaSettingsNotice = message;
-      renderBusinessAreaSettings();
+      if (templateKey) openTemplateImportSuccess(id);
+      else { closeBottomSheet(); renderBusinessAreaSettings(); }
     }
   }
 
   const settingsSections = [
     { id: "settings-company", icon: "▣", title: "Unternehmensdaten", note: "Name, Anschrift und Kontaktdaten", available: true },
-    { id: "settings-location", icon: "⌖", title: "Leistungsort", note: "Standardort für Leistungen und Gutscheine", available: true },
+    { id: "settings-location", icon: "⌖", title: "Leistungsorte", note: "Orte, Zuordnungen und Standards", available: true },
     { id: "settings-taxes", icon: "%", title: "Steuern und Belegangaben", note: "Steuerstatus, Nummern und Belegtexte", available: true },
     { id: "settings-payments", icon: "€", title: "Zahlungsarten", note: "Aktive Arten und Reihenfolge", available: true },
     { id: "settings-business-areas", icon: "◇", title: "Geschäftsbereiche", note: "Fachbereiche und Standardauswahl", available: true },
+    { id: "settings-catalog", icon: "≡", title: "Leistungen & Produkte", note: "Katalog je Geschäftsbereich verwalten", available: true },
     { id: "settings-help", icon: "?", title: "Hilfe & Lernen", note: "Erste Schritte und häufige Fragen", available: true },
     { icon: "◎", title: "Benutzer", note: "Für eine spätere Version vorbereitet" },
     { icon: "↥", title: "Backup und Wiederherstellung", note: "Für eine spätere Version vorbereitet", help: "backup" },
@@ -1991,6 +2380,13 @@
   }
 
   function applyCompanyForm(formData) {
+    const requestedCompanyLocationUse = formData.has("useAsServiceLocation")
+      ? formData.get("useAsServiceLocation") === "on"
+      : data.company.useAsServiceLocation !== false;
+    const uncoveredArea = uncoveredBusinessAreaForCompanyLocationChoice(requestedCompanyLocationUse);
+    if (formData.has("useAsServiceLocation") && uncoveredArea) {
+      return `Bitte zuerst einen eigenen aktiven Leistungsort für ${uncoveredArea.label} zuordnen.`;
+    }
     Object.assign(data.company, {
       name: String(formData.get("name") || "").trim(),
       owner: String(formData.get("owner") || "").trim(),
@@ -2001,26 +2397,56 @@
       phone: String(formData.get("phone") || "").trim(),
       email: String(formData.get("email") || "").trim(),
       taxNumber: String(formData.get("taxNumber") ?? data.company.taxNumber ?? "").trim(),
-      vatId: String(formData.get("vatId") ?? data.company.vatId ?? "").trim()
+      vatId: String(formData.get("vatId") ?? data.company.vatId ?? "").trim(),
+      useAsServiceLocation: requestedCompanyLocationUse
     });
+    repairBusinessAreaLocationDefaults();
     companyName.textContent = data.company.name || "FRECKA";
+    return "";
   }
 
-  function applyServiceLocationForm(formData) {
-    const mode = formData.get("mode") === "alternate" ? "alternate" : "company";
-    const location = mode === "alternate" ? {
-      id: data.defaultServiceLocationId,
-      mode,
-      name: String(formData.get("name") || "").trim(),
-      street: String(formData.get("street") || "").trim(),
-      zip: String(formData.get("zip") || "").trim(),
-      city: String(formData.get("city") || "").trim(),
+  function applyServiceLocationForm(formData, validate = true) {
+    const existingId = String(formData.get("locationId") || state.serviceLocationEditingId || "");
+    const existing = existingId === "new"
+      ? { id: "new", name: "", addressMode: data.company.useAsServiceLocation !== false ? "company" : "own", street: "", houseNumber: "", zip: "", city: "", phone: "", voucherNote: "", active: true, businessAreaIds: [state.activeBusinessArea].filter(Boolean) }
+      : data.serviceLocations.find(location => location.id === existingId) ?? currentServiceLocation();
+    const editorForm = formData.get("_locationEditor") === "true";
+    const rawMode = String(formData.get("addressMode") || formData.get("mode") || existing.addressMode || "company");
+    const addressMode = rawMode === "own" || rawMode === "alternate" ? "own" : "company";
+    const submittedAreaIds = formData.getAll("businessAreaIds").map(String);
+    const businessAreaIds = editorForm ? submittedAreaIds : (submittedAreaIds.length ? submittedAreaIds : [...(existing.businessAreaIds || [])]);
+    const location = {
+      id: existingId && existingId !== "new" ? existingId : `location-${Date.now()}`,
+      name: String(formData.get("name") || existing.name || "").trim(),
+      addressMode,
+      street: addressMode === "own" ? String(formData.get("street") || "").trim() : "",
+      houseNumber: addressMode === "own" ? String(formData.get("houseNumber") || "").trim() : "",
+      zip: addressMode === "own" ? String(formData.get("zip") || "").trim() : "",
+      city: addressMode === "own" ? String(formData.get("city") || "").trim() : "",
       phone: String(formData.get("phone") || "").trim(),
-      voucherNote: String(formData.get("voucherNote") || "").trim()
-    } : { id: data.defaultServiceLocationId, mode: "company" };
-    const locationIndex = data.serviceLocations.findIndex(entry => entry.id === data.defaultServiceLocationId);
+      voucherNote: String(formData.get("voucherNote") || "").trim(),
+      active: editorForm ? formData.get("active") === "on" : existing.active !== false,
+      businessAreaIds
+    };
+    if (validate && !location.name) return "Bitte eine Bezeichnung für den Leistungsort eingeben.";
+    if (validate && addressMode === "company" && data.company.useAsServiceLocation === false) return "Bitte die Nutzung der Unternehmensanschrift aktivieren oder eine eigene Adresse eingeben.";
+    if (validate && addressMode === "own" && [location.street, location.houseNumber, location.zip, location.city].some(value => !value)) return "Bitte die eigene Adresse vollständig eingeben.";
+    if (validate && !businessAreaIds.length) return "Bitte mindestens einen Geschäftsbereich zuordnen.";
+
+    const nextLocations = data.serviceLocations.filter(entry => entry.id !== location.id);
+    nextLocations.push(location);
+    const uncoveredArea = activeBusinessAreas().find(area => !nextLocations.some(entry =>
+      entry.businessAreaIds.includes(area.id)
+      && entry.active !== false
+      && (entry.addressMode !== "company" || data.company.useAsServiceLocation !== false)
+    ));
+    if (validate && uncoveredArea) return `Für ${uncoveredArea.label} muss mindestens ein aktiver Leistungsort verfügbar bleiben.`;
+
+    const locationIndex = data.serviceLocations.findIndex(entry => entry.id === location.id);
     if (locationIndex >= 0) data.serviceLocations.splice(locationIndex, 1, location);
     else data.serviceLocations.push(location);
+    repairBusinessAreaLocationDefaults();
+    return "";
   }
 
   function receiptNumberValidation(yearPrefix, nextNumber) {
@@ -2038,10 +2464,20 @@
     if ([...labels.values()].some(label => !label)) return "Bitte für jeden Geschäftsbereich einen Namen eingeben.";
     if (!activeIds.length) return "Mindestens ein Geschäftsbereich muss aktiv bleiben.";
     if (!activeIds.includes(defaultId)) return "Bitte einen aktiven Geschäftsbereich als Standard festlegen.";
+    const locationDefaults = new Map(data.businessAreas.map(area => {
+      const fieldName = `defaultServiceLocation:${area.id}`;
+      return [area.id, formData.has(fieldName) ? String(formData.get(fieldName) || "") : String(area.defaultServiceLocationId || "")];
+    }));
+    const invalidLocationArea = data.businessAreas.find(area => {
+      if (!activeIds.includes(area.id)) return false;
+      return !serviceLocationsForBusinessArea(area.id).some(location => location.id === locationDefaults.get(area.id));
+    });
+    if (invalidLocationArea) return `Bitte für ${labels.get(invalidLocationArea.id) || invalidLocationArea.label} einen zugeordneten Standard-Leistungsort wählen.`;
     data.businessAreas.forEach(area => {
       area.label = labels.get(area.id);
       area.active = activeIds.includes(area.id);
       area.isDefault = area.id === defaultId;
+      area.defaultServiceLocationId = locationDefaults.get(area.id) || area.defaultServiceLocationId || null;
     });
     if (!state.cart.length || !activeIds.includes(state.activeBusinessArea)) state.activeBusinessArea = defaultId;
     refreshBusinessSwitcher();
@@ -2057,32 +2493,51 @@
   }
 
   function setupBusinessAreaRows() {
-    return data.businessAreas.map(area => `<section class="business-area-row">
+    return data.businessAreas.map(area => {
+      const status = catalogStatusSummary(area.id);
+      const importedNeedsReview = data.templateImportStatus[area.id]?.status === "needs-review";
+      return `<section class="business-area-row">
       <label class="setting-field"><span>Name</span><input name="areaLabel:${escapeHtml(area.id)}" value="${escapeHtml(area.label)}" required></label>
       <div class="business-area-controls">
         <label><input type="checkbox" name="activeBusinessArea" value="${escapeHtml(area.id)}" ${area.active !== false ? "checked" : ""}><span>Aktiv</span></label>
         <label><input type="radio" name="defaultBusinessArea" value="${escapeHtml(area.id)}" ${area.isDefault ? "checked" : ""}><span>Standard</span></label>
       </div>
-    </section>`).join("");
+      ${businessAreaServiceLocationField(area)}
+      <div class="business-area-catalog-status ${status.ready ? "is-ready" : "needs-review"}"><strong>${status.ready ? "✓ Leistungen vollständig" : importedNeedsReview ? "⚠ Vorlage angelegt – Preise noch prüfen" : "⚠ Leistungen noch prüfen"}</strong><small>${status.reviewCount ? `${status.reviewCount} Preise oder Steuersätze sind unbestätigt.` : `${status.active} aktive Einträge im zentralen Katalog.`}</small><button type="button" data-setup-edit-catalog="${escapeHtml(area.id)}">Leistungen & Preise</button></div>
+    </section>`;
+    }).join("");
+  }
+
+  function businessAreaServiceLocationField(area) {
+    const locations = serviceLocationsForBusinessArea(area.id);
+    return `<label class="setting-field business-area-location-field"><span>Standard-Leistungsort</span><select name="defaultServiceLocation:${escapeHtml(area.id)}" ${area.active !== false ? "required" : ""}>
+      ${locations.length ? locations.map(location => `<option value="${escapeHtml(location.id)}" ${area.defaultServiceLocationId === location.id ? "selected" : ""}>${escapeHtml(location.name)}</option>`).join("") : `<option value="">Kein zugeordneter Leistungsort</option>`}
+    </select><small>Nur diesem Geschäftsbereich zugeordnete aktive Orte.</small></label>`;
   }
 
   function setupSummary() {
-    const location = currentServiceLocation();
+    const defaultArea = defaultBusinessArea();
+    const defaultLocation = serviceLocationForBusinessArea(defaultArea?.id);
+    const availableLocationCount = data.serviceLocations.filter(serviceLocationAvailable).length;
     const taxLabels = { vat: "Umsatzsteuer", "small-business": "Kleinunternehmen", undecided: "Noch nicht festgelegt" };
     const companyAddressComplete = [data.company.street, data.company.zip, data.company.city].every(Boolean);
     const companyComplete = [data.company.name, data.company.owner].every(Boolean) && companyAddressComplete;
-    const locationComplete = location.mode === "alternate" ? [location.name, location.street, location.zip, location.city].every(Boolean) : companyAddressComplete;
+    const locationComplete = activeBusinessAreas().every(area => Boolean(serviceLocationForBusinessArea(area.id)));
     const taxComplete = data.taxSettings.status !== "undecided" && (data.taxSettings.status !== "vat" || [7, 19].includes(Number(data.taxSettings.defaultRate)));
     const numberComplete = /^\d{4}$/.test(String(data.receiptSettings.yearPrefix)) && Number.isInteger(Number(data.receiptSettings.nextNumber)) && Number(data.receiptSettings.nextNumber) > 0;
     const paymentComplete = activeNormalPaymentChoices().length > 0;
     const businessComplete = Boolean(defaultBusinessArea()) && activeBusinessAreas().some(area => area.id === defaultBusinessArea()?.id);
+    const catalogReviewTotal = activeBusinessAreas().reduce((sum, area) => sum + catalogReviewCount(area.id), 0);
+    const catalogHasEntries = activeBusinessAreas().every(area => catalogEntries(area.id).some(item => ["service", "product"].includes(item.type) && item.active !== false));
+    const catalogComplete = catalogHasEntries && catalogReviewTotal === 0;
     const summary = [
       [2, "Unternehmen", data.company.name || "Nicht angegeben", companyComplete, companyComplete ? "Pflichtangaben vorhanden" : "Pflichtangaben prüfen"],
-      [3, "Leistungsort", location.mode === "alternate" ? location.name || "Abweichender Ort" : "Unternehmensanschrift", locationComplete, locationComplete ? "Leistungsort ist festgelegt" : "Adresse vervollständigen"],
+      [3, "Leistungsorte", defaultLocation?.name || "Kein Standard-Leistungsort", locationComplete, locationComplete ? `${availableLocationCount} aktive Orte · jeder Bereich hat einen Standard` : "Zuordnung und Standard prüfen"],
       [4, "Steuern", taxLabels[data.taxSettings.status] || taxLabels.undecided, taxComplete, taxComplete ? (data.taxSettings.status === "vat" ? `${data.taxSettings.defaultRate} % Standard` : "Status gewählt") : "Steuerstatus fachlich klären"],
       [5, "Belegnummer", `${data.receiptSettings.yearPrefix}-${String(data.receiptSettings.nextNumber).padStart(6, "0")}`, numberComplete, numberComplete ? "Nummernkreis vorbereitet" : "Nummernkreis prüfen"],
       [6, "Zahlungsarten", activePaymentChoices().map(choice => choice.title).join(", "), paymentComplete, paymentComplete ? "Normale Zahlungsart aktiv" : "Zahlungsart aktivieren"],
       [7, "Geschäftsbereiche", activeBusinessAreas().map(area => area.label).join(", "), businessComplete, businessComplete ? `Standard: ${defaultBusinessArea()?.label || "–"}` : "Standardbereich auswählen"],
+      [7, "Leistungen & Preise", catalogComplete ? "Katalog geprüft" : `${catalogReviewTotal} Einträge zu prüfen`, catalogComplete, catalogComplete ? "Aktive Leistungen für jeden Bereich vorhanden" : catalogHasEntries ? "Preise und Steuersätze bestätigen" : "Mindestens einen aktiven Eintrag je Bereich anlegen"],
       [8, "Belegtexte", data.receiptSettings.thankYouText || data.receiptSettings.footerText ? "Vorhanden" : "Nicht hinterlegt", true, "Optional – kann leer bleiben"],
       [9, "TSE", "Noch nicht eingerichtet", false, "Vor produktiver Nutzung fachlich prüfen"]
     ];
@@ -2093,16 +2548,21 @@
   }
 
   function setupTestReceipt() {
-    const location = currentServiceLocation();
+    const defaultArea = defaultBusinessArea();
+    const location = serviceLocationForBusinessArea(defaultArea?.id);
     const taxRate = Number(data.taxSettings.defaultRate || 19);
     const payment = activeNormalPaymentChoices()[0]?.title || "Zahlungsart";
+    const catalogItem = catalogEntries(defaultArea?.id).find(item => ["service", "product"].includes(item.type) && item.active !== false && item.needsReview !== true);
+    const testItemName = catalogItem ? catalogItemName(catalogItem) : "Testleistung";
+    const testItemPrice = catalogItem ? catalogItemPrice(catalogItem) : 10;
     return `<article class="setup-test-receipt" aria-label="Testbeleg Vorschau">
       <strong class="setup-test-label">TESTBELEG · VORSCHAU</strong>
       <h3>${escapeHtml(data.company.name || "Unternehmen")}</h3>
       <p>${escapeHtml(data.company.street || "")}<br>${escapeHtml(addressCityLine(data.company))}</p>
-      ${location.mode === "alternate" ? `<p>Leistungsort: ${escapeHtml(location.name || "Abweichender Leistungsort")}</p>` : ""}
-      <div class="setup-test-line"><span>Testleistung</span><strong>${formatCurrency(10)}</strong></div>
-      <div class="setup-test-line total"><span>Gesamt</span><strong>${formatCurrency(10)}</strong></div>
+      ${location ? `<p>Geschäftsbereich: ${escapeHtml(defaultArea?.label || "Geschäftsbereich")}<br>Leistungsort: ${escapeHtml(location.name || "Leistungsort")}</p>` : ""}
+      <div class="setup-test-line"><span>${escapeHtml(testItemName)}</span><strong>${formatCurrency(testItemPrice)}</strong></div>
+      <div class="setup-test-line total"><span>Gesamt</span><strong>${formatCurrency(testItemPrice)}</strong></div>
+      ${catalogItem ? "" : `<p class="setup-test-warning">Noch kein vollständig geprüfter Katalogeintrag – deshalb wird eine neutrale Testleistung verwendet.</p>`}
       <p>${data.taxSettings.status === "vat" ? `Enthaltene USt.: ${escapeHtml(taxRate)} %` : "Steuerstatus: " + escapeHtml(data.taxSettings.status === "small-business" ? "Kleinunternehmen" : "noch nicht festgelegt")}</p>
       <p>Zahlungsart: ${escapeHtml(payment)}</p>
       ${data.receiptSettings.footerText ? `<p>${escapeHtml(data.receiptSettings.footerText)}</p>` : ""}
@@ -2113,8 +2573,6 @@
 
   function setupStepContent() {
     const company = data.company;
-    const location = currentServiceLocation();
-    const alternate = location.mode === "alternate";
     const receipt = data.receiptSettings;
     switch (state.setupStep) {
       case 1: return `<div class="setup-welcome"><div class="setup-welcome-symbol" aria-hidden="true">✓</div><h2>In etwa fünf Minuten ist FRECKA einsatzbereit.</h2><p>Wir richten gemeinsam alles ein.<br>Du kannst jederzeit unterbrechen und später weitermachen.</p><ul><li>Unternehmen und Leistungsort</li><li>Steuern und Belegnummern</li><li>Zahlungsarten und Geschäftsbereich</li></ul></div>${setupActions("Einrichtung starten")}`;
@@ -2127,21 +2585,13 @@
         <label class="setting-field"><span>E-Mail <small>optional</small></span><input name="email" type="email" value="${escapeHtml(company.email || "")}"></label>
         <label class="setting-field"><span>Telefon <small>optional</small></span><input name="phone" type="tel" value="${escapeHtml(company.phone || "")}"></label>
         <input type="hidden" name="country" value="${escapeHtml(company.country || "Deutschland")}"></section>${setupActions()}`;
-      case 3: return `<section class="settings-form-card settings-single-column"><fieldset class="settings-location-choice"><legend>Arbeitest du an deiner Unternehmensanschrift?</legend>
-        <label><input type="radio" name="mode" value="company" ${alternate ? "" : "checked"}><span><strong>Ja</strong><small>Die Unternehmensanschrift wird als Leistungsort verwendet.</small></span></label>
-        <label><input type="radio" name="mode" value="alternate" ${alternate ? "checked" : ""}><span><strong>Nein</strong><small>Ich hinterlege einen abweichenden Leistungsort.</small></span></label></fieldset></section>
-        <fieldset class="settings-form-card setup-location-fields" ${alternate ? "" : "hidden"}><legend>Abweichender Leistungsort</legend>
-        <label class="setting-field full"><span>Bezeichnung</span><input name="name" value="${escapeHtml(location.name || "")}"></label>
-        <label class="setting-field full"><span>Straße und Hausnummer</span><input name="street" value="${escapeHtml(location.street || "")}"></label>
-        <label class="setting-field"><span>PLZ</span><input name="zip" inputmode="numeric" value="${escapeHtml(location.zip || "")}"></label>
-        <label class="setting-field"><span>Ort</span><input name="city" value="${escapeHtml(location.city || "")}"></label>
-        <label class="setting-field full"><span>Hinweis für Gutscheine <small>optional</small></span><textarea name="voucherNote" rows="3" placeholder="z. B. Einlösbar nach Terminvereinbarung">${escapeHtml(location.voucherNote || "")}</textarea></label></fieldset>${setupActions()}`;
+      case 3: return `<section class="settings-form-card settings-single-column">${cardTitle("Leistungsorte", "location")}<p class="settings-neutral-note">Leistungsorte beschreiben, wo deine Leistungen tatsächlich erbracht werden. Die Unternehmensanschrift bleibt unabhängig davon bestehen.</p><label class="company-location-toggle"><input type="checkbox" name="useAsServiceLocation" ${data.company.useAsServiceLocation !== false ? "checked" : ""}><span><strong>Unternehmensanschrift gleichzeitig als Leistungsort verwenden</strong><small>Du kannst weitere Orte später zentral ergänzen.</small></span></label></section><div class="setup-location-overview">${data.serviceLocations.map(entry => { const snapshot = serviceLocationContextSnapshot(entry); return `<article><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(snapshot.street)} · ${escapeHtml(addressCityLine(snapshot))}</small><span>${entry.businessAreaIds.map(id => data.businessAreas.find(area => area.id === id)?.label).filter(Boolean).map(escapeHtml).join(", ")}</span></article>`; }).join("")}</div>${setupActions()}`;
       case 4: return `<section class="settings-form-card settings-single-column"><fieldset class="settings-option-list"><legend>Wie ist dein Steuerstatus?</legend>
         ${[["vat","Umsatzsteuer wird berechnet","Neue Belege zeigen den gewählten Standardsteuersatz."],["small-business","Kleinunternehmerregelung","Belege werden ohne ausgewiesene Umsatzsteuer vorbereitet."],["undecided","Noch nicht sicher","Du kannst fortfahren und die Auswahl später klären."]].map(([value,label,note]) => `<label><input type="radio" name="taxStatus" value="${value}" ${data.taxSettings.status === value ? "checked" : ""}><span><strong>${label}</strong><small>${note}</small></span></label>`).join("")}</fieldset>
         <div class="setup-tax-rate" ${data.taxSettings.status === "vat" ? "" : "hidden"}><span>Standard-Steuersatz</span><div class="setup-choice-row"><label><input type="radio" name="defaultTaxRate" value="19" ${data.taxSettings.defaultRate === 19 ? "checked" : ""}><span>19 %</span></label><label><input type="radio" name="defaultTaxRate" value="7" ${data.taxSettings.defaultRate === 7 ? "checked" : ""}><span>7 %</span></label></div></div>
         <p class="settings-neutral-note">Bitte kläre Unsicherheiten mit deiner Steuerberatung. FRECKA trifft keine rechtliche Entscheidung.</p></section>${setupActions()}`;
       case 5: return `<section class="settings-form-card"><h2>Belegnummern</h2><label class="setting-field"><span>Jahrespräfix</span><input id="setupReceiptPrefix" name="yearPrefix" inputmode="numeric" maxlength="4" value="${escapeHtml(receipt.yearPrefix)}"></label><label class="setting-field"><span>Nächste Belegnummer</span><input id="setupReceiptNext" name="nextNumber" type="number" min="1" step="1" value="${escapeHtml(receipt.nextNumber)}"></label><div class="receipt-number-preview full"><span>Vorschau</span><strong id="setupReceiptPreview">${escapeHtml(receipt.yearPrefix)}-${String(receipt.nextNumber).padStart(6,"0")}</strong><small>Änderungen wirken nur auf neue Belege. Bestehende Belege bleiben unverändert.</small></div></section><p class="settings-neutral-note">Nach dem produktiven Start sollte der Nummernkreis nicht ohne fachliche Prüfung geändert werden.</p>${setupActions()}`;
-      case 6: return `<div class="payment-settings-list">${data.paymentChoices.map(choice => `<article class="payment-setting-row ${choice.id === "later" ? "is-later" : ""}"><span class="payment-setting-icon" aria-hidden="true">${escapeHtml(choice.icon)}</span><span class="payment-setting-name"><strong>${escapeHtml(choice.title)}</strong><small>${isNormalPaymentChoice(choice) ? "Normale Zahlungsart" : choice.id === "voucher" ? "Gutscheinsystem" : "Zahlung erfolgt später"}</small></span><label class="payment-setting-toggle"><input type="checkbox" data-payment-toggle="${escapeHtml(choice.id)}" ${choice.active !== false ? "checked" : ""}><span>${choice.active !== false ? "Aktiv" : "Inaktiv"}</span></label></article>`).join("")}</div><p class="prototype-note">Mindestens eine normale Zahlungsart muss aktiv bleiben.</p>${setupActions()}`;
+      case 6: return `<div class="payment-settings-list">${data.paymentChoices.map(choice => `<article class="payment-setting-row"><span class="payment-setting-icon" aria-hidden="true">${escapeHtml(choice.icon)}</span><span class="payment-setting-name"><strong>${escapeHtml(choice.title)}</strong><small>${choice.id === "voucher" ? "Gutscheinsystem" : "Normale Zahlungsart"}</small></span><label class="payment-setting-toggle"><input type="checkbox" data-payment-toggle="${escapeHtml(choice.id)}" ${choice.active !== false ? "checked" : ""}><span>${choice.active !== false ? "Aktiv" : "Inaktiv"}</span></label></article>`).join("")}</div><p class="prototype-note">Mindestens eine normale Zahlungsart muss aktiv bleiben. Offene Zahlungen werden getrennt im Checkout erfasst.</p>${setupActions()}`;
       case 7: return `<div class="business-model-note"><strong>Eine Instanz entspricht einer Filiale.</strong><span>Hier legst du nur fachliche Geschäftsbereiche fest.</span></div><div class="business-area-list">${setupBusinessAreaRows()}</div><button class="button button-secondary business-area-add" type="button" data-action="business-area-add">＋ Geschäftsbereich</button>${setupActions()}`;
       case 8: return `<section class="settings-form-card settings-single-column"><h2>Optionale Belegtexte</h2><label class="setting-field full"><span>Dankestext <small>optional</small></span><input name="thankYouText" maxlength="120" placeholder="z. B. Vielen Dank für deinen Besuch." value="${escapeHtml(receipt.thankYouText || "")}"></label><label class="setting-field full"><span>Fußtext <small>optional</small></span><textarea name="footerText" rows="3" maxlength="240" placeholder="z. B. Termine bitte 24 Stunden vorher absagen.">${escapeHtml(receipt.footerText || "")}</textarea></label></section>${setupActions("Weiter oder überspringen")}`;
       case 9: return `<div class="setup-info-card"><div class="setup-info-symbol" aria-hidden="true">T</div><h2>TSE kommt später</h2><p>FRECKA hat in diesem Prototyp noch keine TSE-Anbindung. Ob eine TSE erforderlich ist, wird hier nicht automatisch beurteilt.</p><p>Vor produktiver Nutzung als elektronisches Aufzeichnungssystem muss die konkrete Pflicht fachlich geprüft werden. Die spätere TSE-Einrichtung erhält einen eigenen Assistenten.</p><button class="button button-primary" type="button" data-setup-tse>Verstanden</button><button class="button button-secondary" type="button" data-setup-tse>Später in Einstellungen prüfen</button></div><div class="setup-actions"><button class="button button-secondary" type="button" data-setup-back>Zurück</button><button class="setup-cancel" type="button" data-setup-cancel>Assistent abbrechen</button></div>`;
@@ -2154,11 +2604,6 @@
 
   function attachSetupStepBehavior() {
     const form = document.getElementById("setupWizardForm");
-    form?.querySelectorAll('input[name="mode"]').forEach(input => input.addEventListener("change", () => {
-      const alternate = form.querySelector('input[name="mode"]:checked')?.value === "alternate";
-      const fields = form.querySelector(".setup-location-fields");
-      if (fields) fields.hidden = !alternate;
-    }));
     form?.querySelectorAll('input[name="taxStatus"]').forEach(input => input.addEventListener("change", () => {
       const rates = form.querySelector(".setup-tax-rate");
       if (rates) rates.hidden = input.value !== "vat";
@@ -2187,12 +2632,15 @@
     if (state.setupStep === 2) {
       const required = ["name", "owner", "street", "zip", "city"];
       if (validate && required.some(name => !String(formData.get(name) || "").trim())) return "Bitte alle Pflichtangaben zum Unternehmen ausfüllen.";
-      applyCompanyForm(formData);
+      const error = applyCompanyForm(formData);
+      if (validate && error) return error;
     }
     if (state.setupStep === 3) {
-      const alternate = formData.get("mode") === "alternate";
-      if (validate && alternate && ["name", "street", "zip", "city"].some(name => !String(formData.get(name) || "").trim())) return "Bitte den abweichenden Leistungsort vollständig angeben.";
-      applyServiceLocationForm(formData);
+      const requestedCompanyLocationUse = formData.get("useAsServiceLocation") === "on";
+      const uncoveredArea = uncoveredBusinessAreaForCompanyLocationChoice(requestedCompanyLocationUse);
+      if (uncoveredArea) return validate ? `Bitte zuerst einen eigenen aktiven Leistungsort für ${uncoveredArea.label} zuordnen.` : "";
+      data.company.useAsServiceLocation = requestedCompanyLocationUse;
+      repairBusinessAreaLocationDefaults();
     }
     if (state.setupStep === 4) {
       const status = String(formData.get("taxStatus") || "undecided");
@@ -2261,7 +2709,7 @@
         <h1 class="flow-title">Unternehmensdaten</h1>
         <p class="page-copy">Diese Angaben werden für neue Belege und Gutscheine vorbereitet.</p>
       </div>
-      ${state.settingsNotice ? `<div class="settings-save-notice" role="status">${escapeHtml(state.settingsNotice)}</div>` : ""}
+      ${state.settingsNotice ? `<div class="settings-save-notice ${state.settingsNotice.startsWith("Bitte") ? "is-error" : ""}" role="status">${escapeHtml(state.settingsNotice)}</div>` : ""}
       <form id="companySettingsForm" class="settings-form">
         <section class="settings-form-card">
           ${cardTitle("Unternehmensdaten", "company")}
@@ -2271,6 +2719,7 @@
           <label class="setting-field"><span>PLZ</span><input name="zip" inputmode="numeric" autocomplete="postal-code" value="${escapeHtml(company.zip || "")}"></label>
           <label class="setting-field"><span>Ort</span><input name="city" autocomplete="address-level2" value="${escapeHtml(company.city || "")}"></label>
           <label class="setting-field full"><span>Land</span><input name="country" autocomplete="country-name" value="${escapeHtml(company.country || "Deutschland")}"></label>
+          <label class="company-location-toggle full"><input type="checkbox" name="useAsServiceLocation" ${company.useAsServiceLocation !== false ? "checked" : ""}><span><strong>Unternehmensanschrift gleichzeitig als Leistungsort verwenden</strong><small>Wenn deaktiviert, bleibt sie ausschließlich Unternehmensanschrift.</small></span></label>
         </section>
         <section class="settings-form-card">
           <h2>Kontakt und Belegangaben</h2>
@@ -2291,46 +2740,72 @@
   }
 
   function renderServiceLocationSettings() {
-    const location = currentServiceLocation();
-    const alternate = location.mode === "alternate";
+    if (state.serviceLocationEditingId) {
+      renderServiceLocationEditor();
+      return;
+    }
     mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter">
       <div class="flow-head compact-flow-head">
         <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
         <p class="eyebrow">Einstellungen</p>
-        <h1 class="flow-title">Leistungsort</h1>
-        <p class="page-copy">Für Version 1.0 wird genau ein Standard-Leistungsort verwendet.</p>
+        <h1 class="flow-title">Leistungsorte</h1>
+        <p class="page-copy">Orte verwalten und den passenden Geschäftsbereichen zuordnen.</p>
       </div>
       ${state.serviceLocationNotice ? `<div class="settings-save-notice" role="status">${escapeHtml(state.serviceLocationNotice)}</div>` : ""}
+      <section class="service-location-explanation">${cardTitle("Leistungsorte", "location")}<p>Leistungsorte beschreiben, wo deine Leistungen tatsächlich erbracht werden. Die Unternehmensanschrift bleibt unabhängig davon bestehen.</p></section>
+      <div class="company-location-state ${data.company.useAsServiceLocation !== false ? "is-active" : "is-inactive"}"><strong>${data.company.useAsServiceLocation !== false ? "✓ Unternehmensanschrift kann als Leistungsort verwendet werden" : "Unternehmensanschrift wird nur als Unternehmensanschrift verwendet"}</strong><button type="button" data-route="settings-company">Ändern</button></div>
+      <div class="service-location-list">${data.serviceLocations.map(location => {
+        const snapshot = serviceLocationContextSnapshot(location);
+        const assignedAreas = data.businessAreas.filter(area => location.businessAreaIds.includes(area.id));
+        const unavailableCompany = location.addressMode === "company" && data.company.useAsServiceLocation === false;
+        return `<article class="service-location-card ${serviceLocationAvailable(location) ? "is-active" : "is-inactive"}">
+          <div class="service-location-card-head"><div><span>${serviceLocationAvailable(location) ? "Aktiv" : unavailableCompany ? "Unternehmensanschrift deaktiviert" : "Inaktiv"}</span><h2>${escapeHtml(location.name)}</h2></div><button type="button" data-edit-service-location="${escapeHtml(location.id)}">Bearbeiten</button></div>
+          <p>${escapeHtml(snapshot.street || "Keine Straße angegeben")}<br>${escapeHtml(addressCityLine(snapshot))}</p>
+          <div class="service-location-area-tags">${assignedAreas.length ? assignedAreas.map(area => `<span>${escapeHtml(area.label)}</span>`).join("") : `<em>Kein Geschäftsbereich</em>`}</div>
+        </article>`;
+      }).join("")}</div>
+      <button class="button button-primary service-location-add" type="button" data-action="service-location-add">＋ Leistungsort anlegen</button>
+      <p class="prototype-note">Keine Karten, GPS-Daten, Standortberechtigungen oder Filialverwaltung. Änderungen gelten nur in dieser Sitzung.</p>
+    </section>`;
+  }
+
+  function renderServiceLocationEditor() {
+    const isNew = state.serviceLocationEditingId === "new";
+    const location = isNew ? {
+      id: "new", name: "", addressMode: data.company.useAsServiceLocation !== false ? "company" : "own", street: "", houseNumber: "", zip: "", city: "", phone: "", voucherNote: "", active: true, businessAreaIds: [state.activeBusinessArea].filter(Boolean)
+    } : data.serviceLocations.find(entry => entry.id === state.serviceLocationEditingId);
+    if (!location) {
+      state.serviceLocationEditingId = null;
+      renderServiceLocationSettings();
+      return;
+    }
+    const ownAddress = location.addressMode === "own";
+    mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter">
+      <div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-action="service-location-editor-cancel"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">Leistungsorte</p><h1 class="flow-title">${isNew ? "Leistungsort anlegen" : "Leistungsort bearbeiten"}</h1><p class="page-copy">Adresse und Geschäftsbereiche zentral festlegen.</p></div>
+      ${state.serviceLocationNotice ? `<div class="settings-save-notice ${state.serviceLocationNotice.startsWith("Bitte") || state.serviceLocationNotice.startsWith("Für") ? "is-error" : ""}" role="status">${escapeHtml(state.serviceLocationNotice)}</div>` : ""}
       <form id="serviceLocationForm" class="settings-form">
-        <section class="settings-form-card">
-          ${cardTitle("Leistungsort", "location")}
-          <fieldset class="settings-location-choice">
-            <legend class="sr-only">Wo werden die Leistungen normalerweise erbracht?</legend>
-            <strong class="settings-question">Wo werden die Leistungen normalerweise erbracht?</strong>
-            <label><input type="radio" name="mode" value="company" ${alternate ? "" : "checked"}><span><strong>An der Unternehmensanschrift</strong><small>Gutscheine verwenden die hinterlegte Unternehmensanschrift.</small></span></label>
-            <label><input type="radio" name="mode" value="alternate" ${alternate ? "checked" : ""}><span><strong>An einem abweichenden Leistungsort</strong><small>Zum Beispiel in einem Salon oder einer Praxis.</small></span></label>
+        <input type="hidden" name="_locationEditor" value="true"><input type="hidden" name="locationId" value="${escapeHtml(location.id)}">
+        <section class="settings-form-card settings-single-column">${cardTitle("Adresse", "location")}
+          <label class="setting-field full"><span>Bezeichnung</span><input name="name" required placeholder="z. B. Salon Innenstadt" value="${escapeHtml(location.name)}"></label>
+          <fieldset class="settings-location-choice"><legend>Soll dieser Leistungsort die Unternehmensanschrift verwenden?</legend>
+            <label class="${data.company.useAsServiceLocation === false ? "is-disabled" : ""}"><input type="radio" name="addressMode" value="company" ${ownAddress ? "" : "checked"} ${data.company.useAsServiceLocation === false ? "disabled" : ""}><span><strong>Unternehmensanschrift verwenden</strong><small>Keine zweite Adresse speichern.</small></span></label>
+            <label><input type="radio" name="addressMode" value="own" ${ownAddress ? "checked" : ""}><span><strong>Eigene Adresse verwenden</strong><small>Dieser Leistungsort erhält eine eigene Anschrift.</small></span></label>
           </fieldset>
         </section>
-        <div class="settings-company-location-note" ${alternate ? "hidden" : ""}>Auf neuen Gutscheinen wird die Unternehmensanschrift als Einlöseort verwendet. Es wird keine zweite Adresse gespeichert.</div>
-        <fieldset class="settings-form-card settings-location-fields" ${alternate ? "" : "hidden"}>
-          <legend>Abweichender Leistungsort</legend>
-          <label class="setting-field full"><span>Bezeichnung des Ortes</span><input name="name" placeholder="z. B. Salon XY" value="${escapeHtml(location.name || "")}"></label>
-          <label class="setting-field full"><span>Straße und Hausnummer</span><input name="street" autocomplete="street-address" value="${escapeHtml(location.street || "")}"></label>
-          <label class="setting-field"><span>PLZ</span><input name="zip" inputmode="numeric" autocomplete="postal-code" value="${escapeHtml(location.zip || "")}"></label>
-          <label class="setting-field"><span>Ort</span><input name="city" autocomplete="address-level2" value="${escapeHtml(location.city || "")}"></label>
-          <label class="setting-field full"><span>Telefon <small>optional</small></span><input name="phone" type="tel" autocomplete="tel" value="${escapeHtml(location.phone || "")}"></label>
-          <label class="setting-field full"><span>Hinweis für Gutscheine <small>optional</small></span><textarea name="voucherNote" rows="3" placeholder="z. B. Einlösbar nach Terminvereinbarung">${escapeHtml(location.voucherNote || "")}</textarea></label>
+        <fieldset class="settings-form-card settings-location-fields" ${ownAddress ? "" : "hidden"}><legend>Eigene Adresse</legend>
+          <label class="setting-field"><span>Straße</span><input name="street" value="${escapeHtml(location.street)}"></label><label class="setting-field"><span>Hausnummer</span><input name="houseNumber" value="${escapeHtml(location.houseNumber)}"></label>
+          <label class="setting-field"><span>PLZ</span><input name="zip" inputmode="numeric" value="${escapeHtml(location.zip)}"></label><label class="setting-field"><span>Ort</span><input name="city" value="${escapeHtml(location.city)}"></label>
         </fieldset>
-        <p class="prototype-note">Keine Kartenintegration, Standortberechtigung oder Verwaltung mehrerer Orte. Änderungen gehen beim Neuladen verloren.</p>
+        <section class="settings-form-card"><h2>Kontakt und Gutschein</h2><label class="setting-field full"><span>Telefon <small>optional</small></span><input name="phone" type="tel" value="${escapeHtml(location.phone)}"></label><label class="setting-field full"><span>Hinweis für Gutscheine <small>optional</small></span><textarea name="voucherNote" rows="3" placeholder="z. B. Einlösbar nach Terminvereinbarung">${escapeHtml(location.voucherNote)}</textarea></label></section>
+        <section class="settings-form-card settings-single-column"><h2>Gilt für folgende Geschäftsbereiche</h2><div class="service-location-area-options">${activeBusinessAreas().map(area => `<label><input type="checkbox" name="businessAreaIds" value="${escapeHtml(area.id)}" ${location.businessAreaIds.includes(area.id) ? "checked" : ""}><span>${escapeHtml(area.label)}</span></label>`).join("")}</div><p class="settings-neutral-note">Mindestens ein Geschäftsbereich muss gewählt sein.</p></section>
+        <label class="service-location-active-toggle"><input type="checkbox" name="active" ${location.active !== false ? "checked" : ""}><span><strong>Leistungsort aktiv</strong><small>Inaktive Orte werden nicht als Standard angeboten.</small></span></label>
         <button class="button button-primary settings-save" type="submit">Leistungsort speichern</button>
       </form>
     </section>`;
-
     const form = document.getElementById("serviceLocationForm");
-    form?.querySelectorAll('input[name="mode"]').forEach(input => input.addEventListener("change", () => {
-      const showAlternate = form.querySelector('input[name="mode"]:checked')?.value === "alternate";
+    form?.querySelectorAll('input[name="addressMode"]').forEach(input => input.addEventListener("change", () => {
+      const showAlternate = form.querySelector('input[name="addressMode"]:checked')?.value === "own";
       form.querySelector(".settings-location-fields").hidden = !showAlternate;
-      form.querySelector(".settings-company-location-note").hidden = showAlternate;
     }));
   }
 
@@ -2415,9 +2890,9 @@
       ${state.paymentSettingsNotice ? `<div class="settings-save-notice ${state.paymentSettingsNotice.startsWith("Mindestens") ? "is-error" : ""}" role="status">${escapeHtml(state.paymentSettingsNotice)}</div>` : ""}
       <div class="settings-standalone-title">${cardTitle("Zahlungsarten", "payments")}</div>
       <div class="payment-settings-list" aria-label="Zahlungsarten und Reihenfolge">
-        ${data.paymentChoices.map((choice, index) => `<article class="payment-setting-row ${choice.id === "later" ? "is-later" : ""}">
+        ${data.paymentChoices.map((choice, index) => `<article class="payment-setting-row">
           <span class="payment-setting-icon" aria-hidden="true">${escapeHtml(choice.icon)}</span>
-          <span class="payment-setting-name"><strong>${escapeHtml(choice.title)}</strong>${choice.id === "later" ? `<small>Getrennter Fall: Zahlung erfolgt später</small>` : choice.id === "voucher" ? `<small>Gutschein aus dem Gutscheinsystem</small>` : `<small>Normale Zahlungsart</small>`}</span>
+          <span class="payment-setting-name"><strong>${escapeHtml(choice.title)}</strong>${choice.id === "voucher" ? `<small>Gutschein aus dem Gutscheinsystem</small>` : `<small>Normale Zahlungsart</small>`}</span>
           <label class="payment-setting-toggle"><input type="checkbox" data-payment-toggle="${escapeHtml(choice.id)}" ${choice.active !== false ? "checked" : ""}><span>${choice.active !== false ? "Aktiv" : "Inaktiv"}</span></label>
           <span class="payment-order-actions">
             <button type="button" data-payment-move="${escapeHtml(choice.id)}" data-direction="up" aria-label="${escapeHtml(choice.title)} nach oben" ${index === 0 ? "disabled" : ""}>↑</button>
@@ -2425,7 +2900,7 @@
           </span>
         </article>`).join("")}
       </div>
-      <p class="prototype-note">Mindestens eine normale Zahlungsart bleibt aktiv. Keine Verbindung zu Zahlungsanbietern.</p>
+      <p class="prototype-note">Mindestens eine normale Zahlungsart bleibt aktiv. Offene Zahlungen sind ein getrennter Ausnahmefall. Keine Verbindung zu Zahlungsanbietern.</p>
     </section>`;
   }
 
@@ -2448,6 +2923,7 @@
               <label><input type="checkbox" name="activeBusinessArea" value="${escapeHtml(area.id)}" ${area.active !== false ? "checked" : ""}><span>Aktiv</span></label>
               <label><input type="radio" name="defaultBusinessArea" value="${escapeHtml(area.id)}" ${area.isDefault ? "checked" : ""}><span>Standard</span></label>
             </div>
+            ${businessAreaServiceLocationField(area)}
           </section>`).join("")}
         </div>
         <button class="button button-secondary business-area-add" type="button" data-action="business-area-add">＋ Geschäftsbereich</button>
@@ -2455,6 +2931,261 @@
         <button class="button button-primary settings-save" type="submit">Geschäftsbereiche speichern</button>
       </form>
     </section>`;
+  }
+
+  function catalogManagerArea() {
+    const areas = activeBusinessAreas();
+    if (!areas.some(area => area.id === state.catalogManagerAreaId)) {
+      state.catalogManagerAreaId = (areas.find(area => area.id === state.activeBusinessArea) || defaultBusinessArea() || areas[0])?.id || null;
+    }
+    return areas.find(area => area.id === state.catalogManagerAreaId) || null;
+  }
+
+  function catalogManagerItems(areaId) {
+    const query = state.catalogManagerSearch.trim().toLocaleLowerCase("de-DE");
+    return catalogEntries(areaId)
+      .filter(item => ["service", "product"].includes(item.type))
+      .filter(item => !query || catalogItemName(item).toLocaleLowerCase("de-DE").includes(query))
+      .filter(item => {
+        if (state.catalogManagerStatus === "active") return item.active !== false;
+        if (state.catalogManagerStatus === "inactive") return item.active === false;
+        if (state.catalogManagerStatus === "review") return item.needsReview === true;
+        return true;
+      })
+      .filter(item => {
+        if (state.catalogManagerCategory === "all") return true;
+        if (state.catalogManagerCategory === "uncategorized") return !item.categoryId;
+        return item.categoryId === state.catalogManagerCategory;
+      })
+      .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+  }
+
+  function catalogStatusSummary(areaId) {
+    const entries = catalogEntries(areaId).filter(item => ["service", "product"].includes(item.type));
+    const reviewCount = catalogReviewCount(areaId);
+    return {
+      total: entries.length,
+      active: entries.filter(item => item.active !== false).length,
+      reviewCount,
+      ready: reviewCount === 0
+    };
+  }
+
+  function renderCatalogItemEditor(area, itemId) {
+    const isNew = itemId === "new-service" || itemId === "new-product";
+    const item = isNew ? null : catalogEntries(area.id).find(entry => entry.id === itemId);
+    const type = isNew ? itemId.replace("new-", "") : item?.type;
+    if (!type || !["service", "product"].includes(type)) {
+      state.catalogEditingItemId = null;
+      renderCatalogSettings();
+      return;
+    }
+    const categories = catalogCategories(area.id).filter(category => category.type === type);
+    const taxRates = data.taxSettings.rates.filter(rate => rate.active !== false);
+    const price = item ? (Number(item.priceCents || 0) / 100).toFixed(2).replace(".", ",") : "";
+    const requiresPriceConfirmation = item?.needsReview === true && item.priceConfirmed === false;
+    const requiresTaxConfirmation = item?.needsReview === true && item.taxRateConfirmed === false;
+    mainContent.innerHTML = `<section class="flow-page settings-form-page catalog-editor-page page-enter">
+      <div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-action="catalog-editor-cancel"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">${escapeHtml(area.label)}</p><h1 class="flow-title">${item ? escapeHtml(catalogItemName(item)) : type === "product" ? "Produkt anlegen" : "Leistung anlegen"}</h1><p class="page-copy">${type === "product" ? "Produktdaten" : "Leistungsdaten"} zentral für diesen Geschäftsbereich bearbeiten.</p></div>
+      ${state.catalogSettingsNotice ? `<div class="settings-save-notice is-error" role="alert">${escapeHtml(state.catalogSettingsNotice)}</div>` : ""}
+      <form id="catalogItemForm" class="settings-form catalog-item-form" data-item-type="${type}">
+        <label class="setting-field full"><span>Name</span><input name="name" required maxlength="100" value="${escapeHtml(item ? catalogItemName(item) : "")}"></label>
+        <label class="setting-field"><span>Kategorie <small>optional</small></span><select name="categoryId"><option value="">Ohne Kategorie</option>${categories.map(category => `<option value="${escapeHtml(category.id)}" ${item?.categoryId === category.id ? "selected" : ""}>${escapeHtml(category.name)}${category.active === false ? " · inaktiv" : ""}</option>`).join("")}</select></label>
+        <label class="setting-field"><span>Preis in Euro</span><input name="price" inputmode="decimal" required placeholder="0,00" value="${escapeHtml(price)}"></label>
+        <label class="setting-field"><span>Steuersatz</span><select name="taxRate" required>${taxRates.map(rate => `<option value="${rate.rate}" ${Number(item?.taxRate ?? data.taxSettings.defaultRate) === Number(rate.rate) ? "selected" : ""}>${rate.rate} %</option>`).join("")}</select><small>Nur aktive Steuersätze.</small></label>
+        ${type === "product" ? `<label class="setting-field"><span>Artikelnummer <small>optional</small></span><input name="sku" maxlength="60" value="${escapeHtml(item?.sku || "")}"></label><label class="setting-field"><span>Einheit</span><input value="Stück" disabled><input type="hidden" name="unit" value="Stück"></label>` : ""}
+        <label class="setting-field full"><span>Beschreibung <small>optional</small></span><textarea name="description" rows="3" maxlength="500">${escapeHtml(item?.description || "")}</textarea></label>
+        <div class="catalog-check-list full">
+          <label><input type="checkbox" name="active" ${item?.active !== false ? "checked" : ""}><span>Aktiv und im Beleg auswählbar</span></label>
+          <label><input type="checkbox" name="favorite" ${item?.favorite ? "checked" : ""}><span>Als Favorit anzeigen</span></label>
+          ${requiresPriceConfirmation ? `<label class="is-review"><input type="checkbox" name="confirmPrice"><span>Preis geprüft – 0,00 € ist beabsichtigt oder wird jetzt geändert</span></label>` : `<label class="zero-price-confirm" hidden><input type="checkbox" name="confirmPrice"><span>Preis 0,00 € ausdrücklich bestätigen</span></label>`}
+          ${requiresTaxConfirmation ? `<label class="is-review"><input type="checkbox" name="confirmTaxRate"><span>Vorgeschlagenen Steuersatz fachlich geprüft</span></label>` : ""}
+        </div>
+        <p class="prototype-note full">Änderungen gelten für neue Belege. Bereits abgeschlossene Belege bleiben als Snapshot unverändert.</p>
+        <div class="catalog-editor-actions full"><button class="button button-secondary" type="button" data-action="catalog-editor-cancel">Abbrechen</button><button class="button button-primary" type="submit">${item ? "Änderungen übernehmen" : "Eintrag anlegen"}</button></div>
+      </form>
+    </section>`;
+    const priceField = document.querySelector("#catalogItemForm [name='price']");
+    const zeroConfirmation = document.querySelector("#catalogItemForm .zero-price-confirm");
+    const updateZeroConfirmation = () => {
+      if (!zeroConfirmation || !priceField) return;
+      const cents = parseEuroCents(priceField.value);
+      zeroConfirmation.hidden = cents !== 0;
+      if (cents !== 0) zeroConfirmation.querySelector("input").checked = false;
+    };
+    priceField?.addEventListener("input", updateZeroConfirmation);
+    updateZeroConfirmation();
+  }
+
+  function renderCatalogCategoryEditor(area, categoryId) {
+    const isNew = categoryId === "new";
+    const category = isNew ? null : categoryById(categoryId);
+    if (!isNew && (!category || category.businessAreaId !== area.id)) {
+      state.catalogEditingCategoryId = null;
+      renderCatalogSettings();
+      return;
+    }
+    mainContent.innerHTML = `<section class="flow-page settings-form-page catalog-editor-page page-enter">
+      <div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-action="catalog-editor-cancel"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">${escapeHtml(area.label)}</p><h1 class="flow-title">${category ? "Kategorie bearbeiten" : "Kategorie anlegen"}</h1><p class="page-copy">Kategorien strukturieren die Auswahl im normalen Beleg.</p></div>
+      ${state.catalogSettingsNotice ? `<div class="settings-save-notice is-error" role="alert">${escapeHtml(state.catalogSettingsNotice)}</div>` : ""}
+      <form id="catalogCategoryForm" class="settings-form">
+        <label class="setting-field full"><span>Name</span><input name="name" required maxlength="80" value="${escapeHtml(category?.name || "")}"></label>
+        <fieldset class="settings-option-list full"><legend>Typ</legend><label><input type="radio" name="type" value="service" ${category?.type !== "product" ? "checked" : ""}><span><strong>Leistung</strong><small>Für Dienstleistungen</small></span></label><label><input type="radio" name="type" value="product" ${category?.type === "product" ? "checked" : ""}><span><strong>Produkt</strong><small>Für Verkaufsartikel</small></span></label></fieldset>
+        <div class="catalog-check-list full"><label><input type="checkbox" name="active" ${category?.active !== false ? "checked" : ""}><span>Aktiv und im Beleg sichtbar</span></label></div>
+        <p class="prototype-note full">Eine inaktive Kategorie blendet ihre Einträge im Beleg aus. Die Einträge selbst werden nicht gelöscht.</p>
+        <div class="catalog-editor-actions full"><button class="button button-secondary" type="button" data-action="catalog-editor-cancel">Abbrechen</button><button class="button button-primary" type="submit">${category ? "Änderungen übernehmen" : "Kategorie anlegen"}</button></div>
+      </form>
+    </section>`;
+  }
+
+  function renderCatalogSettings() {
+    const area = catalogManagerArea();
+    if (!area) {
+      mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter"><div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button><h1 class="flow-title">Leistungen & Produkte</h1></div><p class="empty-state">Bitte zuerst einen aktiven Geschäftsbereich anlegen.</p></section>`;
+      return;
+    }
+    if (state.catalogEditingItemId) return renderCatalogItemEditor(area, state.catalogEditingItemId);
+    if (state.catalogEditingCategoryId) return renderCatalogCategoryEditor(area, state.catalogEditingCategoryId);
+    const items = catalogManagerItems(area.id);
+    const categories = catalogCategories(area.id);
+    const summary = catalogStatusSummary(area.id);
+    mainContent.innerHTML = `<section class="flow-page settings-form-page catalog-manager-page page-enter">
+      <div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-action="catalog-settings-back"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">Einstellungen</p><h1 class="flow-title">Leistungen & Produkte</h1><p class="page-copy">Zentraler Katalog je Geschäftsbereich. Änderungen erscheinen direkt bei neuen Belegen.</p></div>
+      ${state.catalogSettingsNotice ? `<div class="settings-save-notice ${state.catalogSettingsNotice.startsWith("Bitte") ? "is-error" : ""}" role="status">${escapeHtml(state.catalogSettingsNotice)}</div>` : ""}
+      <label class="setting-field catalog-area-picker"><span>Geschäftsbereich</span><select id="catalogManagerArea">${activeBusinessAreas().map(entry => `<option value="${escapeHtml(entry.id)}" ${entry.id === area.id ? "selected" : ""}>${escapeHtml(entry.label)}</option>`).join("")}</select></label>
+      <div class="catalog-readiness ${summary.ready ? "is-ready" : "needs-review"}"><strong>${summary.ready ? "✓ Katalog einsatzbereit" : `⚠ ${summary.reviewCount} Einträge prüfen`}</strong><span>${summary.active} aktive von ${summary.total} Leistungen und Produkten</span></div>
+      <div class="catalog-manager-tabs" role="tablist"><button type="button" data-catalog-manager-view="items" class="${state.catalogManagerView === "items" ? "is-active" : ""}">Leistungen & Produkte</button><button type="button" data-catalog-manager-view="categories" class="${state.catalogManagerView === "categories" ? "is-active" : ""}">Kategorien</button></div>
+      ${state.catalogManagerView === "categories" ? `<div class="catalog-manager-toolbar"><div><h2>Kategorien</h2><p>Reihenfolge und Sichtbarkeit verwalten.</p></div><button class="button button-primary" type="button" data-action="catalog-new-category">＋ Kategorie</button></div><div class="catalog-admin-list">${categories.length ? categories.map((category, index) => `<article class="catalog-admin-row"><div class="catalog-admin-main"><strong>${escapeHtml(category.name)}</strong><span>${category.type === "product" ? "Produkt" : "Leistung"} · ${category.active === false ? "Inaktiv" : "Aktiv"}</span></div><div class="catalog-row-actions"><button type="button" data-catalog-toggle-category="${escapeHtml(category.id)}">${category.active === false ? "Aktivieren" : "Deaktivieren"}</button><button type="button" data-catalog-edit-category="${escapeHtml(category.id)}">Bearbeiten</button><span><button type="button" data-catalog-move-category="${escapeHtml(category.id)}" data-direction="up" aria-label="${escapeHtml(category.name)} nach oben" ${index === 0 ? "disabled" : ""}>↑</button><button type="button" data-catalog-move-category="${escapeHtml(category.id)}" data-direction="down" aria-label="${escapeHtml(category.name)} nach unten" ${index === categories.length - 1 ? "disabled" : ""}>↓</button></span></div></article>`).join("") : `<p class="empty-state">Noch keine Kategorien vorhanden.</p>`}</div>` : `<div class="catalog-manager-toolbar"><div><h2>Einträge</h2><p>Leistungen und Produkte bearbeiten.</p></div><div class="catalog-create-actions"><button class="button button-secondary" type="button" data-catalog-new-item="service">＋ Leistung</button><button class="button button-primary" type="button" data-catalog-new-item="product">＋ Produkt</button></div></div>
+        <div class="catalog-manager-filters"><label class="search-field"><span aria-hidden="true">⌕</span><input id="catalogManagerSearch" type="search" placeholder="Name suchen" value="${escapeHtml(state.catalogManagerSearch)}"></label><label><span>Status</span><select id="catalogManagerStatus"><option value="active" ${state.catalogManagerStatus === "active" ? "selected" : ""}>Aktiv</option><option value="inactive" ${state.catalogManagerStatus === "inactive" ? "selected" : ""}>Inaktiv</option><option value="review" ${state.catalogManagerStatus === "review" ? "selected" : ""}>Zu prüfen</option><option value="all" ${state.catalogManagerStatus === "all" ? "selected" : ""}>Alle</option></select></label><label><span>Kategorie</span><select id="catalogManagerCategory"><option value="all">Alle</option><option value="uncategorized" ${state.catalogManagerCategory === "uncategorized" ? "selected" : ""}>Ohne Kategorie</option>${categories.map(category => `<option value="${escapeHtml(category.id)}" ${state.catalogManagerCategory === category.id ? "selected" : ""}>${escapeHtml(category.name)}</option>`).join("")}</select></label></div>
+        <div class="catalog-admin-list">${items.length ? items.map((item, index) => { const category = categoryById(item.categoryId); return `<article class="catalog-admin-row ${item.needsReview ? "needs-review" : ""}"><div class="catalog-admin-main"><strong>${escapeHtml(catalogItemName(item))}</strong><span>${item.type === "product" ? "Produkt" : "Leistung"} · ${category ? escapeHtml(category.name) : "Ohne Kategorie"} · ${formatCurrency(catalogItemPrice(item))}</span>${item.needsReview ? `<em>⚠ Preis und Steuersatz prüfen</em>` : ""}</div><div class="catalog-row-actions"><button type="button" data-catalog-toggle-item="${escapeHtml(item.id)}">${item.active === false ? "Aktivieren" : "Deaktivieren"}</button><button type="button" data-catalog-edit-item="${escapeHtml(item.id)}">Bearbeiten</button><span><button type="button" data-catalog-move-item="${escapeHtml(item.id)}" data-direction="up" aria-label="${escapeHtml(catalogItemName(item))} nach oben" ${index === 0 ? "disabled" : ""}>↑</button><button type="button" data-catalog-move-item="${escapeHtml(item.id)}" data-direction="down" aria-label="${escapeHtml(catalogItemName(item))} nach unten" ${index === items.length - 1 ? "disabled" : ""}>↓</button></span></div></article>`; }).join("") : `<p class="empty-state">Für diesen Filter wurden keine Einträge gefunden.</p>`}</div>`}
+      <p class="prototype-note">Keine Speicherung: Alle Änderungen bleiben ausschließlich im Arbeitsspeicher und gehen beim Neuladen verloren.</p>
+    </section>`;
+    document.getElementById("catalogManagerArea")?.addEventListener("change", event => {
+      state.catalogManagerAreaId = event.target.value;
+      state.catalogManagerCategory = "all";
+      state.catalogManagerSearch = "";
+      state.catalogSettingsNotice = "";
+      renderCatalogSettings();
+    });
+    document.getElementById("catalogManagerSearch")?.addEventListener("input", event => {
+      state.catalogManagerSearch = event.target.value;
+      renderCatalogSettings();
+      const input = document.getElementById("catalogManagerSearch");
+      input?.focus();
+      input?.setSelectionRange(state.catalogManagerSearch.length, state.catalogManagerSearch.length);
+    });
+    document.getElementById("catalogManagerStatus")?.addEventListener("change", event => { state.catalogManagerStatus = event.target.value; renderCatalogSettings(); });
+    document.getElementById("catalogManagerCategory")?.addEventListener("change", event => { state.catalogManagerCategory = event.target.value; renderCatalogSettings(); });
+  }
+
+  function parseEuroCents(value) {
+    let normalized = String(value || "").trim().replace(/\s/g, "");
+    if (!normalized) return null;
+    if (normalized.includes(",")) normalized = normalized.replaceAll(".", "").replace(",", ".");
+    const amount = Number(normalized);
+    return Number.isFinite(amount) && amount >= 0 ? Math.round(amount * 100) : null;
+  }
+
+  function applyCatalogItemForm(formData, type) {
+    const area = catalogManagerArea();
+    if (!area || !["service", "product"].includes(type)) return "Bitte einen gültigen Geschäftsbereich wählen.";
+    const existing = ["new-service", "new-product"].includes(state.catalogEditingItemId) ? null : catalogEntries(area.id).find(item => item.id === state.catalogEditingItemId);
+    const name = String(formData.get("name") || "").trim();
+    const priceCents = parseEuroCents(formData.get("price"));
+    const taxRate = Number(formData.get("taxRate"));
+    const categoryId = String(formData.get("categoryId") || "");
+    const category = categoryId ? categoryById(categoryId) : null;
+    if (!name) return "Bitte einen Namen eingeben.";
+    if (priceCents === null) return "Bitte einen gültigen Preis ab 0,00 € eingeben.";
+    if (priceCents === 0 && !formData.has("confirmPrice")) return "Bitte den Preis 0,00 € ausdrücklich bestätigen.";
+    if (!data.taxSettings.rates.some(rate => rate.active !== false && Number(rate.rate) === taxRate)) return "Bitte einen aktiven Steuersatz wählen.";
+    if (category && (category.businessAreaId !== area.id || category.type !== type)) return "Bitte eine passende Kategorie wählen.";
+    if (existing?.source === "template" && existing.taxRateConfirmed === false && !formData.has("confirmTaxRate")) return "Bitte den vorgeschlagenen Steuersatz fachlich prüfen und bestätigen.";
+    const now = new Date().toISOString();
+    const entries = catalogEntries(area.id);
+    const priceConfirmed = priceCents > 0 || formData.has("confirmPrice");
+    const taxRateConfirmed = existing?.source === "template" && existing.taxRateConfirmed === false ? formData.has("confirmTaxRate") : true;
+    const values = {
+      id: existing?.id || `item-${area.id}-${Date.now()}`,
+      businessAreaId: area.id,
+      type,
+      name,
+      title: name,
+      categoryId: category?.id || null,
+      priceCents,
+      price: priceCents / 100,
+      taxRate,
+      active: formData.has("active"),
+      favorite: formData.has("favorite"),
+      description: String(formData.get("description") || "").trim(),
+      sku: type === "product" ? String(formData.get("sku") || "").trim() : undefined,
+      unit: type === "product" ? "Stück" : undefined,
+      quantityAdjustable: type === "product",
+      icon: existing?.icon || (type === "product" ? "▣" : "✦"),
+      sortOrder: existing?.sortOrder ?? ((entries.filter(item => item.type === type).length + 1) * 10),
+      source: existing?.source || "manual",
+      priceConfirmed,
+      taxRateConfirmed,
+      needsReview: !(priceConfirmed && taxRateConfirmed),
+      createdAt: existing?.createdAt || now,
+      updatedAt: now
+    };
+    if (existing) Object.assign(existing, values);
+    else entries.push(values);
+    syncTemplateImportStatus(area.id);
+    return "";
+  }
+
+  function applyCatalogCategoryForm(formData) {
+    const area = catalogManagerArea();
+    if (!area) return "Bitte einen gültigen Geschäftsbereich wählen.";
+    const existing = state.catalogEditingCategoryId === "new" ? null : categoryById(state.catalogEditingCategoryId);
+    const name = String(formData.get("name") || "").trim();
+    const type = String(formData.get("type") || "");
+    if (!name) return "Bitte einen Kategorienamen eingeben.";
+    if (!["service", "product"].includes(type)) return "Bitte einen gültigen Kategorietyp wählen.";
+    if (data.categories.some(category => category.businessAreaId === area.id && category.id !== existing?.id && category.name.toLocaleLowerCase("de-DE") === name.toLocaleLowerCase("de-DE"))) return "Bitte einen eindeutigen Kategorienamen wählen.";
+    if (existing && existing.type !== type && catalogEntries(area.id).some(item => item.categoryId === existing.id)) return "Bitte zuerst alle Einträge aus dieser Kategorie verschieben, bevor der Typ geändert wird.";
+    const now = new Date().toISOString();
+    const values = {
+      id: existing?.id || `category-${area.id}-${Date.now()}`,
+      businessAreaId: area.id,
+      name,
+      type,
+      active: formData.has("active"),
+      sortOrder: existing?.sortOrder ?? ((catalogCategories(area.id).length + 1) * 10),
+      source: existing?.source || "manual",
+      createdAt: existing?.createdAt || now,
+      updatedAt: now
+    };
+    if (existing) Object.assign(existing, values);
+    else data.categories.push(values);
+    return "";
+  }
+
+  function showCatalogEditorError(form, message) {
+    state.catalogSettingsNotice = message;
+    let notice = mainContent.querySelector(".catalog-editor-page > .settings-save-notice");
+    if (!notice) {
+      notice = document.createElement("div");
+      notice.className = "settings-save-notice is-error";
+      notice.setAttribute("role", "alert");
+      form.before(notice);
+    }
+    notice.textContent = message;
+    notice.scrollIntoView({ block: "nearest" });
+  }
+
+  function moveCatalogEntry(entries, id, direction) {
+    const ordered = [...entries].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+    const index = ordered.findIndex(entry => entry.id === id);
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (index < 0 || targetIndex < 0 || targetIndex >= ordered.length) return;
+    const currentOrder = Number(ordered[index].sortOrder || (index + 1) * 10);
+    ordered[index].sortOrder = Number(ordered[targetIndex].sortOrder || (targetIndex + 1) * 10);
+    ordered[targetIndex].sortOrder = currentOrder;
+    ordered[index].updatedAt = new Date().toISOString();
+    ordered[targetIndex].updatedAt = ordered[index].updatedAt;
   }
 
   function renderHelpLearning() {
@@ -2500,6 +3231,7 @@
       "settings-taxes",
       "settings-payments",
       "settings-business-areas",
+      "settings-catalog",
       "settings-help",
       "setup-wizard"
     ].includes(state.route));
@@ -2528,6 +3260,7 @@
     else if (state.route === "settings-taxes") renderTaxSettings();
     else if (state.route === "settings-payments") renderPaymentSettings();
     else if (state.route === "settings-business-areas") renderBusinessAreaSettings();
+    else if (state.route === "settings-catalog") renderCatalogSettings();
     else if (state.route === "settings-help") renderHelpLearning();
     else if (state.route === "setup-wizard") renderSetupWizard();
     else renderPlaceholder(state.route);
@@ -2558,7 +3291,8 @@
     state.paymentChoice = preferredNormalPaymentId() || activePaymentChoices()[0]?.id || "cash";
     resetCheckoutVoucher();
     state.checkoutSubmitting = false;
-    state.activeCategory = "Favoriten";
+    state.checkoutOpenPaymentConfirm = false;
+    state.activeCategory = "favorites";
     state.search = "";
     state.cartExpanded = false;
     navigate("catalog");
@@ -2629,6 +3363,100 @@
   }
 
   document.addEventListener("click", event => {
+    const catalogView = event.target.closest("[data-catalog-manager-view]");
+    if (catalogView) {
+      state.catalogManagerView = catalogView.dataset.catalogManagerView;
+      state.catalogSettingsNotice = "";
+      renderCatalogSettings();
+      return;
+    }
+    const setupEditCatalog = event.target.closest("[data-setup-edit-catalog]");
+    if (setupEditCatalog) {
+      const form = document.getElementById("setupWizardForm");
+      if (form) saveSetupStep(new FormData(form), false);
+      state.catalogManagerAreaId = setupEditCatalog.dataset.setupEditCatalog;
+      state.catalogManagerReturnRoute = "setup-wizard";
+      state.catalogManagerView = "items";
+      state.catalogSettingsNotice = "";
+      navigate("settings-catalog");
+      return;
+    }
+    const newCatalogItem = event.target.closest("[data-catalog-new-item]");
+    if (newCatalogItem) {
+      state.catalogEditingItemId = `new-${newCatalogItem.dataset.catalogNewItem}`;
+      state.catalogSettingsNotice = "";
+      renderCatalogSettings();
+      return;
+    }
+    const editCatalogItem = event.target.closest("[data-catalog-edit-item]");
+    if (editCatalogItem) {
+      state.catalogEditingItemId = editCatalogItem.dataset.catalogEditItem;
+      state.catalogSettingsNotice = "";
+      renderCatalogSettings();
+      return;
+    }
+    const editCatalogCategory = event.target.closest("[data-catalog-edit-category]");
+    if (editCatalogCategory) {
+      state.catalogEditingCategoryId = editCatalogCategory.dataset.catalogEditCategory;
+      state.catalogSettingsNotice = "";
+      renderCatalogSettings();
+      return;
+    }
+    const toggleCatalogItem = event.target.closest("[data-catalog-toggle-item]");
+    if (toggleCatalogItem) {
+      const area = catalogManagerArea();
+      const item = catalogEntries(area?.id).find(entry => entry.id === toggleCatalogItem.dataset.catalogToggleItem);
+      if (item) {
+        item.active = item.active === false;
+        item.updatedAt = new Date().toISOString();
+        syncTemplateImportStatus(area.id);
+        state.catalogSettingsNotice = `${catalogItemName(item)} ist jetzt ${item.active ? "aktiv" : "inaktiv"}.`;
+      }
+      renderCatalogSettings();
+      return;
+    }
+    const toggleCatalogCategory = event.target.closest("[data-catalog-toggle-category]");
+    if (toggleCatalogCategory) {
+      const category = categoryById(toggleCatalogCategory.dataset.catalogToggleCategory);
+      if (category) {
+        category.active = category.active === false;
+        category.updatedAt = new Date().toISOString();
+        state.catalogSettingsNotice = `${category.name} ist jetzt ${category.active ? "aktiv" : "inaktiv"}.`;
+      }
+      renderCatalogSettings();
+      return;
+    }
+    const moveCatalogItemButton = event.target.closest("[data-catalog-move-item]");
+    if (moveCatalogItemButton) {
+      const area = catalogManagerArea();
+      const current = catalogEntries(area?.id).find(item => item.id === moveCatalogItemButton.dataset.catalogMoveItem);
+      moveCatalogEntry(catalogManagerItems(area?.id).filter(item => item.type === current?.type), moveCatalogItemButton.dataset.catalogMoveItem, moveCatalogItemButton.dataset.direction);
+      renderCatalogSettings();
+      return;
+    }
+    const moveCatalogCategoryButton = event.target.closest("[data-catalog-move-category]");
+    if (moveCatalogCategoryButton) {
+      const area = catalogManagerArea();
+      moveCatalogEntry(catalogCategories(area?.id), moveCatalogCategoryButton.dataset.catalogMoveCategory, moveCatalogCategoryButton.dataset.direction);
+      renderCatalogSettings();
+      return;
+    }
+    const paymentCaptureMethod = event.target.closest("[data-payment-capture-method]");
+    if (paymentCaptureMethod) {
+      const recorded = recordOpenPayment(paymentCaptureMethod.dataset.paymentCaptureMethod);
+      const receiptNumber = state.paymentCaptureReceiptNumber;
+      state.paymentCaptureReceiptNumber = null;
+      closeBottomSheet();
+      if (!recorded) return;
+      if (state.route === "receipt-detail") {
+        state.receiptDetailNumber = receiptNumber;
+        state.successNotice = "Zahlung wurde vollständig erfasst.";
+        renderReceiptDetail();
+      } else {
+        renderReceipts();
+      }
+      return;
+    }
     const contextHelp = event.target.closest("[data-help]");
     if (contextHelp) {
       openContextHelp(contextHelp.dataset.help);
@@ -2647,11 +3475,26 @@
       return;
     }
     if (sheetAction === "template-use") {
-      addBusinessArea(state.pendingBusinessTemplate || "Neuer Geschäftsbereich", true);
+      const template = data.businessTemplates[state.pendingBusinessTemplate];
+      addBusinessArea(template?.label || "Neuer Geschäftsbereich", state.pendingBusinessTemplate || null);
       return;
     }
     if (sheetAction === "template-empty") {
-      addBusinessArea(state.pendingBusinessTemplate || "Neuer Geschäftsbereich");
+      const template = data.businessTemplates[state.pendingBusinessTemplate];
+      addBusinessArea(template?.label || "Neuer Geschäftsbereich");
+      return;
+    }
+    if (sheetAction === "template-edit-catalog") {
+      closeBottomSheet();
+      state.catalogManagerView = "items";
+      state.catalogSettingsNotice = "Vorlage angelegt – Preise und Steuersätze bitte prüfen.";
+      navigate("settings-catalog");
+      return;
+    }
+    if (sheetAction === "template-later") {
+      closeBottomSheet();
+      if (state.route === "setup-wizard") renderSetupWizard();
+      else renderBusinessAreaSettings();
       return;
     }
     if (sheetAction === "logo-simulation") {
@@ -2712,6 +3555,11 @@
     if (receiptFilter) {
       state.receiptFilter = receiptFilter.dataset.receiptFilter;
       renderReceipts();
+      return;
+    }
+    const recordPayment = event.target.closest("[data-record-payment]");
+    if (recordPayment) {
+      openPaymentCapture(receiptByNumber(recordPayment.dataset.recordPayment));
       return;
     }
     const openLinkedVoucher = event.target.closest("[data-open-linked-voucher]");
@@ -2863,6 +3711,13 @@
       navigate("voucher-detail");
       return;
     }
+    const editServiceLocation = event.target.closest("[data-edit-service-location]");
+    if (editServiceLocation) {
+      state.serviceLocationEditingId = editServiceLocation.dataset.editServiceLocation;
+      state.serviceLocationNotice = "";
+      renderServiceLocationSettings();
+      return;
+    }
     const setupBack = event.target.closest("[data-setup-back]");
     if (setupBack) {
       const form = document.getElementById("setupWizardForm");
@@ -2954,15 +3809,71 @@
         state.customerSearch = "";
       }
       if (route.dataset.route === "settings-company" && state.route !== "settings-company") state.settingsNotice = "";
-      if (route.dataset.route === "settings-location" && state.route !== "settings-location") state.serviceLocationNotice = "";
+      if (route.dataset.route === "settings-location" && state.route !== "settings-location") {
+        state.serviceLocationNotice = "";
+        state.serviceLocationEditingId = null;
+      }
       if (route.dataset.route === "settings-taxes" && state.route !== "settings-taxes") state.taxSettingsNotice = "";
       if (route.dataset.route === "settings-payments" && state.route !== "settings-payments") state.paymentSettingsNotice = "";
       if (route.dataset.route === "settings-business-areas" && state.route !== "settings-business-areas") state.businessAreaSettingsNotice = "";
+      if (route.dataset.route === "settings-catalog" && state.route !== "settings-catalog") {
+        state.catalogManagerReturnRoute = "settings";
+        state.catalogManagerAreaId = state.activeBusinessArea;
+        state.catalogEditingItemId = null;
+        state.catalogEditingCategoryId = null;
+        state.catalogSettingsNotice = "";
+      }
       if (["vouchers", "voucher-detail", "voucher-preview"].includes(route.dataset.route)) state.voucherNotice = "";
       navigate(route.dataset.route);
       return;
     }
     const action = event.target.closest("[data-action]")?.dataset.action;
+    if (action === "catalog-settings-back") {
+      state.catalogEditingItemId = null;
+      state.catalogEditingCategoryId = null;
+      state.catalogSettingsNotice = "";
+      navigate(state.catalogManagerReturnRoute || "settings");
+      return;
+    }
+    if (action === "catalog-editor-cancel") {
+      state.catalogEditingItemId = null;
+      state.catalogEditingCategoryId = null;
+      state.catalogSettingsNotice = "";
+      renderCatalogSettings();
+      return;
+    }
+    if (action === "catalog-new-category") {
+      state.catalogEditingCategoryId = "new";
+      state.catalogSettingsNotice = "";
+      renderCatalogSettings();
+      return;
+    }
+    if (action === "open-payment-request") {
+      state.checkoutOpenPaymentConfirm = true;
+      renderCheckout();
+      return;
+    }
+    if (action === "open-payment-cancel") {
+      state.checkoutOpenPaymentConfirm = false;
+      renderCheckout();
+      return;
+    }
+    if (action === "open-payment-confirm") {
+      finishReceipt(true);
+      return;
+    }
+    if (action === "service-location-add") {
+      state.serviceLocationEditingId = "new";
+      state.serviceLocationNotice = "";
+      renderServiceLocationSettings();
+      return;
+    }
+    if (action === "service-location-editor-cancel") {
+      state.serviceLocationEditingId = null;
+      state.serviceLocationNotice = "";
+      renderServiceLocationSettings();
+      return;
+    }
     if (action === "setup-start") {
       state.setupStep = 1;
       state.setupNotice = "";
@@ -3169,7 +4080,12 @@
     if (companySettingsForm) {
       event.preventDefault();
       const formData = new FormData(companySettingsForm);
-      applyCompanyForm(formData);
+      const companyError = applyCompanyForm(formData);
+      if (companyError) {
+        state.settingsNotice = companyError;
+        renderCompanySettings();
+        return;
+      }
       state.settingsNotice = "Änderungen wurden für diese Sitzung übernommen. Nach einem Reload gehen sie verloren.";
       renderCompanySettings();
       return;
@@ -3179,8 +4095,14 @@
     if (serviceLocationForm) {
       event.preventDefault();
       const formData = new FormData(serviceLocationForm);
-      applyServiceLocationForm(formData);
-      state.serviceLocationNotice = "Leistungsort wurde für diese Sitzung übernommen. Nach einem Reload geht die Änderung verloren.";
+      const locationError = applyServiceLocationForm(formData);
+      if (locationError) {
+        state.serviceLocationNotice = locationError;
+        renderServiceLocationSettings();
+        return;
+      }
+      state.serviceLocationEditingId = null;
+      state.serviceLocationNotice = "Leistungsort und Geschäftsbereichszuordnung wurden für diese Sitzung übernommen.";
       renderServiceLocationSettings();
       return;
     }
@@ -3234,6 +4156,34 @@
       }
       state.businessAreaSettingsNotice = "Geschäftsbereiche wurden für diese Sitzung übernommen. Leistungen und Belege wurden nicht verschoben.";
       renderBusinessAreaSettings();
+      return;
+    }
+
+    const catalogItemForm = event.target.closest("#catalogItemForm");
+    if (catalogItemForm) {
+      event.preventDefault();
+      const error = applyCatalogItemForm(new FormData(catalogItemForm), catalogItemForm.dataset.itemType);
+      if (error) {
+        showCatalogEditorError(catalogItemForm, error);
+        return;
+      }
+      state.catalogEditingItemId = null;
+      state.catalogSettingsNotice = "Eintrag wurde für diese Sitzung im zentralen Katalog übernommen.";
+      renderCatalogSettings();
+      return;
+    }
+
+    const catalogCategoryForm = event.target.closest("#catalogCategoryForm");
+    if (catalogCategoryForm) {
+      event.preventDefault();
+      const error = applyCatalogCategoryForm(new FormData(catalogCategoryForm));
+      if (error) {
+        showCatalogEditorError(catalogCategoryForm, error);
+        return;
+      }
+      state.catalogEditingCategoryId = null;
+      state.catalogSettingsNotice = "Kategorie wurde für diese Sitzung übernommen.";
+      renderCatalogSettings();
       return;
     }
 
@@ -3389,6 +4339,11 @@
         sortKey: `2026-08-02T10:53:${data.receipts.length}`,
         customer: receipt.customer,
         payment: receipt.payment,
+        paymentStatus: receipt.paymentStatus,
+        paymentMethod: receipt.paymentMethod,
+        paymentRecordedAt: receipt.paymentRecordedAt,
+        paymentEvents: Array.isArray(receipt.paymentEvents) ? receipt.paymentEvents.map(event => ({ ...event })) : [],
+        contextSnapshot: cloneContextSnapshot(receipt.contextSnapshot),
         items: receipt.items.map(item => ({
           ...item,
           total: -Math.abs(Number(item.total || 0)),
@@ -3481,6 +4436,8 @@
     window.visualViewport.addEventListener("scroll", updateBrowserBottomOffset, { passive: true });
   }
 
+  migratePrototypeCommerceModel();
+  migratePrototypeContextSnapshots();
   initHeader();
   const initialRoute = validRoutes.has(window.location.hash.replace("#/", "")) ? window.location.hash.replace("#/", "") : "home";
   history.replaceState({ route: initialRoute }, "", `#/${initialRoute}`);

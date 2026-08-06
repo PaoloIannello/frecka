@@ -1,5 +1,5 @@
 window.PROTOTYPE_DATA = Object.freeze({
-  version: "UX-022d",
+  version: "UX-023",
   build: "2026-08-06",
   company: {
     name: "Studio Beispiel",
@@ -13,11 +13,36 @@ window.PROTOTYPE_DATA = Object.freeze({
     taxNumber: "123/456/78901",
     vatId: "",
     defaultTaxRate: 19,
+    useAsServiceLocation: true,
     logo: null
   },
-  defaultServiceLocationId: "location-default",
   serviceLocations: [
-    { id: "location-default", mode: "company" }
+    {
+      id: "location-default",
+      name: "Studio Beispiel",
+      addressMode: "company",
+      street: "",
+      houseNumber: "",
+      zip: "",
+      city: "",
+      phone: "0941 123456",
+      voucherNote: "Einlösbar nach Terminvereinbarung",
+      active: true,
+      businessAreaIds: ["hair", "podiatry"]
+    },
+    {
+      id: "location-podiatry",
+      name: "Studio Beispiel · Podologie",
+      addressMode: "own",
+      street: "Prüfeninger Straße",
+      houseNumber: "20",
+      zip: "93049",
+      city: "Regensburg",
+      phone: "0941 123456",
+      voucherNote: "Einlösbar nach Terminvereinbarung",
+      active: true,
+      businessAreaIds: ["podiatry"]
+    }
   ],
   taxSettings: {
     status: "undecided",
@@ -36,8 +61,8 @@ window.PROTOTYPE_DATA = Object.freeze({
     language: "Deutsch"
   },
   businessAreas: [
-    { id: "hair", label: "Friseur", active: true, isDefault: true },
-    { id: "podiatry", label: "Podologie", active: true, isDefault: false }
+    { id: "hair", label: "Friseur", active: true, isDefault: true, defaultServiceLocationId: "location-default" },
+    { id: "podiatry", label: "Podologie", active: true, isDefault: false, defaultServiceLocationId: "location-podiatry" }
   ],
   catalog: {
     hair: [
@@ -97,7 +122,83 @@ window.PROTOTYPE_DATA = Object.freeze({
       { id: "voucher-50", title: "Gutschein 50 €", price: 50, type: "voucher", quantityAdjustable: false, category: "Gutscheine", icon: "◇" }
     ]
   },
-  categories: ["Favoriten", "Leistungen", "Produkte", "Gutscheine"],
+  categories: [
+    { id: "hair-services", businessAreaId: "hair", name: "Leistungen", type: "service", active: true, sortOrder: 10, source: "manual", createdAt: "2026-08-06T08:00:00.000Z", updatedAt: "2026-08-06T08:00:00.000Z" },
+    { id: "hair-products", businessAreaId: "hair", name: "Produkte", type: "product", active: true, sortOrder: 20, source: "manual", createdAt: "2026-08-06T08:00:00.000Z", updatedAt: "2026-08-06T08:00:00.000Z" },
+    { id: "podiatry-services", businessAreaId: "podiatry", name: "Leistungen", type: "service", active: true, sortOrder: 10, source: "manual", createdAt: "2026-08-06T08:00:00.000Z", updatedAt: "2026-08-06T08:00:00.000Z" },
+    { id: "podiatry-products", businessAreaId: "podiatry", name: "Produkte", type: "product", active: true, sortOrder: 20, source: "manual", createdAt: "2026-08-06T08:00:00.000Z", updatedAt: "2026-08-06T08:00:00.000Z" }
+  ],
+  templateImportStatus: {},
+  businessTemplates: {
+    hair: {
+      label: "Friseur",
+      categories: [
+        ["cuts", "Haarschnitte", "service"], ["color", "Farbe", "service"], ["styling", "Styling", "service"],
+        ["care", "Pflege", "service"], ["products", "Produkte", "product"]
+      ],
+      services: [
+        ["women-cut", "Damenhaarschnitt", "cuts"], ["men-cut", "Herrenhaarschnitt", "cuts"], ["child-cut", "Kinderhaarschnitt", "cuts"],
+        ["wash-blow", "Waschen und Föhnen", "styling"], ["root-color", "Ansatzfarbe", "color"], ["full-color", "Komplettfarbe", "color"],
+        ["highlights", "Strähnen", "color"], ["intensive-care", "Intensivpflege", "care"]
+      ],
+      products: [["shampoo", "Shampoo", "products"], ["conditioner", "Conditioner", "products"], ["styling-product", "Stylingprodukt", "products"]]
+    },
+    podiatry: {
+      label: "Podologie",
+      categories: [
+        ["treatments", "Behandlungen", "service"], ["partial", "Teilbehandlungen", "service"],
+        ["extras", "Zusatzleistungen", "service"], ["care-products", "Pflegeprodukte", "product"]
+      ],
+      services: [
+        ["complex-treatment", "Podologische Komplexbehandlung", "treatments"], ["partial-treatment", "Teilbehandlung", "partial"],
+        ["nail-treatment", "Nagelbehandlung", "partial"], ["pressure-protection", "Druckschutz", "extras"],
+        ["orthosis-consultation", "Orthosenberatung", "extras"]
+      ],
+      products: [["foot-cream", "Fußpflegecreme", "care-products"], ["nail-care", "Nagelpflegeprodukt", "care-products"]]
+    },
+    cosmetics: {
+      label: "Kosmetik",
+      categories: [["facial", "Gesichtsbehandlungen", "service"], ["eyes", "Augen und Brauen", "service"], ["extras", "Zusatzleistungen", "service"], ["products", "Pflegeprodukte", "product"]],
+      services: [["basic-facial", "Kosmetische Basisbehandlung", "facial"], ["intensive-facial", "Intensivbehandlung", "facial"], ["brow-shaping", "Augenbrauen formen", "eyes"], ["lash-tint", "Wimpern färben", "eyes"], ["facial-massage", "Gesichtsmassage", "extras"]],
+      products: [["facial-cream", "Gesichtscreme", "products"], ["cleanser", "Reinigungsprodukt", "products"]]
+    },
+    nail_studio: {
+      label: "Nagelstudio",
+      categories: [["manicure", "Maniküre", "service"], ["modeling", "Modellage", "service"], ["design", "Design", "service"], ["products", "Pflegeprodukte", "product"]],
+      services: [["classic-manicure", "Klassische Maniküre", "manicure"], ["new-modeling", "Neumodellage", "modeling"], ["refill", "Auffüllen", "modeling"], ["remove-modeling", "Modellage entfernen", "modeling"], ["nail-design", "Nageldesign", "design"]],
+      products: [["nail-oil", "Nagelöl", "products"], ["hand-care", "Handpflege", "products"]]
+    },
+    foot_care: {
+      label: "Fußpflege",
+      categories: [["care", "Fußpflege", "service"], ["nails", "Nagelpflege", "service"], ["extras", "Zusatzpflege", "service"], ["products", "Pflegeprodukte", "product"]],
+      services: [["basic-care", "Kosmetische Fußpflege", "care"], ["short-care", "Kurze Fußpflege", "care"], ["nail-care", "Kosmetische Nagelpflege", "nails"], ["foot-massage", "Fußmassage", "extras"]],
+      products: [["foot-balm", "Fußbalsam", "products"], ["care-oil", "Pflegeöl", "products"]]
+    },
+    massage: {
+      label: "Massage",
+      categories: [["massages", "Massagen", "service"], ["short", "Kurzbehandlungen", "service"], ["extras", "Ergänzungen", "service"], ["products", "Pflegeprodukte", "product"]],
+      services: [["back-massage", "Rückenmassage", "massages"], ["full-body", "Ganzkörpermassage", "massages"], ["head-massage", "Kopf- und Nackenmassage", "short"], ["relaxation", "Entspannungsmassage", "massages"], ["warm-compress", "Warme Kompresse", "extras"]],
+      products: [["massage-oil", "Massageöl", "products"]]
+    },
+    coaching: {
+      label: "Coaching",
+      categories: [["sessions", "Einzelsitzungen", "service"], ["groups", "Gruppenangebote", "service"], ["follow-up", "Begleitung", "service"], ["materials", "Materialien", "product"]],
+      services: [["intro", "Kennenlerngespräch", "sessions"], ["single-session", "Coaching-Einzelsitzung", "sessions"], ["follow-up-session", "Folgesitzung", "follow-up"], ["group-session", "Gruppensitzung", "groups"]],
+      products: [["workbook", "Arbeitsheft", "materials"], ["card-set", "Reflexionskarten", "materials"]]
+    },
+    therapy: {
+      label: "Therapie",
+      categories: [["sessions", "Sitzungen", "service"], ["groups", "Gruppenangebote", "service"], ["consultation", "Beratung", "service"], ["materials", "Arbeitsmaterialien", "product"]],
+      services: [["initial-talk", "Erstgespräch", "consultation"], ["individual-session", "Einzelsitzung", "sessions"], ["follow-up", "Folgesitzung", "sessions"], ["group-offer", "Gruppenangebot", "groups"]],
+      products: [["exercise-book", "Übungsheft", "materials"], ["information-pack", "Informationsmaterial", "materials"]]
+    },
+    dog_grooming: {
+      label: "Hundesalon",
+      categories: [["grooming", "Fellpflege", "service"], ["cutting", "Schneiden und Trimmen", "service"], ["extras", "Zusatzpflege", "service"], ["products", "Pflegeprodukte", "product"]],
+      services: [["wash-dry", "Waschen und Trocknen", "grooming"], ["brush", "Bürsten und Entfilzen", "grooming"], ["cut", "Fell schneiden", "cutting"], ["trim", "Trimmen", "cutting"], ["paw-care", "Pfotenpflege", "extras"]],
+      products: [["dog-shampoo", "Hundeshampoo", "products"], ["coat-care", "Fellpflegeprodukt", "products"]]
+    }
+  },
 
 
   receipts: [
@@ -166,7 +267,7 @@ window.PROTOTYPE_DATA = Object.freeze({
     },
     {
       number: "2026-000126", type: "receipt", status: "completed", date: "22.07.2026", time: "16:45",
-      sortKey: "2026-07-22T16:45", payment: "Später", total: 48.00,
+      sortKey: "2026-07-22T16:45", payment: null, paymentStatus: "open", paymentMethod: null, paymentRecordedAt: null, paymentEvents: [], total: 48.00,
       customer: { id: "c-maria", name: "Maria Schneider", email: "maria.schneider@example.de", street: "Domplatz 4", zip: "93047", city: "Regensburg" },
       items: [{ title: "Farbe", quantity: 1, unitPrice: 48.00, total: 48.00 }],
       activity: [{ label: "Beleg erstellt", date: "22.07.2026 · 16:45" }]
@@ -243,8 +344,7 @@ window.PROTOTYPE_DATA = Object.freeze({
     { id: "mastercard", title: "Mastercard", icon: "M", active: false },
     { id: "paypal", title: "PayPal", icon: "P", active: false },
     { id: "transfer", title: "Überweisung", icon: "↗", active: false },
-    { id: "voucher", title: "Gutschein", icon: "◇", active: true },
-    { id: "later", title: "Später", icon: "…", active: true }
+    { id: "voucher", title: "Gutschein", icon: "◇", active: true }
   ],
   vouchers: [
     {
