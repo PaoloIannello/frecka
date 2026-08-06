@@ -1,6 +1,6 @@
-# FRECKA – PERSIST-003
+# FRECKA – PERSIST-004
 
-Klickbarer UX-Prototyp mit lokaler IndexedDB-Persistenz für Einstellungen, Katalog und Kundenstammdaten.
+Klickbarer UX-Prototyp mit lokaler IndexedDB-Persistenz für Einstellungen, Katalog, Kundenstammdaten und abgeschlossene Belege.
 
 ## Start
 
@@ -10,18 +10,20 @@ Klickbarer UX-Prototyp mit lokaler IndexedDB-Persistenz für Einstellungen, Kata
 
 Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufklappen und bearbeiten → Weiter → Kunde optional und Zahlungsart simulieren → Demo abschließen.
 
-## Neu in PERSIST-003
+## Neu in PERSIST-004
 
-- Datenbankschema 3 mit getrennten Stores für Einstellungen, Katalog und Kunden
-- asynchroner Start mit Lade- und Fehlerzustand
-- dauerhafte Kundenstammdaten mit stabilen IDs
-- Suche nach Name, Firma, Telefon, Mobilnummer und E-Mail ohne separaten Index
-- zentral serialisierte Kundenänderungen
-- getrennte, sichere Resetaktionen für Einstellungen, Katalog und Kunden
+- Datenbankschema 4 mit zusätzlichem mandantenbezogenem Store `receipts`
+- atomarer normaler Belegabschluss einschließlich eindeutiger Nummernvergabe
+- dauerhafte offene und später erfasste Zahlungen samt Aktivitäten
+- dauerhafte Stornos und Gutschriften mit konsistenten Ursprungsreferenzen
+- unveränderliche Unternehmens-, Geschäftsbereichs-, Leistungsort-, Branding-, Kunden- und Positionssnapshots
+- Entwicklungs-Resets standardmäßig eingeklappt; Receipt-Reset bleibt storeisoliert
+- gleichwertige Katalogbuttons „+ Leistung“ und „+ Produkt“
+- Grundadresse startet auf „Start“, konkrete Hash-Routen bleiben beim Reload erhalten
 
 ## Nicht umgesetzt
 
-Noch keine Persistenz für Belege, Gutscheine, Historien oder Entwürfe. Keine echte Zahlung, PDF-Erzeugung, E-Mail, produktiver QR-Scan, TSE oder Fiskalisierung.
+Noch keine Persistenz für Gutscheine, Gutschein-Historien oder Entwürfe. Keine Zahlungsanbieteranbindung, PDF-Erzeugung, E-Mail, produktiver QR-Scan, TSE oder Fiskalisierung.
 
 Der Datenbankvertrag, Fehlerpfade und die ausführbaren Prüfungen sind in `docs/persistence.md` dokumentiert.
 

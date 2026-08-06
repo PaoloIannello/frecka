@@ -3,16 +3,18 @@
 
   const constants = Object.freeze({
     databaseName: "frecka",
-    databaseVersion: 3,
+    databaseVersion: 4,
     storeName: "settings",
     settingsStoreName: "settings",
     catalogStoreName: "catalog",
     customersStoreName: "customers",
+    receiptsStoreName: "receipts",
     tenantId: "local-default",
     formatVersion: 1,
     settingsFormatVersion: 1,
     catalogFormatVersion: 1,
-    customersFormatVersion: 1
+    customersFormatVersion: 1,
+    receiptsFormatVersion: 1
   });
 
   const forbiddenRootKeys = new Set([
@@ -36,6 +38,16 @@
     "history", "histories", "receipts", "vouchers", "openPayments", "drafts",
     "cancellations", "credits", "emailStatus", "receiptCount", "lastVisit", "totalTurnover",
     "zip", "note"
+  ]);
+  const receiptsForbiddenRootKeys = new Set([
+    "company", "serviceLocations", "businessAreas", "taxSettings", "receiptSettings",
+    "paymentChoices", "setup", "catalog", "categories", "businessTemplates",
+    "templateImportStatus", "customers", "customerChoices", "vouchers", "histories",
+    "openReceipt", "drafts", "cancellations", "credits", "images", "logos"
+  ]);
+  const receiptForbiddenKeys = new Set([
+    "voucher", "voucherObject", "voucherHistory", "emailStatus", "emailHistory",
+    "pdf", "pdfFile", "qrData", "tse", "fiscalization"
   ]);
   const dangerousKeys = new Set(["__proto__", "prototype", "constructor"]);
   const sensitiveKeyPattern = /(password|passphrase|credential|secret|access.?token|refresh.?token|private.?key)/i;
@@ -93,6 +105,19 @@
   const validLogoMode = value => ["company", "custom", "none"].includes(value) ? value : "company";
   const validSetupStatus = value => setupStatuses.has(value) ? value : "not-started";
   const epochIso = "1970-01-01T00:00:00.000Z";
+
+  function stableIso(value, fallback = epochIso) {
+    if (typeof value === "string" && value.trim()) {
+      const timestamp = Date.parse(value);
+      if (Number.isFinite(timestamp)) return new Date(timestamp).toISOString();
+    }
+    const fallbackTimestamp = Date.parse(fallback);
+    return Number.isFinite(fallbackTimestamp) ? new Date(fallbackTimestamp).toISOString() : epochIso;
+  }
+
+  const centsFrom = (centsValue, decimalValue = 0) => Number.isInteger(centsValue)
+    ? centsValue
+    : Math.round(finiteNumber(decimalValue) * 100);
 
   function customerMatchesSearch(customer, query) {
     if (!isPlainObject(customer)) return false;
@@ -300,6 +325,262 @@
       updatedAt: new Date().toISOString(),
       customers
     });
+  }
+
+  function normalizeReceiptPosition(position, fallbackTaxRate = 0) {
+    const source = isPlainObject(position) ? position : {};
+    const quantity = Math.max(0, finiteNumber(source.quantity, 1));
+    const unitPriceCents = centsFrom(source.unitPriceCents, source.unitPrice);
+    const originalUnitPriceCents = centsFrom(source.originalUnitPriceCents, source.originalUnitPrice ?? source.unitPrice);
+    const totalCents = centsFrom(source.totalCents, source.total ?? (unitPriceCents * quantity) / 100);
+    const originalTotalCents = centsFrom(source.originalTotalCents, source.originalTotal ?? (originalUnitPriceCents * quantity) / 100);
+    const discountCents = Math.max(0, centsFrom(source.discountCents, source.discountTotal));
+    const taxRate = finiteNumber(source.taxRate, fallbackTaxRate);
+    const netCents = centsFrom(source.netCents, source.netTotal ?? totalCents / 100 / (1 + taxRate / 100));
+    const taxCents = centsFrom(source.taxCents, source.taxAmount ?? (totalCents - netCents) / 100);
+    const normalized = mergePreservingUnknown(source, {
+      catalogItemId: nullableStringId(source.catalogItemId) || nullableStringId(source.id),
+      type: ["service", "product", "voucher-sale"].includes(source.type) ? source.type : "service",
+      name: stringValue(source.name, stringValue(source.title, "Position")),
+      quantity,
+      unitPriceCents,
+      originalUnitPriceCents,
+      totalCents,
+      originalTotalCents,
+      discountCents,
+      discountLabel: stringValue(source.discountLabel),
+      taxRate,
+      netCents,
+      taxCents,
+      grossCents: totalCents,
+      title: stringValue(source.title, stringValue(source.name, "Position")),
+      unitPrice: unitPriceCents / 100,
+      originalUnitPrice: originalUnitPriceCents / 100,
+      total: totalCents / 100,
+      originalTotal: originalTotalCents / 100,
+      discountTotal: discountCents / 100,
+      netTotal: netCents / 100,
+      taxAmount: taxCents / 100
+    });
+    return cloneSafe(normalized);
+  }
+
+  function normalizeReceiptEntry(receipt, fallbackTimestamp = epochIso) {
+    if (!isPlainObject(receipt)) return null;
+    const number = trimmedString(receipt.receiptNumber, trimmedString(receipt.number));
+    const receiptType = ["receipt", "cancellation", "credit"].includes(receipt.receiptType)
+      ? receipt.receiptType
+      : ["receipt", "cancellation", "credit"].includes(receipt.type) ? receipt.type : "receipt";
+    const contextSnapshot = isPlainObject(receipt.contextSnapshot) ? cloneSafe(receipt.contextSnapshot) : {};
+    const businessAreaSnapshot = isPlainObject(receipt.businessAreaSnapshot)
+      ? cloneSafe(receipt.businessAreaSnapshot)
+      : isPlainObject(contextSnapshot.businessArea) ? cloneSafe(contextSnapshot.businessArea) : null;
+    const serviceLocationSnapshot = isPlainObject(receipt.serviceLocationSnapshot)
+      ? cloneSafe(receipt.serviceLocationSnapshot)
+      : isPlainObject(contextSnapshot.serviceLocation) ? cloneSafe(contextSnapshot.serviceLocation) : null;
+    const companySnapshot = isPlainObject(receipt.companySnapshot)
+      ? cloneSafe(receipt.companySnapshot)
+      : isPlainObject(contextSnapshot.company) ? cloneSafe(contextSnapshot.company) : null;
+    const brandingSnapshot = isPlainObject(receipt.brandingSnapshot)
+      ? cloneSafe(receipt.brandingSnapshot)
+      : isPlainObject(contextSnapshot.branding) ? cloneSafe(contextSnapshot.branding) : null;
+    const customerSnapshot = isPlainObject(receipt.customerSnapshot)
+      ? cloneSafe(receipt.customerSnapshot)
+      : isPlainObject(receipt.customer) ? cloneSafe(receipt.customer) : null;
+    const createdAt = stableIso(receipt.createdAt, stableIso(receipt.sortKey, fallbackTimestamp));
+    const completedAt = stableIso(receipt.completedAt, createdAt);
+    const updatedAt = stableIso(receipt.updatedAt, completedAt);
+    const sourcePositions = Array.isArray(receipt.positions) ? receipt.positions : Array.isArray(receipt.items) ? receipt.items : [];
+    const positions = sourcePositions.map(position => normalizeReceiptPosition(position)).filter(Boolean);
+    const positionsSubtotalCents = positions.reduce((sum, position) => sum + position.originalTotalCents, 0);
+    const positionsTotalCents = positions.reduce((sum, position) => sum + position.totalCents, 0);
+    const positionsDiscountCents = positions.reduce((sum, position) => sum + position.discountCents, 0);
+    const positionsNetCents = positions.reduce((sum, position) => sum + position.netCents, 0);
+    const positionsTaxCents = positions.reduce((sum, position) => sum + position.taxCents, 0);
+    const subtotalCents = centsFrom(receipt.subtotalCents, receipt.originalTotal ?? positionsSubtotalCents / 100);
+    const totalCents = centsFrom(receipt.totalCents, receipt.total ?? positionsTotalCents / 100);
+    const discountCents = Math.max(0, centsFrom(receipt.discountCents, receipt.discountTotal ?? positionsDiscountCents / 100));
+    const netTotalCents = centsFrom(receipt.netTotalCents, receipt.netTotal ?? positionsNetCents / 100);
+    const taxTotalCents = centsFrom(receipt.taxTotalCents, receipt.taxTotal ?? positionsTaxCents / 100);
+    const sourceTaxBreakdown = Array.isArray(receipt.taxBreakdown) ? receipt.taxBreakdown : Array.isArray(receipt.taxGroups) ? receipt.taxGroups : [];
+    const taxBreakdown = sourceTaxBreakdown.map(group => ({
+      rate: finiteNumber(group?.rate),
+      netCents: centsFrom(group?.netCents, group?.net),
+      taxCents: centsFrom(group?.taxCents, group?.tax),
+      grossCents: centsFrom(group?.grossCents, group?.gross)
+    }));
+    if (!taxBreakdown.length && positions.length) {
+      const groups = new Map();
+      positions.forEach(position => {
+        const key = String(position.taxRate);
+        const group = groups.get(key) || { rate: position.taxRate, netCents: 0, taxCents: 0, grossCents: 0 };
+        group.netCents += position.netCents;
+        group.taxCents += position.taxCents;
+        group.grossCents += position.totalCents;
+        groups.set(key, group);
+      });
+      taxBreakdown.push(...groups.values());
+    }
+    const paymentEvents = (Array.isArray(receipt.paymentEvents) ? receipt.paymentEvents : []).filter(isPlainObject).map(event => ({
+      ...cloneSafe(event),
+      recordedAt: stableIso(event.recordedAt, completedAt),
+      amountCents: centsFrom(event.amountCents, event.amount),
+      amount: centsFrom(event.amountCents, event.amount) / 100
+    }));
+    const sourceActivities = Array.isArray(receipt.activities) ? receipt.activities : Array.isArray(receipt.activity) ? receipt.activity : [];
+    const activities = sourceActivities.filter(isPlainObject).map(activity => ({
+      ...cloneSafe(activity),
+      occurredAt: stableIso(activity.occurredAt, updatedAt)
+    }));
+    const originalReference = nullableStringId(receipt.reference)
+      || nullableStringId(receipt.references?.originalReceiptNumber);
+    const references = {
+      ...(isPlainObject(receipt.references) ? cloneSafe(receipt.references) : {}),
+      originalReceiptNumber: originalReference,
+      correctionNumbers: uniqueStrings(receipt.references?.correctionNumbers)
+    };
+    const voucherReference = nullableStringId(receipt.voucherReference)
+      || nullableStringId(receipt.voucherPayment?.reference);
+    const voucherPayment = isPlainObject(receipt.voucherPayment) ? {
+      reference: nullableStringId(receipt.voucherPayment.reference),
+      code: stringValue(receipt.voucherPayment.code),
+      amountCents: centsFrom(receipt.voucherPayment.amountCents, receipt.voucherPayment.amount),
+      balanceBeforeCents: centsFrom(receipt.voucherPayment.balanceBeforeCents, receipt.voucherPayment.balanceBefore),
+      balanceAfterCents: centsFrom(receipt.voucherPayment.balanceAfterCents, receipt.voucherPayment.balanceAfter),
+      amount: centsFrom(receipt.voucherPayment.amountCents, receipt.voucherPayment.amount) / 100,
+      balanceBefore: centsFrom(receipt.voucherPayment.balanceBeforeCents, receipt.voucherPayment.balanceBefore) / 100,
+      balanceAfter: centsFrom(receipt.voucherPayment.balanceAfterCents, receipt.voucherPayment.balanceAfter) / 100
+    } : null;
+    const id = nullableStringId(receipt.id) || (number ? `receipt_${number.replace(/[^A-Za-z0-9]+/g, "_")}` : null);
+    if (!id || !number) return null;
+
+    const normalized = mergePreservingUnknown(receipt, {
+      id,
+      receiptNumber: number,
+      number,
+      receiptType,
+      type: receiptType,
+      status: trimmedString(receipt.status, receiptType === "receipt" ? "completed" : receiptType === "cancellation" ? "cancelled" : "credited"),
+      businessAreaId: nullableStringId(receipt.businessAreaId) || nullableStringId(businessAreaSnapshot?.id),
+      businessAreaSnapshot,
+      serviceLocationId: nullableStringId(receipt.serviceLocationId) || nullableStringId(serviceLocationSnapshot?.id),
+      serviceLocationSnapshot,
+      companySnapshot,
+      brandingSnapshot,
+      contextSnapshot: {
+        ...contextSnapshot,
+        company: companySnapshot,
+        businessArea: businessAreaSnapshot,
+        serviceLocation: serviceLocationSnapshot,
+        branding: brandingSnapshot
+      },
+      customerId: nullableStringId(receipt.customerId) || nullableStringId(customerSnapshot?.id),
+      customerSnapshot,
+      customer: customerSnapshot,
+      positions,
+      items: positions,
+      subtotalCents,
+      discountCents,
+      netTotalCents,
+      taxTotalCents,
+      totalCents,
+      originalTotal: subtotalCents / 100,
+      discountTotal: discountCents / 100,
+      netTotal: netTotalCents / 100,
+      taxTotal: taxTotalCents / 100,
+      total: totalCents / 100,
+      taxBreakdown,
+      taxGroups: taxBreakdown.map(group => ({ rate: group.rate, net: group.netCents / 100, tax: group.taxCents / 100, gross: group.grossCents / 100 })),
+      paymentStatus: receipt.paymentStatus === "open" ? "open" : "paid",
+      paymentMethod: nullableStringId(receipt.paymentMethod) || nullableStringId(receipt.payment),
+      payment: nullableStringId(receipt.paymentMethod) || nullableStringId(receipt.payment),
+      paymentRecordedAt: receipt.paymentStatus === "open" ? null : stableIso(receipt.paymentRecordedAt, completedAt),
+      paymentEvents,
+      activities,
+      activity: activities,
+      note: stringValue(receipt.note, stringValue(receipt.internalNote)),
+      internalNote: stringValue(receipt.internalNote, stringValue(receipt.note)),
+      createdAt,
+      completedAt,
+      updatedAt,
+      references,
+      reference: originalReference,
+      voucherReference,
+      voucherPayment
+    });
+    receiptForbiddenKeys.forEach(key => { delete normalized[key]; });
+    return cloneSafe(normalized);
+  }
+
+  function snapshotReceipts(runtimeData, tenantId = constants.tenantId) {
+    if (!runtimeData || !Array.isArray(runtimeData.receipts)) {
+      throw new PersistenceError("INVALID_DATA", "Die zentralen Belegdaten sind nicht verfügbar.");
+    }
+    const now = new Date().toISOString();
+    return stripExcludedReceiptsData({
+      formatVersion: constants.receiptsFormatVersion,
+      tenantId: nullableStringId(tenantId) || constants.tenantId,
+      updatedAt: now,
+      receipts: runtimeData.receipts.map(receipt => normalizeReceiptEntry(receipt, now)).filter(Boolean)
+    });
+  }
+
+  function normalizeReceiptsRecord(rawRecord, defaultsInput, expectedTenantId = constants.tenantId) {
+    if (!isPlainObject(defaultsInput)) {
+      throw new PersistenceError("INVALID_DATA", "Die sicheren Standard-Belegdaten sind nicht verfügbar.");
+    }
+    const defaults = Array.isArray(defaultsInput.receipts)
+      ? cloneSafe(defaultsInput)
+      : snapshotReceipts(defaultsInput, expectedTenantId);
+    if (!Array.isArray(defaults?.receipts)) {
+      throw new PersistenceError("INVALID_DATA", "Die sicheren Standard-Belegdaten sind unvollständig.");
+    }
+    const raw = rawRecord == null ? defaults : rawRecord;
+    if (!isPlainObject(raw)) {
+      throw new PersistenceError("INVALID_DATA", "Der gespeicherte Belegdatensatz ist ungültig.");
+    }
+    const repairs = new Set();
+    if (rawRecord == null) repairs.add("RECEIPTS_DEFAULTED");
+    const rawFormatVersion = raw.formatVersion == null ? constants.receiptsFormatVersion : raw.formatVersion;
+    if (!Number.isInteger(rawFormatVersion) || rawFormatVersion < 1) {
+      throw new PersistenceError("INVALID_DATA", "Die gespeicherten Belege besitzen keine gültige Formatversion.");
+    }
+    if (rawFormatVersion !== constants.receiptsFormatVersion) {
+      throw new PersistenceError(
+        "UNSUPPORTED_FORMAT",
+        rawFormatVersion > constants.receiptsFormatVersion
+          ? "Die gespeicherten Belege stammen aus einer neueren FRECKA-Version und wurden nicht verändert."
+          : "Für diese ältere Belegformatversion ist noch keine Migration verfügbar."
+      );
+    }
+    if (raw.formatVersion == null) repairs.add("FORMAT_VERSION_ADDED");
+    const source = Array.isArray(raw.receipts) ? raw.receipts : defaults.receipts;
+    if (!Array.isArray(raw.receipts)) repairs.add("RECEIPTS_DEFAULTED");
+    const seenIds = new Set();
+    const seenNumbers = new Set();
+    const receipts = source.flatMap(entry => {
+      const normalized = normalizeReceiptEntry(entry, raw.updatedAt || epochIso);
+      if (!normalized) {
+        repairs.add("RECEIPT_REMOVED");
+        return [];
+      }
+      if (seenIds.has(normalized.id) || seenNumbers.has(normalized.number)) {
+        repairs.add("RECEIPT_DUPLICATE_REMOVED");
+        return [];
+      }
+      seenIds.add(normalized.id);
+      seenNumbers.add(normalized.number);
+      return [normalized];
+    });
+    return {
+      record: stripExcludedReceiptsData(mergePreservingUnknown(raw, {
+        formatVersion: constants.receiptsFormatVersion,
+        tenantId: nullableStringId(expectedTenantId) || constants.tenantId,
+        updatedAt: stableIso(raw.updatedAt, epochIso),
+        receipts
+      })),
+      repairs: [...repairs]
+    };
   }
 
   function normalizeCustomersRecord(rawRecord, defaultsInput, expectedTenantId = constants.tenantId) {
@@ -871,6 +1152,18 @@
     return cleaned;
   }
 
+  function stripExcludedReceiptsData(record) {
+    const cleaned = cloneSafe(record) || {};
+    receiptsForbiddenRootKeys.forEach(key => { delete cleaned[key]; });
+    if (Array.isArray(cleaned.receipts)) {
+      cleaned.receipts.forEach(receipt => {
+        if (!isPlainObject(receipt)) return;
+        receiptForbiddenKeys.forEach(key => { delete receipt[key]; });
+      });
+    }
+    return cleaned;
+  }
+
   function createSettingsPersistence(options = {}) {
     const indexedDBFactory = Object.prototype.hasOwnProperty.call(options, "indexedDBFactory")
       ? options.indexedDBFactory
@@ -880,6 +1173,7 @@
     const storeName = options.storeName || constants.storeName;
     const catalogStoreName = options.catalogStoreName || constants.catalogStoreName;
     const customersStoreName = options.customersStoreName || constants.customersStoreName;
+    const receiptsStoreName = options.receiptsStoreName || constants.receiptsStoreName;
     const tenantId = nullableStringId(options.tenantId) || constants.tenantId;
     let databasePromise = null;
     let writeQueue = Promise.resolve();
@@ -912,6 +1206,7 @@
           if (!database.objectStoreNames.contains(storeName)) database.createObjectStore(storeName, { keyPath: "tenantId" });
           if (!database.objectStoreNames.contains(catalogStoreName)) database.createObjectStore(catalogStoreName, { keyPath: "tenantId" });
           if (!database.objectStoreNames.contains(customersStoreName)) database.createObjectStore(customersStoreName, { keyPath: "tenantId" });
+          if (!database.objectStoreNames.contains(receiptsStoreName)) database.createObjectStore(receiptsStoreName, { keyPath: "tenantId" });
         };
         request.onsuccess = () => {
           const database = request.result;
@@ -921,7 +1216,8 @@
           }
           if (!database.objectStoreNames.contains(storeName)
             || !database.objectStoreNames.contains(catalogStoreName)
-            || !database.objectStoreNames.contains(customersStoreName)) {
+            || !database.objectStoreNames.contains(customersStoreName)
+            || !database.objectStoreNames.contains(receiptsStoreName)) {
             settled = true;
             database.close();
             reject(new PersistenceError("SCHEMA_MISSING", "Die lokale Datenbank besitzt nicht das erwartete FRECKA-Schema."));
@@ -1416,6 +1712,551 @@
       });
     }
 
+    async function readReceipts() {
+      const database = await openDatabase();
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        let result = null;
+        let transaction;
+        try {
+          transaction = database.transaction(receiptsStoreName, "readonly");
+          const request = transaction.objectStore(receiptsStoreName).get(tenantId);
+          request.onsuccess = () => { result = request.result || null; };
+          request.onerror = () => {
+            if (settled) return;
+            settled = true;
+            reject(new PersistenceError("RECEIPTS_READ_FAILED", "Die gespeicherten Belege konnten nicht gelesen werden.", request.error));
+          };
+        } catch (cause) {
+          reject(new PersistenceError("RECEIPTS_READ_FAILED", "Die gespeicherten Belege konnten nicht gelesen werden.", cause));
+          return;
+        }
+        transaction.oncomplete = () => {
+          if (settled) return;
+          settled = true;
+          resolve(result);
+        };
+        transaction.onabort = () => {
+          if (settled) return;
+          settled = true;
+          reject(new PersistenceError("TRANSACTION_ABORTED", "Das Lesen der Belege wurde abgebrochen.", transaction.error));
+        };
+        transaction.onerror = () => {};
+      });
+    }
+
+    function prepareReceiptsRecord(record) {
+      let requestedSnapshot;
+      try {
+        requestedSnapshot = stripExcludedReceiptsData(cloneSerializable(record));
+      } catch (error) {
+        throw error;
+      }
+      if (!isPlainObject(requestedSnapshot) || requestedSnapshot.formatVersion !== constants.receiptsFormatVersion || !Array.isArray(requestedSnapshot.receipts)) {
+        throw new PersistenceError("INVALID_DATA", "Der Belegdatensatz besitzt kein unterstütztes Format.");
+      }
+      if (nullableStringId(requestedSnapshot.tenantId) && requestedSnapshot.tenantId !== tenantId) {
+        throw new PersistenceError("INVALID_DATA", "Der Belegdatensatz gehört zu einer anderen Instanz.");
+      }
+      requestedSnapshot.tenantId = tenantId;
+      return requestedSnapshot;
+    }
+
+    function writeReceipts(record) {
+      let requestedSnapshot;
+      try {
+        requestedSnapshot = prepareReceiptsRecord(record);
+      } catch (error) {
+        return Promise.reject(error);
+      }
+      return queued(async () => {
+        const database = await openDatabase();
+        return new Promise((resolve, reject) => {
+          let settled = false;
+          let writtenRecord = null;
+          let transactionFailure = null;
+          let transaction;
+          try {
+            transaction = database.transaction(receiptsStoreName, "readwrite");
+            const store = transaction.objectStore(receiptsStoreName);
+            const readRequest = store.get(tenantId);
+            readRequest.onerror = () => {
+              transactionFailure = new PersistenceError("RECEIPTS_WRITE_FAILED", "Die Belege konnten nicht lokal gespeichert werden.", readRequest.error);
+            };
+            readRequest.onsuccess = () => {
+              try {
+                const existing = readRequest.result;
+                if (existing?.formatVersion > constants.receiptsFormatVersion) {
+                  throw new PersistenceError("UNSUPPORTED_FORMAT", "Die gespeicherten Belege stammen aus einer neueren FRECKA-Version und wurden nicht überschrieben.");
+                }
+                if (existing?.formatVersion != null && existing.formatVersion < constants.receiptsFormatVersion) {
+                  throw new PersistenceError("UNSUPPORTED_FORMAT", "Für diese ältere Belegformatversion ist noch keine Migration verfügbar.");
+                }
+                writtenRecord = normalizeReceiptsRecord(requestedSnapshot, requestedSnapshot, tenantId).record;
+                writtenRecord = stripExcludedReceiptsData(mergePreservingUnknown(existing, writtenRecord));
+                writtenRecord.updatedAt = new Date().toISOString();
+                const putRequest = store.put(writtenRecord);
+                putRequest.onerror = () => {
+                  transactionFailure = new PersistenceError("RECEIPTS_WRITE_FAILED", "Die Belege konnten nicht lokal gespeichert werden.", putRequest.error);
+                };
+              } catch (error) {
+                transactionFailure = error instanceof PersistenceError
+                  ? error
+                  : new PersistenceError("RECEIPTS_WRITE_FAILED", "Die Belege konnten nicht lokal gespeichert werden.", error);
+                try { transaction.abort(); } catch (abortError) {
+                  if (!settled) {
+                    settled = true;
+                    reject(transactionFailure);
+                  }
+                }
+              }
+            };
+          } catch (cause) {
+            reject(new PersistenceError("RECEIPTS_WRITE_FAILED", "Die Belege konnten nicht lokal gespeichert werden.", cause));
+            return;
+          }
+          transaction.oncomplete = () => {
+            if (settled) return;
+            settled = true;
+            if (transactionFailure) reject(transactionFailure);
+            else resolve(cloneSafe(writtenRecord));
+          };
+          transaction.onabort = () => {
+            if (settled) return;
+            settled = true;
+            reject(transactionFailure || new PersistenceError("TRANSACTION_ABORTED", "Das Speichern der Belege wurde abgebrochen.", transaction.error));
+          };
+          transaction.onerror = () => {
+            if (!transactionFailure) transactionFailure = new PersistenceError("RECEIPTS_WRITE_FAILED", "Die Belege konnten nicht lokal gespeichert werden.", transaction.error);
+          };
+        });
+      });
+    }
+
+    function deleteReceipts() {
+      return queued(async () => {
+        const database = await openDatabase();
+        return new Promise((resolve, reject) => {
+          let settled = false;
+          let transactionFailure = null;
+          let transaction;
+          try {
+            transaction = database.transaction(receiptsStoreName, "readwrite");
+            const request = transaction.objectStore(receiptsStoreName).delete(tenantId);
+            request.onerror = () => {
+              transactionFailure = new PersistenceError("RECEIPTS_DELETE_FAILED", "Die gespeicherten Belege konnten nicht zurückgesetzt werden.", request.error);
+            };
+          } catch (cause) {
+            reject(new PersistenceError("RECEIPTS_DELETE_FAILED", "Die gespeicherten Belege konnten nicht zurückgesetzt werden.", cause));
+            return;
+          }
+          transaction.oncomplete = () => {
+            if (settled) return;
+            settled = true;
+            if (transactionFailure) reject(transactionFailure);
+            else resolve();
+          };
+          transaction.onabort = () => {
+            if (settled) return;
+            settled = true;
+            reject(transactionFailure || new PersistenceError("TRANSACTION_ABORTED", "Das Zurücksetzen der Belege wurde abgebrochen.", transaction.error));
+          };
+          transaction.onerror = () => {
+            if (!transactionFailure) transactionFailure = new PersistenceError("RECEIPTS_DELETE_FAILED", "Die gespeicherten Belege konnten nicht zurückgesetzt werden.", transaction.error);
+          };
+        });
+      });
+    }
+
+    function commitReceipt(receiptDraft, settingsRecord, seedReceiptsRecord) {
+      let draft;
+      let requestedSettings;
+      let seedRecord;
+      try {
+        draft = cloneSerializable(receiptDraft);
+        requestedSettings = stripExcludedData(cloneSerializable(settingsRecord));
+        seedRecord = prepareReceiptsRecord(seedReceiptsRecord);
+      } catch (error) {
+        return Promise.reject(error);
+      }
+      if (!isPlainObject(draft) || !nullableStringId(draft.id)) {
+        return Promise.reject(new PersistenceError("INVALID_DATA", "Der abzuschließende Beleg besitzt keine stabile ID."));
+      }
+      if (!isPlainObject(requestedSettings)
+        || requestedSettings.formatVersion !== constants.settingsFormatVersion
+        || !isPlainObject(requestedSettings.receiptSettings)) {
+        return Promise.reject(new PersistenceError("INVALID_DATA", "Der Nummernstand für den Belegabschluss ist nicht verfügbar."));
+      }
+      if (nullableStringId(requestedSettings.tenantId) && requestedSettings.tenantId !== tenantId) {
+        return Promise.reject(new PersistenceError("INVALID_DATA", "Die Einstellungen gehören zu einer anderen Instanz."));
+      }
+      requestedSettings.tenantId = tenantId;
+
+      return queued(async () => {
+        const database = await openDatabase();
+        return new Promise((resolve, reject) => {
+          let settled = false;
+          let transactionFailure = null;
+          let committedResult = null;
+          let transaction;
+          try {
+            transaction = database.transaction([storeName, receiptsStoreName], "readwrite");
+            const settingsStore = transaction.objectStore(storeName);
+            const receiptsStore = transaction.objectStore(receiptsStoreName);
+            const settingsRequest = settingsStore.get(tenantId);
+            const receiptsRequest = receiptsStore.get(tenantId);
+            let settingsReady = false;
+            let receiptsReady = false;
+
+            const fail = (code, message, cause) => {
+              if (!transactionFailure) transactionFailure = new PersistenceError(code, message, cause);
+            };
+            const commitWhenReady = () => {
+              if (!settingsReady || !receiptsReady || transactionFailure) return;
+              try {
+                const existingSettings = settingsRequest.result;
+                if (existingSettings?.formatVersion > constants.settingsFormatVersion) {
+                  throw new PersistenceError("UNSUPPORTED_FORMAT", "Die gespeicherten Einstellungen stammen aus einer neueren FRECKA-Version.");
+                }
+                const currentReceipts = receiptsRequest.result
+                  ? normalizeReceiptsRecord(receiptsRequest.result, seedRecord, tenantId).record
+                  : normalizeReceiptsRecord(seedRecord, seedRecord, tenantId).record;
+                const existingById = currentReceipts.receipts.find(receipt => receipt.id === draft.id);
+                const mergedSettings = stripExcludedData(mergePreservingUnknown(existingSettings, requestedSettings));
+                mergedSettings.formatVersion = constants.settingsFormatVersion;
+                mergedSettings.tenantId = tenantId;
+                mergedSettings.updatedAt = new Date().toISOString();
+                if (existingById) {
+                  committedResult = {
+                    created: false,
+                    receipt: cloneSafe(existingById),
+                    receiptsRecord: cloneSafe(currentReceipts),
+                    settingsRecord: cloneSafe(mergedSettings)
+                  };
+                  return;
+                }
+
+                const prefix = /^\d{4}$/.test(trimmedString(mergedSettings.receiptSettings?.yearPrefix))
+                  ? trimmedString(mergedSettings.receiptSettings.yearPrefix)
+                  : String(new Date().getFullYear());
+                const highestPersisted = currentReceipts.receipts.reduce((highest, receipt) => {
+                  const match = String(receipt.number || "").match(new RegExp(`^${prefix}-(\\d{6})$`));
+                  return match ? Math.max(highest, Number(match[1])) : highest;
+                }, 0);
+                let sequence = Math.max(
+                  1,
+                  nonNegativeInteger(existingSettings?.receiptSettings?.nextNumber, 1),
+                  nonNegativeInteger(requestedSettings.receiptSettings?.nextNumber, 1),
+                  highestPersisted + 1
+                );
+                const usedNumbers = new Set(currentReceipts.receipts.map(receipt => receipt.number));
+                let receiptNumber = `${prefix}-${String(sequence).padStart(6, "0")}`;
+                while (usedNumbers.has(receiptNumber)) {
+                  sequence += 1;
+                  receiptNumber = `${prefix}-${String(sequence).padStart(6, "0")}`;
+                }
+                const completedAt = stableIso(draft.completedAt, stableIso(draft.createdAt, new Date().toISOString()));
+                const receipt = normalizeReceiptEntry({
+                  ...draft,
+                  number: receiptNumber,
+                  receiptNumber,
+                  createdAt: stableIso(draft.createdAt, completedAt),
+                  completedAt,
+                  updatedAt: completedAt
+                }, completedAt);
+                if (!receipt) throw new PersistenceError("INVALID_DATA", "Der Beleg konnte nicht in das persistente Format überführt werden.");
+                currentReceipts.receipts.unshift(receipt);
+                currentReceipts.updatedAt = new Date().toISOString();
+                mergedSettings.receiptSettings.nextNumber = sequence + 1;
+
+                const settingsPut = settingsStore.put(mergedSettings);
+                const receiptsPut = receiptsStore.put(stripExcludedReceiptsData(currentReceipts));
+                settingsPut.onerror = () => fail("RECEIPT_COMMIT_FAILED", "Der Belegabschluss konnte nicht lokal gespeichert werden.", settingsPut.error);
+                receiptsPut.onerror = () => fail("RECEIPT_COMMIT_FAILED", "Der Belegabschluss konnte nicht lokal gespeichert werden.", receiptsPut.error);
+                committedResult = {
+                  created: true,
+                  receipt: cloneSafe(receipt),
+                  receiptsRecord: cloneSafe(currentReceipts),
+                  settingsRecord: cloneSafe(mergedSettings)
+                };
+              } catch (error) {
+                transactionFailure = error instanceof PersistenceError
+                  ? error
+                  : new PersistenceError("RECEIPT_COMMIT_FAILED", "Der Belegabschluss konnte nicht lokal gespeichert werden.", error);
+                try { transaction.abort(); } catch (abortError) {
+                  if (!settled) {
+                    settled = true;
+                    reject(transactionFailure);
+                  }
+                }
+              }
+            };
+
+            settingsRequest.onerror = () => fail("RECEIPT_COMMIT_FAILED", "Der Nummernstand konnte nicht gelesen werden.", settingsRequest.error);
+            receiptsRequest.onerror = () => fail("RECEIPT_COMMIT_FAILED", "Die vorhandenen Belege konnten nicht gelesen werden.", receiptsRequest.error);
+            settingsRequest.onsuccess = () => { settingsReady = true; commitWhenReady(); };
+            receiptsRequest.onsuccess = () => { receiptsReady = true; commitWhenReady(); };
+          } catch (cause) {
+            reject(new PersistenceError("RECEIPT_COMMIT_FAILED", "Der Belegabschluss konnte nicht lokal gespeichert werden.", cause));
+            return;
+          }
+          transaction.oncomplete = () => {
+            if (settled) return;
+            settled = true;
+            if (transactionFailure) reject(transactionFailure);
+            else if (!committedResult) reject(new PersistenceError("RECEIPT_COMMIT_FAILED", "Der Belegabschluss wurde nicht bestätigt."));
+            else resolve(committedResult);
+          };
+          transaction.onabort = () => {
+            if (settled) return;
+            settled = true;
+            reject(transactionFailure || new PersistenceError("TRANSACTION_ABORTED", "Der Belegabschluss wurde abgebrochen.", transaction.error));
+          };
+          transaction.onerror = () => {
+            if (!transactionFailure) transactionFailure = new PersistenceError("RECEIPT_COMMIT_FAILED", "Der Belegabschluss konnte nicht lokal gespeichert werden.", transaction.error);
+          };
+        });
+      });
+    }
+
+    function mutateReceipts(seedReceiptsRecord, operation, failureCode, failureMessage) {
+      let seedRecord;
+      try {
+        seedRecord = prepareReceiptsRecord(seedReceiptsRecord);
+      } catch (error) {
+        return Promise.reject(error);
+      }
+      return queued(async () => {
+        const database = await openDatabase();
+        return new Promise((resolve, reject) => {
+          let settled = false;
+          let transactionFailure = null;
+          let operationResult = null;
+          let transaction;
+          try {
+            transaction = database.transaction(receiptsStoreName, "readwrite");
+            const store = transaction.objectStore(receiptsStoreName);
+            const readRequest = store.get(tenantId);
+            readRequest.onerror = () => {
+              transactionFailure = new PersistenceError(failureCode, failureMessage, readRequest.error);
+            };
+            readRequest.onsuccess = () => {
+              try {
+                const record = readRequest.result
+                  ? normalizeReceiptsRecord(readRequest.result, seedRecord, tenantId).record
+                  : normalizeReceiptsRecord(seedRecord, seedRecord, tenantId).record;
+                const outcome = operation(record) || {};
+                record.updatedAt = new Date().toISOString();
+                operationResult = { ...cloneSafe(outcome), record: cloneSafe(record) };
+                if (outcome.changed === false) return;
+                const putRequest = store.put(stripExcludedReceiptsData(record));
+                putRequest.onerror = () => {
+                  transactionFailure = new PersistenceError(failureCode, failureMessage, putRequest.error);
+                };
+              } catch (error) {
+                transactionFailure = error instanceof PersistenceError
+                  ? error
+                  : new PersistenceError(failureCode, failureMessage, error);
+                try { transaction.abort(); } catch (abortError) {
+                  if (!settled) {
+                    settled = true;
+                    reject(transactionFailure);
+                  }
+                }
+              }
+            };
+          } catch (cause) {
+            reject(new PersistenceError(failureCode, failureMessage, cause));
+            return;
+          }
+          transaction.oncomplete = () => {
+            if (settled) return;
+            settled = true;
+            if (transactionFailure) reject(transactionFailure);
+            else resolve(operationResult);
+          };
+          transaction.onabort = () => {
+            if (settled) return;
+            settled = true;
+            reject(transactionFailure || new PersistenceError("TRANSACTION_ABORTED", failureMessage, transaction.error));
+          };
+          transaction.onerror = () => {
+            if (!transactionFailure) transactionFailure = new PersistenceError(failureCode, failureMessage, transaction.error);
+          };
+        });
+      });
+    }
+
+    function recordReceiptPayment(receiptNumber, paymentInput, seedReceiptsRecord) {
+      let payment;
+      try {
+        payment = cloneSerializable(paymentInput);
+      } catch (error) {
+        return Promise.reject(error);
+      }
+      return mutateReceipts(seedReceiptsRecord, record => {
+        const receipt = record.receipts.find(entry => entry.number === receiptNumber);
+        if (!receipt) throw new PersistenceError("RECEIPT_NOT_FOUND", "Der Beleg wurde nicht gefunden.");
+        if (receipt.receiptType !== "receipt" || receipt.status === "cancelled") {
+          throw new PersistenceError("RECEIPT_NOT_PAYABLE", "Für diesen Beleg kann keine Zahlung erfasst werden.");
+        }
+        if (receipt.paymentStatus !== "open") return { changed: false, receipt, recorded: false };
+        const recordedAt = stableIso(payment.recordedAt, new Date().toISOString());
+        const amountCents = centsFrom(payment.amountCents, payment.amount ?? receipt.total);
+        const paymentMethod = trimmedString(payment.paymentMethod);
+        if (!paymentMethod) throw new PersistenceError("INVALID_DATA", "Bitte eine gültige Zahlungsart auswählen.");
+        const event = {
+          type: "payment_recorded",
+          recordedAt,
+          date: stringValue(payment.date),
+          time: stringValue(payment.time),
+          paymentMethod,
+          amountCents,
+          amount: amountCents / 100
+        };
+        receipt.paymentStatus = "paid";
+        receipt.paymentMethod = paymentMethod;
+        receipt.payment = paymentMethod;
+        receipt.paymentRecordedAt = recordedAt;
+        receipt.paymentEvents = Array.isArray(receipt.paymentEvents) ? receipt.paymentEvents : [];
+        receipt.paymentEvents.push(event);
+        receipt.activities = Array.isArray(receipt.activities) ? receipt.activities : [];
+        receipt.activities.push({
+          label: "Zahlung erfasst",
+          date: stringValue(payment.displayDate, [payment.date, payment.time].filter(Boolean).join(" · ")),
+          detail: stringValue(payment.detail),
+          occurredAt: recordedAt
+        });
+        receipt.activity = receipt.activities;
+        receipt.updatedAt = recordedAt;
+        return { changed: true, receipt, recorded: true };
+      }, "RECEIPT_PAYMENT_FAILED", "Die Zahlung konnte nicht lokal gespeichert werden.");
+    }
+
+    function saveReceiptNote(receiptNumber, note, activityInput, seedReceiptsRecord) {
+      const safeNote = stringValue(note).trim();
+      const activity = isPlainObject(activityInput) ? cloneSafe(activityInput) : {};
+      return mutateReceipts(seedReceiptsRecord, record => {
+        const receipt = record.receipts.find(entry => entry.number === receiptNumber);
+        if (!receipt) throw new PersistenceError("RECEIPT_NOT_FOUND", "Der Beleg wurde nicht gefunden.");
+        const occurredAt = stableIso(activity.occurredAt, new Date().toISOString());
+        receipt.note = safeNote;
+        receipt.internalNote = safeNote;
+        receipt.activities = Array.isArray(receipt.activities) ? receipt.activities : [];
+        receipt.activities.push({
+          label: stringValue(activity.label, "Interne Notiz aktualisiert"),
+          date: stringValue(activity.date),
+          occurredAt
+        });
+        receipt.activity = receipt.activities;
+        receipt.updatedAt = occurredAt;
+        return { changed: true, receipt };
+      }, "RECEIPT_NOTE_FAILED", "Die interne Notiz konnte nicht lokal gespeichert werden.");
+    }
+
+    function commitReceiptCorrection(sourceReceiptNumber, correctionDraft, seedReceiptsRecord) {
+      let draft;
+      try {
+        draft = cloneSerializable(correctionDraft);
+      } catch (error) {
+        return Promise.reject(error);
+      }
+      if (!isPlainObject(draft) || !nullableStringId(draft.id) || !["cancellation", "credit"].includes(draft.type)) {
+        return Promise.reject(new PersistenceError("INVALID_DATA", "Der Korrekturvorgang ist unvollständig."));
+      }
+      return mutateReceipts(seedReceiptsRecord, record => {
+        const existingById = record.receipts.find(receipt => receipt.id === draft.id);
+        if (existingById) return { changed: false, created: false, receipt: existingById };
+        const source = record.receipts.find(receipt => receipt.number === sourceReceiptNumber);
+        if (!source || source.receiptType !== "receipt") {
+          throw new PersistenceError("RECEIPT_NOT_FOUND", "Der Ursprungsbeleg wurde nicht gefunden.");
+        }
+        const related = record.receipts.filter(receipt => receipt.reference === source.number);
+        if (draft.type === "cancellation") {
+          const existingCancellation = related.find(receipt => receipt.receiptType === "cancellation");
+          if (existingCancellation || source.status === "cancelled") {
+            return { changed: false, created: false, receipt: existingCancellation || null, sourceReceipt: source };
+          }
+        }
+        if (source.status === "credited" || source.status === "cancelled") {
+          throw new PersistenceError("RECEIPT_NOT_CORRECTABLE", "Für diesen Beleg ist keine weitere Korrektur möglich.");
+        }
+
+        const prefix = draft.type === "cancellation" ? "ST" : "GS";
+        const sourceYear = String(source.number).match(/^(\d{4})-/)?.[1] || String(new Date().getFullYear());
+        const numberPattern = new RegExp(`^${prefix}-${sourceYear}-(\\d{6})$`);
+        let sequence = record.receipts.reduce((highest, receipt) => {
+          const match = String(receipt.number || "").match(numberPattern);
+          return match ? Math.max(highest, Number(match[1])) : highest;
+        }, 100) + 1;
+        const usedNumbers = new Set(record.receipts.map(receipt => receipt.number));
+        let correctionNumber = `${prefix}-${sourceYear}-${String(sequence).padStart(6, "0")}`;
+        while (usedNumbers.has(correctionNumber)) {
+          sequence += 1;
+          correctionNumber = `${prefix}-${sourceYear}-${String(sequence).padStart(6, "0")}`;
+        }
+        const completedAt = stableIso(draft.completedAt, new Date().toISOString());
+        const amountCents = -Math.abs(centsFrom(draft.totalCents, draft.total));
+        const correction = normalizeReceiptEntry({
+          ...draft,
+          number: correctionNumber,
+          receiptNumber: correctionNumber,
+          receiptType: draft.type,
+          status: draft.type === "cancellation" ? "cancelled" : "credited",
+          reference: source.number,
+          references: { originalReceiptNumber: source.number, correctionNumbers: [] },
+          businessAreaId: source.businessAreaId,
+          businessAreaSnapshot: source.businessAreaSnapshot,
+          serviceLocationId: source.serviceLocationId,
+          serviceLocationSnapshot: source.serviceLocationSnapshot,
+          companySnapshot: source.companySnapshot,
+          brandingSnapshot: source.brandingSnapshot,
+          contextSnapshot: source.contextSnapshot,
+          customerId: source.customerId,
+          customerSnapshot: source.customerSnapshot,
+          customer: source.customerSnapshot,
+          paymentStatus: source.paymentStatus,
+          paymentMethod: source.paymentMethod,
+          payment: source.paymentMethod,
+          paymentRecordedAt: source.paymentRecordedAt,
+          paymentEvents: source.paymentEvents,
+          totalCents: amountCents,
+          total: amountCents / 100,
+          createdAt: completedAt,
+          completedAt,
+          updatedAt: completedAt
+        }, completedAt);
+        if (!correction) throw new PersistenceError("INVALID_DATA", "Der Korrekturbeleg konnte nicht erstellt werden.");
+
+        record.receipts.unshift(correction);
+        const sourceReferences = isPlainObject(source.references) ? source.references : {};
+        source.references = {
+          ...sourceReferences,
+          originalReceiptNumber: nullableStringId(sourceReferences.originalReceiptNumber),
+          correctionNumbers: uniqueStrings([...(sourceReferences.correctionNumbers || []), correction.number])
+        };
+        source.activities = Array.isArray(source.activities) ? source.activities : [];
+        source.activities.push({
+          label: draft.type === "cancellation"
+            ? `Storniert durch ${correction.number}`
+            : draft.isFull ? "Gesamtgutschrift erstellt" : `Teilgutschrift ${Math.abs(amountCents / 100).toFixed(2).replace(".", ",")} €`,
+          date: stringValue(draft.sourceActivityDate),
+          occurredAt: completedAt
+        });
+        source.activity = source.activities;
+        source.updatedAt = completedAt;
+        if (draft.type === "cancellation") {
+          source.status = "cancelled";
+        } else {
+          const creditedCents = record.receipts
+            .filter(receipt => receipt.reference === source.number && receipt.receiptType === "credit")
+            .reduce((sum, receipt) => sum + Math.abs(centsFrom(receipt.totalCents, receipt.total)), 0);
+          source.status = creditedCents >= Math.abs(centsFrom(source.totalCents, source.total)) ? "credited" : "partially-credited";
+        }
+        return { changed: true, created: true, receipt: correction, sourceReceipt: source };
+      }, "RECEIPT_CORRECTION_FAILED", "Die Korrektur konnte nicht lokal gespeichert werden.");
+    }
+
     function closeDatabase() {
       if (!databasePromise) return;
       databasePromise.then(database => database.close()).catch(() => {});
@@ -1433,6 +2274,13 @@
       readCustomers,
       writeCustomers,
       deleteCustomers,
+      readReceipts,
+      writeReceipts,
+      deleteReceipts,
+      commitReceipt,
+      recordReceiptPayment,
+      saveReceiptNote,
+      commitReceiptCorrection,
       closeDatabase,
       tenantId
     });
@@ -1448,6 +2296,8 @@
     normalizeCatalogRecord,
     snapshotCustomers,
     normalizeCustomersRecord,
+    snapshotReceipts,
+    normalizeReceiptsRecord,
     customerMatchesSearch,
     PersistenceError,
     constants

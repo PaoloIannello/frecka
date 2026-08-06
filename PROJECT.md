@@ -63,7 +63,7 @@ Neue Funktionen werden nur aufgenommen, wenn sie den einfachen Kernablauf für d
 - Web App Manifest;
 - statische Auslieferung.
 
-Seit PERSIST-001a speichert der Prototyp die vollständigen Einstellungen über eine zentrale, versionierte IndexedDB-Schicht. PERSIST-002 ergänzt den Katalog, PERSIST-003 die Kundenstammdaten in jeweils getrennten Stores. Belege, Gutscheine, Historien und Entwürfe bleiben bis zu ihren jeweiligen Persistenzblöcken ausschließlich im Arbeitsspeicher. Dieser Zwischenstand darf nicht mit der vollständigen Zielarchitektur verwechselt werden.
+Seit PERSIST-001a speichert der Prototyp die vollständigen Einstellungen über eine zentrale, versionierte IndexedDB-Schicht. PERSIST-002 ergänzt den Katalog, PERSIST-003 die Kundenstammdaten und PERSIST-004 normale Belege, offene Zahlungen, Stornos sowie Gutschriften in fachlich getrennten Stores. Gutscheine, Gutschein-Historien und Entwürfe bleiben bis zu ihren jeweiligen Persistenzblöcken ausschließlich im Arbeitsspeicher. Dieser Zwischenstand darf nicht mit der vollständigen Zielarchitektur verwechselt werden.
 
 ### Verbindliche Zielbasis
 
@@ -88,7 +88,7 @@ Ein Build-System, Framework, eine UI-Bibliothek oder zusätzliche Backend-Kompon
 
 ## 7. Datenhaltung
 
-IndexedDB ist die verbindliche Hauptdatenbank. Einstellungen werden seit PERSIST-001a, Katalogdaten seit PERSIST-002 und Kundenstammdaten seit PERSIST-003 darin gespeichert; Belegentwürfe, abgeschlossene Belege, Gutscheine und erforderliche Änderungsinformationen folgen in getrennten, ausdrücklich beauftragten Persistenzblöcken.
+IndexedDB ist die verbindliche Hauptdatenbank. Einstellungen werden seit PERSIST-001a, Katalogdaten seit PERSIST-002, Kundenstammdaten seit PERSIST-003 und abgeschlossene Belege einschließlich offener Zahlungen, Stornos, Gutschriften und Aktivitäten seit PERSIST-004 darin gespeichert. Belegentwürfe, Gutscheine und Gutschein-Historien folgen in getrennten, ausdrücklich beauftragten Persistenzblöcken.
 
 Verbindliche Regeln:
 

@@ -206,6 +206,51 @@
     return api.snapshotCustomers(customersRuntimeFixture(), tenantId);
   }
 
+  function receiptDraftFixture(id = "receipt-test-draft", overrides = {}) {
+    const completedAt = overrides.completedAt || "2030-01-05T12:00:00.000Z";
+    return {
+      id,
+      type: "receipt",
+      status: "completed",
+      date: "05.01.2030",
+      time: "13:00",
+      sortKey: completedAt,
+      businessAreaId: "hair",
+      businessAreaSnapshot: { id: "hair", label: "Friseur", visibleName: "Snapshot Studio" },
+      serviceLocationId: "location-company",
+      serviceLocationSnapshot: { id: "location-company", name: "Hauptstudio", street: "Testweg 10", zip: "12345", city: "Teststadt" },
+      companySnapshot: { name: "Teststudio Nord", street: "Testweg 10", zip: "12345", city: "Teststadt" },
+      brandingSnapshot: { logoMode: "none", visibleName: "Snapshot Studio", logo: null },
+      customerId: "customer-anna",
+      customerSnapshot: { id: "customer-anna", name: "Anna Muster", email: "anna@example.invalid", street: "Altstraße 1", zip: "93047", city: "Regensburg" },
+      items: [{ id: "service-cut", type: "service", title: "Testhaarschnitt", quantity: 1, unitPrice: 39, originalUnitPrice: 39, total: 39, originalTotal: 39, discountTotal: 0, taxRate: 19, netTotal: 32.77, taxAmount: 6.23 }],
+      total: 39,
+      originalTotal: 39,
+      discountTotal: 0,
+      netTotal: 32.77,
+      taxTotal: 6.23,
+      taxGroups: [{ rate: 19, net: 32.77, tax: 6.23, gross: 39 }],
+      paymentStatus: "paid",
+      paymentMethod: "Bar",
+      paymentRecordedAt: completedAt,
+      paymentEvents: [{ type: "payment_recorded", recordedAt: completedAt, paymentMethod: "Bar", amount: 39 }],
+      activity: [{ label: "Beleg erstellt", date: "05.01.2030 · 13:00", occurredAt: completedAt }],
+      receiptTextSnapshot: { footerText: "Snapshot-Fußtext", thankYouText: "Snapshot-Danke" },
+      createdAt: completedAt,
+      completedAt,
+      updatedAt: completedAt,
+      ...overrides
+    };
+  }
+
+  function receiptsRuntimeFixture() {
+    return { receipts: [{ ...receiptDraftFixture("receipt-existing"), number: "2030-000076" }] };
+  }
+
+  function receiptsRecordFixture(tenantId) {
+    return api.snapshotReceipts(receiptsRuntimeFixture(), tenantId);
+  }
+
   function resultMarkup(name, passed, error = null) {
     const item = document.createElement("li");
     item.className = `result ${passed ? "is-pass" : "is-fail"}`;
@@ -297,10 +342,37 @@
     });
   }
 
+  function createLegacyV3Database(databaseName, settingsRecord, catalogRecord, customersRecord) {
+    return new Promise((resolve, reject) => {
+      const request = globalThis.indexedDB.open(databaseName, 3);
+      request.onupgradeneeded = () => {
+        [api.constants.storeName, api.constants.catalogStoreName, api.constants.customersStoreName].forEach(storeName => {
+          if (!request.result.objectStoreNames.contains(storeName)) request.result.createObjectStore(storeName, { keyPath: "tenantId" });
+        });
+      };
+      request.onerror = () => reject(request.error || new Error("Legacy-v3-Testdatenbank konnte nicht geöffnet werden."));
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction([api.constants.storeName, api.constants.catalogStoreName, api.constants.customersStoreName], "readwrite");
+        transaction.objectStore(api.constants.storeName).put(settingsRecord);
+        transaction.objectStore(api.constants.catalogStoreName).put(catalogRecord);
+        transaction.objectStore(api.constants.customersStoreName).put(customersRecord);
+        transaction.oncomplete = () => {
+          database.close();
+          resolve();
+        };
+        transaction.onabort = () => {
+          database.close();
+          reject(transaction.error || new Error("Legacy-v3-Daten konnten nicht geschrieben werden."));
+        };
+      };
+    });
+  }
+
   function buildTests(context) {
     return [
       {
-        name: "Erststart liefert null und initialisiert Settings-, Katalog- und Kundenschema",
+        name: "Erststart liefert null und initialisiert Settings-, Katalog-, Kunden- und Belegschema",
         run: async () => {
           const persistence = context.makeClient("first-start");
           const database = await persistence.openDatabase();
@@ -309,9 +381,11 @@
           assert(database.objectStoreNames.contains(api.constants.storeName), "Settings-Store fehlt");
           assert(database.objectStoreNames.contains(api.constants.catalogStoreName), "Katalog-Store fehlt");
           assert(database.objectStoreNames.contains(api.constants.customersStoreName), "Kunden-Store fehlt");
+          assert(database.objectStoreNames.contains(api.constants.receiptsStoreName), "Receipt-Store fehlt");
           assertEqual(await persistence.readSettings(), null, "Leerer Tenant muss null liefern");
           assertEqual(await persistence.readCatalog(), null, "Leerer Katalog-Tenant muss null liefern");
           assertEqual(await persistence.readCustomers(), null, "Leerer Kunden-Tenant muss null liefern");
+          assertEqual(await persistence.readReceipts(), null, "Leerer Beleg-Tenant muss null liefern");
         }
       },
       {
@@ -722,6 +796,208 @@
         }
       },
       {
+        name: "Belegformat speichert Centwerte, Snapshots und Aktivitäten ohne vollständige Gutscheine",
+        run: async () => {
+          const persistence = context.makeClient("receipts-roundtrip");
+          const requested = receiptsRecordFixture(persistence.tenantId);
+          requested.receipts[0].voucherReference = "vch-reference-only";
+          requested.receipts[0].voucher = { code: "FORBIDDEN", history: [{ amount: 39 }] };
+          requested.receipts[0].emailStatus = "FORBIDDEN";
+          await persistence.writeReceipts(requested);
+          const stored = await persistence.readReceipts();
+          const receipt = stored.receipts[0];
+          assertEqual(receipt.receiptNumber, "2030-000076", "Belegnummer fehlt");
+          assertEqual(receipt.totalCents, 3900, "Gesamtbetrag wurde nicht als Centwert gespeichert");
+          assertEqual(receipt.positions[0].unitPriceCents, 3900, "Positionspreis wurde nicht als Centwert gespeichert");
+          assertEqual(receipt.businessAreaSnapshot.label, "Friseur", "Geschäftsbereichssnapshot fehlt");
+          assertEqual(receipt.serviceLocationSnapshot.name, "Hauptstudio", "Leistungsortsnapshot fehlt");
+          assertEqual(receipt.companySnapshot.name, "Teststudio Nord", "Unternehmenssnapshot fehlt");
+          assertEqual(receipt.customerSnapshot.name, "Anna Muster", "Kundensnapshot fehlt");
+          assertEqual(receipt.voucherReference, "vch-reference-only", "Erlaubte Gutscheinreferenz ging verloren");
+          assert(!hasOwn(receipt, "voucher") && !hasOwn(receipt, "emailStatus"), "Ausgeschlossene Gutschein- oder Versanddaten wurden gespeichert");
+          assert(!Number.isNaN(Date.parse(receipt.completedAt)), "completedAt ist kein stabiler ISO-Zeitstempel");
+        }
+      },
+      {
+        name: "Belegabschluss vergibt Nummer und Settings-Nummernstand atomar und idempotent",
+        run: async () => {
+          const persistence = context.makeClient("receipt-commit");
+          const settings = recordFixture(persistence.tenantId, "completed");
+          const seed = receiptsRecordFixture(persistence.tenantId);
+          await persistence.writeSettings(settings);
+          await persistence.writeReceipts(seed);
+          const first = await persistence.commitReceipt(receiptDraftFixture("receipt-new-a"), settings, seed);
+          assertEqual(first.receipt.number, "2030-000077", "Falsche nächste Belegnummer vergeben");
+          assertEqual(first.settingsRecord.receiptSettings.nextNumber, 78, "Nummernstand wurde nicht fortgeschrieben");
+          const repeated = await persistence.commitReceipt(receiptDraftFixture("receipt-new-a"), settings, seed);
+          assertEqual(repeated.created, false, "Wiederholter Abschluss wurde nicht als idempotent erkannt");
+          assertEqual(repeated.receipt.number, "2030-000077", "Wiederholter Abschluss erhielt eine neue Nummer");
+          const second = await persistence.commitReceipt(receiptDraftFixture("receipt-new-b", { completedAt: "2030-01-05T12:05:00.000Z" }), settings, seed);
+          assertEqual(second.receipt.number, "2030-000078", "Zweite eindeutige Nummer wurde nicht vergeben");
+          const numbers = (await persistence.readReceipts()).receipts.map(receipt => receipt.number);
+          assertEqual(new Set(numbers).size, numbers.length, "Doppelte Belegnummer gespeichert");
+          assertEqual((await persistence.readSettings()).receiptSettings.nextNumber, 79, "Persistierter Nummernstand ist inkonsistent");
+        }
+      },
+      {
+        name: "Belegsnapshot bleibt nach Änderungen an Kunde, Settings und Katalog unverändert",
+        run: async () => {
+          const persistence = context.makeClient("receipt-snapshot");
+          const settings = recordFixture(persistence.tenantId, "completed");
+          const seed = receiptsRecordFixture(persistence.tenantId);
+          await persistence.writeSettings(settings);
+          const committed = await persistence.commitReceipt(receiptDraftFixture("receipt-snapshot-fixed"), settings, seed);
+          const customer = customersRecordFixture(persistence.tenantId);
+          customer.customers[0].lastName = "Nachträglich geändert";
+          await persistence.writeCustomers(customer);
+          const changedSettings = clone(settings);
+          changedSettings.company.name = "Neuer Unternehmensname";
+          await persistence.writeSettings(changedSettings);
+          const catalog = catalogRecordFixture(persistence.tenantId);
+          catalog.items[0].name = "Neuer Leistungsname";
+          await persistence.writeCatalog(catalog);
+          const stored = (await persistence.readReceipts()).receipts.find(receipt => receipt.id === committed.receipt.id);
+          assertEqual(stored.companySnapshot.name, "Teststudio Nord", "Unternehmenssnapshot änderte sich rückwirkend");
+          assertEqual(stored.customerSnapshot.name, "Anna Muster", "Kundensnapshot änderte sich rückwirkend");
+          assertEqual(stored.positions[0].name, "Testhaarschnitt", "Positionssnapshot änderte sich rückwirkend");
+        }
+      },
+      {
+        name: "Offene Zahlung wird gespeichert und später mit Aktivität vollständig erfasst",
+        run: async () => {
+          const persistence = context.makeClient("receipt-open-payment");
+          const settings = recordFixture(persistence.tenantId, "completed");
+          const seed = receiptsRecordFixture(persistence.tenantId);
+          const draft = receiptDraftFixture("receipt-open", { paymentStatus: "open", paymentMethod: null, paymentRecordedAt: null, paymentEvents: [], activity: [{ label: "Zahlung offen gelassen", date: "05.01.2030 · 13:00", occurredAt: "2030-01-05T12:00:00.000Z" }] });
+          const committed = await persistence.commitReceipt(draft, settings, seed);
+          assertEqual(committed.receipt.paymentStatus, "open", "Offener Zahlungsstatus ging verloren");
+          assertEqual(committed.receipt.paymentMethod, null, "Offener Beleg erhielt eine Zahlungsart");
+          const payment = await persistence.recordReceiptPayment(committed.receipt.number, {
+            recordedAt: "2030-01-06T09:00:00.000Z", date: "06.01.2030", time: "10:00",
+            displayDate: "06.01.2030 · 10:00", paymentMethod: "EC", amountCents: 3900, detail: "EC · 39,00 €"
+          }, committed.receiptsRecord);
+          assertEqual(payment.recorded, true, "Zahlung wurde nicht erfasst");
+          assertEqual(payment.receipt.paymentStatus, "paid", "Zahlungsstatus wurde nicht auf bezahlt gesetzt");
+          assertEqual(payment.receipt.paymentEvents.at(-1).amountCents, 3900, "Zahlungsbetrag fehlt");
+          assertEqual(payment.receipt.activities.at(-1).label, "Zahlung erfasst", "Zahlungsaktivität fehlt");
+          const repeated = await persistence.recordReceiptPayment(committed.receipt.number, { paymentMethod: "Bar", amountCents: 3900 }, payment.record);
+          assertEqual(repeated.recorded, false, "Bereits erfasste Zahlung wurde ein zweites Mal angelegt");
+        }
+      },
+      {
+        name: "Storno ist atomar verknüpft und Mehrfachaufruf erzeugt kein Duplikat",
+        run: async () => {
+          const persistence = context.makeClient("receipt-cancellation");
+          const settings = recordFixture(persistence.tenantId, "completed");
+          const seed = receiptsRecordFixture(persistence.tenantId);
+          const original = await persistence.commitReceipt(receiptDraftFixture("receipt-cancel-source"), settings, seed);
+          const draft = {
+            id: "cancellation-stable", type: "cancellation", total: -39,
+            items: original.receipt.items.map(item => ({ ...item, unitPrice: -39, total: -39 })),
+            completedAt: "2030-01-06T10:00:00.000Z", date: "06.01.2030", time: "11:00",
+            sourceActivityDate: "06.01.2030 · 11:00",
+            activity: [{ label: "Stornobeleg erstellt", date: "06.01.2030 · 11:00", occurredAt: "2030-01-06T10:00:00.000Z" }]
+          };
+          const cancelled = await persistence.commitReceiptCorrection(original.receipt.number, draft, original.receiptsRecord);
+          assert(cancelled.receipt.number.startsWith("ST-2030-"), "Stornonummer besitzt das falsche Format");
+          assertEqual(cancelled.sourceReceipt.status, "cancelled", "Ursprungsstatus wurde nicht konsistent fortgeschrieben");
+          assert(cancelled.sourceReceipt.references.correctionNumbers.includes(cancelled.receipt.number), "Stornoreferenz fehlt am Ursprung");
+          assertEqual(cancelled.receipt.reference, original.receipt.number, "Rückreferenz zum Ursprung fehlt");
+          const repeated = await persistence.commitReceiptCorrection(original.receipt.number, { ...draft, id: "cancellation-second-click" }, cancelled.record);
+          assertEqual(repeated.created, false, "Mehrfachklick erzeugte einen zweiten Storno");
+          assertEqual(repeated.record.receipts.filter(receipt => receipt.type === "cancellation" && receipt.reference === original.receipt.number).length, 1, "Doppelter Stornodatensatz vorhanden");
+        }
+      },
+      {
+        name: "Teil- und Gesamtgutschrift bleiben referenziert und aktualisieren nur den Lebenszyklus",
+        run: async () => {
+          const persistence = context.makeClient("receipt-credits");
+          const settings = recordFixture(persistence.tenantId, "completed");
+          const seed = receiptsRecordFixture(persistence.tenantId);
+          const original = await persistence.commitReceipt(receiptDraftFixture("receipt-credit-source"), settings, seed);
+          const partial = await persistence.commitReceiptCorrection(original.receipt.number, {
+            id: "credit-partial", type: "credit", total: -10, items: [{ title: "Kulanz", quantity: 1, unitPrice: -10, total: -10 }],
+            completedAt: "2030-01-06T10:00:00.000Z", sourceActivityDate: "06.01.2030 · 11:00", isFull: false
+          }, original.receiptsRecord);
+          assert(partial.receipt.number.startsWith("GS-2030-"), "Gutschriftsnummer besitzt das falsche Format");
+          assertEqual(partial.sourceReceipt.status, "partially-credited", "Teilgutschrift setzte falschen Ursprungsstatus");
+          const full = await persistence.commitReceiptCorrection(original.receipt.number, {
+            id: "credit-rest", type: "credit", total: -29, items: [{ title: "Restgutschrift", quantity: 1, unitPrice: -29, total: -29 }],
+            completedAt: "2030-01-06T10:05:00.000Z", sourceActivityDate: "06.01.2030 · 11:05", isFull: true
+          }, partial.record);
+          assertEqual(full.sourceReceipt.status, "credited", "Vollständige Gutschrift setzte falschen Ursprungsstatus");
+          assertEqual(full.sourceReceipt.positions[0].name, "Testhaarschnitt", "Unveränderlicher Positionssnapshot des Ursprungs wurde manipuliert");
+          assertEqual(full.sourceReceipt.references.correctionNumbers.length, 2, "Gutschriften sind nicht vollständig referenziert");
+        }
+      },
+      {
+        name: "Schreibfehler beim Abschluss verbraucht keine Nummer und Queue erholt sich",
+        run: async () => {
+          const persistence = context.makeClient("receipt-write-failure");
+          const settings = recordFixture(persistence.tenantId, "completed");
+          const seed = receiptsRecordFixture(persistence.tenantId);
+          await persistence.writeSettings(settings);
+          await persistence.writeReceipts(seed);
+          const closedDatabase = await persistence.openDatabase();
+          closedDatabase.close();
+          await assertRejects(
+            () => persistence.commitReceipt(receiptDraftFixture("receipt-failed"), settings, seed),
+            "RECEIPT_COMMIT_FAILED",
+            "Belegabschluss auf geschlossener Verbindung"
+          );
+          persistence.closeDatabase();
+          assertEqual((await persistence.readSettings()).receiptSettings.nextNumber, 77, "Nummer wurde trotz fehlgeschlagener Transaktion verbraucht");
+          const recovered = await persistence.commitReceipt(receiptDraftFixture("receipt-recovered"), settings, seed);
+          assertEqual(recovered.receipt.number, "2030-000077", "Wiederholung verwendete nicht dieselbe sichere nächste Nummer");
+        }
+      },
+      {
+        name: "Receipt-Reset ist mandanten- und storeisoliert",
+        run: async () => {
+          const first = context.makeClient("receipts-reset-a");
+          const second = context.makeClient("receipts-reset-b");
+          await first.writeSettings(recordFixture(first.tenantId, "completed"));
+          await first.writeCatalog(catalogRecordFixture(first.tenantId));
+          await first.writeCustomers(customersRecordFixture(first.tenantId));
+          await first.writeReceipts(receiptsRecordFixture(first.tenantId));
+          await second.writeReceipts(receiptsRecordFixture(second.tenantId));
+          await first.deleteReceipts();
+          assertEqual(await first.readReceipts(), null, "Receipt-Store des ersten Tenants wurde nicht gelöscht");
+          assertEqual((await first.readSettings()).receiptSettings.nextNumber, 77, "Nummernstand wurde beim Receipt-Reset verändert");
+          assertEqual((await first.readCatalog()).items.length, 2, "Katalog wurde beim Receipt-Reset verändert");
+          assertEqual((await first.readCustomers()).customers.length, 2, "Kunden wurden beim Receipt-Reset verändert");
+          assertEqual((await second.readReceipts()).receipts.length, 1, "Belege eines anderen Tenants wurden gelöscht");
+        }
+      },
+      {
+        name: "Schema-Upgrade von Version 3 erhält Settings, Katalog und Kunden und ergänzt den Receipt-Store",
+        run: async () => {
+          const legacyDatabaseName = `${context.databaseName}-legacy-v3`;
+          const tenantId = "legacy-v3-tenant";
+          let migratedClient = null;
+          try {
+            await createLegacyV3Database(
+              legacyDatabaseName,
+              recordFixture(tenantId, "completed"),
+              catalogRecordFixture(tenantId),
+              customersRecordFixture(tenantId)
+            );
+            migratedClient = api.createSettingsPersistence({ databaseName: legacyDatabaseName, tenantId });
+            const database = await migratedClient.openDatabase();
+            assertEqual(database.version, 4, "Datenbank wurde nicht auf Schema-Version 4 aktualisiert");
+            assert(database.objectStoreNames.contains(api.constants.receiptsStoreName), "Receipt-Store wurde beim Upgrade nicht ergänzt");
+            assertEqual((await migratedClient.readSettings()).company.name, "Teststudio Nord", "Settings gingen beim Upgrade verloren");
+            assertEqual((await migratedClient.readCatalog()).items.length, 2, "Katalog ging beim Upgrade verloren");
+            assertEqual((await migratedClient.readCustomers()).customers.length, 2, "Kunden gingen beim Upgrade verloren");
+            assertEqual(await migratedClient.readReceipts(), null, "Upgrade hat ungefragt Belege importiert");
+          } finally {
+            migratedClient?.closeDatabase();
+            await new Promise(resolve => setTimeout(resolve, 0));
+            await deleteTestDatabase(legacyDatabaseName);
+          }
+        }
+      },
+      {
         name: "Schema-Upgrade von Version 2 erhält Settings und Katalog und ergänzt den Kundenstore",
         run: async () => {
           const legacyDatabaseName = `${context.databaseName}-legacy-v2`;
@@ -733,11 +1009,13 @@
             await createLegacyV2Database(legacyDatabaseName, settings, catalog);
             migratedClient = api.createSettingsPersistence({ databaseName: legacyDatabaseName, tenantId });
             const database = await migratedClient.openDatabase();
-            assertEqual(database.version, 3, "Datenbank wurde nicht auf Schema-Version 3 aktualisiert");
+            assertEqual(database.version, 4, "Datenbank wurde nicht auf Schema-Version 4 aktualisiert");
             assert(database.objectStoreNames.contains(api.constants.customersStoreName), "Kundenstore wurde beim Upgrade nicht ergänzt");
+            assert(database.objectStoreNames.contains(api.constants.receiptsStoreName), "Receipt-Store wurde beim Upgrade nicht ergänzt");
             assertEqual((await migratedClient.readSettings())?.company?.name, "Teststudio Nord", "Vorhandene Settings gingen beim Upgrade verloren");
             assertEqual((await migratedClient.readCatalog())?.items?.length, 2, "Vorhandener Katalog ging beim Upgrade verloren");
             assertEqual(await migratedClient.readCustomers(), null, "Upgrade hat ungefragt Kundendaten importiert");
+            assertEqual(await migratedClient.readReceipts(), null, "Upgrade hat ungefragt Belege importiert");
           } finally {
             migratedClient?.closeDatabase();
             await new Promise(resolve => setTimeout(resolve, 0));
@@ -757,12 +1035,14 @@
             await createLegacySettingsDatabase(legacyDatabaseName, legacyRecord);
             migratedClient = api.createSettingsPersistence({ databaseName: legacyDatabaseName, tenantId });
             const database = await migratedClient.openDatabase();
-            assertEqual(database.version, 3, "Datenbank wurde nicht auf Schema-Version 3 aktualisiert");
+            assertEqual(database.version, 4, "Datenbank wurde nicht auf Schema-Version 4 aktualisiert");
             assert(database.objectStoreNames.contains(api.constants.catalogStoreName), "Katalogstore wurde beim Upgrade nicht ergänzt");
             assert(database.objectStoreNames.contains(api.constants.customersStoreName), "Kundenstore wurde beim Upgrade nicht ergänzt");
+            assert(database.objectStoreNames.contains(api.constants.receiptsStoreName), "Receipt-Store wurde beim Upgrade nicht ergänzt");
             assertEqual((await migratedClient.readSettings())?.company?.name, "Legacy bleibt erhalten", "Vorhandene Settings gingen beim Upgrade verloren");
             assertEqual(await migratedClient.readCatalog(), null, "Upgrade hat ungefragt einen Katalogdatensatz importiert");
             assertEqual(await migratedClient.readCustomers(), null, "Upgrade hat ungefragt Kundendaten importiert");
+            assertEqual(await migratedClient.readReceipts(), null, "Upgrade hat ungefragt Belege importiert");
           } finally {
             migratedClient?.closeDatabase();
             await new Promise(resolve => setTimeout(resolve, 0));

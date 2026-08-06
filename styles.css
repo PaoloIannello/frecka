@@ -2294,13 +2294,14 @@ body.work-mode:not(.catalog-mode) .flow-page {
   line-height: 1.4;
 }
 .catalog-create-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  width: min(100%, 260px);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 7px;
 }
 .catalog-create-actions .button,
 .catalog-manager-toolbar > .button {
+  width: 100%;
   min-height: 44px;
   padding: 9px 12px;
   white-space: nowrap;
@@ -4279,6 +4280,41 @@ button.settings-entry:active {
 }
 @keyframes persistence-spin { to { transform: rotate(360deg); } }
 
+.development-tools {
+  margin-top: 18px;
+  border: 1px dashed #d8aaa5;
+  border-radius: 18px;
+  background: #fffdfd;
+  overflow: hidden;
+}
+.development-tools > summary {
+  min-height: 52px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  color: var(--danger);
+  font-size: .82rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+.development-tools > summary::marker { color: var(--danger); }
+.development-tools[open] { padding-bottom: 14px; }
+.development-tools-warning {
+  margin: 0 14px 4px;
+  padding: 12px;
+  border-radius: 14px;
+  background: #fff1ef;
+  display: grid;
+  gap: 3px;
+}
+.development-tools-warning strong { font-size: .78rem; }
+.development-tools-warning span {
+  color: var(--muted);
+  font-size: .7rem;
+  line-height: 1.4;
+}
+.development-tools .settings-reset-card { margin-inline: 14px; }
+
 .settings-reset-card {
   margin-top: 14px;
   padding: 16px;
@@ -4304,6 +4340,11 @@ button.settings-entry:active {
 .settings-reset-card .button {
   width: 100%;
   margin-top: 4px;
+}
+
+@media (max-width: 520px) {
+  .catalog-manager-toolbar { align-items: stretch; flex-direction: column; }
+  .catalog-create-actions { width: 100%; grid-template-columns: 1fr; }
 }
 .button:disabled,
 button:disabled {

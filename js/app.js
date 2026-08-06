@@ -7,6 +7,7 @@
     : null;
   let defaultCatalogRecord = null;
   let defaultCustomersRecord = null;
+  let defaultReceiptsRecord = null;
   const state = {
     route: "home",
     activeBusinessArea: null,
@@ -84,6 +85,7 @@
     setupTestPreviewVisible: false,
     pendingBusinessTemplate: "",
     settingsReady: false,
+    receiptsReadyForWrites: false,
     settingsStorageNotice: "",
     settingsStorageNoticeIsError: false
   };
@@ -210,6 +212,10 @@
     replaceSettingsArray(data.customers, customers);
   }
 
+  function applyReceiptsRecord(record) {
+    replaceSettingsArray(data.receipts, Array.isArray(record?.receipts) ? record.receipts : []);
+  }
+
   function calculateReceiptCounter() {
     const prefix = String(data.receiptSettings?.yearPrefix || new Date().getFullYear());
     return [...data.receipts, ...data.vouchers.map(voucher => ({ number: voucher.saleReceipt?.number }))].reduce((highest, receipt) => {
@@ -236,7 +242,7 @@
       "[data-payment-toggle]", "[data-payment-move]", "[data-setup-back]", "[data-setup-cancel]",
       "[data-action='business-area-add']", "[data-template-choice]", "[data-action='template-use']",
       "[data-action='template-empty']", "[data-action='settings-reset']", "[data-action='catalog-reset']",
-      "[data-action='customers-reset']", ".customer-form button", ".customer-form input", ".customer-form textarea",
+      "[data-action='customers-reset']", "[data-action='receipts-reset']", ".customer-form button", ".customer-form input", ".customer-form textarea",
       "[data-catalog-toggle-item]", "[data-catalog-toggle-category]", "[data-catalog-move-item]",
       "[data-catalog-move-category]", "[data-route]",
       "#businessSwitcher", "#bottomSheetClose", "#cancelDiscard", "#confirmDiscard"
@@ -379,7 +385,7 @@
     mainContent.setAttribute("aria-busy", "true");
     bottomNav.setAttribute("aria-busy", "true");
     bottomNav.querySelectorAll("button").forEach(button => { button.disabled = true; });
-    mainContent.innerHTML = `<section class="persistence-loading" role="status" aria-live="polite" aria-busy="true"><span class="persistence-loading-spinner" aria-hidden="true"></span><div><strong>FRECKA wird vorbereitet</strong><p>Lokale Einstellungen, Katalog- und Kundendaten werden geladen …</p></div></section>`;
+    mainContent.innerHTML = `<section class="persistence-loading" role="status" aria-live="polite" aria-busy="true"><span class="persistence-loading-spinner" aria-hidden="true"></span><div><strong>FRECKA wird vorbereitet</strong><p>Lokale Einstellungen, Katalog-, Kunden- und Belegdaten werden geladen …</p></div></section>`;
   }
 
   async function loadSettingsForStart() {
@@ -421,6 +427,20 @@
     if (savedRecord === null) return { firstStart: true, repairs: [] };
     const normalized = persistence.normalizeCustomersRecord(savedRecord, defaultCustomersRecord, persistence.tenantId);
     applyCustomersRecord(normalized.record);
+    return { firstStart: false, repairs: normalized.repairs };
+  }
+
+  async function loadReceiptsForStart() {
+    if (!persistence?.readReceipts || !persistence?.normalizeReceiptsRecord || !defaultReceiptsRecord) {
+      const error = new Error("Die Belegpersistenz wurde nicht geladen.");
+      error.code = "PERSISTENCE_UNAVAILABLE";
+      error.userMessage = "Die lokalen Belege konnten nicht geladen werden. FRECKA zeigt sichere Demodaten; neue Nummern werden bis zur Klärung nicht vergeben.";
+      throw error;
+    }
+    const savedRecord = await persistence.readReceipts();
+    if (savedRecord === null) return { firstStart: true, repairs: [] };
+    const normalized = persistence.normalizeReceiptsRecord(savedRecord, defaultReceiptsRecord, persistence.tenantId);
+    applyReceiptsRecord(normalized.record);
     return { firstStart: false, repairs: normalized.repairs };
   }
 
@@ -825,19 +845,13 @@
     };
   }
 
-  function nextReceiptNumber() {
-    let number;
-    const prefix = String(data.receiptSettings.yearPrefix || new Date().getFullYear()).trim();
-    do {
-      state.receiptCounter += 1;
-      number = `${prefix}-${String(state.receiptCounter).padStart(6, "0")}`;
-    } while (receiptNumberExists(number));
-    data.receiptSettings.nextNumber = state.receiptCounter + 1;
-    return number;
-  }
-
-  function finishReceipt(leavePaymentOpen = false) {
+  async function finishReceipt(leavePaymentOpen = false) {
     if (state.checkoutSubmitting) return;
+    if (!state.receiptsReadyForWrites) {
+      state.checkoutVoucherError = "Der lokale Belegspeicher ist noch nicht sicher verfügbar. Es wurde kein Beleg abgeschlossen und keine Nummer vergeben.";
+      renderCheckout();
+      return;
+    }
     const customer = selectedCustomer();
     if (!leavePaymentOpen && !activePaymentChoices().some(choice => choice.id === state.paymentChoice)) {
       state.paymentChoice = preferredNormalPaymentId() || activePaymentChoices()[0]?.id || "cash";
@@ -889,6 +903,8 @@
       }
 
       return {
+        catalogItemId: item.id || null,
+        type: ["service", "product"].includes(item.type) ? item.type : "service",
         title: item.title,
         quantity,
         originalUnitPrice,
@@ -924,7 +940,6 @@
     }));
 
     const now = new Date();
-    const receiptNumber = nextReceiptNumber();
     const receiptDate = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }).format(now);
     const receiptTime = new Intl.DateTimeFormat("de-DE", { timeStyle: "short" }).format(now);
     const remainderPayment = voucherAmounts?.remainder > 0
@@ -946,7 +961,7 @@
     const contextSnapshot = buildContextSnapshot(state.activeBusinessArea);
     const receipt = {
       id: `receipt_${crypto.randomUUID?.() || Date.now()}`,
-      number: receiptNumber,
+      number: "",
       type: "receipt",
       status: "completed",
       date: receiptDate,
@@ -973,7 +988,9 @@
       customer: customerSnapshot,
       contextSnapshot,
       customerEmail: customer?.email || "",
-      createdAt: new Intl.DateTimeFormat("de-DE", { dateStyle: "short", timeStyle: "short" }).format(new Date()),
+      createdAt: now.toISOString(),
+      completedAt: now.toISOString(),
+      updatedAt: now.toISOString(),
       items,
       voucherPayment: voucher ? {
         reference: voucher.reference,
@@ -996,13 +1013,20 @@
         thankYouText: data.receiptSettings.thankYouText ?? "Vielen Dank für Ihren Besuch."
       }
     };
-    const previousVoucher = voucher ? {
-      currentValue: voucher.currentValue,
-      status: voucher.status,
-      historyLength: Array.isArray(voucher.history) ? voucher.history.length : 0
-    } : null;
-    let receiptInserted = false;
     try {
+      if (!persistence?.snapshotSettings || !persistence?.snapshotReceipts || !persistence?.commitReceipt) {
+        const unavailableError = new Error("Die Belegpersistenz ist nicht verfügbar.");
+        unavailableError.code = "PERSISTENCE_UNAVAILABLE";
+        unavailableError.userMessage = "Der Beleg konnte nicht sicher lokal gespeichert werden.";
+        throw unavailableError;
+      }
+      const settingsSnapshot = persistence.snapshotSettings(data, state.setup.status, persistence.tenantId);
+      const seedReceiptsRecord = persistence.snapshotReceipts(data, persistence.tenantId);
+      const committed = await persistence.commitReceipt(receipt, settingsSnapshot, seedReceiptsRecord);
+      applyReceiptsRecord(committed.receiptsRecord);
+      data.receiptSettings.nextNumber = committed.settingsRecord.receiptSettings.nextNumber;
+      state.receiptCounter = Math.max(0, data.receiptSettings.nextNumber - 1);
+      const storedReceipt = data.receipts.find(entry => entry.id === committed.receipt.id) || committed.receipt;
       if (voucher) {
         voucher.currentValue = voucherAmounts.balanceAfter;
         voucher.status = voucherAmounts.balanceAfter <= 0 ? "redeemed" : "partially_redeemed";
@@ -1013,24 +1037,14 @@
           time: receiptTime,
           amount: voucherAmounts.voucherAmount,
           balanceAfter: voucherAmounts.balanceAfter,
-          receiptNumber
+          receiptNumber: storedReceipt.number
         });
       }
-      data.receipts.unshift(receipt);
-      receiptInserted = true;
-      state.finishedReceipt = receipt;
+      state.finishedReceipt = storedReceipt;
     } catch (error) {
-      if (receiptInserted) {
-        const receiptIndex = data.receipts.indexOf(receipt);
-        if (receiptIndex >= 0) data.receipts.splice(receiptIndex, 1);
-      }
-      if (voucher && previousVoucher) {
-        voucher.currentValue = previousVoucher.currentValue;
-        voucher.status = previousVoucher.status;
-        voucher.history.splice(previousVoucher.historyLength);
-      }
+      logPersistenceError("Belegabschluss fehlgeschlagen", error);
       state.checkoutSubmitting = false;
-      state.checkoutVoucherError = "Beleg und Gutscheineinlösung konnten nicht gemeinsam abgeschlossen werden.";
+      state.checkoutVoucherError = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error, "Der Beleg konnte nicht sicher abgeschlossen werden.")} Warenkorb und Nummernstand blieben unverändert.`;
       renderCheckout();
       return;
     }
@@ -1039,6 +1053,7 @@
     state.successNotice = "";
     state.qrVisible = false;
     state.openReceiptVisible = false;
+    state.cart = [];
     navigate("receipt-success");
   }
 
@@ -1060,7 +1075,7 @@
         <div class="success-mark" aria-hidden="true">✓</div>
         <p class="eyebrow">Beleg abgeschlossen</p>
         <h1>Beleg erfolgreich erstellt</h1>
-        <p>Der Abschluss ist im Prototyp nur simuliert.</p>
+        <p>Der Beleg wurde sicher lokal auf diesem Gerät gespeichert.</p>
       </div>
 
       <section class="receipt-success-summary">
@@ -1234,7 +1249,7 @@
         <div><strong>Zahlung offen lassen</strong><small>Nur verwenden, wenn der Kunde später bezahlt.</small></div>
         ${state.checkoutOpenPaymentConfirm ? `<div class="checkout-open-confirm"><p>Beleg abschließen und Zahlung als offen markieren?</p><button class="button button-secondary" type="button" data-action="open-payment-cancel">Zurück</button><button class="button button-primary" type="button" data-action="open-payment-confirm">Als offen abschließen</button></div>` : `<button class="button button-secondary" type="button" data-action="open-payment-request">Zahlung offen lassen</button>`}
       </section>
-      <p class="prototype-note">Keine echte Zahlung, Speicherung, QR-, Steuer- oder Fiskalisierungsfunktion.</p>
+      <p class="prototype-note">Zahlungsanbieter, QR-Scan, Steuerautomatik und Fiskalisierung sind nicht verbunden. Der abgeschlossene Beleg wird lokal gespeichert.</p>
       <div class="checkout-action"><button class="button button-primary" type="button" data-action="finish-demo" ${state.checkoutSubmitting ? "disabled" : ""}>${state.checkoutSubmitting ? "Wird abgeschlossen …" : "Demo abschließen"}</button></div>
     </section>`;
 
@@ -1748,43 +1763,76 @@
     </section>`;
   }
 
-  function createCredit(receipt, amount, text, isFull) {
-    const number = `GS-2026-${String(data.receipts.filter(item => item.type === "credit").length + 101).padStart(6, "0")}`;
+  async function createCredit(receipt, amount, text, isFull) {
+    if (!receipt || pendingSettingsWrites) return false;
+    const now = new Date();
+    const receiptDate = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }).format(now);
+    const receiptTime = new Intl.DateTimeFormat("de-DE", { timeStyle: "short" }).format(now);
     const items = isFull
-      ? receipt.items.map(item => ({ ...item, total: -Math.abs(item.total), unitPrice: -Math.abs(item.unitPrice) }))
-      : [{ title: text || "Korrektur / Kulanz", quantity: 1, unitPrice: -Math.abs(amount), total: -Math.abs(amount) }];
+      ? receipt.items.map(item => ({
+        ...item,
+        unitPriceCents: -Math.abs(Number(item.unitPriceCents ?? Math.round(Number(item.unitPrice || 0) * 100))),
+        originalUnitPriceCents: -Math.abs(Number(item.originalUnitPriceCents ?? Math.round(Number(item.originalUnitPrice || item.unitPrice || 0) * 100))),
+        totalCents: -Math.abs(Number(item.totalCents ?? Math.round(Number(item.total || 0) * 100))),
+        originalTotalCents: -Math.abs(Number(item.originalTotalCents ?? Math.round(Number(item.originalTotal || item.total || 0) * 100))),
+        netCents: -Math.abs(Number(item.netCents ?? Math.round(Number(item.netTotal || 0) * 100))),
+        taxCents: -Math.abs(Number(item.taxCents ?? Math.round(Number(item.taxAmount || 0) * 100))),
+        grossCents: -Math.abs(Number(item.grossCents ?? Math.round(Number(item.total || 0) * 100))),
+        total: -Math.abs(Number(item.total || 0)),
+        unitPrice: -Math.abs(Number(item.unitPrice || 0)),
+        originalTotal: -Math.abs(Number(item.originalTotal || item.total || 0)),
+        originalUnitPrice: -Math.abs(Number(item.originalUnitPrice || item.unitPrice || 0)),
+        netTotal: -Math.abs(Number(item.netTotal || 0)),
+        taxAmount: -Math.abs(Number(item.taxAmount || 0))
+      }))
+      : [{ title: text || "Korrektur / Kulanz", name: text || "Korrektur / Kulanz", type: "service", quantity: 1, unitPrice: -Math.abs(amount), total: -Math.abs(amount), taxRate: 0 }];
     const credit = {
-      number,
+      id: `credit_${crypto.randomUUID?.() || Date.now()}`,
       type: "credit",
       status: "credited",
-      reference: receipt.number,
-      date: "02.08.2026",
-      time: "10:22",
-      sortKey: `2026-08-02T10:22:${data.receipts.length}`,
-      customer: receipt.customer,
-      payment: receipt.payment,
-      paymentStatus: receipt.paymentStatus,
-      paymentMethod: receipt.paymentMethod,
-      paymentRecordedAt: receipt.paymentRecordedAt,
-      paymentEvents: Array.isArray(receipt.paymentEvents) ? receipt.paymentEvents.map(event => ({ ...event })) : [],
-      contextSnapshot: cloneContextSnapshot(receipt.contextSnapshot),
+      date: receiptDate,
+      time: receiptTime,
+      sortKey: now.toISOString(),
+      completedAt: now.toISOString(),
+      sourceActivityDate: `${receiptDate} · ${receiptTime}`,
+      isFull,
       items,
       total: -Math.abs(amount),
       activity: [
-        { label: "Gutschrift erstellt", date: "02.08.2026 · 10:22" },
+        { label: isFull ? "Gesamtgutschrift erstellt" : "Teilgutschrift erstellt", date: `${receiptDate} · ${receiptTime}`, occurredAt: now.toISOString() },
         { label: `Bezug auf ${receipt.number}`, date: receipt.date }
       ]
     };
-    data.receipts.unshift(credit);
-    const totalCreditsAfter = data.receipts
-      .filter(item => item.reference === receipt.number && item.type === "credit")
-      .reduce((sum, item) => sum + Math.abs(Number(item.total || 0)), 0);
-    receipt.status = totalCreditsAfter >= Number(receipt.total || 0) - 0.009 ? "credited" : "partially-credited";
-    receipt.activity = receipt.activity || [];
-    receipt.activity.push({ label: isFull ? "Gesamtgutschrift erstellt" : `Teilgutschrift ${formatCurrency(amount)}`, date: "02.08.2026 · 10:22" });
-    state.receiptDetailNumber = credit.number;
-    state.successNotice = `${isFull ? "Gesamtgutschrift" : "Teilgutschrift"} ${credit.number} wurde simuliert erstellt.`;
-    navigate("receipt-detail");
+    pendingSettingsWrites += 1;
+    setSettingsWritePending(true);
+    let saved = false;
+    try {
+      if (!state.receiptsReadyForWrites || !persistence?.commitReceiptCorrection || !persistence?.snapshotReceipts) {
+        throw Object.assign(new Error("Die Belegpersistenz ist nicht verfügbar."), {
+          code: "PERSISTENCE_UNAVAILABLE",
+          userMessage: "Die Gutschrift konnte nicht sicher lokal gespeichert werden."
+        });
+      }
+      const result = await persistence.commitReceiptCorrection(
+        receipt.number,
+        credit,
+        persistence.snapshotReceipts(data, persistence.tenantId)
+      );
+      applyReceiptsRecord(result.record);
+      if (!result.receipt) throw new Error("Die Gutschrift wurde nicht bestätigt.");
+      state.receiptDetailNumber = result.receipt.number;
+      state.successNotice = `${isFull ? "Gesamtgutschrift" : "Teilgutschrift"} ${result.receipt.number} wurde lokal gespeichert.`;
+      saved = true;
+    } catch (error) {
+      logPersistenceError("Gutschrift speichern fehlgeschlagen", error);
+      state.receiptDetailNumber = receipt.number;
+      state.successNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error, "Die Gutschrift konnte nicht gespeichert werden.")}`;
+    } finally {
+      pendingSettingsWrites = Math.max(0, pendingSettingsWrites - 1);
+      if (!pendingSettingsWrites) setSettingsWritePending(false);
+    }
+    navigate("receipt-detail", saved);
+    return saved;
   }
 
   const voucherByReference = reference => data.vouchers.find(voucher => voucher.reference === reference) ?? null;
@@ -2244,7 +2292,6 @@
     const soldTime = new Intl.DateTimeFormat("de-DE", { timeStyle: "short" }).format(now);
     const customer = data.customers.find(entry => entry.id === state.voucherSaleCustomerId) ?? null;
     const saleReceiptId = `receipt_${randomHex(12)}`;
-    const saleReceiptNumber = nextReceiptNumber();
     const contextSnapshot = buildContextSnapshot(state.activeBusinessArea);
     const presentationSnapshot = currentVoucherPresentationSnapshot(state.activeBusinessArea);
     const customerSnapshot = customer ? {
@@ -2270,7 +2317,7 @@
       displayName: state.voucherSaleDisplayName.trim(),
       saleReceipt: {
         id: saleReceiptId,
-        number: saleReceiptNumber,
+        number: "",
         soldAt: now.toISOString(),
         payment: voucherSalePaymentLabel(),
         customerId: customer?.id ?? null
@@ -2278,18 +2325,21 @@
       contextSnapshot: cloneContextSnapshot(contextSnapshot),
       presentationSnapshot: cloneContextSnapshot(presentationSnapshot),
       history: [
-        { type: "sold", date: soldAt, time: soldTime, amount: issuedValue, balanceAfter: issuedValue, receiptNumber: saleReceiptNumber }
+        { type: "sold", date: soldAt, time: soldTime, amount: issuedValue, balanceAfter: issuedValue, receiptNumber: "" }
       ]
     };
     const receipt = {
       id: saleReceiptId,
-      number: saleReceiptNumber,
+      number: "",
       type: "receipt",
       receiptKind: "voucher-sale",
       status: "completed",
       date: soldAt,
       time: soldTime,
       sortKey: now.toISOString(),
+      createdAt: now.toISOString(),
+      completedAt: now.toISOString(),
+      updatedAt: now.toISOString(),
       payment: voucherSalePaymentLabel(),
       paymentStatus: "paid",
       paymentMethod: voucherSalePaymentLabel(),
@@ -2310,23 +2360,27 @@
     return { voucher, receipt };
   }
 
-  function commitPrototypeVoucherSale(amount) {
+  async function commitPrototypeVoucherSale(amount) {
     const sale = createPrototypeVoucherSale(amount);
-    let receiptInserted = false;
-    try {
-      data.receipts.unshift(sale.receipt);
-      receiptInserted = true;
-      data.vouchers.unshift(sale.voucher);
-      return sale;
-    } catch (error) {
-      const voucherIndex = data.vouchers.indexOf(sale.voucher);
-      if (voucherIndex >= 0) data.vouchers.splice(voucherIndex, 1);
-      if (receiptInserted) {
-        const receiptIndex = data.receipts.indexOf(sale.receipt);
-        if (receiptIndex >= 0) data.receipts.splice(receiptIndex, 1);
-      }
+    if (!state.receiptsReadyForWrites || !persistence?.snapshotSettings || !persistence?.snapshotReceipts || !persistence?.commitReceipt) {
+      const error = new Error("Die Belegpersistenz ist nicht verfügbar.");
+      error.code = "PERSISTENCE_UNAVAILABLE";
+      error.userMessage = "Der Verkaufsbeleg konnte nicht sicher lokal gespeichert werden.";
       throw error;
     }
+    const committed = await persistence.commitReceipt(
+      sale.receipt,
+      persistence.snapshotSettings(data, state.setup.status, persistence.tenantId),
+      persistence.snapshotReceipts(data, persistence.tenantId)
+    );
+    applyReceiptsRecord(committed.receiptsRecord);
+    data.receiptSettings.nextNumber = committed.settingsRecord.receiptSettings.nextNumber;
+    state.receiptCounter = Math.max(0, data.receiptSettings.nextNumber - 1);
+    sale.receipt = data.receipts.find(receipt => receipt.id === committed.receipt.id) || committed.receipt;
+    sale.voucher.saleReceipt.number = sale.receipt.number;
+    sale.voucher.history[0].receiptNumber = sale.receipt.number;
+    data.vouchers.unshift(sale.voucher);
+    return sale;
   }
 
   function updateVoucherSaleSummary() {
@@ -2395,7 +2449,7 @@
 
         <button class="button button-primary voucher-sale-submit" type="submit" ${state.voucherSaleSubmitting || completedVoucher ? "disabled" : ""}>${state.voucherSaleSubmitting ? "Gutschein wird erstellt …" : completedVoucher ? "Gutschein bereits erstellt" : "Gutschein jetzt verkaufen"}</button>
         ${completedVoucher ? `<button class="button button-secondary voucher-sale-completed-link" type="button" data-route="voucher-sale-success">Zum verkauften Gutschein</button>` : ""}
-        <p class="prototype-note">Nur Prototyp: Gutschein und Verkaufsbeleg bleiben bis zum Neuladen im Arbeitsspeicher.</p>
+        <p class="prototype-note">Der Verkaufsbeleg wird lokal gespeichert. Gutschein und Gutschein-Historie bleiben in diesem Block ausschließlich im Arbeitsspeicher.</p>
       </form>
     </section>`;
 
@@ -2422,7 +2476,7 @@
         <div class="success-mark" aria-hidden="true">✓</div>
         <p class="eyebrow">Verkauf abgeschlossen</p>
         <h1>Gutschein verkauft</h1>
-        <p>Gutschein und Verkaufsbeleg wurden gemeinsam im Arbeitsspeicher angelegt.</p>
+        <p>Der Verkaufsbeleg wurde lokal gespeichert. Der Gutschein bleibt in diesem Entwicklungsblock im Arbeitsspeicher.</p>
       </div>
 
       ${state.voucherNotice ? `<div class="voucher-notice" role="status">${escapeHtml(state.voucherNotice)}</div>` : ""}
@@ -2626,22 +2680,41 @@
     </div>`);
   }
 
-  function recordOpenPayment(methodId) {
+  async function recordOpenPayment(methodId) {
     const receipt = receiptByNumber(state.paymentCaptureReceiptNumber);
     const method = activeNormalPaymentChoices().find(choice => choice.id === methodId);
     if (!receipt || receipt.type !== "receipt" || receipt.paymentStatus !== "open" || !method) return false;
     const now = new Date();
     const date = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }).format(now);
     const time = new Intl.DateTimeFormat("de-DE", { timeStyle: "short" }).format(now);
-    receipt.paymentStatus = "paid";
-    receipt.paymentMethod = method.title;
-    receipt.payment = method.title;
-    receipt.paymentRecordedAt = now.toISOString();
-    receipt.paymentEvents = Array.isArray(receipt.paymentEvents) ? receipt.paymentEvents : [];
-    receipt.paymentEvents.push({ type: "payment_recorded", recordedAt: receipt.paymentRecordedAt, date, time, paymentMethod: method.title, amount: Number(receipt.total || 0) });
-    receipt.activity = Array.isArray(receipt.activity) ? receipt.activity : [];
-    receipt.activity.push({ label: "Zahlung erfasst", date: `${date} · ${time}`, detail: `${method.title} · ${formatCurrency(receipt.total)}` });
-    return true;
+    pendingSettingsWrites += 1;
+    setSettingsWritePending(true);
+    try {
+      if (!state.receiptsReadyForWrites || !persistence?.recordReceiptPayment || !persistence?.snapshotReceipts) {
+        throw Object.assign(new Error("Die Belegpersistenz ist nicht verfügbar."), {
+          code: "PERSISTENCE_UNAVAILABLE",
+          userMessage: "Die Zahlung konnte nicht sicher lokal gespeichert werden."
+        });
+      }
+      const result = await persistence.recordReceiptPayment(receipt.number, {
+        recordedAt: now.toISOString(),
+        date,
+        time,
+        displayDate: `${date} · ${time}`,
+        paymentMethod: method.title,
+        amountCents: Math.round(Number(receipt.total || 0) * 100),
+        detail: `${method.title} · ${formatCurrency(receipt.total)}`
+      }, persistence.snapshotReceipts(data, persistence.tenantId));
+      applyReceiptsRecord(result.record);
+      return result.recorded === true;
+    } catch (error) {
+      logPersistenceError("Offene Zahlung speichern fehlgeschlagen", error);
+      state.successNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error, "Die Zahlung konnte nicht lokal gespeichert werden.")}`;
+      return false;
+    } finally {
+      pendingSettingsWrites = Math.max(0, pendingSettingsWrites - 1);
+      if (!pendingSettingsWrites) setSettingsWritePending(false);
+    }
   }
 
   function openBusinessTemplatePicker() {
@@ -3220,10 +3293,15 @@
           <span class="settings-entry-tools">${section.help ? helpButton(section.help, section.title) : ""}<span class="settings-pending-badge">Geplant</span></span>
         </article>`).join("")}
       </div>
-      <section class="settings-reset-card"><h2>Lokale Einstellungen</h2><p>Unternehmensdaten, Leistungsorte, Steuern, Zahlungsarten und Geschäftsbereiche werden ausschließlich auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="settings-reset">Gespeicherte Einstellungen zurücksetzen</button><small>Kunden, Belege, Gutscheine und Kataloge werden dadurch nicht gelöscht.</small></section>
-      <section class="settings-reset-card"><h2>Lokaler Katalog</h2><p>Kategorien, Leistungen, Produkte und Vorlagenimporte werden getrennt von den Einstellungen auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="catalog-reset">Gespeicherten Katalog zurücksetzen</button><small>Einstellungen, Kunden, Belege und Gutscheine werden dadurch nicht gelöscht.</small></section>
-      <section class="settings-reset-card"><h2>Lokale Kunden</h2><p>Kundenstammdaten werden getrennt von Einstellungen und Katalog ausschließlich auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="customers-reset">Gespeicherte Kunden zurücksetzen</button><small>Einstellungen, Katalog, Belege und Gutscheine werden dadurch nicht gelöscht.</small></section>
-      <p class="prototype-note">Belege, Gutscheine und Historien bleiben in diesem Entwicklungsblock weiterhin im Arbeitsspeicher.</p>
+      <details class="development-tools">
+        <summary>Entwicklungswerkzeuge</summary>
+        <div class="development-tools-warning"><strong>Nur für Entwicklung und Tests</strong><span>Diese Aktionen setzen jeweils genau einen lokalen Datenspeicher dieses Mandanten zurück.</span></div>
+        <section class="settings-reset-card"><h2>Lokale Einstellungen</h2><p>Unternehmensdaten, Leistungsorte, Steuern, Zahlungsarten und Geschäftsbereiche werden ausschließlich auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="settings-reset">Gespeicherte Einstellungen zurücksetzen</button><small>Katalog, Kunden, Belege und Gutscheine werden dadurch nicht gelöscht.</small></section>
+        <section class="settings-reset-card"><h2>Lokaler Katalog</h2><p>Kategorien, Leistungen, Produkte und Vorlagenimporte werden getrennt von den Einstellungen auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="catalog-reset">Gespeicherten Katalog zurücksetzen</button><small>Einstellungen, Kunden, Belege und Gutscheine werden dadurch nicht gelöscht.</small></section>
+        <section class="settings-reset-card"><h2>Lokale Kunden</h2><p>Kundenstammdaten werden getrennt von Einstellungen und Katalog ausschließlich auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="customers-reset">Gespeicherte Kunden zurücksetzen</button><small>Einstellungen, Katalog, Belege und Gutscheine werden dadurch nicht gelöscht.</small></section>
+        <section class="settings-reset-card"><h2>Lokale Belege</h2><p>Belege, offene Zahlungen, Stornos, Gutschriften und ihre Aktivitäten werden getrennt gespeichert.</p><button class="button button-danger" type="button" data-action="receipts-reset">Gespeicherte Belege zurücksetzen</button><small>Einstellungen und ihr Nummernstand, Katalog, Kunden und Gutscheine bleiben unverändert. Dadurch entstehen keine Nummernkollisionen.</small></section>
+      </details>
+      <p class="prototype-note">Gutscheine und Gutschein-Historien bleiben in diesem Entwicklungsblock weiterhin im Arbeitsspeicher.</p>
     </section>`;
   }
 
@@ -3587,7 +3665,7 @@
       <label class="setting-field catalog-area-picker"><span>Geschäftsbereich</span><select id="catalogManagerArea">${activeBusinessAreas().map(entry => `<option value="${escapeHtml(entry.id)}" ${entry.id === area.id ? "selected" : ""}>${escapeHtml(entry.label)}</option>`).join("")}</select></label>
       <div class="catalog-readiness ${summary.total === 0 ? "is-empty" : summary.ready ? "is-ready" : "needs-review"}"><strong>${summary.total === 0 ? "Katalog noch leer" : summary.ready ? "✓ Katalog vollständig eingerichtet" : `⚠ ${summary.reviewCount} Prüfungen offen`}</strong><span>${summary.total} Leistungen und Produkte · ${summary.total === 0 ? "Ersten Eintrag anlegen" : summary.ready ? "Keine offenen Prüfungen" : "Preise oder Steuersätze noch prüfen"}</span></div>
       <div class="catalog-manager-tabs" role="tablist"><button type="button" data-catalog-manager-view="items" class="${state.catalogManagerView === "items" ? "is-active" : ""}">Leistungen & Produkte</button><button type="button" data-catalog-manager-view="categories" class="${state.catalogManagerView === "categories" ? "is-active" : ""}">Kategorien</button></div>
-      ${state.catalogManagerView === "categories" ? `<div class="catalog-manager-toolbar"><div><h2>Kategorien</h2><p>Kategorien beschreiben Tätigkeiten oder Angebotsarten – keine Zielgruppen.</p></div><button class="button button-primary" type="button" data-action="catalog-new-category">＋ Kategorie</button></div><div class="catalog-admin-list">${categories.length ? categories.map((category, index) => `<article class="catalog-admin-row"><div class="catalog-admin-main"><strong>${escapeHtml(category.name)}</strong><span>${category.type === "product" ? "Produkt" : "Leistung"} · ${category.active === false ? "Deaktiviert" : "Aktiv"}</span></div><div class="catalog-row-actions"><button type="button" data-catalog-toggle-category="${escapeHtml(category.id)}">${category.active === false ? "Aktivieren" : "Deaktivieren"}</button><button type="button" data-catalog-edit-category="${escapeHtml(category.id)}">Bearbeiten</button><span><button type="button" data-catalog-move-category="${escapeHtml(category.id)}" data-direction="up" aria-label="${escapeHtml(category.name)} nach oben" ${index === 0 ? "disabled" : ""}>↑</button><button type="button" data-catalog-move-category="${escapeHtml(category.id)}" data-direction="down" aria-label="${escapeHtml(category.name)} nach unten" ${index === categories.length - 1 ? "disabled" : ""}>↓</button></span></div></article>`).join("") : `<p class="empty-state">Noch keine Kategorien vorhanden.</p>`}</div>` : `<div class="catalog-manager-toolbar"><div><h2>Einträge</h2><p>Leistungen und Produkte bearbeiten.</p></div><div class="catalog-create-actions"><button class="button button-secondary" type="button" data-catalog-new-item="service">＋ Leistung</button><button class="button button-primary" type="button" data-catalog-new-item="product">＋ Produkt</button></div></div>
+      ${state.catalogManagerView === "categories" ? `<div class="catalog-manager-toolbar"><div><h2>Kategorien</h2><p>Kategorien beschreiben Tätigkeiten oder Angebotsarten – keine Zielgruppen.</p></div><button class="button button-primary" type="button" data-action="catalog-new-category">＋ Kategorie</button></div><div class="catalog-admin-list">${categories.length ? categories.map((category, index) => `<article class="catalog-admin-row"><div class="catalog-admin-main"><strong>${escapeHtml(category.name)}</strong><span>${category.type === "product" ? "Produkt" : "Leistung"} · ${category.active === false ? "Deaktiviert" : "Aktiv"}</span></div><div class="catalog-row-actions"><button type="button" data-catalog-toggle-category="${escapeHtml(category.id)}">${category.active === false ? "Aktivieren" : "Deaktivieren"}</button><button type="button" data-catalog-edit-category="${escapeHtml(category.id)}">Bearbeiten</button><span><button type="button" data-catalog-move-category="${escapeHtml(category.id)}" data-direction="up" aria-label="${escapeHtml(category.name)} nach oben" ${index === 0 ? "disabled" : ""}>↑</button><button type="button" data-catalog-move-category="${escapeHtml(category.id)}" data-direction="down" aria-label="${escapeHtml(category.name)} nach unten" ${index === categories.length - 1 ? "disabled" : ""}>↓</button></span></div></article>`).join("") : `<p class="empty-state">Noch keine Kategorien vorhanden.</p>`}</div>` : `<div class="catalog-manager-toolbar"><div><h2>Einträge</h2><p>Leistungen und Produkte bearbeiten.</p></div><div class="catalog-create-actions"><button class="button button-secondary" type="button" data-catalog-new-item="service">＋ Leistung</button><button class="button button-secondary" type="button" data-catalog-new-item="product">＋ Produkt</button></div></div>
         <div class="catalog-manager-filters"><label class="search-field"><span aria-hidden="true">⌕</span><input id="catalogManagerSearch" type="search" placeholder="Name suchen" value="${escapeHtml(state.catalogManagerSearch)}"></label><label><span>Status</span><select id="catalogManagerStatus"><option value="all" ${state.catalogManagerStatus === "all" ? "selected" : ""}>Alle</option><option value="active" ${state.catalogManagerStatus === "active" ? "selected" : ""}>Aktiv</option><option value="inactive" ${state.catalogManagerStatus === "inactive" ? "selected" : ""}>Deaktiviert</option></select></label><label><span>Kategorie</span><select id="catalogManagerCategory"><option value="all">Alle</option><option value="uncategorized" ${state.catalogManagerCategory === "uncategorized" ? "selected" : ""}>Ohne Kategorie</option>${categories.map(category => `<option value="${escapeHtml(category.id)}" ${state.catalogManagerCategory === category.id ? "selected" : ""}>${escapeHtml(category.name)}</option>`).join("")}</select></label></div>
         <div class="catalog-admin-list">${items.length ? items.map((item, index) => { const category = categoryById(item.categoryId); return `<article class="catalog-admin-row ${item.needsReview ? "needs-review" : ""}"><div class="catalog-admin-main"><strong>${escapeHtml(catalogItemName(item))}</strong><span>${item.type === "product" ? "Produkt" : "Leistung"} · ${category ? escapeHtml(category.name) : "Ohne Kategorie"} · ${formatCurrency(catalogItemPrice(item))}</span>${item.needsReview ? `<em>⚠ Preis und Steuersatz prüfen</em>` : ""}</div><div class="catalog-row-actions"><button type="button" data-catalog-toggle-item="${escapeHtml(item.id)}">${item.active === false ? "Aktivieren" : "Deaktivieren"}</button><button type="button" data-catalog-edit-item="${escapeHtml(item.id)}">Bearbeiten</button><span><button type="button" data-catalog-move-item="${escapeHtml(item.id)}" data-direction="up" aria-label="${escapeHtml(catalogItemName(item))} nach oben" ${index === 0 ? "disabled" : ""}>↑</button><button type="button" data-catalog-move-item="${escapeHtml(item.id)}" data-direction="down" aria-label="${escapeHtml(catalogItemName(item))} nach unten" ${index === items.length - 1 ? "disabled" : ""}>↓</button></span></div></article>`; }).join("") : `<p class="empty-state">Für diesen Filter wurden keine Einträge gefunden.</p>`}</div>`}
       <p class="prototype-note">Kategorien, Leistungen, Produkte und Vorlagenstatus werden ausschließlich lokal auf diesem Gerät gespeichert.</p>
@@ -4000,11 +4078,19 @@
     }
     const paymentCaptureMethod = event.target.closest("[data-payment-capture-method]");
     if (paymentCaptureMethod) {
-      const recorded = recordOpenPayment(paymentCaptureMethod.dataset.paymentCaptureMethod);
+      const recorded = await recordOpenPayment(paymentCaptureMethod.dataset.paymentCaptureMethod);
       const receiptNumber = state.paymentCaptureReceiptNumber;
       state.paymentCaptureReceiptNumber = null;
       closeBottomSheet();
-      if (!recorded) return;
+      if (!recorded) {
+        if (state.route === "receipt-detail") renderReceiptDetail();
+        else {
+          state.settingsStorageNotice = state.successNotice;
+          state.settingsStorageNoticeIsError = true;
+          renderRoute(false);
+        }
+        return;
+      }
       if (state.route === "receipt-detail") {
         state.receiptDetailNumber = receiptNumber;
         state.successNotice = "Zahlung wurde vollständig erfasst.";
@@ -4461,6 +4547,15 @@
       });
       return;
     }
+    if (action === "receipts-reset") {
+      openConfirmDialog({
+        title: "Gespeicherte Belege zurücksetzen?",
+        text: "Nur der lokale Receipt-Store dieses Mandanten wird gelöscht. Der Nummernstand in den Einstellungen bleibt aus Sicherheitsgründen erhalten; Einstellungen, Katalog, Kunden und Gutscheine werden nicht verändert.",
+        confirmLabel: "Belege zurücksetzen",
+        action: "reset-saved-receipts"
+      });
+      return;
+    }
     if (action === "catalog-settings-back") {
       state.catalogEditingItemId = null;
       state.catalogEditingCategoryId = null;
@@ -4608,12 +4703,34 @@
       const receipt = receiptByNumber(state.receiptDetailNumber);
       const field = document.getElementById("receiptInternalNote");
       if (receipt && field) {
-        receipt.internalNote = field.value.trim();
-        receipt.activity = receipt.activity || [];
-        receipt.activity.push({ label: "Interne Notiz aktualisiert", date: "02.08.2026 · 10:42" });
-        state.successNotice = "Interne Notiz wurde im Prototyp gespeichert.";
+        const now = new Date();
+        const date = new Intl.DateTimeFormat("de-DE", { dateStyle: "short", timeStyle: "short" }).format(now);
+        pendingSettingsWrites += 1;
+        setSettingsWritePending(true);
+        try {
+          if (!state.receiptsReadyForWrites || !persistence?.saveReceiptNote || !persistence?.snapshotReceipts) {
+            throw Object.assign(new Error("Die Belegpersistenz ist nicht verfügbar."), {
+              code: "PERSISTENCE_UNAVAILABLE",
+              userMessage: "Die interne Notiz konnte nicht sicher lokal gespeichert werden."
+            });
+          }
+          const result = await persistence.saveReceiptNote(receipt.number, field.value.trim(), {
+            label: "Interne Notiz aktualisiert",
+            date,
+            occurredAt: now.toISOString()
+          }, persistence.snapshotReceipts(data, persistence.tenantId));
+          applyReceiptsRecord(result.record);
+          state.successNotice = "Interne Notiz wurde lokal gespeichert.";
+        } catch (error) {
+          logPersistenceError("Belegnotiz speichern fehlgeschlagen", error);
+          state.successNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error, "Die interne Notiz konnte nicht gespeichert werden.")}`;
+        } finally {
+          pendingSettingsWrites = Math.max(0, pendingSettingsWrites - 1);
+          if (!pendingSettingsWrites) setSettingsWritePending(false);
+        }
         renderReceiptDetail();
       }
+      return;
     }
     if (action === "receipt-email-demo") {
       const receipt = receiptByNumber(state.receiptDetailNumber);
@@ -4889,10 +5006,11 @@
 
       let sale;
       try {
-        sale = commitPrototypeVoucherSale(amount);
+        sale = await commitPrototypeVoucherSale(amount);
       } catch (error) {
+        logPersistenceError("Gutschein-Verkaufsbeleg speichern fehlgeschlagen", error);
         state.voucherSaleSubmitting = false;
-        state.voucherSaleError = "Gutschein und Verkaufsbeleg konnten nicht gemeinsam erstellt werden. Es wurde kein Verkauf bestätigt.";
+        state.voucherSaleError = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error, "Der Verkaufsbeleg konnte nicht sicher abgeschlossen werden.")} Es wurde kein Gutscheinverkauf bestätigt.`;
         renderVoucherSale();
         return;
       }
@@ -4970,7 +5088,7 @@
       if (!Number.isFinite(amount) || amount <= 0 || amount > receipt.total || !text) return;
       state.creditAmount = String(amount);
       state.creditText = text;
-      createCredit(receipt, amount, text, false);
+      await createCredit(receipt, amount, text, false);
       return;
     }
     const form = event.target.closest("[data-price-form]");
@@ -5015,6 +5133,41 @@
   cancelDiscard.addEventListener("click", closeDiscardDialog);
   confirmDiscard.addEventListener("click", async () => {
     const pendingAction = state.pendingDialogAction;
+
+    if (pendingAction === "reset-saved-receipts") {
+      pendingSettingsWrites += 1;
+      setSettingsWritePending(true);
+      try {
+        if (!persistence?.deleteReceipts || !persistence?.normalizeReceiptsRecord || !defaultReceiptsRecord) {
+          const unavailableError = new Error("Lokale Belegspeicherung ist derzeit nicht verfügbar.");
+          unavailableError.code = "PERSISTENCE_UNAVAILABLE";
+          unavailableError.userMessage = "Gespeicherte Belege konnten nicht zurückgesetzt werden, weil die lokale Speicherung nicht verfügbar ist.";
+          throw unavailableError;
+        }
+        await persistence.deleteReceipts();
+        const normalizedDefaults = persistence.normalizeReceiptsRecord(defaultReceiptsRecord, defaultReceiptsRecord, persistence.tenantId);
+        applyReceiptsRecord(normalizedDefaults.record);
+        state.receiptDetailNumber = null;
+        state.receiptPreviewNumber = null;
+        state.finishedReceipt = null;
+        state.receiptsReadyForWrites = true;
+        refreshSettingsDerivedState();
+        closeDiscardDialog();
+        state.settingsStorageNotice = "Gespeicherte Belege wurden zurückgesetzt. Die gekennzeichneten Demodaten sind wieder aktiv; der Nummernstand blieb unverändert.";
+        state.settingsStorageNoticeIsError = false;
+        renderSettings();
+      } catch (error) {
+        logPersistenceError("Belege zurücksetzen fehlgeschlagen", error);
+        closeDiscardDialog();
+        state.settingsStorageNotice = persistenceErrorMessage(error, "Die gespeicherten Belege konnten nicht zurückgesetzt werden.");
+        state.settingsStorageNoticeIsError = true;
+        renderSettings();
+      } finally {
+        pendingSettingsWrites = Math.max(0, pendingSettingsWrites - 1);
+        if (!pendingSettingsWrites) setSettingsWritePending(false);
+      }
+      return;
+    }
 
     if (pendingAction === "reset-saved-customers") {
       pendingSettingsWrites += 1;
@@ -5139,45 +5292,65 @@
         closeDiscardDialog();
         return;
       }
-
-      const cancelNumber = `ST-2026-${String(data.receipts.filter(item => item.type === "cancellation").length + 101).padStart(6, "0")}`;
+      const now = new Date();
+      const date = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }).format(now);
+      const time = new Intl.DateTimeFormat("de-DE", { timeStyle: "short" }).format(now);
       const cancellation = {
-        number: cancelNumber,
+        id: `cancellation_${crypto.randomUUID?.() || Date.now()}`,
         type: "cancellation",
         status: "cancelled",
-        reference: receipt.number,
-        date: "02.08.2026",
-        time: "10:53",
-        sortKey: `2026-08-02T10:53:${data.receipts.length}`,
-        customer: receipt.customer,
-        payment: receipt.payment,
-        paymentStatus: receipt.paymentStatus,
-        paymentMethod: receipt.paymentMethod,
-        paymentRecordedAt: receipt.paymentRecordedAt,
-        paymentEvents: Array.isArray(receipt.paymentEvents) ? receipt.paymentEvents.map(event => ({ ...event })) : [],
-        contextSnapshot: cloneContextSnapshot(receipt.contextSnapshot),
+        date,
+        time,
+        sortKey: now.toISOString(),
+        completedAt: now.toISOString(),
+        sourceActivityDate: `${date} · ${time}`,
         items: receipt.items.map(item => ({
           ...item,
+          unitPriceCents: -Math.abs(Number(item.unitPriceCents ?? Math.round(Number(item.unitPrice || 0) * 100))),
+          originalUnitPriceCents: -Math.abs(Number(item.originalUnitPriceCents ?? Math.round(Number(item.originalUnitPrice || item.unitPrice || 0) * 100))),
+          totalCents: -Math.abs(Number(item.totalCents ?? Math.round(Number(item.total || 0) * 100))),
+          originalTotalCents: -Math.abs(Number(item.originalTotalCents ?? Math.round(Number(item.originalTotal || item.total || 0) * 100))),
+          netCents: -Math.abs(Number(item.netCents ?? Math.round(Number(item.netTotal || 0) * 100))),
+          taxCents: -Math.abs(Number(item.taxCents ?? Math.round(Number(item.taxAmount || 0) * 100))),
           total: -Math.abs(Number(item.total || 0)),
-          unitPrice: -Math.abs(Number(item.unitPrice || 0))
+          unitPrice: -Math.abs(Number(item.unitPrice || 0)),
+          originalTotal: -Math.abs(Number(item.originalTotal || item.total || 0)),
+          originalUnitPrice: -Math.abs(Number(item.originalUnitPrice || item.unitPrice || 0)),
+          netTotal: -Math.abs(Number(item.netTotal || 0)),
+          taxAmount: -Math.abs(Number(item.taxAmount || 0))
         })),
         total: -Math.abs(Number(receipt.total || 0)),
         activity: [
-          { label: "Stornobeleg erstellt", date: "02.08.2026 · 10:53" },
+          { label: "Stornobeleg erstellt", date: `${date} · ${time}`, occurredAt: now.toISOString() },
           { label: `Bezug auf ${receipt.number}`, date: receipt.date }
         ]
       };
-
-      data.receipts.unshift(cancellation);
-      receipt.status = "cancelled";
-      receipt.activity = receipt.activity || [];
-      receipt.activity.push({
-        label: `Storniert durch ${cancelNumber}`,
-        date: "02.08.2026 · 10:53"
-      });
-
       closeDiscardDialog();
-      state.successNotice = `Stornobeleg ${cancelNumber} wurde simuliert erstellt.`;
+      pendingSettingsWrites += 1;
+      setSettingsWritePending(true);
+      try {
+        if (!state.receiptsReadyForWrites || !persistence?.commitReceiptCorrection || !persistence?.snapshotReceipts) {
+          throw Object.assign(new Error("Die Belegpersistenz ist nicht verfügbar."), {
+            code: "PERSISTENCE_UNAVAILABLE",
+            userMessage: "Der Stornobeleg konnte nicht sicher lokal gespeichert werden."
+          });
+        }
+        const result = await persistence.commitReceiptCorrection(
+          receipt.number,
+          cancellation,
+          persistence.snapshotReceipts(data, persistence.tenantId)
+        );
+        applyReceiptsRecord(result.record);
+        state.successNotice = result.receipt
+          ? `Stornobeleg ${result.receipt.number} wurde lokal gespeichert.`
+          : "Dieser Beleg war bereits storniert. Es wurde kein Duplikat erzeugt.";
+      } catch (error) {
+        logPersistenceError("Storno speichern fehlgeschlagen", error);
+        state.successNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error, "Der Stornobeleg konnte nicht gespeichert werden.")}`;
+      } finally {
+        pendingSettingsWrites = Math.max(0, pendingSettingsWrites - 1);
+        if (!pendingSettingsWrites) setSettingsWritePending(false);
+      }
       renderReceiptDetail();
       return;
     }
@@ -5196,7 +5369,7 @@
 
       closeDiscardDialog();
       if (maximumCredit > 0.009) {
-        createCredit(receipt, maximumCredit, "Gesamtgutschrift", true);
+        await createCredit(receipt, maximumCredit, "Gesamtgutschrift", true);
       }
       return;
     }
@@ -5296,6 +5469,18 @@
     state.settingsStorageNoticeIsError = true;
   }
   migratePrototypeContextSnapshots();
+  try {
+    if (!persistence?.snapshotReceipts) throw new Error("Die Belegpersistenz wurde nicht geladen.");
+    defaultReceiptsRecord = persistence.snapshotReceipts(data, persistence.tenantId);
+    await loadReceiptsForStart();
+    state.receiptsReadyForWrites = true;
+  } catch (error) {
+    logPersistenceError("Belegdaten laden fehlgeschlagen", error);
+    const message = persistenceErrorMessage(error, "Die lokalen Belege konnten nicht geladen werden. Neue Belegabschlüsse bleiben gesperrt, damit keine Nummernkollision entsteht.");
+    state.settingsStorageNotice = state.settingsStorageNotice ? `${state.settingsStorageNotice} ${message}` : message;
+    state.settingsStorageNoticeIsError = true;
+    state.receiptsReadyForWrites = false;
+  }
   refreshSettingsDerivedState();
   state.settingsReady = true;
   mainContent.removeAttribute("aria-busy");
@@ -5303,7 +5488,11 @@
   bottomNav.querySelectorAll("button").forEach(button => { button.disabled = false; });
   bottomNav.hidden = false;
   initHeader();
-  const initialRoute = validRoutes.has(window.location.hash.replace("#/", "")) ? window.location.hash.replace("#/", "") : "home";
-  history.replaceState({ route: initialRoute, freckaIndex: currentHistoryIndex }, "", `#/${initialRoute}`);
+  const requestedRoute = window.location.hash.startsWith("#/") ? window.location.hash.slice(2) : "";
+  const initialRoute = validRoutes.has(requestedRoute) ? requestedRoute : "home";
+  const initialUrl = requestedRoute && validRoutes.has(requestedRoute)
+    ? `#/${requestedRoute}`
+    : `${window.location.origin}${window.location.pathname}${window.location.search}`;
+  history.replaceState({ route: initialRoute, freckaIndex: currentHistoryIndex }, "", initialUrl);
   navigate(initialRoute, false);
 })();

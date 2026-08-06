@@ -1,8 +1,8 @@
-# Lokale Settings-, Katalog- und Kundenpersistenz
+# Lokale Settings-, Katalog-, Kunden- und Belegpersistenz
 
-**Stand:** PERSIST-003
-**Geltungsbereich:** Vollständige FRECKA-Einstellungen, Katalog sowie Kundenstammdaten
-**Nicht enthalten:** Belege, offene Zahlungen, Gutscheine, Historien, Entwürfe, Stornos und Gutschriften
+**Stand:** PERSIST-004
+**Geltungsbereich:** Vollständige FRECKA-Einstellungen, Katalog, Kundenstammdaten, abgeschlossene Belege, offene Zahlungen, Stornos und Gutschriften
+**Nicht enthalten:** Gutscheine, Gutschein-Historien, Entwürfe, QR-Daten, E-Mail-Versandstatus, PDF- und Backup-Dateien
 
 ## Ausgangsfluss vor PERSIST-001a
 
@@ -34,7 +34,15 @@ Die einzige Kundenlaufzeitquelle ist `data.customers`. Neuanlage und Bearbeitung
 
 Die bisherige Suche berücksichtigt Name, Telefon und E-Mail. PERSIST-003 ergänzt Firma und Mobilnummer sowie eine Trennzeichen-unabhängige Telefonnummernsuche, ohne einen Suchindex anzulegen. Der Kundenbelegverlauf wird weiterhin aus `data.receipts` über die Kunden-ID abgeleitet. Demo-Kennzahlen und die alten eingebetteten Demo-History-Arrays sind keine Kundenstammdaten und werden nicht persistiert.
 
-## Datenfluss ab PERSIST-003
+## Belegfluss vor PERSIST-004
+
+Normale Belege, offene Zahlungen, Stornos und Gutschriften liegen gemeinsam in `data.receipts`. Die Liste ist zugleich Laufzeitquelle für Belegübersicht, Detail, Kassenzettel, Filter, offene Zahlungen und den aus der Kunden-ID abgeleiteten Kundenverlauf. Aktivitäten liegen am jeweiligen Beleg; offene Zahlungen ergänzen `paymentEvents`. Es gibt keine Historienkopie im Kundenstore.
+
+Vor PERSIST-004 erhöht `nextReceiptNumber` den Laufzeitzähler und `data.receiptSettings.nextNumber`, bevor ein Beleg dauerhaft gesichert ist. Normale Abschlüsse und Gutschein-Verkaufsbelege werden anschließend direkt in `data.receipts` eingefügt. Nachträgliche Zahlung und interne Notiz mutieren den Ursprungsbeleg. Storno und Gutschrift erzeugen Nummern aus der aktuellen Listenlänge, fügen ein Folgedokument hinzu und ändern Status sowie Aktivität des Ursprungs. Sämtliche Änderungen gehen bei Reload verloren; ein Schreibfehler besitzt keine fachliche Transaktionsgrenze.
+
+Neue Belege bilden bereits `contextSnapshot` aus Unternehmen, Geschäftsbereich, Leistungsort und Branding sowie ein Kundensnapshot. Positionen enthalten Preis-, Rabatt- und Steuerinformationen. Gutscheinzahlungen referenzieren einen Gutschein über `voucherPayment.reference`; Gutscheinverkaufsbelege verwenden `voucherReference`. Vollständige Gutscheinobjekte gehören nicht zum Belegmodell.
+
+## Datenfluss ab PERSIST-004
 
 1. Die statische App-Shell zeigt einen kompakten Ladezustand.
 2. `js/persistence.js` öffnet IndexedDB und liest den Settings-Datensatz.
@@ -42,25 +50,27 @@ Die bisherige Suche berücksichtigt Name, Telefon und E-Mail. PERSIST-003 ergän
 4. Die Demo-/Standardkatalogdaten werden einmal in das aktuelle Laufzeitformat überführt und als sichere Fallbackbasis erfasst.
 5. Der mandantenbezogene Katalogdatensatz wird gelesen, normalisiert und in-place in `data.categories`, `data.catalog` und `data.templateImportStatus` übernommen.
 6. Danach wird der Kundendatensatz gelesen, normalisiert und in-place in `data.customers` übernommen.
-7. Fehlt ein Datensatz, bleiben für den jeweiligen Bereich die sicheren Demo-/Standardwerte aktiv. Branchenvorlagen werden nicht automatisch importiert.
-8. Erst danach werden Belegzähler, aktiver Geschäftsbereich und UI-State abgeleitet und die Oberfläche gerendert.
-9. Settings-, Katalog- und Kundenaktionen erzeugen jeweils eine enge Projektion ihrer bestehenden Laufzeitquelle und verwenden getrennte Stores über dieselbe serialisierte Persistenzschicht.
-10. Eine Erfolgsmeldung erscheint erst nach erfolgreichem Transaktionsabschluss.
+7. Nach Bildung der sicheren Dokumentkontexte wird der Belegdatensatz gelesen, normalisiert und in-place in dasselbe `data.receipts` übernommen.
+8. Fehlt ein Datensatz, bleiben für den jeweiligen Bereich die sicheren Demo-/Standardwerte aktiv. Demo-Belege verbrauchen dabei keine neue produktive Nummer.
+9. Erst danach werden Belegzähler, aktiver Geschäftsbereich und UI-State abgeleitet und die Oberfläche gerendert.
+10. Settings-, Katalog-, Kunden- und Belegaktionen erzeugen jeweils eine enge Projektion ihrer bestehenden Laufzeitquelle und verwenden getrennte Stores über dieselbe serialisierte Persistenzschicht.
+11. Eine Erfolgsmeldung erscheint erst nach erfolgreichem Transaktionsabschluss. Kann der Receipt-Store beim Start nicht sicher gelesen werden, bleiben neue Belegabschlüsse gesperrt, damit keine Nummernkollision entsteht.
 
 UI- und Renderfunktionen greifen niemals direkt auf `indexedDB` zu. Nur `js/persistence.js` kennt die Browser-Datenbank-API.
 
 ## Datenbankvertrag
 
 - Datenbankname: `frecka`
-- Datenbankschema-Version: `3`
-- Object Stores: `settings`, `catalog` und `customers`
+- Datenbankschema-Version: `4`
+- Object Stores: `settings`, `catalog`, `customers` und `receipts`
 - Key Path: `tenantId`
 - Standardschlüssel/Instanz: `local-default`
 - Einstellungsformat-Version: `1`
 - Katalogformat-Version: `1`
 - Kundenformat-Version: `1`
+- Belegformat-Version: `1`
 
-Das Upgrade von Schema-Version 2 auf 3 legt ausschließlich den neuen `customers`-Store an; vorhandene Settings- und Katalogdatensätze bleiben unverändert. Der Upgradepfad von Version 1 auf 3 ergänzt beide fehlenden Stores. Es werden dabei keine Demo-Kunden ungefragt als persistierter Datensatz geschrieben. Datenbankschema- und Datenformatversionen werden unabhängig versioniert.
+Das Upgrade von Schema-Version 3 auf 4 legt ausschließlich den neuen `receipts`-Store an; vorhandene Settings-, Katalog- und Kundendatensätze bleiben unverändert. Die Upgradepfade von Version 1 oder 2 ergänzen alle später hinzugekommenen Stores. Es werden dabei weder Demo-Kunden noch Demo-Belege ungefragt als persistierte Datensätze geschrieben. Datenbankschema- und Datenformatversionen werden unabhängig versioniert.
 
 Der Settings-Datensatz enthält ausschließlich:
 
@@ -93,6 +103,19 @@ Der Datensatz im Store `customers` enthält ausschließlich:
 
 Telefonnummern bleiben Text. E-Mail-Adressen werden an den Rändern bereinigt, ihre eingegebene Groß-/Kleinschreibung wird aber nicht unnötig verändert. Belege, Gutscheine, Historien, Umsatz- und Besuchskennzahlen sowie Versandstatus werden nicht im Kundenstore gespeichert.
 
+Der Datensatz im Store `receipts` enthält:
+
+- `formatVersion`, `tenantId`, `updatedAt` und die Liste `receipts`;
+- je Dokument stabile ID, Belegnummer, Typ, Status und ISO-Zeitstempel;
+- IDs und unveränderliche Snapshots für Unternehmen, Geschäftsbereich, Leistungsort, Branding und optional Kunde;
+- Positionssnapshots mit optionaler Katalog-ID, Typ, Name, Menge, Preis, Rabatt, Steuersatz sowie Netto-, Steuer- und Bruttocentwerten;
+- Summen und Steueraufschlüsselung als Integer-Centwerte;
+- Zahlungsstatus, Zahlungsart, Zahlungszeitpunkt und `paymentEvents`;
+- Aktivitäten, interne Notiz sowie Referenzen zwischen Ursprung, Storno und Gutschrift;
+- optional ausschließlich eine schmale Gutscheinreferenz beziehungsweise Zahlungsreferenz, niemals das vollständige Gutscheinobjekt oder seine Historie.
+
+Die bestehenden UI-Aliasfelder wie `number`, `type`, `items`, `total` und `activity` bleiben innerhalb desselben Belegobjekts erhalten. Das persistente Format ergänzt die kanonischen Felder `receiptNumber`, `receiptType`, `positions`, `totalCents` und `activities`; es entsteht keine zweite Belegliste.
+
 ## Kundenmodell, Suche und Referenzen
 
 `data.customers` bleibt die einzige fachliche Kundenquelle. Das gespeicherte Format verwendet `postalCode` und `notes`; beim Übernehmen in das bestehende Laufzeitmodell werden zusätzlich die vorhandenen Aliasfelder `zip` und `note` gesetzt. Dies ist eine Formatabbildung innerhalb desselben Kundenobjekts, kein paralleles Modell.
@@ -101,7 +124,17 @@ Fehlende optionale Felder werden als leere Strings ergänzt. Doppelte IDs werden
 
 Die Suche arbeitet direkt auf den geladenen Kundenobjekten und umfasst Vorname, Nachname, Firma, Telefon, Mobilnummer und E-Mail. Für Telefonnummern werden bei der Suche Leerzeichen, Schrägstriche, Bindestriche und Klammern ignoriert. Es gibt keine zusätzliche Suchdatenbank und keinen separaten Index.
 
-Neue Belege und Gutscheine referenzieren weiterhin die stabile Kunden-ID und erzeugen beim Abschluss ein separates Kundensnapshot. Kundenänderungen mutieren weder bestehende Beleg- noch Gutscheinsnapshots. Der Verlauf bleibt aus den noch flüchtigen Beleg- und Gutscheindaten ableitbar und wird nicht in den Kundenstore kopiert.
+Neue Belege und Gutscheine referenzieren weiterhin die stabile Kunden-ID und erzeugen beim Abschluss ein separates Kundensnapshot. Kundenänderungen mutieren weder bestehende Beleg- noch Gutscheinsnapshots. Der Kundenbelegverlauf wird seit PERSIST-004 aus den persistierten Belegen abgeleitet; Gutscheinverläufe bleiben flüchtig. Keine Historie wird in den Kundenstore kopiert.
+
+## Belegmodell, Nummernvergabe und Atomarität
+
+`data.receipts` bleibt die einzige fachliche Beleglaufzeitquelle. Der Receipt-Store speichert eine versionierte Projektion genau dieser Liste. Laden und Speichern ersetzen beziehungsweise normalisieren Einträge in-place; Belegübersicht, Detail, Kassenzettel, Filter und Kundenverlauf lesen weiterhin dieselben Objekte.
+
+Der Nummernstand normaler Belege bleibt ausschließlich in `settings.receiptSettings.nextNumber`. Im Receipt-Store wird kein paralleler `receiptSequence` geführt. `commitReceipt` öffnet eine gemeinsame Readwrite-Transaktion über `settings` und `receipts`, liest Nummernstand und vorhandene Belegnummern, vergibt die nächste kollisionsfreie Nummer, schreibt den vollständigen Beleg und erhöht anschließend den Settings-Nummernstand. Erst der erfolgreiche Abschluss dieser einen Transaktion bestätigt den Beleg. Bei Abbruch bleiben Nummernstand, Receipt-Store, Warenkorb und Erfolgsansicht unverändert; ein erneuter Versuch kann dieselbe sichere nächste Nummer verwenden. Eine stabile Beleg-ID macht die Wiederholung desselben Abschlusses idempotent.
+
+Storno- und Gutschriftsnummern werden innerhalb der Receipt-Transaktion aus den bereits gespeicherten Folgedokumenten ermittelt. Stornos verwenden `ST-<Jahr>-<Sequenz>`, Gutschriften `GS-<Jahr>-<Sequenz>` entsprechend der vorhandenen Prototyplogik. Ursprungsbeleg und Folgedokument werden in einem Schreibvorgang aktualisiert. Die Dokument-Snapshots des Ursprungs bleiben unverändert; nur Lebenszyklusfelder wie Status, Korrekturreferenzen, Aktivität und `updatedAt` werden ergänzt. Ein zweiter Stornoklick erzeugt kein Duplikat.
+
+Offene Belege werden mit `paymentStatus: "open"`, ohne Zahlungsart und ohne Zahlungszeitpunkt gespeichert. Die Aktivität „Zahlung offen gelassen“ gehört zum Beleg. Eine spätere vollständige Zahlung wird vor der UI-Bestätigung zusammen mit Zahlungsart, Zeitpunkt, Betrag, `paymentEvent` und Aktivität in den Receipt-Store geschrieben. Teilzahlungen, Mahnungen, Bankabgleich und Zahlungsanbieter sind nicht enthalten.
 
 ## Katalogmodell und Normalisierung
 
@@ -127,29 +160,35 @@ Beim Laden werden verwaiste Zuordnungen entfernt. Ein Standardort ist nur gülti
 - Ladefehler führen zu sicheren In-Memory-Standardwerten und einem verständlichen Hinweis.
 - Schreibfehler lassen die aktuelle Eingabe im Arbeitsspeicher bestehen, zeigen aber keine Erfolgsmeldung.
 - Schreib- und Resetvorgänge werden serialisiert; ein Fehler blockiert spätere Versuche nicht.
-- Settings-, Katalog- und Kundenschreibvorgänge verwenden getrennte Stores und überschreiben sich nicht gegenseitig.
+- Settings-, Katalog-, Kunden- und Belegschreibvorgänge verwenden getrennte Stores und überschreiben sich nicht gegenseitig. Nur der fachlich atomare Belegabschluss umfasst gemeinsam `settings` und `receipts`.
 - Konsolenmeldungen enthalten nur Operation und Fehlercode, niemals vollständige Datensätze, Namen, E-Mail-Adressen, Telefonnummern oder Anschriften.
 - Unbekannte harmlose Felder bestehender Datensätze werden beim erneuten Schreiben soweit möglich erhalten.
 - Ein Katalogschreibfehler lässt die bereits geänderten zentralen Laufzeitobjekte bestehen, zeigt keine Erfolgsmeldung und ermöglicht einen erneuten Speicherversuch.
 - Ein Kundenschreibfehler lässt Formularwerte und die geänderten zentralen Kundenobjekte bestehen. Das Formular bleibt geöffnet, ein erneuter Versuch verwendet dieselbe stabile ID und erzeugt kein Duplikat.
+- Ein Belegabschlussfehler zeigt weder Erfolgsansicht noch vergebene Nummer und leert den Warenkorb nicht. Nachträgliche Zahlung, Notiz, Storno und Gutschrift melden einen Fehler, ohne einen isolierten oder halb aktualisierten Folgezustand zu speichern.
+- Kann der Belegbestand beim Start nicht gelesen werden, werden keine neuen Nummern vergeben. Die übrigen sicher geladenen Bereiche bleiben bedienbar.
 
 ## Automatisierter Browser-Smoke-Test
 
 `tests/persistence-smoke.html` führt ohne zusätzliche Bibliothek native IndexedDB-Prüfungen aus. Die Seite muss über HTTP oder HTTPS geöffnet werden und startet automatisch. Jeder Lauf verwendet einen zufälligen Datenbanknamen mit dem Präfix `frecka-persist-smoke-`, zeigt jeden Fall als PASS oder FAIL und löscht anschließend ausschließlich diese Testdatenbank. Ein Guard schützt die Produktionsdatenbank `frecka`.
 
-Geprüft werden weiterhin alle PERSIST-001a- und PERSIST-002-Fälle. Hinzu kommen Schema-Upgrades auf Version 3, Kunden-Erststart und Roundtrip, Anlage, Bearbeitung, optionale Felder, Text-Telefonnummern, E-Mail, Aktivstatus, stabile IDs, Mehrfachspeicherung, Suche nach Name, Firma, Telefon und E-Mail, ausgeschlossene Historien, unbekannte Felder, tenantisolierter Kundenreset sowie Wiederanlauf nach Kundenschreibfehlern.
+Geprüft werden weiterhin alle Fälle aus PERSIST-001a bis PERSIST-003. PERSIST-004 ergänzt das Upgrade 3 → 4, Beleg-Roundtrip, Centwerte, Snapshots, eindeutige und atomare Nummernvergabe, idempotente Wiederholung, Schreibfehler ohne Nummernverbrauch, offene und später erfasste Zahlung, Aktivitäten, Storno, Teil- und Gesamtgutschrift, konsistente Ursprungsreferenzen, Gutschein-Ausschlüsse sowie den tenant- und storeisolierten Receipt-Reset.
 
 ## Reset
 
 „Gespeicherte Einstellungen zurücksetzen“ löscht ausschließlich den Settings-Datensatz der aktuellen `tenantId`. Kunden, Belege, Gutscheine, Kataloge und deren Snapshots werden weder aus IndexedDB noch aus dem aktuellen Arbeitsspeicher gelöscht. Anschließend werden die unveränderten sicheren Start-Einstellungen in die zentrale Laufzeitquelle übernommen.
 
-„Gespeicherten Katalog zurücksetzen“ löscht ausschließlich den Katalogdatensatz der aktuellen `tenantId`. Settings, Kunden, Belege und Gutscheine bleiben unverändert. Anschließend werden die sicheren Demo-/Standardkategorien, -leistungen und -produkte in die bestehende zentrale Katalogquelle übernommen. Beide Aktionen sind getrennt bestätigt und führen keine versteckte Löschung aus.
+„Gespeicherten Katalog zurücksetzen“ löscht ausschließlich den Katalogdatensatz der aktuellen `tenantId`. Settings, Kunden, Belege und Gutscheine bleiben unverändert. Anschließend werden die sicheren Demo-/Standardkategorien, -leistungen und -produkte in die bestehende zentrale Katalogquelle übernommen. Alle Resetaktionen sind getrennt bestätigt und führen keine versteckte Löschung aus.
 
 „Gespeicherte Kunden zurücksetzen“ löscht ausschließlich den Kundendatensatz der aktuellen `tenantId`. Settings, Katalog, Belege und Gutscheine bleiben unverändert. Anschließend werden die sicheren Demo-Kunden in `data.customers` übernommen. Die Aktion besitzt eine eigene Bestätigung und löscht keine Datensätze anderer Mandanten.
 
+„Gespeicherte Belege zurücksetzen“ löscht ausschließlich den Receipt-Datensatz der aktuellen `tenantId`. Settings, Katalog, Kunden und Gutscheine bleiben unverändert. Der Settings-Nummernstand wird absichtlich nicht abgesenkt, damit kein zuvor verwendeter Nummernstand erneut vergeben wird. Anschließend erscheinen die klaren Demo-Belege wieder als Startdaten.
+
+Alle vier feingranularen Resetaktionen sind Entwicklungswerkzeuge. Sie liegen standardmäßig eingeklappt im deutlich gekennzeichneten Bereich „Entwicklungswerkzeuge – Nur für Entwicklung und Tests“ und sind nicht Bestandteil einer produktiven Datenverwaltung. Eine allgemeine Funktion „Alle Daten löschen“ ist nicht umgesetzt.
+
 ## ADR-Status
 
-ADR-0002 dokumentiert IndexedDB bereits als verbindliche lokale Persistenztechnologie. PERSIST-003 folgt dieser Entscheidung und benötigt für den kleinen fachlichen Storezuschnitt kein weiteres ADR.
+ADR-0002 dokumentiert IndexedDB bereits als verbindliche lokale Persistenztechnologie. PERSIST-004 folgt dieser Entscheidung und erweitert nur den dort vorgesehenen Store- und Transaktionszuschnitt; ein neues ADR ist nicht erforderlich.
 
 ## Manueller Safari-/iPhone-Smoke-Test
 
@@ -162,13 +201,15 @@ Der Test erfolgt über ein HTTPS-Testdeployment oder einen lokalen HTTP-Server, 
 5. Eine Branchenvorlage importieren, einen importierten Eintrag manuell bearbeiten und offene Prüfungen bestätigen.
 6. Einen eindeutig fiktiven Kunden mit Firma, Telefon, Mobilnummer, E-Mail, Anschrift und Notiz anlegen und anschließend bearbeiten.
 7. Die Kundensuche nacheinander mit Name, Firma, E-Mail und einer Telefonnummer ohne die eingegebenen Trennzeichen prüfen.
-8. Mit diesem Kunden einen neuen Beleg und einen Gutschein simulieren und die jeweiligen Kundensnapshots öffnen.
+8. Mit diesem Kunden einen normalen Beleg abschließen, anschließend einen Gutschein simulieren und die jeweiligen Kundensnapshots öffnen.
 9. Seite neu laden, Safari vollständig schließen und erneut öffnen.
-10. Einstellungen, Katalogänderungen und Kundenstammdaten prüfen; die Kundensuche muss unverändert funktionieren und der Kunde darf nur einmal vorhanden sein.
+10. Einstellungen, Katalogänderungen, Kundenstammdaten und den abgeschlossenen Beleg prüfen; die konkrete Hash-Route muss beim Reload erhalten bleiben.
 11. Kundenadresse ändern und prüfen, dass zuvor erzeugte Beleg- und Gutscheinsnapshots unverändert bleiben.
-12. Bei bereits geladener App das Netz deaktivieren und erneut Settings, Katalog und Kunden speichern.
-13. Settings- und Katalogreset jeweils abbrechen und bestätigen; die Kunden müssen erhalten bleiben.
-14. Kundenreset abbrechen und bestätigen; Settings und Katalog müssen erhalten bleiben und sichere Demo-Kunden wieder erscheinen.
-15. Optional im privaten Modus prüfen, ob Speicherung funktioniert oder der Fallbackhinweis verständlich erscheint.
+12. Einen Beleg als offene Zahlung abschließen, neu laden, Zahlung vollständig erfassen und nach erneutem Reload Zahlungsart, Zeitpunkt und Aktivität prüfen.
+13. Einen vollständigen Storno sowie eine Teil- und Restgutschrift an geeigneten Belegen erstellen; Ursprung, Folgedokumente und Navigation in beide Richtungen nach Reload prüfen.
+14. Bei bereits geladener App das Netz deaktivieren und erneut Settings, Katalog, Kunden sowie einen Beleg speichern.
+15. Die Entwicklungswerkzeuge öffnen; Settings-, Katalog-, Kunden- und Receipt-Reset jeweils abbrechen und gezielt bestätigen. Nicht gewählte Stores müssen erhalten bleiben, der Nummernstand darf beim Receipt-Reset nicht sinken.
+16. Grundadresse ohne Hash öffnen und „Start“ prüfen; anschließend eine konkrete gültige Hash-Route neu laden und den Routenerhalt prüfen.
+17. Optional im privaten Modus prüfen, ob Speicherung funktioniert oder der Fallbackhinweis verständlich erscheint.
 
 Ein kalter Offline-Neustart der App-Shell ist nicht Gegenstand dieser Persistenzblöcke, weil der bestehende Prototyp ältere Service Worker und Caches weiterhin entfernt und ein Service-Worker-Großumbau ausdrücklich ausgeschlossen ist.
