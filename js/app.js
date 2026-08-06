@@ -64,7 +64,12 @@
     serviceLocationNotice: "",
     taxSettingsNotice: "",
     paymentSettingsNotice: "",
-    businessAreaSettingsNotice: ""
+    businessAreaSettingsNotice: "",
+    setupStep: 1,
+    setupNotice: "",
+    setupFirstStartVisible: true,
+    setupCompleted: false,
+    setupTestPreviewVisible: false
   };
 
   const mainContent = document.getElementById("mainContent");
@@ -77,7 +82,7 @@
   const confirmDiscard = document.getElementById("confirmDiscard");
   const dialogTitle = document.getElementById("dialogTitle");
   const dialogText = document.getElementById("dialogText");
-  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "settings-company", "settings-location", "settings-taxes", "settings-payments", "settings-business-areas"]);
+  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "settings-company", "settings-location", "settings-taxes", "settings-payments", "settings-business-areas", "setup-wizard"]);
   const validRoutes = new Set(["home", "receipts", "customers", "vouchers", "settings", ...flowRoutes]);
 
   const escapeHtml = value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -116,7 +121,7 @@
       <p>${data.openReceipt.itemCount} Positionen · ${escapeHtml(data.openReceipt.customer)} · ${escapeHtml(data.openReceipt.lastEdited)}</p>
       <div class="open-receipt-actions"><button class="button button-secondary" type="button" data-action="resume-receipt">Weiter bearbeiten</button><button class="button button-ghost" type="button" data-action="discard-receipt">Verwerfen</button></div>
     </section>` : "";
-    mainContent.innerHTML = `<div class="home-layout page-enter"><section class="hero-card"><p class="eyebrow">${escapeHtml(getAreaLabel())}</p><h1>Was möchtest du erfassen?</h1><p class="hero-copy">Leistungen und Produkte direkt auswählen.</p><button class="button button-primary" type="button" data-action="new-receipt"><span aria-hidden="true">＋</span><span>Neuer Beleg</span></button></section>${openReceipt}</div>`;
+    mainContent.innerHTML = `<div class="home-layout page-enter">${state.setupFirstStartVisible ? setupStartHint() : ""}<section class="hero-card"><p class="eyebrow">${escapeHtml(getAreaLabel())}</p><h1>Was möchtest du erfassen?</h1><p class="hero-copy">Leistungen und Produkte direkt auswählen.</p><button class="button button-primary" type="button" data-action="new-receipt"><span aria-hidden="true">＋</span><span>Neuer Beleg</span></button></section>${openReceipt}</div>`;
   }
 
   function catalogItems() {
@@ -1888,6 +1893,247 @@
     { icon: "T", title: "TSE-Vorbereitung", note: "Noch nicht umgesetzt" }
   ];
 
+  const setupSteps = [
+    "Willkommen", "Unternehmensdaten", "Leistungsort", "Steuerstatus", "Belegnummer",
+    "Zahlungsarten", "Geschäftsbereich", "Belegtexte", "TSE-Hinweis", "Zusammenfassung",
+    "Testbeleg", "Fertig"
+  ];
+
+  function setupStartHint() {
+    return `<section class="setup-start-hint"><span class="setup-start-icon" aria-hidden="true">✓</span><div><strong>Wir richten FRECKA gemeinsam in wenigen Schritten ein.</strong><p>Du kannst die Einrichtung jederzeit abbrechen und später fortsetzen.</p></div><button class="button button-primary" type="button" data-action="setup-start">Jetzt einrichten</button><button class="button button-ghost" type="button" data-action="setup-later">Später</button></section>`;
+  }
+
+  function applyCompanyForm(formData) {
+    Object.assign(data.company, {
+      name: String(formData.get("name") || "").trim(),
+      owner: String(formData.get("owner") || "").trim(),
+      street: String(formData.get("street") || "").trim(),
+      zip: String(formData.get("zip") || "").trim(),
+      city: String(formData.get("city") || "").trim(),
+      country: String(formData.get("country") || "Deutschland").trim() || "Deutschland",
+      phone: String(formData.get("phone") || "").trim(),
+      email: String(formData.get("email") || "").trim(),
+      taxNumber: String(formData.get("taxNumber") ?? data.company.taxNumber ?? "").trim(),
+      vatId: String(formData.get("vatId") ?? data.company.vatId ?? "").trim()
+    });
+    companyName.textContent = data.company.name || "FRECKA";
+  }
+
+  function applyServiceLocationForm(formData) {
+    const mode = formData.get("mode") === "alternate" ? "alternate" : "company";
+    const location = mode === "alternate" ? {
+      id: data.defaultServiceLocationId,
+      mode,
+      name: String(formData.get("name") || "").trim(),
+      street: String(formData.get("street") || "").trim(),
+      zip: String(formData.get("zip") || "").trim(),
+      city: String(formData.get("city") || "").trim(),
+      phone: String(formData.get("phone") || "").trim(),
+      voucherNote: String(formData.get("voucherNote") || "").trim()
+    } : { id: data.defaultServiceLocationId, mode: "company" };
+    const locationIndex = data.serviceLocations.findIndex(entry => entry.id === data.defaultServiceLocationId);
+    if (locationIndex >= 0) data.serviceLocations.splice(locationIndex, 1, location);
+    else data.serviceLocations.push(location);
+  }
+
+  function receiptNumberValidation(yearPrefix, nextNumber) {
+    if (!/^\d{4}$/.test(yearPrefix) || !Number.isInteger(nextNumber) || nextNumber < 1) {
+      return "Bitte ein vierstelliges Jahrespräfix und eine gültige nächste Belegnummer eingeben.";
+    }
+    const candidateNumber = `${yearPrefix}-${String(nextNumber).padStart(6, "0")}`;
+    return receiptNumberExists(candidateNumber) ? "Bitte eine noch nicht vergebene nächste Belegnummer wählen." : "";
+  }
+
+  function applyBusinessAreaForm(formData) {
+    const activeIds = formData.getAll("activeBusinessArea").map(String);
+    const defaultId = String(formData.get("defaultBusinessArea") || "");
+    const labels = new Map(data.businessAreas.map(area => [area.id, String(formData.get(`areaLabel:${area.id}`) || "").trim()]));
+    if ([...labels.values()].some(label => !label)) return "Bitte für jeden Geschäftsbereich einen Namen eingeben.";
+    if (!activeIds.length) return "Mindestens ein Geschäftsbereich muss aktiv bleiben.";
+    if (!activeIds.includes(defaultId)) return "Bitte einen aktiven Geschäftsbereich als Standard festlegen.";
+    data.businessAreas.forEach(area => {
+      area.label = labels.get(area.id);
+      area.active = activeIds.includes(area.id);
+      area.isDefault = area.id === defaultId;
+    });
+    if (!state.cart.length || !activeIds.includes(state.activeBusinessArea)) state.activeBusinessArea = defaultId;
+    refreshBusinessSwitcher();
+    return "";
+  }
+
+  function setupActions(nextLabel = "Weiter") {
+    return `<div class="setup-actions">
+      ${state.setupStep > 1 ? `<button class="button button-secondary" type="button" data-setup-back>Zurück</button>` : ""}
+      <button class="button button-primary" type="submit">${escapeHtml(nextLabel)}</button>
+      <button class="setup-cancel" type="button" data-setup-cancel>Assistent abbrechen</button>
+    </div>`;
+  }
+
+  function setupBusinessAreaRows() {
+    return data.businessAreas.map(area => `<section class="business-area-row">
+      <label class="setting-field"><span>Name</span><input name="areaLabel:${escapeHtml(area.id)}" value="${escapeHtml(area.label)}" required></label>
+      <div class="business-area-controls">
+        <label><input type="checkbox" name="activeBusinessArea" value="${escapeHtml(area.id)}" ${area.active !== false ? "checked" : ""}><span>Aktiv</span></label>
+        <label><input type="radio" name="defaultBusinessArea" value="${escapeHtml(area.id)}" ${area.isDefault ? "checked" : ""}><span>Standard</span></label>
+      </div>
+    </section>`).join("");
+  }
+
+  function setupSummary() {
+    const location = currentServiceLocation();
+    const taxLabels = { vat: "Umsatzsteuer", "small-business": "Kleinunternehmen", undecided: "Noch nicht festgelegt" };
+    const summary = [
+      [2, "Unternehmen", data.company.name || "Nicht angegeben", [data.company.street, addressCityLine(data.company)].filter(Boolean).join(", ")],
+      [3, "Leistungsort", location.mode === "alternate" ? location.name || "Abweichender Ort" : "Unternehmensanschrift", location.mode === "alternate" ? [location.street, addressCityLine(location)].filter(Boolean).join(", ") : ""],
+      [4, "Steuern", taxLabels[data.taxSettings.status] || taxLabels.undecided, data.taxSettings.status === "vat" ? `${data.taxSettings.defaultRate} % Standard` : "Keine automatische steuerliche Bewertung"],
+      [5, "Belegnummer", `${data.receiptSettings.yearPrefix}-${String(data.receiptSettings.nextNumber).padStart(6, "0")}`, "Nächster produktiver Beleg"],
+      [6, "Zahlungsarten", activePaymentChoices().map(choice => choice.title).join(", "), ""],
+      [7, "Geschäftsbereiche", activeBusinessAreas().map(area => area.label).join(", "), `Standard: ${defaultBusinessArea()?.label || "–"}`],
+      [8, "Belegtexte", data.receiptSettings.thankYouText || data.receiptSettings.footerText ? "Vorhanden" : "Nicht hinterlegt", "Optional"],
+      [9, "TSE", "Noch nicht eingerichtet", "Pflicht vor produktiver Nutzung fachlich prüfen"]
+    ];
+    return `<div class="setup-summary">${summary.map(([step, title, value, note]) => `<article>
+      <div><span>${escapeHtml(title)}</span><strong>${escapeHtml(value || "–")}</strong>${note ? `<small>${escapeHtml(note)}</small>` : ""}</div>
+      <button type="button" data-setup-jump="${step}">Ändern</button>
+    </article>`).join("")}</div>`;
+  }
+
+  function setupTestReceipt() {
+    const location = currentServiceLocation();
+    const taxRate = Number(data.taxSettings.defaultRate || 19);
+    const payment = activeNormalPaymentChoices()[0]?.title || "Zahlungsart";
+    return `<article class="setup-test-receipt" aria-label="Testbeleg Vorschau">
+      <strong class="setup-test-label">TESTBELEG · VORSCHAU</strong>
+      <h3>${escapeHtml(data.company.name || "Unternehmen")}</h3>
+      <p>${escapeHtml(data.company.street || "")}<br>${escapeHtml(addressCityLine(data.company))}</p>
+      ${location.mode === "alternate" ? `<p>Leistungsort: ${escapeHtml(location.name || "Abweichender Leistungsort")}</p>` : ""}
+      <div class="setup-test-line"><span>Testleistung</span><strong>${formatCurrency(10)}</strong></div>
+      <div class="setup-test-line total"><span>Gesamt</span><strong>${formatCurrency(10)}</strong></div>
+      <p>${data.taxSettings.status === "vat" ? `Enthaltene USt.: ${escapeHtml(taxRate)} %` : "Steuerstatus: " + escapeHtml(data.taxSettings.status === "small-business" ? "Kleinunternehmen" : "noch nicht festgelegt")}</p>
+      <p>Zahlungsart: ${escapeHtml(payment)}</p>
+      ${data.receiptSettings.footerText ? `<p>${escapeHtml(data.receiptSettings.footerText)}</p>` : ""}
+      ${data.receiptSettings.thankYouText ? `<p>${escapeHtml(data.receiptSettings.thankYouText)}</p>` : ""}
+      <strong>Keine produktive Belegnummer · keine TSE · keine Fiskalisierung</strong>
+    </article>`;
+  }
+
+  function setupStepContent() {
+    const company = data.company;
+    const location = currentServiceLocation();
+    const alternate = location.mode === "alternate";
+    const receipt = data.receiptSettings;
+    switch (state.setupStep) {
+      case 1: return `<div class="setup-welcome"><div class="setup-welcome-symbol" aria-hidden="true">✓</div><h2>In wenigen Schritten startklar</h2><p>Wir richten die wichtigsten Angaben gemeinsam ein. Alles lässt sich später in den Einstellungen ändern.</p><ul><li>Unternehmen und Leistungsort</li><li>Steuern und Belegnummern</li><li>Zahlungsarten und Geschäftsbereich</li></ul></div>${setupActions("Einrichtung starten")}`;
+      case 2: return `<section class="settings-form-card"><h2>Unternehmen</h2>
+        <label class="setting-field full"><span>Firmenname oder Geschäftsbezeichnung</span><input name="name" required value="${escapeHtml(company.name || "")}"></label>
+        <label class="setting-field full"><span>Vor- und Nachname des Inhabers</span><input name="owner" required value="${escapeHtml(company.owner || "")}"></label>
+        <label class="setting-field full"><span>Straße und Hausnummer</span><input name="street" required value="${escapeHtml(company.street || "")}"></label>
+        <label class="setting-field"><span>PLZ</span><input name="zip" inputmode="numeric" required value="${escapeHtml(company.zip || "")}"></label>
+        <label class="setting-field"><span>Ort</span><input name="city" required value="${escapeHtml(company.city || "")}"></label>
+        <label class="setting-field"><span>E-Mail <small>optional</small></span><input name="email" type="email" value="${escapeHtml(company.email || "")}"></label>
+        <label class="setting-field"><span>Telefon <small>optional</small></span><input name="phone" type="tel" value="${escapeHtml(company.phone || "")}"></label>
+        <input type="hidden" name="country" value="${escapeHtml(company.country || "Deutschland")}"></section>${setupActions()}`;
+      case 3: return `<section class="settings-form-card settings-single-column"><fieldset class="settings-location-choice"><legend>Arbeitest du an deiner Unternehmensanschrift?</legend>
+        <label><input type="radio" name="mode" value="company" ${alternate ? "" : "checked"}><span><strong>Ja</strong><small>Die Unternehmensanschrift wird als Leistungsort verwendet.</small></span></label>
+        <label><input type="radio" name="mode" value="alternate" ${alternate ? "checked" : ""}><span><strong>Nein</strong><small>Ich hinterlege einen abweichenden Leistungsort.</small></span></label></fieldset></section>
+        <fieldset class="settings-form-card setup-location-fields" ${alternate ? "" : "hidden"}><legend>Abweichender Leistungsort</legend>
+        <label class="setting-field full"><span>Bezeichnung</span><input name="name" value="${escapeHtml(location.name || "")}"></label>
+        <label class="setting-field full"><span>Straße und Hausnummer</span><input name="street" value="${escapeHtml(location.street || "")}"></label>
+        <label class="setting-field"><span>PLZ</span><input name="zip" inputmode="numeric" value="${escapeHtml(location.zip || "")}"></label>
+        <label class="setting-field"><span>Ort</span><input name="city" value="${escapeHtml(location.city || "")}"></label>
+        <label class="setting-field full"><span>Hinweis für Gutscheine <small>optional</small></span><textarea name="voucherNote" rows="3" placeholder="z. B. Einlösbar nach Terminvereinbarung">${escapeHtml(location.voucherNote || "")}</textarea></label></fieldset>${setupActions()}`;
+      case 4: return `<section class="settings-form-card settings-single-column"><fieldset class="settings-option-list"><legend>Wie ist dein Steuerstatus?</legend>
+        ${[["vat","Umsatzsteuer wird berechnet","Neue Belege zeigen den gewählten Standardsteuersatz."],["small-business","Kleinunternehmerregelung","Belege werden ohne ausgewiesene Umsatzsteuer vorbereitet."],["undecided","Noch nicht sicher","Du kannst fortfahren und die Auswahl später klären."]].map(([value,label,note]) => `<label><input type="radio" name="taxStatus" value="${value}" ${data.taxSettings.status === value ? "checked" : ""}><span><strong>${label}</strong><small>${note}</small></span></label>`).join("")}</fieldset>
+        <div class="setup-tax-rate" ${data.taxSettings.status === "vat" ? "" : "hidden"}><span>Standard-Steuersatz</span><div class="setup-choice-row"><label><input type="radio" name="defaultTaxRate" value="19" ${data.taxSettings.defaultRate === 19 ? "checked" : ""}><span>19 %</span></label><label><input type="radio" name="defaultTaxRate" value="7" ${data.taxSettings.defaultRate === 7 ? "checked" : ""}><span>7 %</span></label></div></div>
+        <p class="settings-neutral-note">Bitte kläre Unsicherheiten mit deiner Steuerberatung. FRECKA trifft keine rechtliche Entscheidung.</p></section>${setupActions()}`;
+      case 5: return `<section class="settings-form-card"><h2>Belegnummern</h2><label class="setting-field"><span>Jahrespräfix</span><input id="setupReceiptPrefix" name="yearPrefix" inputmode="numeric" maxlength="4" value="${escapeHtml(receipt.yearPrefix)}"></label><label class="setting-field"><span>Nächste Belegnummer</span><input id="setupReceiptNext" name="nextNumber" type="number" min="1" step="1" value="${escapeHtml(receipt.nextNumber)}"></label><div class="receipt-number-preview full"><span>Vorschau</span><strong id="setupReceiptPreview">${escapeHtml(receipt.yearPrefix)}-${String(receipt.nextNumber).padStart(6,"0")}</strong><small>Änderungen wirken nur auf neue Belege. Bestehende Belege bleiben unverändert.</small></div></section><p class="settings-neutral-note">Nach dem produktiven Start sollte der Nummernkreis nicht ohne fachliche Prüfung geändert werden.</p>${setupActions()}`;
+      case 6: return `<div class="payment-settings-list">${data.paymentChoices.map(choice => `<article class="payment-setting-row ${choice.id === "later" ? "is-later" : ""}"><span class="payment-setting-icon" aria-hidden="true">${escapeHtml(choice.icon)}</span><span class="payment-setting-name"><strong>${escapeHtml(choice.title)}</strong><small>${isNormalPaymentChoice(choice) ? "Normale Zahlungsart" : choice.id === "voucher" ? "Gutscheinsystem" : "Zahlung erfolgt später"}</small></span><label class="payment-setting-toggle"><input type="checkbox" data-payment-toggle="${escapeHtml(choice.id)}" ${choice.active !== false ? "checked" : ""}><span>${choice.active !== false ? "Aktiv" : "Inaktiv"}</span></label></article>`).join("")}</div><p class="prototype-note">Mindestens eine normale Zahlungsart muss aktiv bleiben.</p>${setupActions()}`;
+      case 7: return `<div class="business-model-note"><strong>Eine Instanz entspricht einer Filiale.</strong><span>Hier legst du nur fachliche Geschäftsbereiche fest.</span></div><div class="business-area-list">${setupBusinessAreaRows()}</div><button class="button button-secondary business-area-add" type="button" data-action="business-area-add">＋ Geschäftsbereich anlegen</button>${setupActions()}`;
+      case 8: return `<section class="settings-form-card settings-single-column"><h2>Optionale Belegtexte</h2><label class="setting-field full"><span>Dankestext <small>optional</small></span><input name="thankYouText" maxlength="120" placeholder="z. B. Vielen Dank für deinen Besuch." value="${escapeHtml(receipt.thankYouText || "")}"></label><label class="setting-field full"><span>Fußtext <small>optional</small></span><textarea name="footerText" rows="3" maxlength="240" placeholder="z. B. Termine bitte 24 Stunden vorher absagen.">${escapeHtml(receipt.footerText || "")}</textarea></label></section>${setupActions("Weiter oder überspringen")}`;
+      case 9: return `<div class="setup-info-card"><div class="setup-info-symbol" aria-hidden="true">T</div><h2>TSE kommt später</h2><p>FRECKA hat in diesem Prototyp noch keine TSE-Anbindung. Ob eine TSE erforderlich ist, wird hier nicht automatisch beurteilt.</p><p>Vor produktiver Nutzung als elektronisches Aufzeichnungssystem muss die konkrete Pflicht fachlich geprüft werden. Die spätere TSE-Einrichtung erhält einen eigenen Assistenten.</p><button class="button button-primary" type="button" data-setup-tse>Verstanden</button><button class="button button-secondary" type="button" data-setup-tse>Später in Einstellungen prüfen</button></div><div class="setup-actions"><button class="button button-secondary" type="button" data-setup-back>Zurück</button><button class="setup-cancel" type="button" data-setup-cancel>Assistent abbrechen</button></div>`;
+      case 10: return `${setupSummary()}${setupActions("Weiter zum Testbeleg")}`;
+      case 11: return `<div class="setup-info-card"><h2>Jetzt einen Testbeleg erstellen</h2><p>Die Vorschau verwendet deine aktuellen Angaben, erzeugt aber keinen echten Beleg.</p><button class="button button-secondary" type="button" data-setup-test>${state.setupTestPreviewVisible ? "Vorschau aktualisieren" : "Testbeleg-Vorschau anzeigen"}</button></div>${state.setupTestPreviewVisible ? setupTestReceipt() : ""}${setupActions(state.setupTestPreviewVisible ? "Einrichtung abschließen" : "Testbeleg überspringen")}`;
+      case 12: return `<div class="setup-finished"><div class="setup-welcome-symbol" aria-hidden="true">✓</div><h2>FRECKA ist für den Test eingerichtet</h2><p>Die Daten werden in diesem Prototyp nach einem Reload zurückgesetzt.</p><button class="button button-primary" type="button" data-route="home">Zur Startseite</button><button class="button button-secondary" type="button" data-route="settings">Einstellungen öffnen</button></div>`;
+      default: return "";
+    }
+  }
+
+  function attachSetupStepBehavior() {
+    const form = document.getElementById("setupWizardForm");
+    form?.querySelectorAll('input[name="mode"]').forEach(input => input.addEventListener("change", () => {
+      const alternate = form.querySelector('input[name="mode"]:checked')?.value === "alternate";
+      const fields = form.querySelector(".setup-location-fields");
+      if (fields) fields.hidden = !alternate;
+    }));
+    form?.querySelectorAll('input[name="taxStatus"]').forEach(input => input.addEventListener("change", () => {
+      const rates = form.querySelector(".setup-tax-rate");
+      if (rates) rates.hidden = input.value !== "vat";
+    }));
+    const updateNumber = () => {
+      const prefix = String(document.getElementById("setupReceiptPrefix")?.value || "–").trim() || "–";
+      const number = Math.max(1, Number(document.getElementById("setupReceiptNext")?.value || 1));
+      const preview = document.getElementById("setupReceiptPreview");
+      if (preview) preview.textContent = `${prefix}-${String(Math.trunc(number)).padStart(6, "0")}`;
+    };
+    document.getElementById("setupReceiptPrefix")?.addEventListener("input", updateNumber);
+    document.getElementById("setupReceiptNext")?.addEventListener("input", updateNumber);
+  }
+
+  function renderSetupWizard() {
+    const progress = Math.round((state.setupStep / setupSteps.length) * 100);
+    mainContent.innerHTML = `<section class="flow-page setup-page page-enter">
+      <header class="setup-head"><div><p class="eyebrow">Ersteinrichtung</p><span>Schritt ${state.setupStep} von ${setupSteps.length}</span></div><div class="setup-progress" role="progressbar" aria-valuemin="1" aria-valuemax="${setupSteps.length}" aria-valuenow="${state.setupStep}"><span style="width:${progress}%"></span></div><h1>${escapeHtml(setupSteps[state.setupStep - 1])}</h1></header>
+      ${state.setupNotice ? `<div class="settings-save-notice is-error" role="alert">${escapeHtml(state.setupNotice)}</div>` : ""}
+      <form id="setupWizardForm" class="settings-form setup-form" data-setup-step="${state.setupStep}">${setupStepContent()}</form>
+    </section>`;
+    attachSetupStepBehavior();
+  }
+
+  function saveSetupStep(formData, validate = true) {
+    if (state.setupStep === 2) {
+      const required = ["name", "owner", "street", "zip", "city"];
+      if (validate && required.some(name => !String(formData.get(name) || "").trim())) return "Bitte alle Pflichtangaben zum Unternehmen ausfüllen.";
+      applyCompanyForm(formData);
+    }
+    if (state.setupStep === 3) {
+      const alternate = formData.get("mode") === "alternate";
+      if (validate && alternate && ["name", "street", "zip", "city"].some(name => !String(formData.get(name) || "").trim())) return "Bitte den abweichenden Leistungsort vollständig angeben.";
+      applyServiceLocationForm(formData);
+    }
+    if (state.setupStep === 4) {
+      const status = String(formData.get("taxStatus") || "undecided");
+      const defaultRate = Number(formData.get("defaultTaxRate"));
+      if (validate && status === "vat" && ![7, 19].includes(defaultRate)) return "Bitte einen Standard-Steuersatz auswählen.";
+      data.taxSettings.status = ["vat", "small-business", "undecided"].includes(status) ? status : "undecided";
+      if (status === "vat") {
+        data.taxSettings.defaultRate = defaultRate;
+        data.company.defaultTaxRate = defaultRate;
+        data.taxSettings.rates.forEach(rate => { rate.active = rate.rate === defaultRate || rate.active; });
+      }
+    }
+    if (state.setupStep === 5) {
+      const yearPrefix = String(formData.get("yearPrefix") || "").trim();
+      const nextNumber = Number(formData.get("nextNumber"));
+      const error = receiptNumberValidation(yearPrefix, nextNumber);
+      if (validate && error) return error;
+      if (!error) {
+        data.receiptSettings.yearPrefix = yearPrefix;
+        data.receiptSettings.nextNumber = nextNumber;
+        state.receiptCounter = nextNumber - 1;
+      }
+    }
+    if (state.setupStep === 6 && !activeNormalPaymentChoices().length) return "Mindestens eine normale Zahlungsart muss aktiv bleiben.";
+    if (state.setupStep === 7) {
+      const error = applyBusinessAreaForm(formData);
+      if (validate && error) return error;
+    }
+    if (state.setupStep === 8) {
+      data.receiptSettings.footerText = String(formData.get("footerText") || "").trim();
+      data.receiptSettings.thankYouText = String(formData.get("thankYouText") || "").trim();
+    }
+    return "";
+  }
+
   function renderSettings() {
     mainContent.innerHTML = `<section class="settings-overview page-enter">
       <header class="settings-head">
@@ -1895,6 +2141,8 @@
         <h1>Einstellungen</h1>
         <p>Grunddaten des Betriebs zentral verwalten.</p>
       </header>
+      ${state.setupFirstStartVisible ? setupStartHint() : ""}
+      <button class="button button-secondary setup-restart" type="button" data-action="setup-start">${state.setupCompleted ? "Ersteinrichtung erneut starten" : "Ersteinrichtung starten"}</button>
       <div class="settings-list" aria-label="Einstellungsbereiche">
         ${settingsSections.map(section => section.available ? `<button class="settings-entry" type="button" data-route="${escapeHtml(section.id)}">
           <span class="settings-entry-icon" aria-hidden="true">${escapeHtml(section.icon)}</span>
@@ -2136,7 +2384,8 @@
       "settings-location",
       "settings-taxes",
       "settings-payments",
-      "settings-business-areas"
+      "settings-business-areas",
+      "setup-wizard"
     ].includes(state.route));
     if (state.route === "home") renderHome();
     else if (state.route === "receipts") renderReceipts();
@@ -2163,6 +2412,7 @@
     else if (state.route === "settings-taxes") renderTaxSettings();
     else if (state.route === "settings-payments") renderPaymentSettings();
     else if (state.route === "settings-business-areas") renderBusinessAreaSettings();
+    else if (state.route === "setup-wizard") renderSetupWizard();
     else renderPlaceholder(state.route);
     const isFlow = flowRoutes.has(state.route);
     bottomNav.hidden = isFlow;
@@ -2467,12 +2717,48 @@
       navigate("voucher-detail");
       return;
     }
+    const setupBack = event.target.closest("[data-setup-back]");
+    if (setupBack) {
+      const form = document.getElementById("setupWizardForm");
+      if (form) saveSetupStep(new FormData(form), false);
+      state.setupNotice = "";
+      state.setupStep = Math.max(1, state.setupStep - 1);
+      renderSetupWizard();
+      return;
+    }
+    const setupCancel = event.target.closest("[data-setup-cancel]");
+    if (setupCancel) {
+      const form = document.getElementById("setupWizardForm");
+      if (form) saveSetupStep(new FormData(form), false);
+      state.setupNotice = "";
+      navigate("settings");
+      return;
+    }
+    const setupJump = event.target.closest("[data-setup-jump]");
+    if (setupJump) {
+      state.setupStep = Math.min(setupSteps.length, Math.max(1, Number(setupJump.dataset.setupJump)));
+      state.setupNotice = "";
+      renderSetupWizard();
+      return;
+    }
+    if (event.target.closest("[data-setup-tse]")) {
+      state.setupStep = 10;
+      state.setupNotice = "";
+      renderSetupWizard();
+      return;
+    }
+    if (event.target.closest("[data-setup-test]")) {
+      state.setupTestPreviewVisible = true;
+      renderSetupWizard();
+      return;
+    }
     const paymentToggle = event.target.closest("[data-payment-toggle]");
     if (paymentToggle) {
       const choice = data.paymentChoices.find(entry => entry.id === paymentToggle.dataset.paymentToggle);
       if (!choice) return;
       const showPaymentNotice = (message, isError = false) => {
-        state.paymentSettingsNotice = message;
+        if (state.route === "setup-wizard") state.setupNotice = isError ? message : "";
+        else state.paymentSettingsNotice = message;
         let notice = document.querySelector(".settings-save-notice");
         if (!notice) {
           notice = document.createElement("div");
@@ -2531,12 +2817,34 @@
       return;
     }
     const action = event.target.closest("[data-action]")?.dataset.action;
+    if (action === "setup-start") {
+      state.setupStep = 1;
+      state.setupNotice = "";
+      state.setupTestPreviewVisible = false;
+      state.setupFirstStartVisible = false;
+      navigate("setup-wizard");
+      return;
+    }
+    if (action === "setup-later") {
+      state.setupFirstStartVisible = false;
+      renderSettings();
+      return;
+    }
     if (action === "business-area-add") {
+      if (state.route === "setup-wizard") {
+        const form = document.getElementById("setupWizardForm");
+        if (form) saveSetupStep(new FormData(form), false);
+      }
       const id = `area-${Date.now()}`;
       data.businessAreas.push({ id, label: "Neuer Geschäftsbereich", active: true, isDefault: false });
       data.catalog[id] = [];
-      state.businessAreaSettingsNotice = "Neuer Geschäftsbereich wurde für diese Sitzung angelegt. Name und Standard können jetzt angepasst werden.";
-      renderBusinessAreaSettings();
+      if (state.route === "setup-wizard") {
+        state.setupNotice = "";
+        renderSetupWizard();
+      } else {
+        state.businessAreaSettingsNotice = "Neuer Geschäftsbereich wurde für diese Sitzung angelegt. Name und Standard können jetzt angepasst werden.";
+        renderBusinessAreaSettings();
+      }
       return;
     }
     if (action === "checkout-voucher-code") {
@@ -2700,23 +3008,31 @@
   });
 
   document.addEventListener("submit", event => {
+    const setupWizardForm = event.target.closest("#setupWizardForm");
+    if (setupWizardForm) {
+      event.preventDefault();
+      if (state.setupStep >= setupSteps.length) return;
+      const error = saveSetupStep(new FormData(setupWizardForm));
+      if (error) {
+        state.setupNotice = error;
+        renderSetupWizard();
+        return;
+      }
+      state.setupNotice = "";
+      state.setupStep += 1;
+      if (state.setupStep === setupSteps.length) {
+        state.setupCompleted = true;
+        state.setupFirstStartVisible = false;
+      }
+      renderSetupWizard();
+      return;
+    }
+
     const companySettingsForm = event.target.closest("#companySettingsForm");
     if (companySettingsForm) {
       event.preventDefault();
       const formData = new FormData(companySettingsForm);
-      Object.assign(data.company, {
-        name: String(formData.get("name") || "").trim(),
-        owner: String(formData.get("owner") || "").trim(),
-        street: String(formData.get("street") || "").trim(),
-        zip: String(formData.get("zip") || "").trim(),
-        city: String(formData.get("city") || "").trim(),
-        country: String(formData.get("country") || "Deutschland").trim() || "Deutschland",
-        phone: String(formData.get("phone") || "").trim(),
-        email: String(formData.get("email") || "").trim(),
-        taxNumber: String(formData.get("taxNumber") || "").trim(),
-        vatId: String(formData.get("vatId") || "").trim()
-      });
-      companyName.textContent = data.company.name;
+      applyCompanyForm(formData);
       state.settingsNotice = "Änderungen wurden für diese Sitzung übernommen. Nach einem Reload gehen sie verloren.";
       renderCompanySettings();
       return;
@@ -2726,20 +3042,7 @@
     if (serviceLocationForm) {
       event.preventDefault();
       const formData = new FormData(serviceLocationForm);
-      const mode = formData.get("mode") === "alternate" ? "alternate" : "company";
-      const location = mode === "alternate" ? {
-        id: data.defaultServiceLocationId,
-        mode,
-        name: String(formData.get("name") || "").trim(),
-        street: String(formData.get("street") || "").trim(),
-        zip: String(formData.get("zip") || "").trim(),
-        city: String(formData.get("city") || "").trim(),
-        phone: String(formData.get("phone") || "").trim(),
-        voucherNote: String(formData.get("voucherNote") || "").trim()
-      } : { id: data.defaultServiceLocationId, mode: "company" };
-      const locationIndex = data.serviceLocations.findIndex(entry => entry.id === data.defaultServiceLocationId);
-      if (locationIndex >= 0) data.serviceLocations.splice(locationIndex, 1, location);
-      else data.serviceLocations.push(location);
+      applyServiceLocationForm(formData);
       state.serviceLocationNotice = "Leistungsort wurde für diese Sitzung übernommen. Nach einem Reload geht die Änderung verloren.";
       renderServiceLocationSettings();
       return;
@@ -2758,14 +3061,9 @@
         renderTaxSettings();
         return;
       }
-      if (!/^\d{4}$/.test(yearPrefix) || !Number.isInteger(nextNumber) || nextNumber < 1) {
-        state.taxSettingsNotice = "Bitte ein vierstelliges Jahrespräfix und eine gültige nächste Belegnummer eingeben.";
-        renderTaxSettings();
-        return;
-      }
-      const candidateNumber = `${yearPrefix}-${String(nextNumber).padStart(6, "0")}`;
-      if (receiptNumberExists(candidateNumber)) {
-        state.taxSettingsNotice = "Bitte eine noch nicht vergebene nächste Belegnummer wählen.";
+      const numberError = receiptNumberValidation(yearPrefix, nextNumber);
+      if (numberError) {
+        state.taxSettingsNotice = numberError;
         renderTaxSettings();
         return;
       }
@@ -2791,31 +3089,12 @@
     if (businessAreaSettingsForm) {
       event.preventDefault();
       const formData = new FormData(businessAreaSettingsForm);
-      const activeIds = formData.getAll("activeBusinessArea").map(String);
-      const defaultId = String(formData.get("defaultBusinessArea") || "");
-      const labels = new Map(data.businessAreas.map(area => [area.id, String(formData.get(`areaLabel:${area.id}`) || "").trim()]));
-      if ([...labels.values()].some(label => !label)) {
-        state.businessAreaSettingsNotice = "Bitte für jeden Geschäftsbereich einen Namen eingeben.";
+      const businessError = applyBusinessAreaForm(formData);
+      if (businessError) {
+        state.businessAreaSettingsNotice = businessError;
         renderBusinessAreaSettings();
         return;
       }
-      if (!activeIds.length) {
-        state.businessAreaSettingsNotice = "Mindestens ein Geschäftsbereich muss aktiv bleiben.";
-        renderBusinessAreaSettings();
-        return;
-      }
-      if (!activeIds.includes(defaultId)) {
-        state.businessAreaSettingsNotice = "Bitte einen aktiven Geschäftsbereich als Standard festlegen.";
-        renderBusinessAreaSettings();
-        return;
-      }
-      data.businessAreas.forEach(area => {
-        area.label = labels.get(area.id);
-        area.active = activeIds.includes(area.id);
-        area.isDefault = area.id === defaultId;
-      });
-      if (!state.cart.length || !activeIds.includes(state.activeBusinessArea)) state.activeBusinessArea = defaultId;
-      refreshBusinessSwitcher();
       state.businessAreaSettingsNotice = "Geschäftsbereiche wurden für diese Sitzung übernommen. Leistungen und Belege wurden nicht verschoben.";
       renderBusinessAreaSettings();
       return;

@@ -1819,6 +1819,100 @@ body.work-mode:not(.catalog-mode) .flow-page {
   }
 }
 
+/* UX-022c: geführte Ersteinrichtung */
+.setup-start-hint {
+  margin-bottom: 12px;
+  padding: 15px;
+  border: 1px solid #b9d9ca;
+  border-radius: 18px;
+  background: #eef8f3;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+.setup-start-hint .button { width: 100%; }
+.setup-start-hint .button-primary { grid-column: 1 / -1; }
+.setup-start-hint .button-ghost { grid-column: 1 / -1; min-height: 40px; }
+.setup-start-hint p { margin: 3px 0 0; color: var(--muted); font-size: .82rem; line-height: 1.4; }
+.setup-start-icon,
+.setup-welcome-symbol {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--primary);
+  color: #fff;
+  font-size: 1.3rem;
+  font-weight: 900;
+}
+.setup-restart { width: 100%; margin-bottom: 14px; }
+.setup-page { width: min(100%, 680px); margin-inline: auto; }
+.setup-head { display: grid; gap: 10px; margin-bottom: 18px; }
+.setup-head > div:first-child { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.setup-head .eyebrow { margin: 0; }
+.setup-head > div:first-child span { color: var(--muted); font-size: .78rem; font-weight: 800; }
+.setup-head h1 { margin: 2px 0 0; font-size: clamp(1.65rem, 8vw, 2.25rem); line-height: 1.05; }
+.setup-progress { height: 8px; border-radius: 99px; overflow: hidden; background: #e2e8e5; }
+.setup-progress span { display: block; height: 100%; border-radius: inherit; background: var(--primary); transition: width .2s ease; }
+.setup-form { gap: 14px; }
+.setup-welcome,
+.setup-info-card,
+.setup-finished {
+  padding: 24px 18px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+  text-align: center;
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+}
+.setup-welcome h2,
+.setup-info-card h2,
+.setup-finished h2 { margin: 0; line-height: 1.2; }
+.setup-welcome p,
+.setup-info-card p,
+.setup-finished p { margin: 0; color: var(--muted); line-height: 1.5; }
+.setup-welcome ul { width: 100%; margin: 4px 0 0; padding-left: 22px; text-align: left; display: grid; gap: 7px; }
+.setup-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 2px; }
+.setup-actions .button { width: 100%; }
+.setup-actions .button:only-of-type { grid-column: 1 / -1; }
+.setup-cancel { grid-column: 1 / -1; min-height: 40px; border: 0; background: transparent; color: var(--muted); text-decoration: underline; font: inherit; font-weight: 750; cursor: pointer; }
+.setup-tax-rate { display: grid; gap: 9px; }
+.setup-tax-rate > span { font-weight: 900; }
+.setup-choice-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.setup-choice-row label { min-height: 52px; padding: 10px; border: 1px solid var(--border); border-radius: 14px; display: flex; align-items: center; justify-content: center; gap: 7px; font-weight: 850; }
+.setup-choice-row label:has(input:checked) { border-color: var(--primary); background: var(--primary-soft); }
+.setup-choice-row input { width: 20px; height: 20px; accent-color: var(--primary); }
+.setup-page .settings-option-list label > span { display: grid; gap: 3px; }
+.setup-page .settings-option-list small { color: var(--muted); font-size: .7rem; line-height: 1.35; }
+.setup-summary { display: grid; gap: 10px; }
+.setup-summary article { padding: 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.setup-summary article > div { min-width: 0; display: grid; gap: 3px; }
+.setup-summary span,
+.setup-summary small { color: var(--muted); font-size: .74rem; }
+.setup-summary strong { overflow-wrap: anywhere; }
+.setup-summary button { min-height: 40px; padding: 6px 8px; border: 0; background: transparent; color: var(--primary); font: inherit; font-size: .8rem; font-weight: 900; text-decoration: underline; cursor: pointer; }
+.setup-info-symbol { width: 50px; height: 50px; border-radius: 15px; display: grid; place-items: center; background: var(--primary-soft); color: var(--primary); font-size: 1.4rem; font-weight: 950; }
+.setup-info-card .button,
+.setup-finished .button { width: 100%; }
+.setup-test-receipt { width: min(100%, 380px); margin-inline: auto; padding: 22px 17px; border: 2px dashed #8e9994; border-radius: 8px; background: #fff; color: #1d211f; display: grid; gap: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; }
+.setup-test-receipt h3,
+.setup-test-receipt p { margin: 0; }
+.setup-test-label { padding: 7px; background: #1d211f; color: #fff; text-align: center; letter-spacing: .06em; }
+.setup-test-line { padding-top: 9px; border-top: 1px dashed #777; display: flex; justify-content: space-between; gap: 10px; }
+.setup-test-line.total { font-size: 1rem; }
+@media(max-width:350px) {
+  .setup-actions { grid-template-columns: 1fr; }
+  .setup-actions .button,
+  .setup-cancel { grid-column: 1; }
+  .setup-summary article { padding: 11px; gap: 6px; }
+  .setup-page .payment-setting-row { grid-template-columns: 34px minmax(0, 1fr) auto; padding-inline: 10px; }
+  .setup-page .payment-setting-icon { width: 34px; height: 34px; }
+}
+
 /* UX-022b – Steuern, Zahlungsarten und Geschäftsbereiche */
 .settings-save-notice.is-error {
   background: #fff1f0;
