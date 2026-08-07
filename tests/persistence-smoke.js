@@ -233,7 +233,7 @@
       businessAreaSnapshot: { id: "hair", label: "Friseur", visibleName: "Snapshot Studio" },
       serviceLocationId: "location-company",
       serviceLocationSnapshot: { id: "location-company", name: "Hauptstudio", street: "Testweg 10", zip: "12345", city: "Teststadt" },
-      companySnapshot: { name: "Teststudio Nord", street: "Testweg 10", zip: "12345", city: "Teststadt" },
+      companySnapshot: { name: "Teststudio Nord", owner: "Testperson", street: "Testweg 10", zip: "12345", city: "Teststadt" },
       brandingSnapshot: { logoMode: "none", visibleName: "Snapshot Studio", logo: null },
       customerId: "customer-anna",
       customerSnapshot: { id: "customer-anna", name: "Anna Muster", email: "anna@example.invalid", street: "Altstraße 1", zip: "93047", city: "Regensburg" },
@@ -288,12 +288,12 @@
       customerSnapshot: { id: "customer-anna", name: "Anna Muster", street: "Altstraße 1", postalCode: "93047", city: "Regensburg", phone: "0123", mobile: "0176", email: "anna@example.invalid" },
       saleReceipt: { id: `receipt-sale-${id}`, number: "", soldAt: createdAt, payment: "Bar", customerId: "customer-anna" },
       contextSnapshot: {
-        company: { name: "Teststudio Nord", street: "Testweg 10", zip: "12345", city: "Teststadt" },
+        company: { name: "Teststudio Nord", owner: "Testperson", street: "Testweg 10", zip: "12345", city: "Teststadt" },
         branding: { logoMode: "none", visibleName: "Snapshot Studio", logo: null },
         businessArea: { id: "hair", label: "Friseur", visibleName: "Snapshot Studio" },
         serviceLocation: { id: "location-company", name: "Hauptstudio", street: "Testweg 10", zip: "12345", city: "Teststadt" }
       },
-      presentationSnapshot: { issuer: { name: "Teststudio Nord" }, redemptionLocation: { id: "location-company", name: "Hauptstudio" } },
+      presentationSnapshot: { issuer: { name: "Teststudio Nord", owner: "Testperson" }, redemptionLocation: { id: "location-company", name: "Hauptstudio" } },
       qrReference: reference,
       qrLink: `https://example.invalid/app#/voucher/${reference}`,
       history: [{ type: "sold", occurredAt: createdAt, date: "05.01.2030", time: "13:00", amount: issuedValue, balanceAfter: issuedValue, receiptNumber: "" }],
@@ -740,6 +740,49 @@
           assertThrows(() => qrApi.create("mail", "ref-1"), "QR_KIND_INVALID", "Unbekannter QR-Typ");
           assertThrows(() => qrApi.encodeAppLink("javascript:alert(1)"), "QR_APP_LINK_INVALID", "Unsicheres Linkprotokoll");
           assertThrows(() => qrApi.parseAppLink("#/voucher/", "https://app.example.invalid/frecka/"), "QR_REFERENCE_INVALID", "Unvollständiger Gutscheinlink");
+        }
+      },
+      {
+        name: "Unternehmensdarstellung trennt optionale Geschäftsbezeichnung und verpflichtenden Unternehmer",
+        run: async () => {
+          assertEqual(typeof api.companyIdentity, "function", "Zentrale Unternehmensdarstellung fehlt");
+          assertDeepEqual(api.companyIdentity({ name: "Studio Nord", owner: "Alex Beispiel" }), {
+            name: "Studio Nord", owner: "Alex Beispiel", displayName: "Studio Nord"
+          }, "Geschäftsbezeichnung und Unternehmer wurden nicht getrennt");
+          assertDeepEqual(api.companyIdentity({ name: "", owner: "Alex Beispiel" }), {
+            name: "", owner: "Alex Beispiel", displayName: "Alex Beispiel"
+          }, "Unternehmer ohne Geschäftsbezeichnung wird nicht allein dargestellt");
+          assertDeepEqual(api.companyIdentity({ name: "Alex Beispiel", owner: "alex beispiel" }), {
+            name: "", owner: "alex beispiel", displayName: "alex beispiel"
+          }, "Doppelte Unternehmensdarstellung wurde nicht entfernt");
+        }
+      },
+      {
+        name: "Settings-Snapshot erlaubt leere Geschäftsbezeichnung und repariert fehlenden Unternehmer",
+        run: async () => {
+          const runtime = runtimeFixture();
+          runtime.company.name = "";
+          runtime.company.owner = "Solo Unternehmerin";
+          const snapshot = api.snapshotSettings(runtime, "started", "test-company-identity");
+          assertEqual(snapshot.company.name, "", "Optionale Geschäftsbezeichnung wurde künstlich befüllt");
+          assertEqual(snapshot.company.owner, "Solo Unternehmerin", "Verpflichtender Unternehmer fehlt im Snapshot");
+
+          const defaults = recordFixture("test-company-legacy");
+          const legacy = clone(defaults);
+          legacy.company.name = "Legacy Unternehmer";
+          legacy.company.owner = "";
+          const normalized = api.normalizeSettingsRecord(legacy, defaults, "test-company-legacy");
+          assertEqual(normalized.record.company.name, "", "Legacy-Name wurde doppelt als Geschäftsbezeichnung behalten");
+          assertEqual(normalized.record.company.owner, "Legacy Unternehmer", "Fehlender Legacy-Unternehmer wurde nicht sicher übernommen");
+          assert(normalized.repairs.includes("COMPANY_OWNER_REPAIRED"), "Migration des verpflichtenden Unternehmers wurde nicht ausgewiesen");
+
+          const legacyReceipt = receiptDraftFixture("receipt-company-legacy", {
+            number: "2030-009999",
+            companySnapshot: { name: "Historischer Unternehmer", street: "Altweg 1", zip: "12345", city: "Altstadt" }
+          });
+          const receiptSnapshot = api.snapshotReceipts({ receipts: [legacyReceipt] }, "test-company-legacy").receipts[0].companySnapshot;
+          assertEqual(receiptSnapshot.name, "", "Legacy-Belegsnapshot zeigt den Unternehmer doppelt");
+          assertEqual(receiptSnapshot.owner, "Historischer Unternehmer", "Legacy-Belegsnapshot verlor den Unternehmer");
         }
       },
       {
@@ -1209,6 +1252,7 @@
           assertEqual(receipt.businessAreaSnapshot.label, "Friseur", "Geschäftsbereichssnapshot fehlt");
           assertEqual(receipt.serviceLocationSnapshot.name, "Hauptstudio", "Leistungsortsnapshot fehlt");
           assertEqual(receipt.companySnapshot.name, "Teststudio Nord", "Unternehmenssnapshot fehlt");
+          assertEqual(receipt.companySnapshot.owner, "Testperson", "Unternehmer fehlt im Belegsnapshot");
           assertEqual(receipt.customerSnapshot.name, "Anna Muster", "Kundensnapshot fehlt");
           assertEqual(receipt.voucherReference, "vch-reference-only", "Erlaubte Gutscheinreferenz ging verloren");
           assert(!hasOwn(receipt, "voucher") && !hasOwn(receipt, "emailStatus"), "Ausgeschlossene Gutschein- oder Versanddaten wurden gespeichert");
@@ -1383,6 +1427,7 @@
           assertEqual(voucher.currentValueCents, 10000, "Restwert wurde nicht als Centwert gespeichert");
           assertEqual(voucher.saleReceipt.number, "2030-000075", "Verkaufsbelegreferenz fehlt");
           assertEqual(voucher.companySnapshot.name, "Teststudio Nord", "Unternehmenssnapshot fehlt");
+          assertEqual(voucher.companySnapshot.owner, "Testperson", "Unternehmer fehlt im Gutscheinsnapshot");
           assertEqual(voucher.businessAreaSnapshot.label, "Friseur", "Geschäftsbereichssnapshot fehlt");
           assertEqual(voucher.serviceLocationSnapshot.name, "Hauptstudio", "Leistungsortsnapshot fehlt");
           assertEqual(voucher.customerSnapshot.name, "Anna Muster", "Kundensnapshot fehlt");
@@ -1908,10 +1953,31 @@
           });
           const info = exported.files.find(file => file.name === "Export-Info.txt")?.content || "";
           assert(info.includes("FRECKA-Version: EXPORT-001"), "FRECKA-Version fehlt");
+          assert(info.includes("Geschäftsbezeichnung: Frisör Änne & Söhne"), "Geschäftsbezeichnung fehlt");
+          assert(info.includes("Unternehmer/in: Testperson"), "Unternehmer fehlt");
+          assert(info.includes("Exportdatum: 01.02.2030 • 12:34"), "Exportdatum ist nicht deutsch formatiert");
           assert(info.includes("Zeitraum: 01.01.2030 bis 31.01.2030"), "Dokumentierter Zeitraum ist falsch");
           assert(info.includes("Anzahl Belege: 3"), "Belegzählung ist falsch");
           assert(info.includes("Anzahl Gutscheine: 1"), "Gutscheinzählung ist falsch");
           assert(info.includes("Dies ist ein FRECKA-Export.\r\nKeine bestätigte DATEV-Importschnittstelle."), "DATEV-Hinweis fehlt oder behauptet zu viel");
+        }
+      },
+      {
+        name: "Export zeigt ohne Geschäftsbezeichnung ausschließlich den Unternehmer",
+        run: async () => {
+          const snapshot = completeExportSnapshotFixture("test-export-owner-only");
+          snapshot.stores.settings.company.name = "";
+          snapshot.stores.settings.company.owner = "Solo Unternehmerin";
+          const exported = exportApi.createExportFiles(snapshot, {
+            exportType: "tax-advisor",
+            periodType: "custom",
+            dateFrom: "2030-01-01",
+            dateTo: "2030-01-31",
+            businessAreaId: "all"
+          });
+          const info = exported.files.find(file => file.name === "Export-Info.txt")?.content || "";
+          assert(!info.includes("Geschäftsbezeichnung:"), "Leere Geschäftsbezeichnung wurde ausgegeben");
+          assertEqual((info.match(/Solo Unternehmerin/g) || []).length, 1, "Unternehmer wurde im Export doppelt dargestellt");
         }
       },
       {
@@ -1950,6 +2016,8 @@
           const tenantId = "test-backup-valid";
           const validated = api.validateTenantSnapshot(completeTenantSnapshotFixture(tenantId), tenantId);
           assertEqual(validated.snapshot.backupFormatVersion, 1, "Falsche Backup-Formatversion");
+          assertEqual(validated.summary.companyName, "Backup Teststudio", "Geschäftsbezeichnung fehlt in der Backup-Vorschau");
+          assertEqual(validated.summary.companyOwner, "Testperson", "Unternehmer fehlt in der Backup-Vorschau");
           assertEqual(validated.summary.catalogItems, 2, "Katalogzählung ist falsch");
           assertEqual(validated.summary.customers, 2, "Kundenzählung ist falsch");
           assertEqual(validated.summary.receipts, 2, "Belegzählung ist falsch");

@@ -140,7 +140,68 @@
 
   const escapeHtml = value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
   const formatCurrency = value => new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(value);
-  const addressCityLine = address => [address?.zip || "", address?.city || ""].filter(Boolean).join(" ");
+  const addressCityLine = address => {
+    const zip = String(address?.zip || "").trim();
+    const city = String(address?.city || "").trim();
+    return zip && city.startsWith(`${zip} `) ? city : [zip, city].filter(Boolean).join(" ");
+  };
+  const companyIdentityValue = company => persistence?.companyIdentity?.(company) ?? {
+    name: String(company?.name || "").trim(),
+    owner: String(company?.owner || company?.name || "").trim(),
+    displayName: String(company?.name || company?.owner || "").trim()
+  };
+  const companyDisplayName = company => companyIdentityValue(company).displayName || "FRECKA";
+  const sameDisplayText = (left, right) => String(left || "").trim().localeCompare(String(right || "").trim(), "de-DE", { sensitivity: "base" }) === 0;
+  const distinctBrandingName = (branding, company) => {
+    const visibleName = String(branding?.visibleName || "").trim();
+    const identity = companyIdentityValue(company);
+    return visibleName && !sameDisplayText(visibleName, identity.name) && !sameDisplayText(visibleName, identity.owner)
+      ? visibleName
+      : "";
+  };
+
+  function companyIdentityMarkup(company, ownerTag = "span") {
+    const identity = companyIdentityValue(company);
+    const primary = identity.name || identity.owner || "Unternehmen";
+    const owner = identity.name ? identity.owner : "";
+    return `<strong class="company-identity-name">${escapeHtml(primary)}</strong>${owner ? `<${ownerTag} class="company-identity-owner">${escapeHtml(owner)}</${ownerTag}>` : ""}`;
+  }
+
+  function formatGermanDate(value) {
+    const source = String(value || "").trim();
+    const german = source.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+    if (german) return source;
+    const dateOnly = source.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnly) return `${dateOnly[3]}.${dateOnly[2]}.${dateOnly[1]}`;
+    const timestamp = Date.parse(source);
+    return Number.isFinite(timestamp)
+      ? new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(timestamp))
+      : source;
+  }
+
+  function formatGermanTime(value) {
+    const source = String(value || "").trim();
+    const direct = source.match(/^(\d{1,2}):(\d{2})/);
+    if (direct) return `${direct[1].padStart(2, "0")}:${direct[2]}`;
+    const timestamp = Date.parse(source);
+    return Number.isFinite(timestamp)
+      ? new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(timestamp))
+      : "";
+  }
+
+  function formatGermanDateTime({ date = "", time = "", iso = "" } = {}) {
+    const dateText = formatGermanDate(date || iso);
+    const timeText = formatGermanTime(time || iso);
+    return [dateText, timeText].filter(Boolean).join(" • ");
+  }
+
+  function formatStoredDateTime(value, fallbackIso = "") {
+    const source = String(value || "").trim();
+    const displayMatch = source.match(/^(\d{2}\.\d{2}\.\d{4})(?:\s*[•·,]\s*(\d{1,2}:\d{2}))?$/);
+    if (displayMatch) return formatGermanDateTime({ date: displayMatch[1], time: displayMatch[2] || "" });
+    if (Number.isFinite(Date.parse(source || fallbackIso))) return formatGermanDateTime({ iso: source || fallbackIso });
+    return source;
+  }
   const getAreaLabel = () => data.businessAreas.find(area => area.id === state.activeBusinessArea)?.label ?? "Geschäftsbereich";
   const cartTotal = () => state.cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const cartCount = () => state.cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -152,6 +213,7 @@
   let pendingSettingsWrites = 0;
   let currentHistoryIndex = Number.isInteger(history.state?.freckaIndex) ? history.state.freckaIndex : 0;
   let qrFullscreenReturnFocus = null;
+  let qrNativeFullscreenOwned = false;
 
   function voucherQrReference(voucher) {
     return voucher?.qrReference || voucher?.id || voucher?.reference || "";
@@ -171,6 +233,15 @@
     }
   }
 
+  function exitNativeQrFullscreen() {
+    try {
+      const request = document.exitFullscreen?.();
+      request?.catch?.(() => {});
+    } catch (error) {
+      // Die feste PWA-Vollbildfläche bleibt der sichere Fallback.
+    }
+  }
+
   function openQrFullscreen(kind, reference) {
     qrFullscreenReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     try {
@@ -185,10 +256,36 @@
     document.getElementById("app")?.setAttribute("aria-hidden", "true");
     document.body.classList.add("qr-fullscreen-open");
     qrFullscreenClose.focus({ preventScroll: true });
+    if (!document.fullscreenElement && typeof document.documentElement.requestFullscreen === "function") {
+      const expectedViewport = { width: window.innerWidth, height: window.innerHeight };
+      try {
+        Promise.resolve(document.documentElement.requestFullscreen())
+          .then(() => {
+            qrNativeFullscreenOwned = document.fullscreenElement === document.documentElement;
+            const fullscreenBounds = qrFullscreen.getBoundingClientRect();
+            const fullscreenIsUsable = fullscreenBounds.width >= expectedViewport.width * 0.8
+              && fullscreenBounds.height >= expectedViewport.height * 0.8;
+            if (qrNativeFullscreenOwned && !fullscreenIsUsable) {
+              qrNativeFullscreenOwned = false;
+              exitNativeQrFullscreen();
+              return;
+            }
+            if (qrFullscreen.hidden && qrNativeFullscreenOwned) {
+              qrNativeFullscreenOwned = false;
+              exitNativeQrFullscreen();
+            }
+          })
+          .catch(() => { qrNativeFullscreenOwned = false; });
+      } catch (error) {
+        qrNativeFullscreenOwned = false;
+      }
+    }
   }
 
-  function closeQrFullscreen() {
+  function closeQrFullscreen(exitNativeFullscreen = true) {
     if (qrFullscreen.hidden) return;
+    const shouldExitNative = exitNativeFullscreen && qrNativeFullscreenOwned && Boolean(document.fullscreenElement);
+    qrNativeFullscreenOwned = false;
     qrFullscreen.hidden = true;
     qrFullscreenCode.innerHTML = "";
     document.getElementById("app")?.removeAttribute("inert");
@@ -196,6 +293,7 @@
     document.body.classList.remove("qr-fullscreen-open");
     qrFullscreenReturnFocus?.focus?.({ preventScroll: true });
     qrFullscreenReturnFocus = null;
+    if (shouldExitNative) exitNativeQrFullscreen();
   }
 
   function cloneSettingsValue(value) {
@@ -601,7 +699,7 @@
   }
 
   function refreshBusinessSwitcher() {
-    companyName.textContent = data.company.name;
+    companyName.textContent = companyDisplayName(data.company);
     const areas = activeBusinessAreas();
     if (!areas.some(area => area.id === state.activeBusinessArea)) state.activeBusinessArea = defaultBusinessArea()?.id ?? null;
     switcherWrap.hidden = areas.length <= 1;
@@ -1107,12 +1205,12 @@
       } : null,
       remainderPayment: voucherAmounts?.remainder > 0 ? { method: remainderPayment, amount: voucherAmounts.remainder } : null,
       activity: [
-        { label: "Beleg erstellt", date: `${receiptDate} · ${receiptTime}` },
+        { label: "Beleg erstellt", date: `${receiptDate} • ${receiptTime}` },
         ...(leavePaymentOpen
-          ? [{ label: "Zahlung offen gelassen", date: `${receiptDate} · ${receiptTime}` }]
+          ? [{ label: "Zahlung offen gelassen", date: `${receiptDate} • ${receiptTime}` }]
           : voucher
-            ? [{ label: `Mit Gutschein ${voucher.code} bezahlt`, date: `${receiptDate} · ${receiptTime}` }]
-            : [{ label: "Zahlung erfasst", date: `${receiptDate} · ${receiptTime}`, detail: `${receiptPaymentMethod} · ${formatCurrency(total)}` }])
+            ? [{ label: `Mit Gutschein ${voucher.code} bezahlt`, date: `${receiptDate} • ${receiptTime}` }]
+            : [{ label: "Zahlung erfasst", date: `${receiptDate} • ${receiptTime}`, detail: `${receiptPaymentMethod} · ${formatCurrency(total)}` }])
       ],
       receiptTextSnapshot: {
         footerText: data.receiptSettings.footerText || "",
@@ -1226,14 +1324,14 @@
     const linkedVoucher = isVoucherSale
       ? voucherByReference(receipt.voucherReference)
       : receipt.voucherPayment ? voucherByReference(receipt.voucherPayment.reference) : null;
-    const createdAt = receipt.createdAt || [receipt.date, receipt.time].filter(Boolean).join(" · ");
+    const createdAt = formatGermanDateTime({ date: receipt.date, time: receipt.time, iso: receipt.completedAt || receipt.createdAt || receipt.sortKey });
     const taxGroups = Array.isArray(receipt.taxGroups) ? receipt.taxGroups : [];
     const showTaxDetails = !isVoucherSale && Number.isFinite(Number(receipt.netTotal)) && taxGroups.length > 0;
     const receiptIssuer = receipt.contextSnapshot?.company
       ?? receipt.presentationSnapshot?.issuer
       ?? data.company;
-    const receiptServiceLocation = receipt.contextSnapshot?.serviceLocation ?? null;
     const receiptBranding = receipt.contextSnapshot?.branding ?? receipt.presentationSnapshot?.branding ?? null;
+    const receiptBrandingName = distinctBrandingName(receiptBranding, receiptIssuer);
 
     mainContent.innerHTML = `<section class="flow-page receipt-preview-page page-enter">
       <div class="flow-head compact-flow-head">
@@ -1246,9 +1344,8 @@
       <article class="receipt-paper ${isVoucherSale ? "is-voucher-sale" : ""}">
         <header>
           ${brandingLogoMarkup(receiptBranding)}
-          ${receiptBranding?.visibleName ? `<em class="document-visible-name">${escapeHtml(receiptBranding.visibleName)}</em>` : ""}
-          <strong>${escapeHtml(receiptIssuer.name)}</strong>
-          <span>${escapeHtml(receiptIssuer.owner || "")}</span>
+          ${receiptBrandingName ? `<em class="document-visible-name">${escapeHtml(receiptBrandingName)}</em>` : ""}
+          ${companyIdentityMarkup(receiptIssuer)}
           <small>${escapeHtml(receiptIssuer.street || "")}</small>
           <small>${escapeHtml(addressCityLine(receiptIssuer))}</small>
           <small>Steuernummer: ${escapeHtml(receiptIssuer.taxNumber || "nicht hinterlegt")}</small>
@@ -1260,7 +1357,6 @@
           <span>${escapeHtml(createdAt)}</span>
         </div>
         <div class="receipt-paper-kind"><span>Belegart</span><strong>${escapeHtml(receiptKindLabel(receipt))}</strong></div>
-        ${receiptServiceLocation ? `<div class="receipt-paper-row"><span>Leistungsort · ${escapeHtml(receipt.contextSnapshot?.businessArea?.label || "Geschäftsbereich")}</span><strong>${escapeHtml(receiptServiceLocation.name || "Leistungsort")}</strong></div>` : ""}
 
         <div class="receipt-paper-items">
           ${receipt.items.map(item => `<div class="receipt-paper-item">
@@ -1372,7 +1468,7 @@
           <div class="checkout-voucher-selected-head"><span><small>Ausgewählter Gutschein</small><strong>${escapeHtml(checkoutVoucher.code)}</strong></span><button class="text-action" type="button" data-action="checkout-voucher-change">Ändern</button></div>
           <dl>
             <div><dt>Aktueller Restwert</dt><dd>${formatCurrency(checkoutVoucher.currentValue)}</dd></div>
-            <div><dt>Verkauft am</dt><dd>${escapeHtml(checkoutVoucher.soldAt)}</dd></div>
+            <div><dt>Verkauft am</dt><dd>${escapeHtml(formatGermanDateTime({ date: checkoutVoucher.soldAt, time: checkoutVoucher.soldTime, iso: checkoutVoucher.soldAtIso || checkoutVoucher.createdAt }))}</dd></div>
             ${checkoutVoucher.customer ? `<div><dt>Zugeordneter Kunde</dt><dd>${escapeHtml(checkoutVoucher.customer.name)}</dd></div>` : ""}
           </dl>
           <div class="checkout-voucher-calculation">
@@ -1557,7 +1653,9 @@
     const visibleHistory = allHistory.slice(0, 8);
     const turnover = customerEconomicTurnover(c);
     const latestOriginal = allHistory.find(receipt => receipt.type === "receipt");
-    const lastVisit = latestOriginal?.date || c.lastVisit || "Noch kein Besuch";
+    const lastVisit = latestOriginal?.date || c.lastVisit
+      ? formatGermanDate(latestOriginal?.date || c.lastVisit)
+      : "Noch kein Besuch";
     const originalReceiptCount = allHistory.filter(receipt => receipt.type === "receipt").length || Number(c.receiptCount || 0);
     const isActive = c.active !== false;
 
@@ -1580,7 +1678,7 @@
                 return `<article class="customer-history-item ${isOpen ? "is-open" : ""}">
                   <button type="button" data-toggle-customer-history="${escapeHtml(receipt.number)}" aria-expanded="${isOpen ? "true" : "false"}">
                     <span>
-                      <strong>${escapeHtml(receipt.date)}</strong>
+                      <strong>${escapeHtml(formatGermanDate(receipt.date || receipt.completedAt || receipt.createdAt))}</strong>
                       <small>${escapeHtml(receipt.number)}</small>
                     </span>
                     <span class="customer-history-right">
@@ -1744,7 +1842,7 @@
       <div class="receipt-admin-list">
         ${receipts.length ? receipts.map(receipt => state.receiptFilter === "open" ? `<article class="open-payment-card">
           <button class="open-payment-card-main" type="button" data-open-receipt="${escapeHtml(receipt.number)}">
-            <span><small>${escapeHtml(receipt.number)} · ${escapeHtml(receipt.date)}</small><strong>${escapeHtml(receiptCustomerLabel(receipt))}</strong><em>${escapeHtml(receipt.contextSnapshot?.businessArea?.label || "Geschäftsbereich")}</em>${receipt.internalNote ? `<span>${escapeHtml(receipt.internalNote)}</span>` : ""}</span>
+            <span><small>${escapeHtml(receipt.number)} · ${escapeHtml(formatGermanDate(receipt.date || receipt.completedAt || receipt.createdAt))}</small><strong>${escapeHtml(receiptCustomerLabel(receipt))}</strong><em>${escapeHtml(receipt.contextSnapshot?.businessArea?.label || "Geschäftsbereich")}</em>${receipt.internalNote ? `<span>${escapeHtml(receipt.internalNote)}</span>` : ""}</span>
             <strong>${formatCurrency(receipt.total)}</strong>
           </button>
           <button class="button button-primary" type="button" data-record-payment="${escapeHtml(receipt.number)}">Zahlung erfassen</button>
@@ -1753,7 +1851,7 @@
             <span class="receipt-card-number">${escapeHtml(receipt.number)}</span>
             ${receipt.receiptKind === "voucher-sale" ? `<span class="receipt-card-kind">Gutscheinverkauf</span>` : ""}
             <strong>${escapeHtml(receiptCustomerLabel(receipt))}</strong>
-            <small>${escapeHtml(receipt.date)} · ${escapeHtml(receipt.time)} · ${escapeHtml(receiptPaymentMethodLabel(receipt))}</small>
+            <small>${escapeHtml(formatGermanDateTime({ date: receipt.date, time: receipt.time, iso: receipt.completedAt || receipt.createdAt || receipt.sortKey }))} · ${escapeHtml(receiptPaymentMethodLabel(receipt))}</small>
           </span>
           <span class="receipt-card-side">
             <strong>${formatCurrency(receipt.total)}</strong>
@@ -1796,7 +1894,7 @@
         <button class="button button-back" type="button" data-route="receipts"><span aria-hidden="true">←</span> Zurück</button>
         <p class="eyebrow">${escapeHtml(receiptKindLabel(receipt))}</p>
         <h1 class="flow-title">${escapeHtml(receipt.number)}</h1>
-        <p class="page-copy">${escapeHtml(receipt.date)} · ${escapeHtml(receipt.time)}</p>
+        <p class="page-copy">${escapeHtml(formatGermanDateTime({ date: receipt.date, time: receipt.time, iso: receipt.completedAt || receipt.createdAt || receipt.sortKey }))}</p>
       </div>
 
       <section class="receipt-detail-status">
@@ -1807,7 +1905,6 @@
       <section class="receipt-detail-card">
         <div class="receipt-detail-row"><span>Belegart</span><strong>${escapeHtml(receiptKindLabel(receipt))}</strong></div>
         ${receipt.contextSnapshot?.businessArea ? `<div class="receipt-detail-row"><span>Geschäftsbereich</span><strong>${escapeHtml(receipt.contextSnapshot.businessArea.label)}</strong></div>` : ""}
-        ${receipt.contextSnapshot?.serviceLocation ? `<div class="receipt-detail-row"><span>Leistungsort</span><strong>${escapeHtml(receipt.contextSnapshot.serviceLocation.name)}</strong></div>` : ""}
         <div class="receipt-detail-row"><span>Kunde</span><strong>${escapeHtml(receiptCustomerLabel(receipt))}</strong></div>
         <div class="receipt-detail-row"><span>Zahlungsstatus</span><strong>${receipt.paymentStatus === "open" ? "Offen" : "Bezahlt"}</strong></div>
         ${receipt.paymentStatus === "open" ? "" : `<div class="receipt-detail-row"><span>Zahlungsart</span><strong>${escapeHtml(receiptPaymentMethodLabel(receipt))}</strong></div>`}
@@ -1846,7 +1943,7 @@
 
       <section class="receipt-detail-card activity-log">
         <div class="receipt-section-title"><h2>Aktivität</h2></div>
-        ${(receipt.activity || []).map(entry => `<div><span>${escapeHtml(entry.label)}${entry.detail ? `<em>${escapeHtml(entry.detail)}</em>` : ""}</span><small>${escapeHtml(entry.date)}</small></div>`).join("")}
+        ${(receipt.activity || []).map(entry => `<div><span>${escapeHtml(entry.label)}${entry.detail ? `<em>${escapeHtml(entry.detail)}</em>` : ""}</span><small>${escapeHtml(formatStoredDateTime(entry.date, entry.occurredAt))}</small></div>`).join("")}
       </section>
 
       ${canRecordPayment ? `<section class="receipt-open-payment-action"><div><strong>Zahlung ist noch offen</strong><p>Erfasse die tatsächliche Zahlungsart, sobald der vollständige Betrag bezahlt wurde.</p></div><button class="button button-primary" type="button" data-record-payment="${escapeHtml(receipt.number)}">Zahlung erfassen</button></section>` : ""}
@@ -1951,12 +2048,12 @@
       time: receiptTime,
       sortKey: now.toISOString(),
       completedAt: now.toISOString(),
-      sourceActivityDate: `${receiptDate} · ${receiptTime}`,
+      sourceActivityDate: `${receiptDate} • ${receiptTime}`,
       isFull,
       items,
       total: -Math.abs(amount),
       activity: [
-        { label: isFull ? "Gesamtgutschrift erstellt" : "Teilgutschrift erstellt", date: `${receiptDate} · ${receiptTime}`, occurredAt: now.toISOString() },
+        { label: isFull ? "Gesamtgutschrift erstellt" : "Teilgutschrift erstellt", date: `${receiptDate} • ${receiptTime}`, occurredAt: now.toISOString() },
         { label: `Bezug auf ${receipt.number}`, date: receipt.date }
       ]
     };
@@ -2023,9 +2120,10 @@
   };
 
   function companyContextSnapshot() {
+    const identity = companyIdentityValue(data.company);
     return {
-      name: data.company.name,
-      owner: data.company.owner || "",
+      name: identity.name,
+      owner: identity.owner,
       street: data.company.street || "",
       zip: data.company.zip || "",
       city: data.company.city || "",
@@ -2080,7 +2178,7 @@
     const houseNumber = usesCompanyAddress ? "" : location.houseNumber || "";
     return {
       id: location.id || "",
-      name: location.name || (usesCompanyAddress ? data.company.name : "Leistungsort"),
+      name: location.name || (usesCompanyAddress ? companyDisplayName(data.company) : "Leistungsort"),
       addressMode: usesCompanyAddress ? "company" : "own",
       street: usesCompanyAddress ? streetName : [streetName, houseNumber].filter(Boolean).join(" "),
       streetName,
@@ -2161,7 +2259,7 @@
     const allAreaIds = data.businessAreas.map(area => area.id);
     data.serviceLocations.forEach((location, index) => {
       if (!location.addressMode) location.addressMode = location.mode === "alternate" ? "own" : "company";
-      if (!location.name) location.name = location.addressMode === "company" ? data.company.name : `Leistungsort ${index + 1}`;
+      if (!location.name) location.name = location.addressMode === "company" ? companyDisplayName(data.company) : `Leistungsort ${index + 1}`;
       if (location.houseNumber === undefined) location.houseNumber = "";
       if (location.street === undefined) location.street = "";
       if (location.zip === undefined) location.zip = "";
@@ -2226,15 +2324,18 @@
   }
 
   function voucherPresentation(voucher) {
-    return voucher.presentationSnapshot ?? currentVoucherPresentationSnapshot();
-  }
-
-  function sameVoucherAddress(issuer, redemptionLocation) {
-    if (redemptionLocation?.mode === "issuer") return true;
-    const normalize = value => String(value || "").trim().toLocaleLowerCase("de-DE");
-    return normalize(issuer.street) === normalize(redemptionLocation.street)
-      && normalize(issuer.zip || "") === normalize(redemptionLocation.zip || "")
-      && normalize(issuer.city) === normalize(redemptionLocation.city);
+    const current = currentVoucherPresentationSnapshot(voucher?.businessAreaId || voucher?.contextSnapshot?.businessArea?.id);
+    const snapshot = voucher?.presentationSnapshot ?? {};
+    return {
+      ...snapshot,
+      issuer: snapshot.issuer ?? voucher?.contextSnapshot?.company ?? current.issuer,
+      branding: snapshot.branding ?? voucher?.contextSnapshot?.branding ?? current.branding,
+      redemptionLocation: {
+        ...current.redemptionLocation,
+        ...(voucher?.contextSnapshot?.serviceLocation ?? {}),
+        ...(snapshot.redemptionLocation ?? {})
+      }
+    };
   }
 
   const voucherHistoryLabel = type => ({
@@ -2257,7 +2358,7 @@
           return `<article class="voucher-history-item voucher-history-${escapeHtml(event.type)}">
           <span class="voucher-history-marker" aria-hidden="true"></span>
           <div class="voucher-history-main">
-            <div><strong>${escapeHtml(voucherHistoryLabel(event.type))}</strong><time>${escapeHtml([event.date, event.time].filter(Boolean).join(" · "))}</time></div>
+            <div><strong>${escapeHtml(voucherHistoryLabel(event.type))}</strong><time>${escapeHtml(formatGermanDateTime({ date: event.date, time: event.time, iso: event.occurredAt }))}</time></div>
             <dl>
               <div><dt>Betrag</dt><dd>${formatCurrency(event.amount)}</dd></div>
               <div><dt>Restwert danach</dt><dd>${formatCurrency(event.balanceAfter)}</dd></div>
@@ -2501,8 +2602,8 @@
       total: issuedValue,
       taxTreatment: "undetermined-prototype",
       activity: [
-        { label: "Gutscheinverkauf abgeschlossen", date: `${soldAt} · ${soldTime}` },
-        { label: `Gutschein ${voucher.code} verknüpft`, date: `${soldAt} · ${soldTime}` }
+        { label: "Gutscheinverkauf abgeschlossen", date: `${soldAt} • ${soldTime}` },
+        { label: `Gutschein ${voucher.code} verknüpft`, date: `${soldAt} • ${soldTime}` }
       ]
     };
     return { voucher, receipt };
@@ -2663,8 +2764,8 @@
     }
     const appLink = voucherAppLink(voucherQrReference(voucher));
     const presentation = voucherPresentation(voucher);
-    const addressesMatch = sameVoucherAddress(presentation.issuer, presentation.redemptionLocation);
     const saleReceipt = linkedVoucherSaleReceipt(voucher);
+    const voucherBrandingName = distinctBrandingName(presentation.branding, presentation.issuer);
     mainContent.innerHTML = `<section class="flow-page voucher-detail-page page-enter">
       <div class="flow-head compact-flow-head">
         <button class="button button-back" type="button" data-route="vouchers"><span aria-hidden="true">←</span> Zurück</button>
@@ -2688,7 +2789,7 @@
         <div><span>Status</span><strong class="voucher-status ${voucherStatusClass(voucher)}">${escapeHtml(voucherStatusLabel(voucher))}</strong></div>
         <div class="voucher-balance ${isVoucherOpen(voucher) ? "" : "is-unavailable"}"><span>Aktueller Restwert</span><strong>${formatCurrency(voucher.currentValue)}</strong></div>
         <div><span>Ursprünglicher Wert</span><strong>${formatCurrency(voucher.issuedValue)}</strong></div>
-        <div><span>Verkauft am</span><strong>${escapeHtml([voucher.soldAt, voucher.soldTime].filter(Boolean).join(" · "))}</strong></div>
+        <div><span>Verkauft am</span><strong>${escapeHtml(formatGermanDateTime({ date: voucher.soldAt, time: voucher.soldTime, iso: voucher.soldAtIso || voucher.createdAt }))}</strong></div>
         <div><span>Zahlungsart beim Verkauf</span><strong>${escapeHtml(voucher.payment || "Nicht angegeben")}</strong></div>
         ${voucher.contextSnapshot?.businessArea ? `<div><span>Geschäftsbereich beim Verkauf</span><strong>${escapeHtml(voucher.contextSnapshot.businessArea.label)}</strong></div>` : ""}
         ${voucher.saleReceipt?.number ? `<div><span>Verkaufsbeleg</span>${saleReceipt ? `<button type="button" data-open-receipt="${escapeHtml(saleReceipt.number)}">${escapeHtml(saleReceipt.number)} · Verkaufsbeleg öffnen</button>` : `<strong>${escapeHtml(voucher.saleReceipt.number)}</strong>`}</div>` : ""}
@@ -2700,18 +2801,18 @@
         <div class="voucher-section-title"><h2 id="voucherPartiesTitle">Ausstellung und Einlöseort</h2><span>Stand bei Verkauf</span></div>
         <div class="voucher-party-card">
           <span>Aussteller</span>
-          <strong>${escapeHtml(presentation.issuer.name)}</strong>
-          ${presentation.issuer.owner ? `<small>${escapeHtml(presentation.issuer.owner)}</small>` : ""}
+          ${voucherBrandingName ? `<em class="document-visible-name">${escapeHtml(voucherBrandingName)}</em>` : ""}
+          ${companyIdentityMarkup(presentation.issuer, "small")}
           <small>${escapeHtml(presentation.issuer.street)}</small>
           <small>${escapeHtml(addressCityLine(presentation.issuer))}</small>
         </div>
-        ${addressesMatch ? `<div class="voucher-location-same"><span>Einlöseort</span><strong>Ausstelleradresse</strong><small>Einlösbar an der oben genannten Adresse.</small></div>` : `<div class="voucher-party-card is-redemption-location">
+        <div class="voucher-party-card is-redemption-location">
           <span>Einlösbar bei</span>
           <strong>${escapeHtml(presentation.redemptionLocation.name || "Leistungsort")}</strong>
           <small>${escapeHtml(presentation.redemptionLocation.street)}</small>
           <small>${escapeHtml(addressCityLine(presentation.redemptionLocation))}</small>
           ${presentation.redemptionLocation.voucherNote ? `<small>${escapeHtml(presentation.redemptionLocation.voucherNote)}</small>` : ""}
-        </div>`}
+        </div>
       </section>
 
       ${renderVoucherHistory(voucher)}
@@ -2732,7 +2833,7 @@
     }
     const presentation = voucherPresentation(voucher);
     const voucherBranding = presentation.branding ?? voucher.contextSnapshot?.branding ?? null;
-    const addressesMatch = sameVoucherAddress(presentation.issuer, presentation.redemptionLocation);
+    const voucherBrandingName = distinctBrandingName(voucherBranding, presentation.issuer);
     mainContent.innerHTML = `<section class="flow-page voucher-preview-page page-enter">
       <div class="flow-head compact-flow-head voucher-preview-controls">
         <button class="button button-back" type="button" data-route="voucher-detail"><span aria-hidden="true">←</span> Zurück</button>
@@ -2747,10 +2848,9 @@
         <header>
           <span>Gutschein</span>
           ${brandingLogoMarkup(voucherBranding)}
-          ${voucherBranding?.visibleName ? `<em class="document-visible-name">${escapeHtml(voucherBranding.visibleName)}</em>` : ""}
+          ${voucherBrandingName ? `<em class="document-visible-name">${escapeHtml(voucherBrandingName)}</em>` : ""}
           <small class="voucher-sheet-label">Aussteller</small>
-          <strong>${escapeHtml(presentation.issuer.name)}</strong>
-          ${presentation.issuer.owner ? `<small>${escapeHtml(presentation.issuer.owner)}</small>` : ""}
+          ${companyIdentityMarkup(presentation.issuer, "small")}
           <small>${escapeHtml(presentation.issuer.street)}</small>
           <small>${escapeHtml(addressCityLine(presentation.issuer))}</small>
         </header>
@@ -2761,9 +2861,9 @@
         </div>
         <div class="voucher-sheet-status"><span>Status</span><strong class="voucher-status ${voucherStatusClass(voucher)}">${escapeHtml(voucherStatusLabel(voucher))}</strong></div>
         <div class="voucher-sheet-code"><span>Gutscheincode</span><strong>${escapeHtml(voucher.code)}</strong></div>
-        <div class="voucher-sheet-location ${addressesMatch ? "is-same" : ""}">
+        <div class="voucher-sheet-location">
           <span>Einlösbar bei</span>
-          ${addressesMatch ? `<strong>Ausstelleradresse</strong>` : `<strong>${escapeHtml(presentation.redemptionLocation.name || "Leistungsort")}</strong><small>${escapeHtml(presentation.redemptionLocation.street)}</small><small>${escapeHtml(addressCityLine(presentation.redemptionLocation))}</small>${presentation.redemptionLocation.voucherNote ? `<small>${escapeHtml(presentation.redemptionLocation.voucherNote)}</small>` : ""}`}
+          <strong>${escapeHtml(presentation.redemptionLocation.name || "Leistungsort")}</strong><small>${escapeHtml(presentation.redemptionLocation.street)}</small><small>${escapeHtml(addressCityLine(presentation.redemptionLocation))}</small>${presentation.redemptionLocation.voucherNote ? `<small>${escapeHtml(presentation.redemptionLocation.voucherNote)}</small>` : ""}
         </div>
         <footer>Bitte Gutscheincode oder QR-Code bei der Einlösung vorzeigen.</footer>
       </article>
@@ -3040,6 +3140,8 @@
   }
 
   function applyCompanyForm(formData) {
+    const owner = String(formData.get("owner") || "").trim();
+    if (!owner) return "Bitte Unternehmer/in angeben.";
     const requestedCompanyLocationUse = formData.has("useAsServiceLocation")
       ? formData.get("useAsServiceLocation") === "on"
       : data.company.useAsServiceLocation !== false;
@@ -3049,7 +3151,7 @@
     }
     Object.assign(data.company, {
       name: String(formData.get("name") || "").trim(),
-      owner: String(formData.get("owner") || "").trim(),
+      owner,
       street: String(formData.get("street") || "").trim(),
       zip: String(formData.get("zip") || "").trim(),
       city: String(formData.get("city") || "").trim(),
@@ -3060,8 +3162,11 @@
       vatId: String(formData.get("vatId") ?? data.company.vatId ?? "").trim(),
       useAsServiceLocation: requestedCompanyLocationUse
     });
+    const identity = companyIdentityValue(data.company);
+    data.company.name = identity.name;
+    data.company.owner = identity.owner;
     repairBusinessAreaLocationDefaults();
-    companyName.textContent = data.company.name || "FRECKA";
+    companyName.textContent = companyDisplayName(data.company);
     return "";
   }
 
@@ -3187,6 +3292,7 @@
     const branding = brandingContextSnapshot(area.id);
     const location = serviceLocationForBusinessArea(area.id);
     const logoSource = branding.logo?.source || "none";
+    const brandingName = distinctBrandingName(branding, data.company);
     return `<section class="business-branding-card" data-business-branding="${escapeHtml(area.id)}">
       <div class="business-branding-title"><div><h3>Branding auf Dokumenten</h3><p>Gilt für neue Belege und Gutscheine dieses Geschäftsbereichs.</p></div><span>Live-Vorschau</span></div>
       <label class="setting-field full"><span>Sichtbare Geschäftsbezeichnung <small>optional</small></span><input name="areaVisibleName:${escapeHtml(area.id)}" maxlength="100" value="${escapeHtml(area.visibleName || "")}" placeholder="z. B. ${escapeHtml(area.label)} im Studio"></label>
@@ -3200,9 +3306,9 @@
         <span class="branding-preview-label">Dokumentvorschau</span>
         <div class="branding-preview-head">
           <span class="document-brand-logo is-compact" data-preview-logo ${logoSource === "none" ? "hidden" : ""}><strong>${logoSource === "business-area" ? "GB" : "UN"}</strong><small>${logoSource === "business-area" ? "Bereich" : "Firma"}</small></span>
-          <div><em class="document-visible-name" data-preview-visible-name ${area.visibleName ? "" : "hidden"}>${escapeHtml(area.visibleName || "")}</em><strong data-preview-company>${escapeHtml(data.company.name || "Unternehmen")}</strong><small>${escapeHtml(data.company.street || "")}</small><small>${escapeHtml(addressCityLine(data.company))}</small></div>
+          <div><em class="document-visible-name" data-preview-visible-name ${brandingName ? "" : "hidden"}>${escapeHtml(brandingName)}</em>${companyIdentityMarkup(data.company, "small")}<small>${escapeHtml(data.company.street || "")}</small><small>${escapeHtml(addressCityLine(data.company))}</small></div>
         </div>
-        <footer><span>Geschäftsbereich</span><strong data-preview-area>${escapeHtml(area.label)}</strong><span>Leistungsort</span><strong data-preview-location>${escapeHtml(location?.name || "Noch nicht festgelegt")}</strong></footer>
+        <footer><span>Geschäftsbereich</span><strong data-preview-area>${escapeHtml(area.label)}</strong><span>Gutschein · Einlösbar bei</span><strong data-preview-location>${escapeHtml(location?.name || "Noch nicht festgelegt")}</strong></footer>
       </article>
     </section>`;
   }
@@ -3243,7 +3349,8 @@
           if (sourceLabel) sourceLabel.textContent = isCustom ? "Bereich" : "Firma";
         }
         if (previewVisibleName) {
-          previewVisibleName.textContent = visibleName?.value.trim() || "";
+          const requestedName = visibleName?.value.trim() || "";
+          previewVisibleName.textContent = distinctBrandingName({ visibleName: requestedName }, data.company);
           previewVisibleName.hidden = !previewVisibleName.textContent;
         }
         if (previewArea) previewArea.textContent = areaName?.value.trim() || "Geschäftsbereich";
@@ -3264,7 +3371,8 @@
     const availableLocationCount = data.serviceLocations.filter(serviceLocationAvailable).length;
     const taxLabels = { vat: "Umsatzsteuer", "small-business": "Kleinunternehmen", undecided: "Noch nicht festgelegt" };
     const companyAddressComplete = [data.company.street, data.company.zip, data.company.city].every(Boolean);
-    const companyComplete = [data.company.name, data.company.owner].every(Boolean) && companyAddressComplete;
+    const companyIdentity = companyIdentityValue(data.company);
+    const companyComplete = Boolean(companyIdentity.owner) && companyAddressComplete;
     const locationComplete = activeBusinessAreas().every(area => Boolean(serviceLocationForBusinessArea(area.id)));
     const taxComplete = data.taxSettings.status !== "undecided" && (data.taxSettings.status !== "vat" || [7, 19].includes(Number(data.taxSettings.defaultRate)));
     const numberComplete = /^\d{4}$/.test(String(data.receiptSettings.yearPrefix)) && Number.isInteger(Number(data.receiptSettings.nextNumber)) && Number(data.receiptSettings.nextNumber) > 0;
@@ -3274,7 +3382,7 @@
     const catalogHasEntries = activeBusinessAreas().every(area => catalogEntries(area.id).some(item => ["service", "product"].includes(item.type) && item.active !== false));
     const catalogComplete = catalogHasEntries && catalogReviewTotal === 0;
     const summary = [
-      [2, "Unternehmen", data.company.name || "Nicht angegeben", companyComplete, companyComplete ? "Pflichtangaben vorhanden" : "Pflichtangaben prüfen"],
+      [2, "Unternehmen", [companyIdentity.name, companyIdentity.owner].filter(Boolean).join(" · ") || "Nicht angegeben", companyComplete, companyComplete ? "Pflichtangaben vorhanden" : "Pflichtangaben prüfen"],
       [3, "Leistungsorte", defaultLocation?.name || "Kein Standard-Leistungsort", locationComplete, locationComplete ? `${availableLocationCount} aktive Orte · jeder Bereich hat einen Standard` : "Zuordnung und Standard prüfen"],
       [4, "Steuern", taxLabels[data.taxSettings.status] || taxLabels.undecided, taxComplete, taxComplete ? (data.taxSettings.status === "vat" ? `${data.taxSettings.defaultRate} % Standard` : "Status gewählt") : "Steuerstatus fachlich klären"],
       [5, "Belegnummer", `${data.receiptSettings.yearPrefix}-${String(data.receiptSettings.nextNumber).padStart(6, "0")}`, numberComplete, numberComplete ? "Nummernkreis vorbereitet" : "Nummernkreis prüfen"],
@@ -3292,20 +3400,20 @@
 
   function setupTestReceipt() {
     const defaultArea = defaultBusinessArea();
-    const location = serviceLocationForBusinessArea(defaultArea?.id);
     const branding = brandingContextSnapshot(defaultArea?.id);
     const taxRate = Number(data.taxSettings.defaultRate || 19);
     const payment = activeNormalPaymentChoices()[0]?.title || "Zahlungsart";
     const catalogItem = catalogEntries(defaultArea?.id).find(item => ["service", "product"].includes(item.type) && item.active !== false && item.needsReview !== true);
     const testItemName = catalogItem ? catalogItemName(catalogItem) : "Testleistung";
     const testItemPrice = catalogItem ? catalogItemPrice(catalogItem) : 10;
+    const brandingName = distinctBrandingName(branding, data.company);
     return `<article class="setup-test-receipt" aria-label="Testbeleg Vorschau">
       <strong class="setup-test-label">TESTBELEG · VORSCHAU</strong>
       ${brandingLogoMarkup(branding, true)}
-      ${branding.visibleName ? `<em class="document-visible-name">${escapeHtml(branding.visibleName)}</em>` : ""}
-      <h3>${escapeHtml(data.company.name || "Unternehmen")}</h3>
+      ${brandingName ? `<em class="document-visible-name">${escapeHtml(brandingName)}</em>` : ""}
+      <h3>${companyIdentityMarkup(data.company, "small")}</h3>
       <p>${escapeHtml(data.company.street || "")}<br>${escapeHtml(addressCityLine(data.company))}</p>
-      ${location ? `<p>Geschäftsbereich: ${escapeHtml(defaultArea?.label || "Geschäftsbereich")}<br>Leistungsort: ${escapeHtml(location.name || "Leistungsort")}</p>` : ""}
+      <p>Geschäftsbereich: ${escapeHtml(defaultArea?.label || "Geschäftsbereich")}</p>
       <div class="setup-test-line"><span>${escapeHtml(testItemName)}</span><strong>${formatCurrency(testItemPrice)}</strong></div>
       <div class="setup-test-line total"><span>Gesamt</span><strong>${formatCurrency(testItemPrice)}</strong></div>
       ${catalogItem ? "" : `<p class="setup-test-warning">Noch kein vollständig geprüfter Katalogeintrag – deshalb wird eine neutrale Testleistung verwendet.</p>`}
@@ -3323,8 +3431,8 @@
     switch (state.setupStep) {
       case 1: return `<div class="setup-welcome"><div class="setup-welcome-symbol" aria-hidden="true">✓</div><h2>In etwa fünf Minuten ist FRECKA einsatzbereit.</h2><p>Wir richten gemeinsam alles ein.<br>Du kannst jederzeit unterbrechen und später weitermachen.</p><ul><li>Unternehmen und Leistungsort</li><li>Steuern und Belegnummern</li><li>Zahlungsarten und Geschäftsbereich</li></ul></div>${setupActions("Einrichtung starten")}`;
       case 2: return `<section class="settings-form-card"><h2>Unternehmen</h2>
-        <label class="setting-field full"><span>Firmenname oder Geschäftsbezeichnung</span><input name="name" required value="${escapeHtml(company.name || "")}"></label>
-        <label class="setting-field full"><span>Vor- und Nachname des Inhabers</span><input name="owner" required value="${escapeHtml(company.owner || "")}"></label>
+        <label class="setting-field full"><span>Geschäftsbezeichnung <small>optional</small></span><input name="name" autocomplete="organization" value="${escapeHtml(company.name || "")}"></label>
+        <label class="setting-field full"><span>Unternehmer/in</span><input name="owner" autocomplete="name" required value="${escapeHtml(company.owner || "")}"></label>
         <label class="setting-field full"><span>Straße und Hausnummer</span><input name="street" required value="${escapeHtml(company.street || "")}"></label>
         <label class="setting-field"><span>PLZ</span><input name="zip" inputmode="numeric" required value="${escapeHtml(company.zip || "")}"></label>
         <label class="setting-field"><span>Ort</span><input name="city" required value="${escapeHtml(company.city || "")}"></label>
@@ -3376,7 +3484,7 @@
 
   function saveSetupStep(formData, validate = true) {
     if (state.setupStep === 2) {
-      const required = ["name", "owner", "street", "zip", "city"];
+      const required = ["owner", "street", "zip", "city"];
       if (validate && required.some(name => !String(formData.get(name) || "").trim())) return "Bitte alle Pflichtangaben zum Unternehmen ausfüllen.";
       const error = applyCompanyForm(formData);
       if (validate && error) return error;
@@ -3504,8 +3612,7 @@
   }
 
   function localBackupDate(value) {
-    if (!Number.isFinite(Date.parse(value))) return "Unbekannt";
-    return new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+    return Number.isFinite(Date.parse(value)) ? formatGermanDateTime({ iso: value }) : "Unbekannt";
   }
 
   function backupNoticeMarkup() {
@@ -3523,10 +3630,11 @@
     }
     if (state.backupStage === "preview" && state.backupRestoreSummary) {
       const summary = state.backupRestoreSummary;
+      const backupCompany = companyIdentityValue({ name: summary.companyName, owner: summary.companyOwner });
       return `<article class="backup-preview" aria-label="Inhalt der geprüften Sicherung">
           <div class="backup-preview-head"><span aria-hidden="true">✓</span><div><strong>Sicherung vollständig geprüft</strong><small>${escapeHtml(state.backupRestoreFilename)}</small></div></div>
           <dl>
-            <div><dt>Unternehmen</dt><dd>${escapeHtml(summary.companyName || "Ohne Bezeichnung")}</dd></div>
+            <div><dt>Unternehmen</dt><dd class="backup-company-identity">${backupCompany.name ? `<strong>${escapeHtml(backupCompany.name)}</strong><small>${escapeHtml(backupCompany.owner)}</small>` : `<strong>${escapeHtml(backupCompany.owner || "Nicht angegeben")}</strong>`}</dd></div>
             <div><dt>Erstellungsdatum</dt><dd>${escapeHtml(localBackupDate(summary.createdAt))}</dd></div>
             <div><dt>Geschäftsbereiche</dt><dd>${summary.businessAreas}</dd></div>
             <div><dt>Kunden</dt><dd>${summary.customers}</dd></div>
@@ -3634,8 +3742,9 @@
     const result = state.exportResult;
     if (!result) return "";
     const projection = result.projection;
+    const exportCompany = companyIdentityValue({ name: projection.companyName, owner: projection.companyOwner });
     return `<section class="export-result" aria-labelledby="exportResultTitle">
-      <div class="export-result-head"><span aria-hidden="true">✓</span><div><h2 id="exportResultTitle">Export ist vorbereitet</h2><p>${projection.receipts.length} Belege · ${projection.receiptPositions.length} Positionen · ${projection.vouchers.length} Gutscheine · ${projection.voucherHistory.length} Historieneinträge</p></div></div>
+      <div class="export-result-head"><span aria-hidden="true">✓</span><div><h2 id="exportResultTitle">Export ist vorbereitet</h2><p>${escapeHtml([exportCompany.name, exportCompany.owner].filter(Boolean).join(" · "))} · ${escapeHtml(formatGermanDateTime({ iso: projection.generatedAt }))}</p><small>${projection.receipts.length} ${projection.receipts.length === 1 ? "Beleg" : "Belege"} · ${projection.receiptPositions.length} ${projection.receiptPositions.length === 1 ? "Position" : "Positionen"} · ${projection.vouchers.length} ${projection.vouchers.length === 1 ? "Gutschein" : "Gutscheine"} · ${projection.voucherHistory.length} ${projection.voucherHistory.length === 1 ? "Historieneintrag" : "Historieneinträge"}</small></div></div>
       <div class="export-file-list" aria-label="Exportdateien">
         ${result.files.map(file => `<button class="export-file" type="button" data-export-download="${escapeHtml(file.name)}"><span aria-hidden="true">⇩</span><span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(formatExportFileSize(file.content))}</small></span><em>Download</em></button>`).join("")}
       </div>
@@ -3732,8 +3841,8 @@
       <form id="companySettingsForm" class="settings-form">
         <section class="settings-form-card">
           ${cardTitle("Unternehmensdaten", "company")}
-          <label class="setting-field full"><span>Firmenname oder Geschäftsbezeichnung</span><input name="name" autocomplete="organization" required value="${escapeHtml(company.name || "")}"></label>
-          <label class="setting-field full"><span>Vor- und Nachname des Inhabers</span><input name="owner" autocomplete="name" value="${escapeHtml(company.owner || "")}"></label>
+          <label class="setting-field full"><span>Geschäftsbezeichnung <small>optional</small></span><input name="name" autocomplete="organization" value="${escapeHtml(company.name || "")}"></label>
+          <label class="setting-field full"><span>Unternehmer/in</span><input name="owner" autocomplete="name" required value="${escapeHtml(company.owner || "")}"></label>
           <label class="setting-field full"><span>Straße und Hausnummer</span><input name="street" autocomplete="street-address" value="${escapeHtml(company.street || "")}"></label>
           <label class="setting-field"><span>PLZ</span><input name="zip" inputmode="numeric" autocomplete="postal-code" value="${escapeHtml(company.zip || "")}"></label>
           <label class="setting-field"><span>Ort</span><input name="city" autocomplete="address-level2" value="${escapeHtml(company.city || "")}"></label>
@@ -5201,7 +5310,7 @@
       const field = document.getElementById("receiptInternalNote");
       if (receipt && field) {
         const now = new Date();
-        const date = new Intl.DateTimeFormat("de-DE", { dateStyle: "short", timeStyle: "short" }).format(now);
+        const date = formatGermanDateTime({ iso: now.toISOString() });
         pendingSettingsWrites += 1;
         setSettingsWritePending(true);
         try {
@@ -6006,7 +6115,7 @@
         time,
         sortKey: now.toISOString(),
         completedAt: now.toISOString(),
-        sourceActivityDate: `${date} · ${time}`,
+        sourceActivityDate: `${date} • ${time}`,
         items: receipt.items.map(item => ({
           ...item,
           unitPriceCents: -Math.abs(Number(item.unitPriceCents ?? Math.round(Number(item.unitPrice || 0) * 100))),
@@ -6024,7 +6133,7 @@
         })),
         total: -Math.abs(Number(receipt.total || 0)),
         activity: [
-          { label: "Stornobeleg erstellt", date: `${date} · ${time}`, occurredAt: now.toISOString() },
+          { label: "Stornobeleg erstellt", date: `${date} • ${time}`, occurredAt: now.toISOString() },
           { label: `Bezug auf ${receipt.number}`, date: receipt.date }
         ]
       };
@@ -6088,6 +6197,12 @@
     if (event.target === bottomSheetBackdrop) closeBottomSheet();
   });
   qrFullscreenClose.addEventListener("click", closeQrFullscreen);
+  document.addEventListener("fullscreenchange", () => {
+    if (!document.fullscreenElement && qrNativeFullscreenOwned && !qrFullscreen.hidden) {
+      qrNativeFullscreenOwned = false;
+      qrFullscreenClose.focus({ preventScroll: true });
+    }
+  });
   document.addEventListener("keydown", event => {
     if (qrFullscreen.hidden) return;
     if (event.key === "Escape") {

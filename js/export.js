@@ -106,6 +106,14 @@
   const text = value => value == null ? "" : String(value).trim();
   const finiteNumber = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 
+  function snapshotCompanyIdentity(company) {
+    const resolver = globalThis.FRECKA_PERSISTENCE?.companyIdentity;
+    if (typeof resolver !== "function") {
+      throw new ExportError("INVALID_SNAPSHOT", "Die Unternehmensdarstellung des FRECKA-Datensnapshots ist nicht verfügbar.");
+    }
+    return resolver(company);
+  }
+
   function clone(value) {
     if (typeof structuredClone === "function") return structuredClone(value);
     return JSON.parse(JSON.stringify(value));
@@ -478,6 +486,7 @@
       ? projectCustomers(snapshot.stores.customers.customers, receipts.selected, vouchers.selected, vouchers.selectedHistoryEntries)
       : [];
     const selectedArea = settingsAreaById.get(normalized.businessAreaId);
+    const company = snapshotCompanyIdentity(settings.company);
     return Object.freeze({
       exportFormat: constants.exportFormat,
       exportFormatVersion: constants.exportFormatVersion,
@@ -485,7 +494,9 @@
       generatedAt: normalized.generatedAt,
       tenantId: text(snapshot.tenantId),
       appVersion: text(snapshot.app?.version) || "Unbekannt",
-      companyName: text(settings.company?.name) || "Ohne Bezeichnung",
+      companyName: company.name,
+      companyOwner: company.owner,
+      companyDisplayName: company.displayName,
       range: Object.freeze(clone(normalized.range)),
       businessAreaId: normalized.businessAreaId,
       businessAreasLabel: normalized.businessAreaId === "all" ? "Alle" : text(selectedArea?.label) || normalized.businessAreaId,
@@ -521,7 +532,9 @@
       "FRECKA-Export",
       "",
       `FRECKA-Version: ${projection.appVersion}`,
-      `Exportdatum: ${formatDateKey(projection.generatedAt)} ${formatTime(projection.generatedAt)}`.trim(),
+      ...(projection.companyName ? [`Geschäftsbezeichnung: ${projection.companyName}`] : []),
+      `Unternehmer/in: ${projection.companyOwner}`,
+      `Exportdatum: ${formatDateKey(projection.generatedAt)} • ${formatTime(projection.generatedAt)}`.trim(),
       `Zeitraum: ${formatDateKey(projection.range.dateFrom)} bis ${formatDateKey(projection.range.dateTo)}`,
       `Exporttyp: ${projection.exportType === "own-data" ? "Eigene Daten" : "Steuerberatung"}`,
       `Anzahl Belege: ${projection.receipts.length}`,

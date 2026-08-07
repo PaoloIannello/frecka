@@ -125,6 +125,17 @@
   const validSetupStatus = value => setupStatuses.has(value) ? value : "not-started";
   const epochIso = "1970-01-01T00:00:00.000Z";
 
+  function companyIdentity(source = {}) {
+    const rawName = stringValue(source?.name).trim();
+    const rawOwner = stringValue(source?.owner).trim();
+    const owner = rawOwner || rawName;
+    const duplicatesOwner = rawName
+      && owner
+      && rawName.localeCompare(owner, "de-DE", { sensitivity: "base" }) === 0;
+    const name = duplicatesOwner || !rawOwner ? "" : rawName;
+    return Object.freeze({ name, owner, displayName: name || owner });
+  }
+
   function stableIso(value, fallback = epochIso) {
     if (typeof value === "string" && value.trim()) {
       const timestamp = Date.parse(value);
@@ -168,6 +179,7 @@
     }
 
     const company = runtimeData.company;
+    const identity = companyIdentity(company);
     const taxSettings = runtimeData.taxSettings || {};
     const receiptSettings = runtimeData.receiptSettings || {};
     const snapshot = {
@@ -175,8 +187,8 @@
       tenantId: nullableStringId(tenantId) || constants.tenantId,
       updatedAt: new Date().toISOString(),
       company: {
-        name: stringValue(company.name),
-        owner: stringValue(company.owner),
+        name: identity.name,
+        owner: identity.owner,
         street: stringValue(company.street),
         zip: stringValue(company.zip),
         city: stringValue(company.city),
@@ -388,6 +400,15 @@
     return cloneSafe(normalized);
   }
 
+  function normalizeCompanySnapshot(source) {
+    if (!isPlainObject(source)) return null;
+    const identity = companyIdentity(source);
+    return cloneSafe(mergePreservingUnknown(source, {
+      name: identity.name,
+      owner: identity.owner
+    }));
+  }
+
   function normalizeReceiptEntry(receipt, fallbackTimestamp = epochIso) {
     if (!isPlainObject(receipt)) return null;
     const number = trimmedString(receipt.receiptNumber, trimmedString(receipt.number));
@@ -402,8 +423,8 @@
       ? cloneSafe(receipt.serviceLocationSnapshot)
       : isPlainObject(contextSnapshot.serviceLocation) ? cloneSafe(contextSnapshot.serviceLocation) : null;
     const companySnapshot = isPlainObject(receipt.companySnapshot)
-      ? cloneSafe(receipt.companySnapshot)
-      : isPlainObject(contextSnapshot.company) ? cloneSafe(contextSnapshot.company) : null;
+      ? normalizeCompanySnapshot(receipt.companySnapshot)
+      : isPlainObject(contextSnapshot.company) ? normalizeCompanySnapshot(contextSnapshot.company) : null;
     const brandingSnapshot = isPlainObject(receipt.brandingSnapshot)
       ? cloneSafe(receipt.brandingSnapshot)
       : isPlainObject(contextSnapshot.branding) ? cloneSafe(contextSnapshot.branding) : null;
@@ -700,8 +721,8 @@
       : isPlainObject(voucher.customer) ? cloneSafe(voucher.customer) : null;
     const contextSnapshot = isPlainObject(voucher.contextSnapshot) ? cloneSafe(voucher.contextSnapshot) : {};
     const companySnapshot = isPlainObject(voucher.companySnapshot)
-      ? cloneSafe(voucher.companySnapshot)
-      : isPlainObject(contextSnapshot.company) ? cloneSafe(contextSnapshot.company) : null;
+      ? normalizeCompanySnapshot(voucher.companySnapshot)
+      : isPlainObject(contextSnapshot.company) ? normalizeCompanySnapshot(contextSnapshot.company) : null;
     const brandingSnapshot = isPlainObject(voucher.brandingSnapshot)
       ? cloneSafe(voucher.brandingSnapshot)
       : isPlainObject(contextSnapshot.branding) ? cloneSafe(contextSnapshot.branding) : null;
@@ -1141,9 +1162,18 @@
     const defaultCompany = defaults.company || {};
     const rawCompany = isPlainObject(raw.company) ? raw.company : {};
     if (!isPlainObject(raw.company)) repairs.add("COMPANY_DEFAULTED");
+    const submittedCompanyName = stringValue(rawCompany.name, stringValue(defaultCompany.name)).trim();
+    const submittedCompanyOwner = stringValue(rawCompany.owner).trim();
+    const fallbackCompanyOwner = stringValue(defaultCompany.owner).trim();
+    const identity = companyIdentity({
+      name: submittedCompanyName,
+      owner: submittedCompanyOwner || submittedCompanyName || fallbackCompanyOwner
+    });
+    if (!submittedCompanyOwner) repairs.add("COMPANY_OWNER_REPAIRED");
+    if (submittedCompanyName && !identity.name) repairs.add("COMPANY_DUPLICATE_NAME_REMOVED");
     const company = {
-      name: stringValue(rawCompany.name, stringValue(defaultCompany.name)),
-      owner: stringValue(rawCompany.owner, stringValue(defaultCompany.owner)),
+      name: identity.name,
+      owner: identity.owner,
       street: stringValue(rawCompany.street, stringValue(defaultCompany.street)),
       zip: stringValue(rawCompany.zip, stringValue(defaultCompany.zip)),
       city: stringValue(rawCompany.city, stringValue(defaultCompany.city)),
@@ -1585,11 +1615,13 @@
       },
       stores: { settings, catalog, customers, receipts, vouchers }
     };
+    const identity = companyIdentity(settings.company);
     return {
       snapshot: normalizedSnapshot,
       summary: {
         createdAt: normalizedSnapshot.createdAt,
-        companyName: settings.company.name,
+        companyName: identity.name,
+        companyOwner: identity.owner,
         businessAreas: settings.businessAreas.length,
         serviceLocations: settings.serviceLocations.length,
         categories: catalog.categories.length,
@@ -3394,6 +3426,7 @@
     createSettingsPersistence,
     snapshotSettings,
     normalizeSettingsRecord,
+    companyIdentity,
     snapshotCatalog,
     normalizeCatalogRecord,
     snapshotCustomers,

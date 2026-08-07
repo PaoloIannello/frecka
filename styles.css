@@ -2009,6 +2009,8 @@ body.work-mode:not(.catalog-mode) .flow-page {
 .backup-preview dl > div:nth-last-child(-n + 2) { border-bottom: 0; }
 .backup-preview dt { color: var(--muted); font-size: .66rem; }
 .backup-preview dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: .78rem; font-weight: 850; }
+.backup-company-identity { display: grid; gap: 2px; }
+.backup-company-identity small { color: var(--muted); font-size: .68rem; font-weight: 750; }
 .backup-safety-card {
   padding: 14px;
   border: 1px solid #bad5c9;
@@ -2256,6 +2258,9 @@ body.work-mode:not(.catalog-mode) .flow-page {
   font-weight: 850;
   line-height: 1.35;
 }
+.company-identity-name,
+.company-identity-owner { overflow-wrap: anywhere; }
+.company-identity-owner { display: block; }
 .receipt-paper header > .document-visible-name,
 .voucher-sheet header > .document-visible-name,
 .setup-test-receipt > .document-visible-name {
@@ -3075,6 +3080,8 @@ body.work-mode:not(.catalog-mode) .flow-page {
 .setup-test-receipt { width: min(100%, 380px); margin-inline: auto; padding: 22px 17px; border: 2px dashed #8e9994; border-radius: 8px; background: #fff; color: #1d211f; display: grid; gap: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; }
 .setup-test-receipt h3,
 .setup-test-receipt p { margin: 0; }
+.setup-test-receipt h3 { display: grid; gap: 2px; }
+.setup-test-receipt h3 .company-identity-owner { font-size: .72rem; font-weight: 600; }
 .setup-test-label { padding: 7px; background: #1d211f; color: #fff; text-align: center; letter-spacing: .06em; }
 .setup-test-line { padding-top: 9px; border-top: 1px dashed #777; display: flex; justify-content: space-between; gap: 10px; }
 .setup-test-line.total { font-size: 1rem; }
@@ -4763,6 +4770,13 @@ button:disabled {
   font-size: .72rem;
   line-height: 1.45;
 }
+.export-result-head small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: .68rem;
+  line-height: 1.4;
+}
 .export-file-list {
   margin-top: 12px;
   border: 1px solid var(--border);
@@ -4885,6 +4899,11 @@ body.qr-fullscreen-open { overflow: hidden; }
   align-items: center;
   gap: 8px;
 }
+html:fullscreen .qr-fullscreen {
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+}
 .qr-fullscreen-code {
   width: min(94vw, calc(100dvh - 92px));
   max-width: 760px;
@@ -4939,6 +4958,28 @@ body.qr-fullscreen-open { overflow: hidden; }
 @media (max-width: 460px) {
   .frecka-qr-voucher { width: 112px; }
   .frecka-qr-voucher-sheet { width: min(68vw, 220px); }
+}
+
+@media (max-width: 420px) {
+  .nav-item {
+    padding-inline: 2px;
+    font-size: .6rem;
+  }
+  .nav-item > span:last-child {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    line-height: 1.05;
+    text-align: center;
+  }
+}
+
+.nav-label-short { display: none; }
+
+@media (max-width: 350px) {
+  .nav-item { font-size: .56rem; }
+  .nav-label-full { display: none; }
+  .nav-label-short { display: inline; }
+  .settings-form-page .flow-title { font-size: 1.75rem; }
 }
 
 @media print {
