@@ -33,14 +33,15 @@ IndexedDB ist die verbindliche lokale Persistenztechnologie für strukturierte G
 Der erste umgesetzte Datenbankvertrag lautet:
 
 - Datenbank: `frecka`
-- Datenbankschema-Version: `4`
-- Object Stores: `settings`, `catalog`, `customers` und `receipts`
+- Datenbankschema-Version: `5`
+- Object Stores: `settings`, `catalog`, `customers`, `receipts` und `vouchers`
 - Key Path: `tenantId`
 - Standardschlüssel: `local-default`
 - Einstellungsformat-Version: `1`
 - Katalogformat-Version: `1`
 - Kundenformat-Version: `1`
 - Belegformat-Version: `1`
+- Gutscheinformat-Version: `1`
 
 Dieser konkrete Vertrag beschreibt den aktuellen Stand. Künftige Stores und Versionen erweitern ihn nur über ausdrücklich definierte Migrationen.
 
@@ -87,11 +88,11 @@ Die lokale Persistenz ändert nichts an der Datenschutzgrenze aus ADR-0001: Kund
 
 ## Aktueller Umsetzungsstand
 
-Mit PERSIST-001a ist eine zentrale, versionierte IndexedDB-Persistenzschicht umgesetzt. PERSIST-002 ergänzt einen getrennten Katalogstore, PERSIST-003 einen getrennten Kundenstore und PERSIST-004 den Receipt-Store. Persistiert werden damit die vollständigen zentralen Einstellungen, der Katalog, die Kundenstammdaten, normale Belege, offene und nachträglich erfasste Zahlungen, Stornos, Gutschriften und ihre Aktivitäten.
+Mit PERSIST-001a ist eine zentrale, versionierte IndexedDB-Persistenzschicht umgesetzt. PERSIST-002 ergänzt einen getrennten Katalogstore, PERSIST-003 einen getrennten Kundenstore, PERSIST-004 den Receipt-Store und PERSIST-005 den Voucher-Store. Persistiert werden damit die vollständigen zentralen Einstellungen, der Katalog, die Kundenstammdaten, normale Belege, offene und nachträglich erfasste Zahlungen, Stornos, Gutschriften, Gutscheine und Gutschein-Historien.
 
-Der Nummernstand normaler Belege bleibt ausschließlich in den Settings. Der Abschluss schreibt Nummernstand und Beleg gemeinsam in einer IndexedDB-Transaktion; Storno und Gutschrift schreiben Ursprung und Folgedokument atomar im Receipt-Store. Dokument-Snapshots bleiben von späteren Stammdatenänderungen unberührt.
+Der Nummernstand normaler Belege bleibt ausschließlich in den Settings. Normale Abschlüsse schreiben Nummernstand und Beleg gemeinsam; Gutscheinverkauf und -einlösung schreiben Nummernstand, Beleg, Gutschein und Historie in einer Transaktion über `settings`, `receipts` und `vouchers`. Storno und Gutschrift schreiben Ursprung und Folgedokument atomar im Receipt-Store. Dokument-Snapshots bleiben von späteren Stammdatenänderungen unberührt.
 
-Gutscheine, Gutschein-Historien und Entwürfe bleiben noch im Arbeitsspeicher. Backup und Restore sind noch nicht umgesetzt. Auch ein kalter Offline-Start mit abschließendem Service-Worker- und Update-Lebenszyklus ist noch nicht vollständig realisiert.
+Belegentwürfe bleiben noch im Arbeitsspeicher. Backup und Restore sind noch nicht umgesetzt. Auch ein kalter Offline-Start mit abschließendem Service-Worker- und Update-Lebenszyklus ist noch nicht vollständig realisiert.
 
 ## Alternativen
 

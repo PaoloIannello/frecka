@@ -4313,7 +4313,25 @@ button.settings-entry:active {
   font-size: .7rem;
   line-height: 1.4;
 }
-.development-tools .settings-reset-card { margin-inline: 14px; }
+.development-reset-group {
+  margin: 10px 14px 0;
+  border: 1px solid #ead1ce;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #fff;
+}
+.development-reset-group > summary {
+  min-height: 46px;
+  padding: 0 13px;
+  display: flex;
+  align-items: center;
+  color: var(--danger);
+  font-size: .76rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+.development-reset-group[open] { padding-bottom: 12px; }
+.development-reset-group .settings-reset-card { margin-inline: 12px; }
 
 .settings-reset-card {
   margin-top: 14px;

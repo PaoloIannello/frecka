@@ -1,6 +1,6 @@
-# FRECKA – PERSIST-004
+# FRECKA – PERSIST-005
 
-Klickbarer UX-Prototyp mit lokaler IndexedDB-Persistenz für Einstellungen, Katalog, Kundenstammdaten und abgeschlossene Belege.
+Klickbarer UX-Prototyp mit lokaler IndexedDB-Persistenz für Einstellungen, Katalog, Kundenstammdaten, abgeschlossene Belege und Gutscheine.
 
 ## Start
 
@@ -10,20 +10,21 @@ Klickbarer UX-Prototyp mit lokaler IndexedDB-Persistenz für Einstellungen, Kata
 
 Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufklappen und bearbeiten → Weiter → Kunde optional und Zahlungsart simulieren → Demo abschließen.
 
-## Neu in PERSIST-004
+## Neu in PERSIST-005
 
-- Datenbankschema 4 mit zusätzlichem mandantenbezogenem Store `receipts`
-- atomarer normaler Belegabschluss einschließlich eindeutiger Nummernvergabe
-- dauerhafte offene und später erfasste Zahlungen samt Aktivitäten
-- dauerhafte Stornos und Gutschriften mit konsistenten Ursprungsreferenzen
-- unveränderliche Unternehmens-, Geschäftsbereichs-, Leistungsort-, Branding-, Kunden- und Positionssnapshots
-- Entwicklungs-Resets standardmäßig eingeklappt; Receipt-Reset bleibt storeisoliert
-- gleichwertige Katalogbuttons „+ Leistung“ und „+ Produkt“
-- Grundadresse startet auf „Start“, konkrete Hash-Routen bleiben beim Reload erhalten
+- Datenbankschema 5 mit zusätzlichem mandantenbezogenem Store `vouchers`
+- atomarer Gutscheinverkauf mit Verkaufsbeleg, Historie und gemeinsamem Nummernstand
+- atomare Teil- und Voll-Einlösung mit Einlösungsbeleg, Zahlungsstatus und Restwert
+- dauerhafte, chronologisch angehängte Gutschein-Historien und Belegreferenzen
+- unveränderliche Unternehmens-, Branding-, Geschäftsbereichs-, Leistungsort- und Kundensnapshots
+- eindeutige Gutschein-IDs, opake Referenzen und sichtbare Codes sowie geprüfte Restwertgrenzen
+- QR-Referenz und App-Link ohne gespeicherte QR-Grafik
+- eine Kundensuche für Name, Firma, Telefon, Mobil, E-Mail, Straße, PLZ und Ort
+- zweistufig eingeklappter Entwicklerbereich mit storeisoliertem Voucher-Reset
 
 ## Nicht umgesetzt
 
-Noch keine Persistenz für Gutscheine, Gutschein-Historien oder Entwürfe. Keine Zahlungsanbieteranbindung, PDF-Erzeugung, E-Mail, produktiver QR-Scan, TSE oder Fiskalisierung.
+Noch keine Persistenz für Belegentwürfe. Keine Backup- oder Exportfunktion, Zahlungsanbieteranbindung, PDF-Erzeugung, E-Mail, produktiver QR-Scan, TSE oder Fiskalisierung.
 
 Der Datenbankvertrag, Fehlerpfade und die ausführbaren Prüfungen sind in `docs/persistence.md` dokumentiert.
 

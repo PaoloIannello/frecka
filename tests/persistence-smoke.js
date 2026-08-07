@@ -251,6 +251,66 @@
     return api.snapshotReceipts(receiptsRuntimeFixture(), tenantId);
   }
 
+  function voucherDraftFixture(id = "voucher-test-new", overrides = {}) {
+    const createdAt = overrides.createdAt || "2030-01-05T12:00:00.000Z";
+    const reference = overrides.reference || `vch_${id.replace(/[^a-z0-9]+/gi, "_")}`;
+    const code = overrides.code || "FRKA-TEST-0001";
+    const issuedValue = overrides.issuedValue ?? 100;
+    const currentValue = overrides.currentValue ?? issuedValue;
+    return {
+      id,
+      reference,
+      code,
+      status: currentValue === 0 ? "redeemed" : currentValue < issuedValue ? "partially_redeemed" : "active",
+      issuedValue,
+      currentValue,
+      soldAt: "05.01.2030",
+      soldTime: "13:00",
+      createdAt,
+      updatedAt: createdAt,
+      payment: "Bar",
+      customer: { id: "customer-anna", name: "Anna Muster" },
+      customerId: "customer-anna",
+      customerSnapshot: { id: "customer-anna", name: "Anna Muster", street: "Altstraße 1", postalCode: "93047", city: "Regensburg", phone: "0123", mobile: "0176", email: "anna@example.invalid" },
+      saleReceipt: { id: `receipt-sale-${id}`, number: "", soldAt: createdAt, payment: "Bar", customerId: "customer-anna" },
+      contextSnapshot: {
+        company: { name: "Teststudio Nord", street: "Testweg 10", zip: "12345", city: "Teststadt" },
+        branding: { logoMode: "none", visibleName: "Snapshot Studio", logo: null },
+        businessArea: { id: "hair", label: "Friseur", visibleName: "Snapshot Studio" },
+        serviceLocation: { id: "location-company", name: "Hauptstudio", street: "Testweg 10", zip: "12345", city: "Teststadt" }
+      },
+      presentationSnapshot: { issuer: { name: "Teststudio Nord" }, redemptionLocation: { id: "location-company", name: "Hauptstudio" } },
+      qrReference: reference,
+      qrLink: `https://example.invalid/app#/voucher/${reference}`,
+      history: [{ type: "sold", occurredAt: createdAt, date: "05.01.2030", time: "13:00", amount: issuedValue, balanceAfter: issuedValue, receiptNumber: "" }],
+      ...overrides
+    };
+  }
+
+  function vouchersRuntimeFixture() {
+    return { vouchers: [voucherDraftFixture("voucher-existing", { reference: "vch_existing", code: "FRKA-EXST-0001", saleReceipt: { id: "receipt-voucher-existing", number: "2030-000075", soldAt: "2030-01-01T09:00:00.000Z", payment: "Bar", customerId: "customer-anna" }, history: [{ type: "sold", occurredAt: "2030-01-01T09:00:00.000Z", date: "01.01.2030", time: "10:00", amount: 100, balanceAfter: 100, receiptNumber: "2030-000075" }] })] };
+  }
+
+  function vouchersRecordFixture(tenantId) {
+    return api.snapshotVouchers(vouchersRuntimeFixture(), tenantId);
+  }
+
+  function voucherSaleReceiptFixture(voucher, id = `receipt-sale-${voucher.id}`) {
+    return receiptDraftFixture(id, {
+      receiptKind: "voucher-sale",
+      voucherReference: voucher.reference,
+      items: [{ type: "voucher-sale", title: "Gutschein", quantity: 1, unitPrice: voucher.issuedValue, total: voucher.issuedValue }],
+      total: voucher.issuedValue,
+      originalTotal: voucher.issuedValue,
+      netTotal: 0,
+      taxTotal: 0,
+      taxGroups: [],
+      completedAt: voucher.createdAt,
+      createdAt: voucher.createdAt,
+      updatedAt: voucher.createdAt
+    });
+  }
+
   function resultMarkup(name, passed, error = null) {
     const item = document.createElement("li");
     item.className = `result ${passed ? "is-pass" : "is-fail"}`;
@@ -369,10 +429,33 @@
     });
   }
 
+  function createLegacyV4Database(databaseName, settingsRecord, catalogRecord, customersRecord, receiptsRecord) {
+    return new Promise((resolve, reject) => {
+      const request = globalThis.indexedDB.open(databaseName, 4);
+      request.onupgradeneeded = () => {
+        [api.constants.storeName, api.constants.catalogStoreName, api.constants.customersStoreName, api.constants.receiptsStoreName].forEach(storeName => {
+          if (!request.result.objectStoreNames.contains(storeName)) request.result.createObjectStore(storeName, { keyPath: "tenantId" });
+        });
+      };
+      request.onerror = () => reject(request.error || new Error("Legacy-v4-Testdatenbank konnte nicht geöffnet werden."));
+      request.onsuccess = () => {
+        const database = request.result;
+        const stores = [api.constants.storeName, api.constants.catalogStoreName, api.constants.customersStoreName, api.constants.receiptsStoreName];
+        const transaction = database.transaction(stores, "readwrite");
+        transaction.objectStore(api.constants.storeName).put(settingsRecord);
+        transaction.objectStore(api.constants.catalogStoreName).put(catalogRecord);
+        transaction.objectStore(api.constants.customersStoreName).put(customersRecord);
+        transaction.objectStore(api.constants.receiptsStoreName).put(receiptsRecord);
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onabort = () => { database.close(); reject(transaction.error || new Error("Legacy-v4-Daten konnten nicht geschrieben werden.")); };
+      };
+    });
+  }
+
   function buildTests(context) {
     return [
       {
-        name: "Erststart liefert null und initialisiert Settings-, Katalog-, Kunden- und Belegschema",
+        name: "Erststart liefert null und initialisiert Settings-, Katalog-, Kunden-, Beleg- und Gutscheinschema",
         run: async () => {
           const persistence = context.makeClient("first-start");
           const database = await persistence.openDatabase();
@@ -382,10 +465,12 @@
           assert(database.objectStoreNames.contains(api.constants.catalogStoreName), "Katalog-Store fehlt");
           assert(database.objectStoreNames.contains(api.constants.customersStoreName), "Kunden-Store fehlt");
           assert(database.objectStoreNames.contains(api.constants.receiptsStoreName), "Receipt-Store fehlt");
+          assert(database.objectStoreNames.contains(api.constants.vouchersStoreName), "Voucher-Store fehlt");
           assertEqual(await persistence.readSettings(), null, "Leerer Tenant muss null liefern");
           assertEqual(await persistence.readCatalog(), null, "Leerer Katalog-Tenant muss null liefern");
           assertEqual(await persistence.readCustomers(), null, "Leerer Kunden-Tenant muss null liefern");
           assertEqual(await persistence.readReceipts(), null, "Leerer Beleg-Tenant muss null liefern");
+          assertEqual(await persistence.readVouchers(), null, "Leerer Gutschein-Tenant muss null liefern");
         }
       },
       {
@@ -694,11 +779,14 @@
         }
       },
       {
-        name: "Kundensuche findet Name und Firma",
+        name: "Kundensuche findet Name, Firma, Straße, PLZ und Ort in einer Suchlogik",
         run: async () => {
           const customer = customersRecordFixture("search-name").customers[0];
           assert(api.customerMatchesSearch(customer, "anna muster"), "Vollständiger Name wurde nicht gefunden");
           assert(api.customerMatchesSearch(customer, "studio gmbh"), "Firma wurde nicht gefunden");
+          assert(api.customerMatchesSearch(customer, "teststraße 12"), "Straße wurde nicht gefunden");
+          assert(api.customerMatchesSearch(customer, "93047"), "PLZ wurde nicht gefunden");
+          assert(api.customerMatchesSearch(customer, "regensburg"), "Ort wurde nicht gefunden");
           assert(!api.customerMatchesSearch(customer, "nicht vorhanden"), "Unpassende Suche lieferte einen Treffer");
         }
       },
@@ -970,6 +1058,243 @@
         }
       },
       {
+        name: "Gutscheinformat speichert Werte, Referenzen, Snapshots, Historie und QR-Link ohne Binär- oder Versanddaten",
+        run: async () => {
+          const persistence = context.makeClient("vouchers-roundtrip");
+          const requested = vouchersRecordFixture(persistence.tenantId);
+          requested.vouchers[0].pdf = "FORBIDDEN";
+          requested.vouchers[0].qrImage = "FORBIDDEN";
+          requested.vouchers[0].mailStatus = "FORBIDDEN";
+          requested.vouchers[0].cameraData = { frame: "FORBIDDEN" };
+          requested.vouchers[0].printStatus = "FORBIDDEN";
+          await persistence.writeVouchers(requested);
+          const stored = await persistence.readVouchers();
+          const voucher = stored.vouchers[0];
+          assertEqual(voucher.issuedValueCents, 10000, "Ursprungswert wurde nicht als Centwert gespeichert");
+          assertEqual(voucher.currentValueCents, 10000, "Restwert wurde nicht als Centwert gespeichert");
+          assertEqual(voucher.saleReceipt.number, "2030-000075", "Verkaufsbelegreferenz fehlt");
+          assertEqual(voucher.companySnapshot.name, "Teststudio Nord", "Unternehmenssnapshot fehlt");
+          assertEqual(voucher.businessAreaSnapshot.label, "Friseur", "Geschäftsbereichssnapshot fehlt");
+          assertEqual(voucher.serviceLocationSnapshot.name, "Hauptstudio", "Leistungsortsnapshot fehlt");
+          assertEqual(voucher.customerSnapshot.name, "Anna Muster", "Kundensnapshot fehlt");
+          assertEqual(voucher.qrReference, "vch_existing", "QR-Referenz fehlt");
+          assert(voucher.qrLink.includes("#/voucher/"), "QR-App-Link fehlt");
+          assertEqual(voucher.history[0].type, "sold", "Verkaufshistorie fehlt");
+          ["pdf", "qrImage", "mailStatus", "cameraData", "printStatus"].forEach(key => assert(!hasOwn(voucher, key), `${key} wurde unzulässig gespeichert`));
+        }
+      },
+      {
+        name: "Gutscheinverkauf speichert Beleg, Gutschein, Historie und Nummer atomar und reload-stabil",
+        run: async () => {
+          const persistence = context.makeClient("voucher-sale");
+          const settings = recordFixture(persistence.tenantId, "completed");
+          const receipts = receiptsRecordFixture(persistence.tenantId);
+          const vouchers = vouchersRecordFixture(persistence.tenantId);
+          await persistence.writeSettings(settings);
+          await persistence.writeReceipts(receipts);
+          await persistence.writeVouchers(vouchers);
+          const voucher = voucherDraftFixture("voucher-sale-new", { reference: "vch_sale_new", code: "FRKA-SALE-0001" });
+          const receipt = voucherSaleReceiptFixture(voucher);
+          const committed = await persistence.commitVoucherSale(receipt, voucher, settings, receipts, vouchers);
+          assertEqual(committed.receipt.number, "2030-000077", "Verkaufsbeleg erhielt die falsche Nummer");
+          assertEqual(committed.voucher.saleReceipt.number, committed.receipt.number, "Verkaufsbeleg ist nicht am Gutschein verknüpft");
+          assertEqual(committed.voucher.history[0].receiptNumber, committed.receipt.number, "Historie ist nicht mit dem Verkaufsbeleg verknüpft");
+          assertEqual(committed.settingsRecord.receiptSettings.nextNumber, 78, "Nummernstand wurde nicht atomar fortgeschrieben");
+          const reloadedVoucher = (await persistence.readVouchers()).vouchers.find(entry => entry.reference === voucher.reference);
+          const reloadedReceipt = (await persistence.readReceipts()).receipts.find(entry => entry.id === receipt.id);
+          assertEqual(reloadedVoucher.saleReceipt.number, reloadedReceipt.number, "Reload verlor die Belegverknüpfung");
+          assertEqual(reloadedVoucher.qrLink, voucher.qrLink, "Reload verlor den QR-Link");
+          const repeated = await persistence.commitVoucherSale(receipt, voucher, settings, receipts, vouchers);
+          assertEqual(repeated.created, false, "Wiederholter Verkauf wurde nicht idempotent erkannt");
+          assertEqual(repeated.settingsRecord.receiptSettings.nextNumber, 78, "Idempotente Wiederholung setzte den Nummernstand zurück");
+          assertEqual((await persistence.readVouchers()).vouchers.filter(entry => entry.reference === voucher.reference).length, 1, "Wiederholung erzeugte einen doppelten Gutschein");
+        }
+      },
+      {
+        name: "Doppelter Gutscheincode wird vor Nummernverbrauch vollständig abgewiesen",
+        run: async () => {
+          const persistence = context.makeClient("voucher-duplicate-code");
+          const settings = recordFixture(persistence.tenantId, "completed");
+          const receipts = receiptsRecordFixture(persistence.tenantId);
+          const vouchers = vouchersRecordFixture(persistence.tenantId);
+          await persistence.writeSettings(settings);
+          await persistence.writeReceipts(receipts);
+          await persistence.writeVouchers(vouchers);
+          const duplicate = voucherDraftFixture("voucher-duplicate", { reference: "vch_duplicate", code: "frka exst 0001" });
+          await assertRejects(
+            () => persistence.commitVoucherSale(voucherSaleReceiptFixture(duplicate), duplicate, settings, receipts, vouchers),
+            "VOUCHER_DUPLICATE",
+            "Doppelter sichtbarer Gutscheincode"
+          );
+          assertEqual((await persistence.readSettings()).receiptSettings.nextNumber, 77, "Fehlgeschlagener Verkauf verbrauchte eine Nummer");
+          assertEqual((await persistence.readReceipts()).receipts.length, 1, "Fehlgeschlagener Verkauf legte einen Beleg an");
+          assertEqual((await persistence.readVouchers()).vouchers.length, 1, "Fehlgeschlagener Verkauf legte einen Gutschein an");
+        }
+      },
+      {
+        name: "Gutschein-Snapshots bleiben nach Änderungen an Unternehmen, Kunde und Leistungsort unverändert",
+        run: async () => {
+          const persistence = context.makeClient("voucher-snapshot");
+          const settings = recordFixture(persistence.tenantId, "completed");
+          const receipts = receiptsRecordFixture(persistence.tenantId);
+          const vouchers = vouchersRecordFixture(persistence.tenantId);
+          const voucher = voucherDraftFixture("voucher-snapshot-fixed", { reference: "vch_snapshot_fixed", code: "FRKA-SNAP-0001" });
+          await persistence.commitVoucherSale(voucherSaleReceiptFixture(voucher), voucher, settings, receipts, vouchers);
+          const changedSettings = clone(settings);
+          changedSettings.company.name = "Nachträglich geändertes Unternehmen";
+          changedSettings.serviceLocations[0].name = "Nachträglich geänderter Ort";
+          await persistence.writeSettings(changedSettings);
+          const changedCustomers = customersRecordFixture(persistence.tenantId);
+          changedCustomers.customers[0].lastName = "Nachträglich geändert";
+          await persistence.writeCustomers(changedCustomers);
+          const stored = (await persistence.readVouchers()).vouchers.find(entry => entry.reference === voucher.reference);
+          assertEqual(stored.companySnapshot.name, "Teststudio Nord", "Unternehmenssnapshot änderte sich rückwirkend");
+          assertEqual(stored.serviceLocationSnapshot.name, "Hauptstudio", "Leistungsortsnapshot änderte sich rückwirkend");
+          assertEqual(stored.customerSnapshot.name, "Anna Muster", "Kundensnapshot änderte sich rückwirkend");
+          assertEqual(stored.businessAreaSnapshot.visibleName, "Snapshot Studio", "Geschäftsbereichssnapshot änderte sich rückwirkend");
+        }
+      },
+      {
+        name: "Teil-Einlösung aktualisiert Restwert, Status, Historie und Einlösungsbeleg atomar",
+        run: async () => {
+          const persistence = context.makeClient("voucher-partial-redemption");
+          const settings = recordFixture(persistence.tenantId, "completed");
+          const receipts = receiptsRecordFixture(persistence.tenantId);
+          const vouchers = vouchersRecordFixture(persistence.tenantId);
+          await persistence.writeSettings(settings);
+          await persistence.writeReceipts(receipts);
+          await persistence.writeVouchers(vouchers);
+          const receipt = receiptDraftFixture("receipt-voucher-partial", { voucherReference: "vch_existing", total: 30, originalTotal: 30, paymentMethod: "Gutschein" });
+          const result = await persistence.commitVoucherRedemption(receipt, {
+            voucherReference: "vch_existing", amountCents: 3000, occurredAt: "2030-01-06T10:00:00.000Z", date: "06.01.2030", time: "11:00"
+          }, settings, receipts, vouchers);
+          assertEqual(result.voucher.currentValueCents, 7000, "Teil-Einlösung berechnete falschen Restwert");
+          assertEqual(result.voucher.status, "partially_redeemed", "Teil-Einlösung setzte falschen Status");
+          assertEqual(result.voucher.history.at(-1).type, "partial_redemption", "Historientyp der Teil-Einlösung ist falsch");
+          assertEqual(result.voucher.history.at(-1).receiptNumber, result.receipt.number, "Einlösungshistorie ist nicht mit dem Beleg verknüpft");
+          assertEqual(result.receipt.voucherPayment.balanceAfterCents, 7000, "Beleg enthält falschen Restwert");
+          assert(result.voucher.redemptionReferences.includes(result.receipt.number), "Einlösungsreferenz fehlt");
+        }
+      },
+      {
+        name: "Voll-Einlösung setzt Restwert null und bleibt bei Wiederholung idempotent",
+        run: async () => {
+          const persistence = context.makeClient("voucher-full-redemption");
+          const settings = recordFixture(persistence.tenantId, "completed");
+          const receipts = receiptsRecordFixture(persistence.tenantId);
+          const vouchers = vouchersRecordFixture(persistence.tenantId);
+          const receipt = receiptDraftFixture("receipt-voucher-full", { voucherReference: "vch_existing", total: 100, originalTotal: 100, paymentMethod: "Gutschein" });
+          const input = { voucherReference: "vch_existing", amountCents: 10000, occurredAt: "2030-01-06T10:00:00.000Z", date: "06.01.2030", time: "11:00" };
+          const result = await persistence.commitVoucherRedemption(receipt, input, settings, receipts, vouchers);
+          assertEqual(result.voucher.currentValueCents, 0, "Voll-Einlösung ließ einen Restwert zurück");
+          assertEqual(result.voucher.status, "redeemed", "Voll-Einlösung setzte falschen Status");
+          assertEqual(result.voucher.history.at(-1).type, "full_redemption", "Historientyp der Voll-Einlösung ist falsch");
+          const repeated = await persistence.commitVoucherRedemption(receipt, input, settings, receipts, vouchers);
+          assertEqual(repeated.created, false, "Wiederholte Einlösung wurde nicht idempotent erkannt");
+          assertEqual(repeated.voucher.history.filter(entry => entry.receiptNumber === result.receipt.number).length, 1, "Wiederholung duplizierte die Historie");
+        }
+      },
+      {
+        name: "Ungültige Restwerte und nachträgliche Historienänderungen werden abgewiesen",
+        run: async () => {
+          const persistence = context.makeClient("voucher-invariants");
+          await assertRejects(
+            () => Promise.resolve().then(() => api.snapshotVouchers({ vouchers: [voucherDraftFixture("voucher-negative", { currentValue: -1 })] }, persistence.tenantId)),
+            "INVALID_VOUCHER_VALUE",
+            "Negativer Restwert"
+          );
+          await assertRejects(
+            () => Promise.resolve().then(() => api.snapshotVouchers({ vouchers: [voucherDraftFixture("voucher-too-high", { issuedValue: 50, currentValue: 60 })] }, persistence.tenantId)),
+            "INVALID_VOUCHER_VALUE",
+            "Restwert über Ursprungswert"
+          );
+          const record = vouchersRecordFixture(persistence.tenantId);
+          await persistence.writeVouchers(record);
+          const changed = clone(record);
+          changed.vouchers[0].history[0].amount = 99;
+          changed.vouchers[0].history[0].amountCents = 9900;
+          await assertRejects(() => persistence.writeVouchers(changed), "VOUCHER_HISTORY_IMMUTABLE", "Bestehende Historie ändern");
+          const changedSnapshot = clone(record);
+          changedSnapshot.vouchers[0].companySnapshot.name = "Rückwirkend geändert";
+          await assertRejects(() => persistence.writeVouchers(changedSnapshot), "VOUCHER_SNAPSHOT_IMMUTABLE", "Verkaufssnapshot ändern");
+        }
+      },
+      {
+        name: "Voucher-Reset löscht nur den Voucher-Store des gewählten Mandanten",
+        run: async () => {
+          const first = context.makeClient("vouchers-reset-a");
+          const second = context.makeClient("vouchers-reset-b");
+          await first.writeSettings(recordFixture(first.tenantId, "completed"));
+          await first.writeCatalog(catalogRecordFixture(first.tenantId));
+          await first.writeCustomers(customersRecordFixture(first.tenantId));
+          await first.writeReceipts(receiptsRecordFixture(first.tenantId));
+          await first.writeVouchers(vouchersRecordFixture(first.tenantId));
+          await second.writeVouchers(vouchersRecordFixture(second.tenantId));
+          await first.deleteVouchers();
+          assertEqual(await first.readVouchers(), null, "Voucher-Store des ersten Tenants wurde nicht gelöscht");
+          assertEqual((await first.readSettings()).receiptSettings.nextNumber, 77, "Nummernstand wurde beim Voucher-Reset verändert");
+          assertEqual((await first.readCatalog()).items.length, 2, "Katalog wurde beim Voucher-Reset verändert");
+          assertEqual((await first.readCustomers()).customers.length, 2, "Kunden wurden beim Voucher-Reset verändert");
+          assertEqual((await first.readReceipts()).receipts.length, 1, "Belege wurden beim Voucher-Reset verändert");
+          assertEqual((await second.readVouchers()).vouchers.length, 1, "Gutscheine eines anderen Tenants wurden gelöscht");
+        }
+      },
+      {
+        name: "Schreibfehler beim Gutscheinverkauf hinterlässt weder Beleg noch Gutschein noch Nummernlücke",
+        run: async () => {
+          const persistence = context.makeClient("voucher-write-failure");
+          const settings = recordFixture(persistence.tenantId, "completed");
+          const receipts = receiptsRecordFixture(persistence.tenantId);
+          const vouchers = vouchersRecordFixture(persistence.tenantId);
+          await persistence.writeSettings(settings);
+          await persistence.writeReceipts(receipts);
+          await persistence.writeVouchers(vouchers);
+          const voucher = voucherDraftFixture("voucher-failed", { reference: "vch_failed", code: "FRKA-FAIL-0001" });
+          const receipt = voucherSaleReceiptFixture(voucher);
+          const closedDatabase = await persistence.openDatabase();
+          closedDatabase.close();
+          await assertRejects(
+            () => persistence.commitVoucherSale(receipt, voucher, settings, receipts, vouchers),
+            "VOUCHER_COMMIT_FAILED",
+            "Gutscheinverkauf auf geschlossener Verbindung"
+          );
+          persistence.closeDatabase();
+          assertEqual((await persistence.readSettings()).receiptSettings.nextNumber, 77, "Fehler verbrauchte eine Nummer");
+          assertEqual((await persistence.readReceipts()).receipts.length, 1, "Fehler hinterließ einen halben Beleg");
+          assertEqual((await persistence.readVouchers()).vouchers.length, 1, "Fehler hinterließ einen halben Gutschein");
+        }
+      },
+      {
+        name: "Schema-Upgrade von Version 4 erhält alle bisherigen Stores und ergänzt nur den Voucher-Store",
+        run: async () => {
+          const legacyDatabaseName = `${context.databaseName}-legacy-v4`;
+          const tenantId = "legacy-v4-tenant";
+          let migratedClient = null;
+          try {
+            await createLegacyV4Database(
+              legacyDatabaseName,
+              recordFixture(tenantId, "completed"),
+              catalogRecordFixture(tenantId),
+              customersRecordFixture(tenantId),
+              receiptsRecordFixture(tenantId)
+            );
+            migratedClient = api.createSettingsPersistence({ databaseName: legacyDatabaseName, tenantId });
+            const database = await migratedClient.openDatabase();
+            assertEqual(database.version, 5, "Datenbank wurde nicht auf Schema-Version 5 aktualisiert");
+            assert(database.objectStoreNames.contains(api.constants.vouchersStoreName), "Voucher-Store wurde beim Upgrade nicht ergänzt");
+            assertEqual((await migratedClient.readSettings()).company.name, "Teststudio Nord", "Settings gingen beim Upgrade verloren");
+            assertEqual((await migratedClient.readCatalog()).items.length, 2, "Katalog ging beim Upgrade verloren");
+            assertEqual((await migratedClient.readCustomers()).customers.length, 2, "Kunden gingen beim Upgrade verloren");
+            assertEqual((await migratedClient.readReceipts()).receipts.length, 1, "Belege gingen beim Upgrade verloren");
+            assertEqual(await migratedClient.readVouchers(), null, "Upgrade hat ungefragt Gutscheine importiert");
+          } finally {
+            migratedClient?.closeDatabase();
+            await new Promise(resolve => setTimeout(resolve, 0));
+            await deleteTestDatabase(legacyDatabaseName);
+          }
+        }
+      },
+      {
         name: "Schema-Upgrade von Version 3 erhält Settings, Katalog und Kunden und ergänzt den Receipt-Store",
         run: async () => {
           const legacyDatabaseName = `${context.databaseName}-legacy-v3`;
@@ -984,7 +1309,7 @@
             );
             migratedClient = api.createSettingsPersistence({ databaseName: legacyDatabaseName, tenantId });
             const database = await migratedClient.openDatabase();
-            assertEqual(database.version, 4, "Datenbank wurde nicht auf Schema-Version 4 aktualisiert");
+            assertEqual(database.version, api.constants.databaseVersion, "Datenbank wurde nicht auf die aktuelle Schema-Version aktualisiert");
             assert(database.objectStoreNames.contains(api.constants.receiptsStoreName), "Receipt-Store wurde beim Upgrade nicht ergänzt");
             assertEqual((await migratedClient.readSettings()).company.name, "Teststudio Nord", "Settings gingen beim Upgrade verloren");
             assertEqual((await migratedClient.readCatalog()).items.length, 2, "Katalog ging beim Upgrade verloren");
@@ -1009,7 +1334,7 @@
             await createLegacyV2Database(legacyDatabaseName, settings, catalog);
             migratedClient = api.createSettingsPersistence({ databaseName: legacyDatabaseName, tenantId });
             const database = await migratedClient.openDatabase();
-            assertEqual(database.version, 4, "Datenbank wurde nicht auf Schema-Version 4 aktualisiert");
+            assertEqual(database.version, api.constants.databaseVersion, "Datenbank wurde nicht auf die aktuelle Schema-Version aktualisiert");
             assert(database.objectStoreNames.contains(api.constants.customersStoreName), "Kundenstore wurde beim Upgrade nicht ergänzt");
             assert(database.objectStoreNames.contains(api.constants.receiptsStoreName), "Receipt-Store wurde beim Upgrade nicht ergänzt");
             assertEqual((await migratedClient.readSettings())?.company?.name, "Teststudio Nord", "Vorhandene Settings gingen beim Upgrade verloren");
@@ -1035,7 +1360,7 @@
             await createLegacySettingsDatabase(legacyDatabaseName, legacyRecord);
             migratedClient = api.createSettingsPersistence({ databaseName: legacyDatabaseName, tenantId });
             const database = await migratedClient.openDatabase();
-            assertEqual(database.version, 4, "Datenbank wurde nicht auf Schema-Version 4 aktualisiert");
+            assertEqual(database.version, api.constants.databaseVersion, "Datenbank wurde nicht auf die aktuelle Schema-Version aktualisiert");
             assert(database.objectStoreNames.contains(api.constants.catalogStoreName), "Katalogstore wurde beim Upgrade nicht ergänzt");
             assert(database.objectStoreNames.contains(api.constants.customersStoreName), "Kundenstore wurde beim Upgrade nicht ergänzt");
             assert(database.objectStoreNames.contains(api.constants.receiptsStoreName), "Receipt-Store wurde beim Upgrade nicht ergänzt");

@@ -2,7 +2,7 @@
 
 **Status:** Verbindliche Leitlinie  
 **Geltungsbereich:** Alle zukünftigen Produkt-, Architektur- und Entwicklungsarbeiten an FRECKA  
-**Letzte Aktualisierung:** 4. August 2026
+**Letzte Aktualisierung:** 7. August 2026
 
 Dieses Dokument beschreibt die verbindliche Zielrichtung von FRECKA. Der aktuelle Stand ist ein klickbarer UX-Prototyp; Aussagen zur Zielarchitektur kennzeichnen daher nicht automatisch bereits implementierte Funktionen. Abweichungen von diesen Leitlinien benötigen eine dokumentierte Architekturentscheidung (ADR) mit Begründung, Folgen und Migrationsweg.
 
@@ -63,7 +63,7 @@ Neue Funktionen werden nur aufgenommen, wenn sie den einfachen Kernablauf für d
 - Web App Manifest;
 - statische Auslieferung.
 
-Seit PERSIST-001a speichert der Prototyp die vollständigen Einstellungen über eine zentrale, versionierte IndexedDB-Schicht. PERSIST-002 ergänzt den Katalog, PERSIST-003 die Kundenstammdaten und PERSIST-004 normale Belege, offene Zahlungen, Stornos sowie Gutschriften in fachlich getrennten Stores. Gutscheine, Gutschein-Historien und Entwürfe bleiben bis zu ihren jeweiligen Persistenzblöcken ausschließlich im Arbeitsspeicher. Dieser Zwischenstand darf nicht mit der vollständigen Zielarchitektur verwechselt werden.
+Seit PERSIST-001a speichert der Prototyp die vollständigen Einstellungen über eine zentrale, versionierte IndexedDB-Schicht. PERSIST-002 ergänzt den Katalog, PERSIST-003 die Kundenstammdaten, PERSIST-004 normale Belege, offene Zahlungen, Stornos sowie Gutschriften und PERSIST-005 Gutscheine samt Historie. Verkauf und Einlösung bestätigen Nummernstand, Beleg, Gutschein und Historie atomar. Belegentwürfe bleiben bis zu ihrem Persistenzblock ausschließlich im Arbeitsspeicher. Dieser Zwischenstand darf nicht mit der vollständigen Zielarchitektur verwechselt werden.
 
 ### Verbindliche Zielbasis
 
@@ -88,7 +88,7 @@ Ein Build-System, Framework, eine UI-Bibliothek oder zusätzliche Backend-Kompon
 
 ## 7. Datenhaltung
 
-IndexedDB ist die verbindliche Hauptdatenbank. Einstellungen werden seit PERSIST-001a, Katalogdaten seit PERSIST-002, Kundenstammdaten seit PERSIST-003 und abgeschlossene Belege einschließlich offener Zahlungen, Stornos, Gutschriften und Aktivitäten seit PERSIST-004 darin gespeichert. Belegentwürfe, Gutscheine und Gutschein-Historien folgen in getrennten, ausdrücklich beauftragten Persistenzblöcken.
+IndexedDB ist die verbindliche Hauptdatenbank. Einstellungen werden seit PERSIST-001a, Katalogdaten seit PERSIST-002, Kundenstammdaten seit PERSIST-003, abgeschlossene Belege einschließlich offener Zahlungen, Stornos, Gutschriften und Aktivitäten seit PERSIST-004 sowie Gutscheine einschließlich Restwerten, Referenzen, Snapshots und unveränderlich angehängter Historien seit PERSIST-005 darin gespeichert. Belegentwürfe folgen in einem getrennten, ausdrücklich beauftragten Persistenzblock.
 
 Verbindliche Regeln:
 

@@ -8,6 +8,7 @@
   let defaultCatalogRecord = null;
   let defaultCustomersRecord = null;
   let defaultReceiptsRecord = null;
+  let defaultVouchersRecord = null;
   const state = {
     route: "home",
     activeBusinessArea: null,
@@ -86,6 +87,7 @@
     pendingBusinessTemplate: "",
     settingsReady: false,
     receiptsReadyForWrites: false,
+    vouchersReadyForWrites: false,
     settingsStorageNotice: "",
     settingsStorageNoticeIsError: false
   };
@@ -216,6 +218,10 @@
     replaceSettingsArray(data.receipts, Array.isArray(record?.receipts) ? record.receipts : []);
   }
 
+  function applyVouchersRecord(record) {
+    replaceSettingsArray(data.vouchers, Array.isArray(record?.vouchers) ? record.vouchers : []);
+  }
+
   function calculateReceiptCounter() {
     const prefix = String(data.receiptSettings?.yearPrefix || new Date().getFullYear());
     return [...data.receipts, ...data.vouchers.map(voucher => ({ number: voucher.saleReceipt?.number }))].reduce((highest, receipt) => {
@@ -242,7 +248,7 @@
       "[data-payment-toggle]", "[data-payment-move]", "[data-setup-back]", "[data-setup-cancel]",
       "[data-action='business-area-add']", "[data-template-choice]", "[data-action='template-use']",
       "[data-action='template-empty']", "[data-action='settings-reset']", "[data-action='catalog-reset']",
-      "[data-action='customers-reset']", "[data-action='receipts-reset']", ".customer-form button", ".customer-form input", ".customer-form textarea",
+      "[data-action='customers-reset']", "[data-action='receipts-reset']", "[data-action='vouchers-reset']", ".customer-form button", ".customer-form input", ".customer-form textarea",
       "[data-catalog-toggle-item]", "[data-catalog-toggle-category]", "[data-catalog-move-item]",
       "[data-catalog-move-category]", "[data-route]",
       "#businessSwitcher", "#bottomSheetClose", "#cancelDiscard", "#confirmDiscard"
@@ -385,7 +391,7 @@
     mainContent.setAttribute("aria-busy", "true");
     bottomNav.setAttribute("aria-busy", "true");
     bottomNav.querySelectorAll("button").forEach(button => { button.disabled = true; });
-    mainContent.innerHTML = `<section class="persistence-loading" role="status" aria-live="polite" aria-busy="true"><span class="persistence-loading-spinner" aria-hidden="true"></span><div><strong>FRECKA wird vorbereitet</strong><p>Lokale Einstellungen, Katalog-, Kunden- und Belegdaten werden geladen …</p></div></section>`;
+    mainContent.innerHTML = `<section class="persistence-loading" role="status" aria-live="polite" aria-busy="true"><span class="persistence-loading-spinner" aria-hidden="true"></span><div><strong>FRECKA wird vorbereitet</strong><p>Lokale Einstellungen, Katalog-, Kunden-, Beleg- und Gutscheindaten werden geladen …</p></div></section>`;
   }
 
   async function loadSettingsForStart() {
@@ -441,6 +447,20 @@
     if (savedRecord === null) return { firstStart: true, repairs: [] };
     const normalized = persistence.normalizeReceiptsRecord(savedRecord, defaultReceiptsRecord, persistence.tenantId);
     applyReceiptsRecord(normalized.record);
+    return { firstStart: false, repairs: normalized.repairs };
+  }
+
+  async function loadVouchersForStart() {
+    if (!persistence?.readVouchers || !persistence?.normalizeVouchersRecord || !defaultVouchersRecord) {
+      const error = new Error("Die Gutscheinpersistenz wurde nicht geladen.");
+      error.code = "PERSISTENCE_UNAVAILABLE";
+      error.userMessage = "Die lokalen Gutscheine konnten nicht geladen werden. FRECKA zeigt sichere Demodaten; Gutscheinverkäufe und -einlösungen bleiben bis zur Klärung gesperrt.";
+      throw error;
+    }
+    const savedRecord = await persistence.readVouchers();
+    if (savedRecord === null) return { firstStart: true, repairs: [] };
+    const normalized = persistence.normalizeVouchersRecord(savedRecord, defaultVouchersRecord, persistence.tenantId);
+    applyVouchersRecord(normalized.record);
     return { firstStart: false, repairs: normalized.repairs };
   }
 
@@ -864,6 +884,11 @@
       return;
     }
     const voucher = !leavePaymentOpen && state.paymentChoice === "voucher" ? selectedCheckoutVoucher() : null;
+    if (voucher && !state.vouchersReadyForWrites) {
+      state.checkoutVoucherError = "Der lokale Gutscheinspeicher ist noch nicht sicher verfügbar. Es wurde kein Beleg abgeschlossen und kein Restwert verändert.";
+      renderCheckout();
+      return;
+    }
     if (!leavePaymentOpen && state.paymentChoice === "voucher" && (!voucher || !isVoucherOpen(voucher))) {
       state.checkoutVoucherError = voucher?.status === "cancelled"
         ? "Dieser Gutschein wurde storniert."
@@ -953,9 +978,15 @@
     const customerSnapshot = customer ? {
       id: customer.id,
       name: customerName(customer),
+      firstName: customer.firstName || "",
+      lastName: customer.lastName || "",
+      companyName: customer.companyName || "",
       email: customer.email || "",
+      phone: customer.phone || "",
+      mobile: customer.mobile || "",
       street: customer.street || "",
-      zip: customer.zip || "",
+      postalCode: customer.postalCode || customer.zip || "",
+      zip: customer.postalCode || customer.zip || "",
       city: customer.city || ""
     } : null;
     const contextSnapshot = buildContextSnapshot(state.activeBusinessArea);
@@ -1014,7 +1045,8 @@
       }
     };
     try {
-      if (!persistence?.snapshotSettings || !persistence?.snapshotReceipts || !persistence?.commitReceipt) {
+      if (!persistence?.snapshotSettings || !persistence?.snapshotReceipts || !persistence?.commitReceipt
+        || (voucher && (!persistence?.snapshotVouchers || !persistence?.commitVoucherRedemption))) {
         const unavailableError = new Error("Die Belegpersistenz ist nicht verfügbar.");
         unavailableError.code = "PERSISTENCE_UNAVAILABLE";
         unavailableError.userMessage = "Der Beleg konnte nicht sicher lokal gespeichert werden.";
@@ -1022,24 +1054,26 @@
       }
       const settingsSnapshot = persistence.snapshotSettings(data, state.setup.status, persistence.tenantId);
       const seedReceiptsRecord = persistence.snapshotReceipts(data, persistence.tenantId);
-      const committed = await persistence.commitReceipt(receipt, settingsSnapshot, seedReceiptsRecord);
+      const committed = voucher
+        ? await persistence.commitVoucherRedemption(
+          receipt,
+          {
+            voucherReference: voucher.reference,
+            amountCents: Math.round(voucherAmounts.voucherAmount * 100),
+            occurredAt: now.toISOString(),
+            date: receiptDate,
+            time: receiptTime
+          },
+          settingsSnapshot,
+          seedReceiptsRecord,
+          persistence.snapshotVouchers(data, persistence.tenantId)
+        )
+        : await persistence.commitReceipt(receipt, settingsSnapshot, seedReceiptsRecord);
       applyReceiptsRecord(committed.receiptsRecord);
+      if (voucher) applyVouchersRecord(committed.vouchersRecord);
       data.receiptSettings.nextNumber = committed.settingsRecord.receiptSettings.nextNumber;
       state.receiptCounter = Math.max(0, data.receiptSettings.nextNumber - 1);
       const storedReceipt = data.receipts.find(entry => entry.id === committed.receipt.id) || committed.receipt;
-      if (voucher) {
-        voucher.currentValue = voucherAmounts.balanceAfter;
-        voucher.status = voucherAmounts.balanceAfter <= 0 ? "redeemed" : "partially_redeemed";
-        voucher.history = Array.isArray(voucher.history) ? voucher.history : [];
-        voucher.history.push({
-          type: voucherAmounts.balanceAfter <= 0 ? "full_redemption" : "partial_redemption",
-          date: receiptDate,
-          time: receiptTime,
-          amount: voucherAmounts.voucherAmount,
-          balanceAfter: voucherAmounts.balanceAfter,
-          receiptNumber: storedReceipt.number
-        });
-      }
       state.finishedReceipt = storedReceipt;
     } catch (error) {
       logPersistenceError("Belegabschluss fehlgeschlagen", error);
@@ -1320,7 +1354,7 @@
     const back=selectable?(voucherSelection?'voucher-sale':'checkout'):'home';
     mainContent.innerHTML=`<section class="flow-page customer-page page-enter">
       ${customerNoticeMarkup()}
-      <div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-route="${back}"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">${selectable?(voucherSelection?'Gutscheinverkauf':'Neuer Beleg'):'Verwaltung'}</p><h1 class="flow-title">${title}</h1><p class="page-copy">Nach Name, Firma, Telefon oder E-Mail suchen.</p></div>
+      <div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-route="${back}"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">${selectable?(voucherSelection?'Gutscheinverkauf':'Neuer Beleg'):'Verwaltung'}</p><h1 class="flow-title">${title}</h1><p class="page-copy">Nach Name, Firma, Telefon, E-Mail oder Adresse suchen.</p></div>
       <div class="customer-toolbar ${voucherSelection ? "is-picker-only" : ""}"><label class="search-field"><span aria-hidden="true">⌕</span><input id="customerSearch" type="search" placeholder="Kunde suchen" value="${escapeHtml(state.customerSearch)}"></label>${voucherSelection ? "" : `<button class="button button-primary customer-new-button" type="button" data-route="customer-new">＋ Neuer Kunde</button>`}</div>
       ${selectable?'<button class="customer-none" type="button" data-select-no-customer>Ohne Kunde fortfahren</button>':''}
       <div class="customer-list">${list.length?list.map(c=>customerCard(c,selectable,selectedId)).join(''):'<div class="empty-state">Keine passenden Kunden gefunden.</div>'}</div>
@@ -2028,6 +2062,8 @@
       receipt.contextSnapshot = context;
     });
     data.vouchers.forEach(voucher => {
+      if (!voucher.qrReference) voucher.qrReference = voucher.reference;
+      if (!voucher.qrLink) voucher.qrLink = voucherAppLink(voucher.reference);
       if (voucher.contextSnapshot) return;
       const redemption = voucher.presentationSnapshot?.redemptionLocation;
       const inferredAreaId = String(redemption?.name || "").toLocaleLowerCase("de-DE").includes("podolog") ? "podiatry" : defaultBusinessArea()?.id;
@@ -2194,7 +2230,7 @@
         </button>`).join("") : `<div class="empty-state">${state.voucherSearch.trim() ? "Keine passenden Gutscheine gefunden." : "Keine Gutscheine in diesem Filter."}</div>`}
       </div>
 
-      <p class="prototype-note">Demo ohne dauerhafte Speicherung. Änderungen gehen beim Neuladen verloren.</p>
+      <p class="prototype-note">Gutscheine, Restwerte und Historien werden ausschließlich lokal auf diesem Gerät gespeichert.</p>
     </section>`;
 
     document.getElementById("voucherSearch")?.addEventListener("input", event => {
@@ -2297,9 +2333,15 @@
     const customerSnapshot = customer ? {
       id: customer.id,
       name: customerName(customer),
+      firstName: customer.firstName || "",
+      lastName: customer.lastName || "",
+      companyName: customer.companyName || "",
       email: customer.email || "",
+      phone: customer.phone || "",
+      mobile: customer.mobile || "",
       street: customer.street || "",
-      zip: customer.zip || "",
+      postalCode: customer.postalCode || customer.zip || "",
+      zip: customer.postalCode || customer.zip || "",
       city: customer.city || ""
     } : null;
     const voucher = {
@@ -2312,8 +2354,11 @@
       soldAt,
       soldTime,
       createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
       payment: voucherSalePaymentLabel(),
       customer: customerSnapshot ? { id: customerSnapshot.id, name: customerSnapshot.name } : null,
+      customerId: customerSnapshot?.id ?? null,
+      customerSnapshot,
       displayName: state.voucherSaleDisplayName.trim(),
       saleReceipt: {
         id: saleReceiptId,
@@ -2324,6 +2369,8 @@
       },
       contextSnapshot: cloneContextSnapshot(contextSnapshot),
       presentationSnapshot: cloneContextSnapshot(presentationSnapshot),
+      qrReference: reference,
+      qrLink: voucherAppLink(reference),
       history: [
         { type: "sold", date: soldAt, time: soldTime, amount: issuedValue, balanceAfter: issuedValue, receiptNumber: "" }
       ]
@@ -2362,24 +2409,27 @@
 
   async function commitPrototypeVoucherSale(amount) {
     const sale = createPrototypeVoucherSale(amount);
-    if (!state.receiptsReadyForWrites || !persistence?.snapshotSettings || !persistence?.snapshotReceipts || !persistence?.commitReceipt) {
-      const error = new Error("Die Belegpersistenz ist nicht verfügbar.");
+    if (!state.receiptsReadyForWrites || !state.vouchersReadyForWrites
+      || !persistence?.snapshotSettings || !persistence?.snapshotReceipts
+      || !persistence?.snapshotVouchers || !persistence?.commitVoucherSale) {
+      const error = new Error("Die Gutscheinpersistenz ist nicht verfügbar.");
       error.code = "PERSISTENCE_UNAVAILABLE";
-      error.userMessage = "Der Verkaufsbeleg konnte nicht sicher lokal gespeichert werden.";
+      error.userMessage = "Gutschein und Verkaufsbeleg konnten nicht sicher gemeinsam lokal gespeichert werden.";
       throw error;
     }
-    const committed = await persistence.commitReceipt(
+    const committed = await persistence.commitVoucherSale(
       sale.receipt,
+      sale.voucher,
       persistence.snapshotSettings(data, state.setup.status, persistence.tenantId),
-      persistence.snapshotReceipts(data, persistence.tenantId)
+      persistence.snapshotReceipts(data, persistence.tenantId),
+      persistence.snapshotVouchers(data, persistence.tenantId)
     );
     applyReceiptsRecord(committed.receiptsRecord);
+    applyVouchersRecord(committed.vouchersRecord);
     data.receiptSettings.nextNumber = committed.settingsRecord.receiptSettings.nextNumber;
     state.receiptCounter = Math.max(0, data.receiptSettings.nextNumber - 1);
     sale.receipt = data.receipts.find(receipt => receipt.id === committed.receipt.id) || committed.receipt;
-    sale.voucher.saleReceipt.number = sale.receipt.number;
-    sale.voucher.history[0].receiptNumber = sale.receipt.number;
-    data.vouchers.unshift(sale.voucher);
+    sale.voucher = data.vouchers.find(voucher => voucher.reference === committed.voucher.reference) || committed.voucher;
     return sale;
   }
 
@@ -2449,7 +2499,7 @@
 
         <button class="button button-primary voucher-sale-submit" type="submit" ${state.voucherSaleSubmitting || completedVoucher ? "disabled" : ""}>${state.voucherSaleSubmitting ? "Gutschein wird erstellt …" : completedVoucher ? "Gutschein bereits erstellt" : "Gutschein jetzt verkaufen"}</button>
         ${completedVoucher ? `<button class="button button-secondary voucher-sale-completed-link" type="button" data-route="voucher-sale-success">Zum verkauften Gutschein</button>` : ""}
-        <p class="prototype-note">Der Verkaufsbeleg wird lokal gespeichert. Gutschein und Gutschein-Historie bleiben in diesem Block ausschließlich im Arbeitsspeicher.</p>
+        <p class="prototype-note">Gutschein, Historie, Verkaufsbeleg und Nummernstand werden gemeinsam lokal gespeichert.</p>
       </form>
     </section>`;
 
@@ -2476,7 +2526,7 @@
         <div class="success-mark" aria-hidden="true">✓</div>
         <p class="eyebrow">Verkauf abgeschlossen</p>
         <h1>Gutschein verkauft</h1>
-        <p>Der Verkaufsbeleg wurde lokal gespeichert. Der Gutschein bleibt in diesem Entwicklungsblock im Arbeitsspeicher.</p>
+        <p>Gutschein und Verkaufsbeleg wurden gemeinsam lokal gespeichert.</p>
       </div>
 
       ${state.voucherNotice ? `<div class="voucher-notice" role="status">${escapeHtml(state.voucherNotice)}</div>` : ""}
@@ -3294,14 +3344,18 @@
         </article>`).join("")}
       </div>
       <details class="development-tools">
-        <summary>Entwicklungswerkzeuge</summary>
+        <summary>Entwicklerbereich · nicht für den Betrieb</summary>
         <div class="development-tools-warning"><strong>Nur für Entwicklung und Tests</strong><span>Diese Aktionen setzen jeweils genau einen lokalen Datenspeicher dieses Mandanten zurück.</span></div>
-        <section class="settings-reset-card"><h2>Lokale Einstellungen</h2><p>Unternehmensdaten, Leistungsorte, Steuern, Zahlungsarten und Geschäftsbereiche werden ausschließlich auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="settings-reset">Gespeicherte Einstellungen zurücksetzen</button><small>Katalog, Kunden, Belege und Gutscheine werden dadurch nicht gelöscht.</small></section>
-        <section class="settings-reset-card"><h2>Lokaler Katalog</h2><p>Kategorien, Leistungen, Produkte und Vorlagenimporte werden getrennt von den Einstellungen auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="catalog-reset">Gespeicherten Katalog zurücksetzen</button><small>Einstellungen, Kunden, Belege und Gutscheine werden dadurch nicht gelöscht.</small></section>
-        <section class="settings-reset-card"><h2>Lokale Kunden</h2><p>Kundenstammdaten werden getrennt von Einstellungen und Katalog ausschließlich auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="customers-reset">Gespeicherte Kunden zurücksetzen</button><small>Einstellungen, Katalog, Belege und Gutscheine werden dadurch nicht gelöscht.</small></section>
-        <section class="settings-reset-card"><h2>Lokale Belege</h2><p>Belege, offene Zahlungen, Stornos, Gutschriften und ihre Aktivitäten werden getrennt gespeichert.</p><button class="button button-danger" type="button" data-action="receipts-reset">Gespeicherte Belege zurücksetzen</button><small>Einstellungen und ihr Nummernstand, Katalog, Kunden und Gutscheine bleiben unverändert. Dadurch entstehen keine Nummernkollisionen.</small></section>
+        <details class="development-reset-group">
+          <summary>Lokale Datenspeicher zurücksetzen</summary>
+          <section class="settings-reset-card"><h2>Lokale Einstellungen</h2><p>Unternehmensdaten, Leistungsorte, Steuern, Zahlungsarten und Geschäftsbereiche werden ausschließlich auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="settings-reset">Gespeicherte Einstellungen zurücksetzen</button><small>Katalog, Kunden, Belege und Gutscheine werden dadurch nicht gelöscht.</small></section>
+          <section class="settings-reset-card"><h2>Lokaler Katalog</h2><p>Kategorien, Leistungen, Produkte und Vorlagenimporte werden getrennt von den Einstellungen auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="catalog-reset">Gespeicherten Katalog zurücksetzen</button><small>Einstellungen, Kunden, Belege und Gutscheine werden dadurch nicht gelöscht.</small></section>
+          <section class="settings-reset-card"><h2>Lokale Kunden</h2><p>Kundenstammdaten werden getrennt von Einstellungen und Katalog ausschließlich auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="customers-reset">Gespeicherte Kunden zurücksetzen</button><small>Einstellungen, Katalog, Belege und Gutscheine werden dadurch nicht gelöscht.</small></section>
+          <section class="settings-reset-card"><h2>Lokale Belege</h2><p>Belege, offene Zahlungen, Stornos, Gutschriften und ihre Aktivitäten werden getrennt gespeichert.</p><button class="button button-danger" type="button" data-action="receipts-reset">Gespeicherte Belege zurücksetzen</button><small>Einstellungen und ihr Nummernstand, Katalog, Kunden und Gutscheine bleiben unverändert. Dadurch entstehen keine Nummernkollisionen.</small></section>
+          <section class="settings-reset-card"><h2>Lokale Gutscheine</h2><p>Gutscheinstammdaten, Restwerte, Snapshots und Historien werden im eigenen mandantenbezogenen Store gespeichert.</p><button class="button button-danger" type="button" data-action="vouchers-reset">Gespeicherte Gutscheine zurücksetzen</button><small>Einstellungen, Nummernstand, Katalog, Kunden und Belege bleiben unverändert.</small></section>
+        </details>
       </details>
-      <p class="prototype-note">Gutscheine und Gutschein-Historien bleiben in diesem Entwicklungsblock weiterhin im Arbeitsspeicher.</p>
+      <p class="prototype-note">Einstellungen, Katalog, Kunden, Belege und Gutscheine werden lokal und mandantenbezogen gespeichert.</p>
     </section>`;
   }
 
@@ -4556,6 +4610,15 @@
       });
       return;
     }
+    if (action === "vouchers-reset") {
+      openConfirmDialog({
+        title: "Gespeicherte Gutscheine zurücksetzen?",
+        text: "Nur der lokale Voucher-Store dieses Mandanten wird gelöscht. Einstellungen, Nummernstand, Katalog, Kunden und Belege bleiben unverändert; sichere Demo-Gutscheine werden wieder angezeigt.",
+        confirmLabel: "Gutscheine zurücksetzen",
+        action: "reset-saved-vouchers"
+      });
+      return;
+    }
     if (action === "catalog-settings-back") {
       state.catalogEditingItemId = null;
       state.catalogEditingCategoryId = null;
@@ -5134,6 +5197,41 @@
   confirmDiscard.addEventListener("click", async () => {
     const pendingAction = state.pendingDialogAction;
 
+    if (pendingAction === "reset-saved-vouchers") {
+      pendingSettingsWrites += 1;
+      setSettingsWritePending(true);
+      try {
+        if (!persistence?.deleteVouchers || !persistence?.normalizeVouchersRecord || !defaultVouchersRecord) {
+          const unavailableError = new Error("Lokale Gutscheinpersistenz ist derzeit nicht verfügbar.");
+          unavailableError.code = "PERSISTENCE_UNAVAILABLE";
+          unavailableError.userMessage = "Gespeicherte Gutscheine konnten nicht zurückgesetzt werden, weil die lokale Speicherung nicht verfügbar ist.";
+          throw unavailableError;
+        }
+        await persistence.deleteVouchers();
+        const normalizedDefaults = persistence.normalizeVouchersRecord(defaultVouchersRecord, defaultVouchersRecord, persistence.tenantId);
+        applyVouchersRecord(normalizedDefaults.record);
+        state.checkoutVoucherReference = null;
+        state.voucherDetailReference = null;
+        state.voucherSaleCreatedReference = null;
+        state.voucherSearch = "";
+        state.vouchersReadyForWrites = true;
+        closeDiscardDialog();
+        state.settingsStorageNotice = "Gespeicherte Gutscheine wurden zurückgesetzt. Sichere Demo-Gutscheine sind wieder aktiv; alle anderen Stores blieben unverändert.";
+        state.settingsStorageNoticeIsError = false;
+        renderSettings();
+      } catch (error) {
+        logPersistenceError("Gutscheine zurücksetzen fehlgeschlagen", error);
+        closeDiscardDialog();
+        state.settingsStorageNotice = persistenceErrorMessage(error, "Die gespeicherten Gutscheine konnten nicht zurückgesetzt werden.");
+        state.settingsStorageNoticeIsError = true;
+        renderSettings();
+      } finally {
+        pendingSettingsWrites = Math.max(0, pendingSettingsWrites - 1);
+        if (!pendingSettingsWrites) setSettingsWritePending(false);
+      }
+      return;
+    }
+
     if (pendingAction === "reset-saved-receipts") {
       pendingSettingsWrites += 1;
       setSettingsWritePending(true);
@@ -5480,6 +5578,18 @@
     state.settingsStorageNotice = state.settingsStorageNotice ? `${state.settingsStorageNotice} ${message}` : message;
     state.settingsStorageNoticeIsError = true;
     state.receiptsReadyForWrites = false;
+  }
+  try {
+    if (!persistence?.snapshotVouchers) throw new Error("Die Gutscheinpersistenz wurde nicht geladen.");
+    defaultVouchersRecord = persistence.snapshotVouchers(data, persistence.tenantId);
+    await loadVouchersForStart();
+    state.vouchersReadyForWrites = true;
+  } catch (error) {
+    logPersistenceError("Gutscheindaten laden fehlgeschlagen", error);
+    const message = persistenceErrorMessage(error, "Die lokalen Gutscheine konnten nicht geladen werden. Gutscheinverkäufe und -einlösungen bleiben gesperrt, damit keine inkonsistenten Restwerte entstehen.");
+    state.settingsStorageNotice = state.settingsStorageNotice ? `${state.settingsStorageNotice} ${message}` : message;
+    state.settingsStorageNoticeIsError = true;
+    state.vouchersReadyForWrites = false;
   }
   refreshSettingsDerivedState();
   state.settingsReady = true;
