@@ -63,7 +63,7 @@ Neue Funktionen werden nur aufgenommen, wenn sie den einfachen Kernablauf für d
 - Web App Manifest;
 - statische Auslieferung.
 
-Seit PERSIST-001a speichert der Prototyp die vollständigen Einstellungen über eine zentrale, versionierte IndexedDB-Schicht. PERSIST-002 ergänzt den Katalog, PERSIST-003 die Kundenstammdaten, PERSIST-004 normale Belege, offene Zahlungen, Stornos sowie Gutschriften und PERSIST-005 Gutscheine samt Historie. Verkauf und Einlösung bestätigen Nummernstand, Beleg, Gutschein und Historie atomar. BACKUP-001 ergänzt einen vollständigen Tenant-Snapshot, eine lokal verschlüsselte `.frecka-backup`-Datei und einen atomaren Restore aller fünf Stores. Belegentwürfe bleiben bis zu ihrem Persistenzblock ausschließlich im Arbeitsspeicher. Dieser Zwischenstand darf nicht mit der vollständigen Zielarchitektur verwechselt werden.
+Seit PERSIST-001a speichert der Prototyp die vollständigen Einstellungen über eine zentrale, versionierte IndexedDB-Schicht. PERSIST-002 ergänzt den Katalog, PERSIST-003 die Kundenstammdaten, PERSIST-004 normale Belege, offene Zahlungen, Stornos sowie Gutschriften und PERSIST-005 Gutscheine samt Historie. Verkauf und Einlösung bestätigen Nummernstand, Beleg, Gutschein und Historie atomar. BACKUP-001 ergänzt einen vollständigen Tenant-Snapshot, eine lokal verschlüsselte `.frecka-backup`-Datei und einen atomaren Restore aller fünf Stores. HARDEN-001 macht Kunden deaktivierbar statt löschbar und härtet Sicherungskennwort, Dateiname und iOS-Dateiauswahl UX-seitig. Belegentwürfe bleiben bis zu ihrem Persistenzblock ausschließlich im Arbeitsspeicher. Dieser Zwischenstand darf nicht mit der vollständigen Zielarchitektur verwechselt werden.
 
 ### Verbindliche Zielbasis
 
@@ -131,6 +131,7 @@ Die Synology dient ausschließlich als Update-Server. Sie stellt statische Progr
 ## 10. UX-Grundsätze
 
 - **Mobile First:** Gestaltung und Implementierung beginnen beim Smartphone und skalieren anschließend auf größere Displays.
+- Kunden werden im normalen Betrieb deaktiviert und wieder aktiviert, nicht endgültig gelöscht. Deaktivierte Kunden bleiben in historischen Belegen, Gutscheinen und Snapshots erhalten und werden für neue Vorgänge standardmäßig ausgeblendet.
 - Die häufigsten Aufgaben benötigen möglichst wenige, eindeutige Schritte.
 - Häufig genutzte Kernfunktionen eines Hauptmenüpunkts müssen in höchstens drei bewussten Interaktionen erreichbar sein, sofern keine fachlich oder rechtlich zwingenden Schritte entgegenstehen.
 - FRECKA unterstützt bestehende Arbeitsabläufe des Betriebs, statt sie unnötig zu ersetzen.

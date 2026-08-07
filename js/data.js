@@ -1,6 +1,6 @@
 window.PROTOTYPE_DATA = Object.freeze({
-  version: "UX-024",
-  build: "2026-08-06",
+  version: "HARDEN-001",
+  build: "2026-08-07",
   company: {
     name: "Studio Beispiel",
     owner: "Angel Luzolo",

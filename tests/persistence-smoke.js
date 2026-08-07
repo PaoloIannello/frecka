@@ -835,6 +835,27 @@
         }
       },
       {
+        name: "Kundendeaktivierung bleibt reversibel und verändert keine Historien",
+        run: async () => {
+          const persistence = context.makeClient("customers-status-lifecycle");
+          const snapshot = completeTenantSnapshotFixture(persistence.tenantId);
+          await persistence.restoreTenantSnapshot(snapshot);
+          const receiptsBefore = await persistence.readReceipts();
+          const vouchersBefore = await persistence.readVouchers();
+          const customers = await persistence.readCustomers();
+          customers.customers[0].active = false;
+          customers.customers[0].updatedAt = "2030-02-02T12:00:00.000Z";
+          await persistence.writeCustomers(customers);
+          assertEqual((await persistence.readCustomers()).customers[0].active, false, "Kunde wurde nicht deaktiviert gespeichert");
+          assertDeepEqual(await persistence.readReceipts(), receiptsBefore, "Beleg- oder Kundenhistorie wurde bei Deaktivierung verändert");
+          assertDeepEqual(await persistence.readVouchers(), vouchersBefore, "Gutschein oder Kundensnapshot wurde bei Deaktivierung verändert");
+          customers.customers[0].active = true;
+          customers.customers[0].updatedAt = "2030-02-03T12:00:00.000Z";
+          await persistence.writeCustomers(customers);
+          assertEqual((await persistence.readCustomers()).customers[0].active, true, "Kunde konnte nicht wieder aktiviert werden");
+        }
+      },
+      {
         name: "Kundensuche findet Name, Firma, Straße, PLZ und Ort in einer Suchlogik",
         run: async () => {
           const customer = customersRecordFixture("search-name").customers[0];
@@ -1522,6 +1543,18 @@
           assert(typeof persistence.restoreTenantSnapshot === "function", "restoreTenantSnapshot fehlt");
           assert(typeof backupApi?.encryptTenantSnapshot === "function", "Verschlüsselungs-API fehlt");
           assertEqual(api.constants.databaseVersion, 5, "Backup führte unerwartet eine neue Schema-Version ein");
+        }
+      },
+      {
+        name: "Backup-Dateiname und neutraler Downloadtyp sind iOS-robust",
+        run: async () => {
+          const localDate = new Date(2030, 1, 1, 12, 34, 59);
+          assertEqual(
+            backupApi.backupFilename(localDate.toISOString()),
+            "FRECKA-Backup-2030-02-01-1234.frecka-backup",
+            "Backup-Dateiname ist nicht chronologisch oder enthält unerwartete Zeichen"
+          );
+          assertEqual(backupApi.constants.downloadMimeType, "application/octet-stream", "Download verwendet keinen neutralen Binärtyp");
         }
       },
       {

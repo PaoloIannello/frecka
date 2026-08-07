@@ -15,7 +15,8 @@
     minimumPassphraseLength: 12,
     maximumPassphraseLength: 1024,
     maximumFileBytes: 64 * 1024 * 1024,
-    fileExtension: ".frecka-backup"
+    fileExtension: ".frecka-backup",
+    downloadMimeType: "application/octet-stream"
   });
 
   class BackupError extends Error {
@@ -43,10 +44,10 @@
 
   function validatePassphrase(passphrase) {
     if (typeof passphrase !== "string" || passphrase.length < constants.minimumPassphraseLength) {
-      throw new BackupError("PASSPHRASE_TOO_SHORT", `Die Passphrase muss mindestens ${constants.minimumPassphraseLength} Zeichen lang sein.`);
+      throw new BackupError("PASSPHRASE_TOO_SHORT", `Das Sicherungskennwort muss mindestens ${constants.minimumPassphraseLength} Zeichen lang sein.`);
     }
     if (passphrase.length > constants.maximumPassphraseLength) {
-      throw new BackupError("PASSPHRASE_TOO_LONG", "Die Passphrase ist zu lang.");
+      throw new BackupError("PASSPHRASE_TOO_LONG", "Das Sicherungskennwort ist zu lang.");
     }
     return passphrase;
   }
@@ -239,20 +240,21 @@
       }
     } catch (cause) {
       if (cause instanceof BackupError) throw cause;
-      throw new BackupError("BACKUP_DECRYPT_FAILED", "Die Passphrase ist falsch oder die Datei wurde verändert.", cause);
+      throw new BackupError("BACKUP_DECRYPT_FAILED", "Das Sicherungskennwort ist falsch oder die Datei wurde verändert.", cause);
     }
   }
 
   function backupFilename(createdAt = new Date().toISOString(), suffix = "") {
     const date = Number.isFinite(Date.parse(createdAt)) ? new Date(createdAt) : new Date();
-    const stamp = date.toISOString().replace(/[:.]/g, "-");
+    const twoDigits = value => String(value).padStart(2, "0");
+    const stamp = `${date.getFullYear()}-${twoDigits(date.getMonth() + 1)}-${twoDigits(date.getDate())}-${twoDigits(date.getHours())}${twoDigits(date.getMinutes())}`;
     const safeSuffix = String(suffix).trim().replace(/[^A-Za-z0-9_-]+/g, "-");
-    return `frecka-sicherung-${stamp}${safeSuffix ? `-${safeSuffix}` : ""}${constants.fileExtension}`;
+    return `FRECKA-Backup-${stamp}${safeSuffix ? `-${safeSuffix}` : ""}${constants.fileExtension}`;
   }
 
   function downloadBackup(serializedBackup, filename) {
     if (typeof serializedBackup !== "string") throw new BackupError("BACKUP_DATA_INVALID", "Die Sicherungsdatei ist nicht verfügbar.");
-    const blob = new Blob([serializedBackup], { type: "application/vnd.frecka.backup+json" });
+    const blob = new Blob([serializedBackup], { type: constants.downloadMimeType });
     const objectUrl = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = objectUrl;

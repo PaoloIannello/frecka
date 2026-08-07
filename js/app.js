@@ -29,6 +29,7 @@
     checkoutOpenPaymentConfirm: false,
     priceEditorId: null,
     customerSearch: "",
+    customerFilter: "active",
     selectedCustomerId: null,
     customerDetailId: null,
     customerHistoryExpanded: false,
@@ -260,6 +261,7 @@
       "[data-action='business-area-add']", "[data-template-choice]", "[data-action='template-use']",
       "[data-action='template-empty']", "[data-action='settings-reset']", "[data-action='catalog-reset']",
       "[data-action='customers-reset']", "[data-action='receipts-reset']", "[data-action='vouchers-reset']", ".customer-form button", ".customer-form input", ".customer-form textarea",
+      "[data-toggle-customer-active]",
       "[data-catalog-toggle-item]", "[data-catalog-toggle-category]", "[data-catalog-move-item]",
       "[data-catalog-move-category]", "[data-route]",
       "#businessSwitcher", "#bottomSheetClose", "#cancelDiscard", "#confirmDiscard"
@@ -798,7 +800,7 @@
 
 
   function selectedCustomer() {
-    return data.customers.find(customer => customer.id === state.selectedCustomerId) ?? null;
+    return data.customers.find(customer => customer.id === state.selectedCustomerId && customer.active !== false) ?? null;
   }
 
   const activePaymentChoices = () => data.paymentChoices.filter(choice => choice.active !== false);
@@ -1243,13 +1245,13 @@
   }
 
   function renderCheckout() {
-    const selectedCustomer = data.customers.find(c => c.id === state.selectedCustomerId);
+    const checkoutCustomer = selectedCustomer();
     const checkoutVoucher = selectedCheckoutVoucher();
     const voucherAmounts = checkoutVoucher ? checkoutVoucherAmounts(checkoutVoucher) : null;
     const voucherQuery = normalizeVoucherCode(state.checkoutVoucherCode);
     const selectableVouchers = eligibleCheckoutVouchers().filter(voucher => !voucherQuery || normalizeVoucherCode(voucher.code).includes(voucherQuery));
-    const customerCards = selectedCustomer
-      ? `<div class="selected-customer"><div><strong>${escapeHtml(customerName(selectedCustomer))}</strong>${customerAddressLines(selectedCustomer).map(line => `<small>${escapeHtml(line)}</small>`).join("")}<small>${escapeHtml(selectedCustomer.phone || selectedCustomer.email || "Kunde ausgewählt")}</small></div><div class="selected-customer-actions"><button class="text-action" type="button" data-edit-customer="${selectedCustomer.id}">Bearbeiten</button><button class="text-action" type="button" data-route="customer-picker">Ändern</button></div></div>`
+    const customerCards = checkoutCustomer
+      ? `<div class="selected-customer"><div><strong>${escapeHtml(customerName(checkoutCustomer))}</strong>${customerAddressLines(checkoutCustomer).map(line => `<small>${escapeHtml(line)}</small>`).join("")}<small>${escapeHtml(checkoutCustomer.phone || checkoutCustomer.email || "Kunde ausgewählt")}</small></div><div class="selected-customer-actions"><button class="text-action" type="button" data-edit-customer="${checkoutCustomer.id}">Bearbeiten</button><button class="text-action" type="button" data-route="customer-picker">Ändern</button></div></div>`
       : `<button class="mini-choice ${state.customerChoice === "none" ? "is-selected" : ""}" type="button" data-select-no-customer><span class="mini-choice-icon" aria-hidden="true">→</span><span><strong>Ohne Kunde</strong><small>Keine persönlichen Daten</small></span></button><button class="mini-choice" type="button" data-route="customer-picker"><span class="mini-choice-icon" aria-hidden="true">◎</span><span><strong>Kunde auswählen</strong><small>Suchen oder neu anlegen</small></span></button>`;
     const paymentCards = activePaymentChoices().map(choice => `<button class="payment-choice ${state.paymentChoice === choice.id ? "is-selected" : ""}" type="button" data-payment-choice="${choice.id}"><span aria-hidden="true">${choice.icon}</span><strong>${escapeHtml(choice.title)}</strong></button>`).join("");
     mainContent.innerHTML = `<section class="flow-page checkout-page page-enter">
@@ -1333,10 +1335,16 @@
     form.before(notice);
   }
   const normalizePhoneSearch = value => String(value || "").replace(/[^0-9+]/g, "").replace(/(?!^)\+/g, "");
-  function filteredCustomers() {
+  function filteredCustomers(selectable = false) {
     const q = state.customerSearch.trim().toLowerCase();
-    if (!q) return data.customers;
-    return data.customers.filter(c => {
+    const statusFiltered = data.customers.filter(customer => {
+      if (selectable) return customer.active !== false;
+      if (state.customerFilter === "disabled") return customer.active === false;
+      if (state.customerFilter === "active") return customer.active !== false;
+      return true;
+    });
+    if (!q) return statusFiltered;
+    return statusFiltered.filter(c => {
       if (persistence?.customerMatchesSearch) return persistence.customerMatchesSearch(c, q);
       const phoneQuery = normalizePhoneSearch(q);
       const textMatch = [customerName(c), c.companyName, c.phone, c.mobile, c.email].join(" ").toLowerCase().includes(q);
@@ -1348,17 +1356,18 @@
     const receiptHistory = customerReceipts(c).filter(receipt => receipt.type === "receipt");
     const receiptCount = receiptHistory.length || Number(c.receiptCount || 0);
     const lastVisit = receiptHistory[0]?.date || c.lastVisit || "Noch kein Besuch";
-    return `<article class="customer-card ${selectedId===c.id?"is-selected":""}">
+    const isActive = c.active !== false;
+    return `<article class="customer-card ${selectedId===c.id?"is-selected":""} ${isActive ? "" : "is-disabled"}">
       <button type="button" class="customer-card-main" ${selectable?`data-select-customer="${c.id}"`:`data-open-customer="${c.id}"`}>
         <span class="customer-avatar" aria-hidden="true">${escapeHtml(customerInitials(c))}</span>
-        <span class="customer-card-text"><strong>${escapeHtml(customerName(c))}</strong>${c.companyName ? `<small>${escapeHtml(c.companyName)}</small>` : ""}<small>${escapeHtml(c.phone || c.mobile || "Keine Telefonnummer")}</small><small>${escapeHtml(c.email || "Keine E-Mail")}</small></span>
+        <span class="customer-card-text"><span class="customer-name-line"><strong>${escapeHtml(customerName(c))}</strong>${selectable ? "" : `<em class="customer-status ${isActive ? "is-active" : "is-disabled"}">${isActive ? "Aktiv" : "Deaktiviert"}</em>`}</span>${c.companyName ? `<small>${escapeHtml(c.companyName)}</small>` : ""}<small>${escapeHtml(c.phone || c.mobile || "Keine Telefonnummer")}</small><small>${escapeHtml(c.email || "Keine E-Mail")}</small></span>
         <span class="customer-card-meta">${receiptCount} Belege<br>${escapeHtml(lastVisit)}</span>
       </button>
       ${selectable ? "" : `<button class="customer-card-edit" type="button" data-edit-customer="${c.id}">Bearbeiten</button>`}
     </article>`;
   }
   function renderCustomers(selectable=false) {
-    const list=filteredCustomers();
+    const list=filteredCustomers(selectable);
     const voucherSelection=selectable && state.customerPickerContext === "voucher";
     const selectedId=voucherSelection ? state.voucherSaleCustomerId : state.selectedCustomerId;
     const title=selectable?"Kunde auswählen":"Kunden";
@@ -1367,6 +1376,9 @@
       ${customerNoticeMarkup()}
       <div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-route="${back}"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">${selectable?(voucherSelection?'Gutscheinverkauf':'Neuer Beleg'):'Verwaltung'}</p><h1 class="flow-title">${title}</h1><p class="page-copy">Nach Name, Firma, Telefon, E-Mail oder Adresse suchen.</p></div>
       <div class="customer-toolbar ${voucherSelection ? "is-picker-only" : ""}"><label class="search-field"><span aria-hidden="true">⌕</span><input id="customerSearch" type="search" placeholder="Kunde suchen" value="${escapeHtml(state.customerSearch)}"></label>${voucherSelection ? "" : `<button class="button button-primary customer-new-button" type="button" data-route="customer-new">＋ Neuer Kunde</button>`}</div>
+      ${selectable ? "" : `<div class="customer-filter-tabs" role="tablist" aria-label="Kundenstatus">${[
+        ["all", "Alle"], ["active", "Aktiv"], ["disabled", "Deaktiviert"]
+      ].map(([id, label]) => `<button type="button" role="tab" aria-selected="${state.customerFilter === id}" class="${state.customerFilter === id ? "is-active" : ""}" data-customer-filter="${id}">${label}</button>`).join("")}</div>`}
       ${selectable?'<button class="customer-none" type="button" data-select-no-customer>Ohne Kunde fortfahren</button>':''}
       <div class="customer-list">${list.length?list.map(c=>customerCard(c,selectable,selectedId)).join(''):'<div class="empty-state">Keine passenden Kunden gefunden.</div>'}</div>
     </section>`;
@@ -1454,6 +1466,7 @@
     const latestOriginal = allHistory.find(receipt => receipt.type === "receipt");
     const lastVisit = latestOriginal?.date || c.lastVisit || "Noch kein Besuch";
     const originalReceiptCount = allHistory.filter(receipt => receipt.type === "receipt").length || Number(c.receiptCount || 0);
+    const isActive = c.active !== false;
 
     const historyMarkup = allHistory.length
       ? `<section class="customer-history customer-history-accordion ${state.customerHistoryExpanded ? "is-expanded" : ""}">
@@ -1511,6 +1524,7 @@
         <button class="button button-back" type="button" data-route="customers"><span aria-hidden="true">←</span> Zurück</button>
         <p class="eyebrow">Kunde</p>
         <h1 class="flow-title">${escapeHtml(customerName(c))}</h1>
+        <span class="customer-status ${isActive ? "is-active" : "is-disabled"}">${isActive ? "Aktiv" : "Deaktiviert"}</span>
       </div>
 
       <section class="customer-detail-card">
@@ -1536,7 +1550,8 @@
 
       <div class="customer-detail-actions">
         <button class="button button-secondary" type="button" data-edit-customer="${c.id}">Kunde bearbeiten</button>
-        <button class="button button-primary" type="button" data-start-customer-receipt="${c.id}">Neuen Beleg erstellen</button>
+        <button class="button ${isActive ? "button-ghost" : "button-primary"}" type="button" data-toggle-customer-active="${c.id}">${isActive ? "Deaktivieren" : "Aktivieren"}</button>
+        ${isActive ? `<button class="button button-primary" type="button" data-start-customer-receipt="${c.id}">Neuen Beleg erstellen</button>` : ""}
       </div>
     </section>`;
   }
@@ -2337,7 +2352,7 @@
       year: "numeric"
     }).format(now);
     const soldTime = new Intl.DateTimeFormat("de-DE", { timeStyle: "short" }).format(now);
-    const customer = data.customers.find(entry => entry.id === state.voucherSaleCustomerId) ?? null;
+    const customer = data.customers.find(entry => entry.id === state.voucherSaleCustomerId && entry.active !== false) ?? null;
     const saleReceiptId = `receipt_${randomHex(12)}`;
     const contextSnapshot = buildContextSnapshot(state.activeBusinessArea);
     const presentationSnapshot = currentVoucherPresentationSnapshot(state.activeBusinessArea);
@@ -2454,7 +2469,7 @@
   function renderVoucherSale() {
     const amount = voucherSaleAmount();
     const completedVoucher = voucherByReference(state.voucherSaleCreatedReference);
-    const saleCustomer = data.customers.find(customer => customer.id === state.voucherSaleCustomerId) ?? null;
+    const saleCustomer = data.customers.find(customer => customer.id === state.voucherSaleCustomerId && customer.active !== false) ?? null;
     const paymentChoices = activeNormalPaymentChoices();
     const saleArea = businessAreaContextSnapshot(state.activeBusinessArea);
     const saleLocation = serviceLocationForBusinessArea(state.activeBusinessArea);
@@ -2692,7 +2707,7 @@
     payments: ["Zahlungsarten", ["Aktive Zahlungsarten erscheinen beim Belegabschluss.", "Mindestens eine normale Zahlungsart muss aktiv bleiben.", "Es besteht keine Verbindung zu Zahlungsanbietern."]],
     openPayments: ["Offene Zahlungen", ["Offene Zahlungen sind nur für Ausnahmefälle gedacht, wenn ein Kunde später bezahlt.", "FRECKA ersetzt keine Buchhaltung und überwacht keine Bankkonten.", "Teilzahlungen und Mahnungen werden nicht verwaltet."]],
     receiptTexts: ["Belegtexte", ["Dankes- und Fußtext sind freiwillig.", "Sie werden als Momentaufnahme in neue Belege übernommen.", "Bereits erstellte Belege ändern sich nicht rückwirkend."]],
-    backup: ["Sicherung & Wiederherstellung", ["Die Sicherungsdatei enthält alle lokalen FRECKA-Daten dieses Betriebs.", "Sie wird vor dem Download mit deiner Passphrase verschlüsselt.", "Ohne diese Passphrase kann die Sicherung nicht wiederhergestellt werden.", "FRECKA speichert weder Datei noch Passphrase zentral."]],
+    backup: ["Sicherung & Wiederherstellung", ["Die Sicherungsdatei enthält alle lokalen FRECKA-Daten dieses Betriebs.", "Sie wird vor dem Speichern mit deinem Sicherungskennwort verschlüsselt.", "Ohne dieses Kennwort kann die Sicherung nicht wiederhergestellt werden.", "FRECKA speichert weder Datei noch Sicherungskennwort zentral."]],
     export: ["Export", ["Exporte werden später aus den lokalen Daten erzeugt.", "Format und Zeitraum sollen vor dem Export klar auswählbar sein.", "Aktuell wird noch keine Datei erstellt."]],
     update: ["Update", ["Updates ersetzen ausschließlich Programmcode.", "Geschäftsdaten bleiben lokal auf dem Endgerät.", "Die Synology ist nur als späterer Update-Server vorgesehen."]],
     tse: ["TSE", ["Dieser Prototyp besitzt keine TSE-Anbindung.", "Ob eine TSE erforderlich ist, wird nicht automatisch beurteilt.", "Vor produktiver Nutzung muss die konkrete Pflicht fachlich geprüft werden.", "Die spätere Einrichtung erhält einen eigenen Assistenten."]]
@@ -3428,7 +3443,7 @@
     if (state.backupStage === "unlock") {
       return `<div class="backup-selected-file"><span aria-hidden="true">✓</span><div><strong>${escapeHtml(state.backupRestoreFilename)}</strong><small>Datei ausgewählt</small></div><button type="button" data-action="backup-restore-cancel">Ändern</button></div>
         <form id="backupUnlockForm" class="backup-inline-form">
-          <label class="setting-field full"><span>Passphrase der Sicherung</span><input name="passphrase" type="password" autocomplete="current-password" minlength="${backup?.constants?.minimumPassphraseLength || 12}" maxlength="1024" required></label>
+          <label class="setting-field full"><span>Kennwort für deine Sicherung</span><input name="passphrase" type="password" autocomplete="current-password" minlength="${backup?.constants?.minimumPassphraseLength || 12}" maxlength="1024" required></label>
           <button class="button button-primary" type="submit" ${state.backupBusy ? "disabled" : ""}>${state.backupBusy ? "Wird geprüft …" : "Sicherung prüfen"}</button>
         </form>`;
     }
@@ -3437,9 +3452,9 @@
       return `<article class="backup-preview" aria-label="Inhalt der geprüften Sicherung">
           <div class="backup-preview-head"><span aria-hidden="true">✓</span><div><strong>Sicherung vollständig geprüft</strong><small>${escapeHtml(state.backupRestoreFilename)}</small></div></div>
           <dl>
-            <div><dt>Erstellt</dt><dd>${escapeHtml(localBackupDate(summary.createdAt))}</dd></div>
             <div><dt>Unternehmen</dt><dd>${escapeHtml(summary.companyName || "Ohne Bezeichnung")}</dd></div>
-            <div><dt>Katalog</dt><dd>${summary.catalogItems} Einträge</dd></div>
+            <div><dt>Erstellungsdatum</dt><dd>${escapeHtml(localBackupDate(summary.createdAt))}</dd></div>
+            <div><dt>Geschäftsbereiche</dt><dd>${summary.businessAreas}</dd></div>
             <div><dt>Kunden</dt><dd>${summary.customers}</dd></div>
             <div><dt>Belege</dt><dd>${summary.receipts}</dd></div>
             <div><dt>Gutscheine</dt><dd>${summary.vouchers}</dd></div>
@@ -3448,8 +3463,8 @@
         <section class="backup-safety-card">
           <div><strong>${state.backupSafetyCreated ? "✓ Aktueller Stand wurde gesichert" : "Aktuellen Stand zuerst sichern"}</strong><p>Empfohlen: Lade vor dem Überschreiben eine neue verschlüsselte Sicherung des jetzigen Datenstands herunter.</p></div>
           ${state.backupSafetyCreated ? "" : `<form id="backupSafetyForm" class="backup-inline-form">
-            <label class="setting-field full"><span>Neue Passphrase für das Sicherheitsbackup</span><input name="passphrase" type="password" autocomplete="new-password" minlength="${backup?.constants?.minimumPassphraseLength || 12}" maxlength="1024" required></label>
-            <label class="setting-field full"><span>Passphrase wiederholen</span><input name="passphraseConfirm" type="password" autocomplete="new-password" minlength="${backup?.constants?.minimumPassphraseLength || 12}" maxlength="1024" required></label>
+            <label class="setting-field full"><span>Neues Sicherungskennwort</span><input name="passphrase" type="password" autocomplete="new-password" minlength="${backup?.constants?.minimumPassphraseLength || 12}" maxlength="1024" required></label>
+            <label class="setting-field full"><span>Sicherungskennwort wiederholen</span><input name="passphraseConfirm" type="password" autocomplete="new-password" minlength="${backup?.constants?.minimumPassphraseLength || 12}" maxlength="1024" required></label>
             <button class="button button-secondary" type="submit" ${state.backupBusy ? "disabled" : ""}>Sicherheitsbackup herunterladen</button>
           </form>`}
         </section>
@@ -3461,8 +3476,8 @@
         </form>`;
     }
     return `<label class="backup-file-picker">
-        <input id="backupRestoreFile" type="file" accept=".frecka-backup,application/vnd.frecka.backup+json,application/json">
-        <span aria-hidden="true">↥</span><strong>Sicherungsdatei auswählen</strong><small>Nur Dateien mit der Endung .frecka-backup</small>
+        <input id="backupRestoreFile" type="file">
+        <span aria-hidden="true">↥</span><strong>Sicherungsdatei auswählen</strong><small>Auf iPhone und iPad über „Dateien“ auswählen. Der Dateiinhalt wird anschließend sicher geprüft.</small>
       </label>`;
   }
 
@@ -3495,17 +3510,17 @@
       <form id="backupCreateForm" class="settings-form backup-card">
         ${cardTitle("Neue Sicherung erstellen", "backup")}
         <p class="backup-card-copy">Die Sicherung enthält Einstellungen, Katalog, Kunden, Belege und Gutscheine einschließlich ihrer Historien.</p>
-        <label class="setting-field full"><span>Neue Passphrase</span><input name="passphrase" type="password" autocomplete="new-password" minlength="${backup?.constants?.minimumPassphraseLength || 12}" maxlength="1024" required><small>Mindestens ${backup?.constants?.minimumPassphraseLength || 12} Zeichen. FRECKA speichert diese Passphrase nicht.</small></label>
-        <label class="setting-field full"><span>Passphrase wiederholen</span><input name="passphraseConfirm" type="password" autocomplete="new-password" minlength="${backup?.constants?.minimumPassphraseLength || 12}" maxlength="1024" required></label>
-        <div class="backup-passphrase-warning"><strong>Passphrase sicher aufbewahren</strong><p>Ohne sie kann die Sicherung nicht wiederhergestellt werden. Es gibt keine zentrale Rücksetzung.</p></div>
-        <button class="button button-primary" type="submit" ${state.backupBusy ? "disabled" : ""}>${state.backupBusy ? "Sicherung wird erstellt …" : "Verschlüsselte Sicherung herunterladen"}</button>
+        <label class="setting-field full"><span>Sicherungskennwort</span><input name="passphrase" type="password" autocomplete="new-password" minlength="${backup?.constants?.minimumPassphraseLength || 12}" maxlength="1024" required><small>Mindestens ${backup?.constants?.minimumPassphraseLength || 12} Zeichen. FRECKA speichert dieses Kennwort nicht.</small></label>
+        <label class="setting-field full"><span>Sicherungskennwort wiederholen</span><input name="passphraseConfirm" type="password" autocomplete="new-password" minlength="${backup?.constants?.minimumPassphraseLength || 12}" maxlength="1024" required></label>
+        <div class="backup-passphrase-warning"><strong>Sicherungskennwort sicher aufbewahren</strong><p>Bewahre dieses Sicherungskennwort an einem sicheren Ort auf. Ohne dieses Kennwort kann FRECKA deine Sicherung nicht wiederherstellen.</p></div>
+        <button class="button button-primary" type="submit" ${state.backupBusy ? "disabled" : ""}>${state.backupBusy ? "Sicherung wird erstellt …" : "Sicherung erstellen"}</button>
       </form>
       <section class="backup-card backup-restore-card">
         ${cardTitle("Sicherung wiederherstellen", "backup")}
         <p class="backup-card-copy">FRECKA entschlüsselt und prüft die gesamte Datei, bevor lokale Daten verändert werden.</p>
         ${restoreStepMarkup()}
       </section>
-      <p class="prototype-note">Die Sicherung wird ausschließlich lokal verarbeitet. Passphrasen werden weder protokolliert noch gespeichert.</p>
+      <p class="prototype-note">Die Sicherung wird ausschließlich lokal verarbeitet. Sicherungskennwörter werden weder protokolliert noch gespeichert.</p>
     </section>`;
     attachBackupFileBehavior();
   }
@@ -3517,6 +3532,8 @@
     applyReceiptsRecord(records.receipts);
     applyVouchersRecord(records.vouchers);
     state.cart = [];
+    state.customerFilter = "active";
+    state.customerSearch = "";
     state.selectedCustomerId = null;
     state.customerChoice = "none";
     state.finishedReceipt = null;
@@ -4397,6 +4414,45 @@
     if (decrease) { changeQuantity(decrease.dataset.decreaseItem, -1); return; }
     const remove = event.target.closest("[data-remove-item]");
     if (remove) { removeItem(remove.dataset.removeItem); return; }
+    const customerFilter = event.target.closest("[data-customer-filter]");
+    if (customerFilter) {
+      state.customerFilter = ["all", "active", "disabled"].includes(customerFilter.dataset.customerFilter)
+        ? customerFilter.dataset.customerFilter
+        : "active";
+      renderCustomers(false);
+      return;
+    }
+    const toggleCustomerActive = event.target.closest("[data-toggle-customer-active]");
+    if (toggleCustomerActive) {
+      const customer = data.customers.find(entry => entry.id === toggleCustomerActive.dataset.toggleCustomerActive);
+      if (!customer) return;
+      const previousActive = customer.active !== false;
+      const previousUpdatedAt = customer.updatedAt;
+      const previousSelectedCustomerId = state.selectedCustomerId;
+      const previousCustomerChoice = state.customerChoice;
+      const previousVoucherSaleCustomerId = state.voucherSaleCustomerId;
+      customer.active = !previousActive;
+      customer.updatedAt = new Date().toISOString();
+      if (!customer.active) {
+        if (state.selectedCustomerId === customer.id) {
+          state.selectedCustomerId = null;
+          state.customerChoice = "none";
+        }
+        if (state.voucherSaleCustomerId === customer.id) state.voucherSaleCustomerId = null;
+      }
+      const saved = await persistCustomerMutation(customer.active
+        ? "Der Kunde wurde aktiviert und kann wieder ausgewählt werden."
+        : "Der Kunde wurde deaktiviert. Belege, Gutscheine und Historien bleiben unverändert.");
+      if (!saved) {
+        customer.active = previousActive;
+        customer.updatedAt = previousUpdatedAt;
+        state.selectedCustomerId = previousSelectedCustomerId;
+        state.customerChoice = previousCustomerChoice;
+        state.voucherSaleCustomerId = previousVoucherSaleCustomerId;
+      }
+      renderCustomerDetail();
+      return;
+    }
     const editCustomer = event.target.closest("[data-edit-customer]");
     if (editCustomer) {
       state.customerNotice = "";
@@ -4418,12 +4474,14 @@
     }
     const selectCustomer = event.target.closest("[data-select-customer]");
     if (selectCustomer) {
+      const selectableCustomer = data.customers.find(entry => entry.id === selectCustomer.dataset.selectCustomer && entry.active !== false);
+      if (!selectableCustomer) return;
       if (state.customerPickerContext === "voucher") {
-        state.voucherSaleCustomerId = selectCustomer.dataset.selectCustomer;
+        state.voucherSaleCustomerId = selectableCustomer.id;
         state.customerSearch = "";
         navigate("voucher-sale");
       } else {
-        state.selectedCustomerId = selectCustomer.dataset.selectCustomer;
+        state.selectedCustomerId = selectableCustomer.id;
         state.customerChoice = "existing";
         navigate("checkout");
       }
@@ -4498,7 +4556,14 @@
       return;
     }
     const startCustomerReceipt = event.target.closest("[data-start-customer-receipt]");
-    if (startCustomerReceipt) { startNewReceipt(); state.selectedCustomerId = startCustomerReceipt.dataset.startCustomerReceipt; state.customerChoice="existing"; return; }
+    if (startCustomerReceipt) {
+      const customer = data.customers.find(entry => entry.id === startCustomerReceipt.dataset.startCustomerReceipt && entry.active !== false);
+      if (!customer) return;
+      startNewReceipt();
+      state.selectedCustomerId = customer.id;
+      state.customerChoice="existing";
+      return;
+    }
     const customer = event.target.closest("[data-customer-choice]");
     if (customer) { state.customerChoice = customer.dataset.customerChoice; renderCheckout(); return; }
     const payment = event.target.closest("[data-payment-choice]");
@@ -5072,7 +5137,7 @@
       const passphrase = String(formData.get("passphrase") || "");
       const confirmation = String(formData.get("passphraseConfirm") || "");
       if (passphrase !== confirmation) {
-        state.backupNotice = "Die beiden Passphrasen stimmen nicht überein.";
+        state.backupNotice = "Die beiden Sicherungskennwörter stimmen nicht überein.";
         state.backupNoticeIsError = true;
         renderSettingsBackup();
         return;
@@ -5142,7 +5207,7 @@
       const passphrase = String(formData.get("passphrase") || "");
       const confirmation = String(formData.get("passphraseConfirm") || "");
       if (passphrase !== confirmation) {
-        state.backupNotice = "Die Passphrasen für das Sicherheitsbackup stimmen nicht überein.";
+        state.backupNotice = "Die Sicherungskennwörter für das Sicherheitsbackup stimmen nicht überein.";
         state.backupNoticeIsError = true;
         renderSettingsBackup();
         return;
@@ -5600,6 +5665,7 @@
         state.customerDetailId = null;
         state.editingCustomerId = null;
         state.customerSearch = "";
+        state.customerFilter = "active";
         state.customerNotice = "";
         state.customerNoticeIsError = false;
         closeDiscardDialog();

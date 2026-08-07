@@ -1,8 +1,8 @@
 # Verschlüsselte Sicherung und Wiederherstellung
 
-**Stand:** BACKUP-001  
-**Datenbankschema:** 5  
-**Backupformat:** 1  
+**Stand:** HARDEN-001 auf Basis BACKUP-001
+**Datenbankschema:** 5
+**Backupformat:** 1
 **Geltungsbereich:** Vollständiger lokaler Datenstand eines Mandanten
 
 ## Zweck und Grenzen
@@ -42,6 +42,8 @@ Jeder Store enthält seinen bestehenden versionierten Datensatz einschließlich 
 ## Äußeres Dateiformat
 
 Dateiendung: `.frecka-backup`
+
+Der sichtbare Dateiname folgt `FRECKA-Backup-YYYY-MM-DD-HHMM.frecka-backup`. Er enthält keine Leer- oder Sonderzeichen und bleibt bei alphabetischer Sortierung chronologisch. Der Download verwendet bewusst den neutralen Typ `application/octet-stream`, weil das webbasierte FRECKA-Format keine auf iOS registrierte native Uniform-Type-Kennung besitzt.
 
 Der sichtbare JSON-Dateikopf enthält ausschließlich Format- und Kryptoparameter:
 
@@ -102,21 +104,23 @@ Schlägt irgendein Put-Vorgang fehl oder wird die Transaktion abgebrochen, rollt
 ### Sicherung erstellen
 
 1. Nutzer öffnet `Einstellungen → Sicherung & Wiederherstellung`.
-2. Passphrase und Bestätigung werden eingegeben.
+2. Sicherungskennwort und Bestätigung werden eingegeben.
 3. FRECKA liest und validiert den vollständigen Tenant-Snapshot.
 4. Der Browser verschlüsselt den Snapshot.
 5. Eine Datei mit Zeitstempel und Endung `.frecka-backup` wird heruntergeladen.
-6. Passphrase und Klartextpayload werden nicht in App-State, IndexedDB oder Logs übernommen.
+6. Sicherungskennwort und Klartextpayload werden nicht in App-State, IndexedDB oder Logs übernommen.
 
 ### Sicherung wiederherstellen
 
-1. Nutzer wählt eine `.frecka-backup`-Datei.
-2. Die Passphrase wird ausschließlich für diesen Entschlüsselungsvorgang gelesen.
-3. FRECKA entschlüsselt und vollvalidiert die Datei, ohne Daten zu verändern.
-4. Die Vorschau zeigt Erstellungszeitpunkt, Unternehmen sowie Anzahl von Katalogeinträgen, Kunden, Belegen und Gutscheinen.
-5. Vor dem Überschreiben wird ein verschlüsseltes Sicherheitsbackup des aktuellen Stands angeboten.
-6. Eine ausdrückliche Bestätigung ist erforderlich.
-7. Alle fünf Stores werden atomar ersetzt und der zentrale App-Zustand wird neu geladen.
+1. Nutzer wählt eine `.frecka-backup`-Datei aus der Dateien-App oder einem anderen verfügbaren Speicherort.
+2. Das HTML-Dateifeld besitzt absichtlich keinen `accept`-Filter. Dadurch bleiben eigene FRECKA-Dateiendungen auch auf iPhone und iPad auswählbar; `*/*` wird ebenfalls nicht verwendet.
+3. Dateiname und vom Betriebssystem gemeldeter MIME-Type gelten nicht als Vertrauensanker. Erst der eingelesene, authentifizierte Dateiinhalt entscheidet über die Annahme.
+4. Das Sicherungskennwort wird ausschließlich für diesen Entschlüsselungsvorgang gelesen.
+5. FRECKA entschlüsselt und vollvalidiert die Datei, ohne Daten zu verändern.
+6. Die Vorschau zeigt Erstellungsdatum, Unternehmen sowie Anzahl von Geschäftsbereichen, Kunden, Belegen und Gutscheinen.
+7. Vor dem Überschreiben wird ein verschlüsseltes Sicherheitsbackup des aktuellen Stands angeboten.
+8. Eine ausdrückliche Bestätigung ist erforderlich.
+9. Alle fünf Stores werden atomar ersetzt und der zentrale App-Zustand wird neu geladen.
 
 ## Fehlerverhalten
 
@@ -132,7 +136,7 @@ Fehlerlogs enthalten nur Vorgang und Fehlercode. Passphrase, Schlüsselmaterial,
 
 ## Tests
 
-`tests/persistence-smoke.html` prüft ohne zusätzliche Bibliothek die gesamte bisherige Persistenz sowie BACKUP-001. Der aktuelle Lauf umfasst 68 Fälle. Die Backup-Ergänzungen decken insbesondere Format- und Mandantenprüfung, Vollständigkeit, Referenzen, Nummernstand, Verschlüsselungs-Roundtrip, zufällige Ciphertexte, Klartextausschluss, falsche Passphrase, Payload- und Headermanipulation, abgeschnittene und unbekannte Formate, Export mit und ohne persistierte Stores, Restore in einen leeren Mandanten, vollständiges Überschreiben, atomaren Rollback und erneute Sicherung nach Restore ab.
+`tests/persistence-smoke.html` prüft ohne zusätzliche Bibliothek die gesamte bisherige Persistenz sowie BACKUP-001 und HARDEN-001. Der aktuelle Lauf umfasst 70 Fälle. Die Ergänzungen decken insbesondere Format- und Mandantenprüfung, Vollständigkeit, Referenzen, Nummernstand, Verschlüsselungs-Roundtrip, zufällige Ciphertexte, Klartextausschluss, falsches Kennwort, Payload- und Headermanipulation, abgeschnittene und unbekannte Formate, Export mit und ohne persistierte Stores, Restore in einen leeren Mandanten, vollständiges Überschreiben, atomaren Rollback, erneute Sicherung nach Restore, reversiblen Kundenstatus sowie iOS-robusten Dateinamen und Downloadtyp ab.
 
 Jeder Lauf verwendet ausschließlich eine zufällig benannte Testdatenbank mit Guard gegen `frecka` und löscht diese anschließend. Ein simulierter Restore-Abbruch ist nur für eindeutig benannte Testdatenbanken freigeschaltet.
 
@@ -141,7 +145,7 @@ Jeder Lauf verwendet ausschließlich eine zufällig benannte Testdatenbank mit G
 Vor einer produktiven Freigabe zusätzlich auf einem realen iPhone in Safari beziehungsweise als installierte PWA prüfen:
 
 1. Sicherung mit realistisch großem fiktivem Datenbestand erstellen und an einen vom Nutzer kontrollierten Speicherort sichern.
-2. Datei nach Safari-Neustart auswählen, falsche und richtige Passphrase prüfen.
+2. Datei nach Safari-Neustart in der Dateien-App auswählen; prüfen, dass sie nicht ausgegraut ist, und anschließend falsches sowie richtiges Sicherungskennwort testen.
 3. Vorschau und Sicherheitsbackup prüfen.
 4. Teil- und Vollrestore dürfen nicht auftreten: nach erfolgreichem Restore alle fünf Bereiche und nach absichtlichem Abbruch den unveränderten Altstand prüfen.
 5. App vollständig schließen, erneut öffnen und Einstellungen, Katalog, Kunden, Belege, Gutscheine, Snapshots, Historien und Nummernstand prüfen.

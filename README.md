@@ -1,4 +1,4 @@
-# FRECKA – BACKUP-001
+# FRECKA – HARDEN-001
 
 Browserbasierter FRECKA-Prototyp mit lokaler IndexedDB-Persistenz sowie verschlüsselter Gesamtsicherung und atomarer Wiederherstellung.
 
@@ -10,7 +10,15 @@ Browserbasierter FRECKA-Prototyp mit lokaler IndexedDB-Persistenz sowie verschl�
 
 Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufklappen und bearbeiten → Weiter → Kunde optional und Zahlungsart simulieren → Demo abschließen.
 
-## Neu in BACKUP-001
+## Neu in HARDEN-001
+
+- verständliche Sicherungskennwort-Texte in der gesamten Produktoberfläche
+- iOS-robuste Auswahl von `.frecka-backup`-Dateien ohne unzuverlässigen Dateityp-Vorfilter
+- chronologisch sortierbare Dateinamen im Format `FRECKA-Backup-YYYY-MM-DD-HHMM.frecka-backup`
+- Kundenstatus Aktiv/Deaktiviert mit Filter und reversibler Deaktivierung
+- deaktivierte Kunden bleiben in Belegen, Gutscheinen und Historien erhalten, sind für neue Vorgänge aber nicht auswählbar
+
+## Grundlage aus BACKUP-001
 
 - eine zentrale Tenant-Snapshot-API für Einstellungen, Katalog, Kunden, Belege und Gutscheine
 - verschlüsselte `.frecka-backup`-Dateien mit PBKDF2-HMAC-SHA-256 und AES-GCM-256 über Web Crypto
@@ -19,7 +27,7 @@ Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufkla
 - angebotenes verschlüsseltes Sicherheitsbackup des aktuellen Stands
 - atomarer Restore aller fünf IndexedDB-Stores ohne Teilzustände
 - keine Passphrase, Schlüssel, Geschäftsdaten oder Sicherungsdatei in zentraler Speicherung
-- 67 native Browser-Smoke-Tests ohne neue Testabhängigkeit
+- 70 native Browser-Smoke-Tests ohne neue Testabhängigkeit
 
 ## Nicht umgesetzt
 
