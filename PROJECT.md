@@ -4,7 +4,7 @@
 **Geltungsbereich:** Alle zukünftigen Produkt-, Architektur- und Entwicklungsarbeiten an FRECKA  
 **Letzte Aktualisierung:** 7. August 2026
 
-Dieses Dokument beschreibt die verbindliche Zielrichtung von FRECKA. Der aktuelle Stand ist ein klickbarer UX-Prototyp; Aussagen zur Zielarchitektur kennzeichnen daher nicht automatisch bereits implementierte Funktionen. Abweichungen von diesen Leitlinien benötigen eine dokumentierte Architekturentscheidung (ADR) mit Begründung, Folgen und Migrationsweg.
+Dieses Dokument beschreibt die verbindliche Zielrichtung von FRECKA. Der aktuelle Stand ist ein browserbasierter Prototyp mit lokaler IndexedDB-Persistenz für Einstellungen, Katalog, Kunden, Belege und Gutscheine sowie manueller verschlüsselter Gesamtsicherung und atomarer Wiederherstellung. Aussagen zu noch offenen Teilen der Zielarchitektur kennzeichnen nicht automatisch bereits implementierte Funktionen. Abweichungen von diesen Leitlinien benötigen eine dokumentierte Architekturentscheidung (ADR) mit Begründung, Folgen und Migrationsweg.
 
 ## 1. Projektvision
 
@@ -63,7 +63,7 @@ Neue Funktionen werden nur aufgenommen, wenn sie den einfachen Kernablauf für d
 - Web App Manifest;
 - statische Auslieferung.
 
-Seit PERSIST-001a speichert der Prototyp die vollständigen Einstellungen über eine zentrale, versionierte IndexedDB-Schicht. PERSIST-002 ergänzt den Katalog, PERSIST-003 die Kundenstammdaten, PERSIST-004 normale Belege, offene Zahlungen, Stornos sowie Gutschriften und PERSIST-005 Gutscheine samt Historie. Verkauf und Einlösung bestätigen Nummernstand, Beleg, Gutschein und Historie atomar. Belegentwürfe bleiben bis zu ihrem Persistenzblock ausschließlich im Arbeitsspeicher. Dieser Zwischenstand darf nicht mit der vollständigen Zielarchitektur verwechselt werden.
+Seit PERSIST-001a speichert der Prototyp die vollständigen Einstellungen über eine zentrale, versionierte IndexedDB-Schicht. PERSIST-002 ergänzt den Katalog, PERSIST-003 die Kundenstammdaten, PERSIST-004 normale Belege, offene Zahlungen, Stornos sowie Gutschriften und PERSIST-005 Gutscheine samt Historie. Verkauf und Einlösung bestätigen Nummernstand, Beleg, Gutschein und Historie atomar. BACKUP-001 ergänzt einen vollständigen Tenant-Snapshot, eine lokal verschlüsselte `.frecka-backup`-Datei und einen atomaren Restore aller fünf Stores. Belegentwürfe bleiben bis zu ihrem Persistenzblock ausschließlich im Arbeitsspeicher. Dieser Zwischenstand darf nicht mit der vollständigen Zielarchitektur verwechselt werden.
 
 ### Verbindliche Zielbasis
 
@@ -78,7 +78,7 @@ Ein Build-System, Framework, eine UI-Bibliothek oder zusätzliche Backend-Kompon
 
 ## 6. Offline-First-Konzept
 
-- Nach erfolgreicher Erstinstallation müssen alle Kernabläufe ohne Internet funktionieren: App starten, Beleg erfassen und bearbeiten, lokale Stammdaten verwenden, vorhandene Belege anzeigen sowie einen Backup-Export vorbereiten.
+- Nach erfolgreicher Erstinstallation müssen alle Kernabläufe ohne Internet funktionieren: App starten, Beleg erfassen und bearbeiten, lokale Stammdaten verwenden, vorhandene Belege anzeigen sowie eine verschlüsselte Gesamtsicherung erstellen und wiederherstellen.
 - Der Service Worker hält eine versionierte, in sich konsistente App-Shell aus HTML, CSS, JavaScript, Manifest und notwendigen statischen Assets vor.
 - Geschäftsdaten werden nicht im Service-Worker-Cache gespeichert. Dafür ist ausschließlich die Persistenzschicht auf Basis von IndexedDB zuständig.
 - Schreibvorgänge werden zuerst lokal und transaktional abgeschlossen. Die UI bestätigt einen Vorgang erst nach erfolgreicher lokaler Speicherung.
@@ -88,7 +88,7 @@ Ein Build-System, Framework, eine UI-Bibliothek oder zusätzliche Backend-Kompon
 
 ## 7. Datenhaltung
 
-IndexedDB ist die verbindliche Hauptdatenbank. Einstellungen werden seit PERSIST-001a, Katalogdaten seit PERSIST-002, Kundenstammdaten seit PERSIST-003, abgeschlossene Belege einschließlich offener Zahlungen, Stornos, Gutschriften und Aktivitäten seit PERSIST-004 sowie Gutscheine einschließlich Restwerten, Referenzen, Snapshots und unveränderlich angehängter Historien seit PERSIST-005 darin gespeichert. Belegentwürfe folgen in einem getrennten, ausdrücklich beauftragten Persistenzblock.
+IndexedDB ist die verbindliche Hauptdatenbank. Einstellungen werden seit PERSIST-001a, Katalogdaten seit PERSIST-002, Kundenstammdaten seit PERSIST-003, abgeschlossene Belege einschließlich offener Zahlungen, Stornos, Gutschriften und Aktivitäten seit PERSIST-004 sowie Gutscheine einschließlich Restwerten, Referenzen, Snapshots und unveränderlich angehängter Historien seit PERSIST-005 darin gespeichert. BACKUP-001 kann diesen vollständigen mandantenbezogenen Stand verschlüsselt exportieren und nach Vollprüfung atomar wiederherstellen. Belegentwürfe folgen in einem getrennten, ausdrücklich beauftragten Persistenzblock.
 
 Verbindliche Regeln:
 
@@ -202,8 +202,8 @@ Die Version 1.0 liefert einen kleinen, stabilen und vollständig offline nutzbar
 
 ### Datensouveränität und Betrieb
 
-- versioniertes, verschlüsseltes Backupformat implementieren;
-- Backup-Export und kontrollierten Restore mit Integritäts- und Kompatibilitätsprüfung bereitstellen;
+- das mit BACKUP-001 implementierte versionierte, verschlüsselte Backupformat auf realen Zielgeräten freigeben;
+- den mit BACKUP-001 implementierten kontrollierten Restore mit Integritäts- und Kompatibilitätsprüfung auf realen Zielgeräten abnehmen;
 - vom Kunden kontrollierte Ablage ermöglichen, ohne zentralen FRECKA-Speicher;
 - statische, integritätsgeprüfte Updates von der Synology mit sicherem Aktivierungszeitpunkt umsetzen;
 - Offline-, Update-, Migrations-, Backup- und Restore-Szenarien auf realen Zielgeräten abnehmen.

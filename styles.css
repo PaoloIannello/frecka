@@ -1822,6 +1822,206 @@ body.work-mode:not(.catalog-mode) .flow-page {
   }
 }
 
+/* BACKUP-001 – verschlüsselte Gesamtsicherung und atomare Wiederherstellung */
+.backup-page { max-width: 720px; }
+.backup-intro,
+.backup-card {
+  min-width: 0;
+  padding: 17px;
+  border: 1px solid var(--border);
+  border-radius: 21px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.backup-intro {
+  margin-bottom: 12px;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.backup-intro > span {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  display: grid;
+  place-items: center;
+  font-size: 1.15rem;
+  font-weight: 950;
+}
+.backup-intro p,
+.backup-card-copy,
+.backup-safety-card p,
+.backup-destructive-warning p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: .76rem;
+  line-height: 1.5;
+}
+.backup-card {
+  margin: 0 0 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px;
+}
+.backup-card > .settings-card-title,
+.backup-card > .backup-card-copy,
+.backup-card > .backup-passphrase-warning,
+.backup-card > .button,
+.backup-card > .backup-selected-file,
+.backup-card > .backup-inline-form,
+.backup-card > .backup-file-picker,
+.backup-card > .backup-preview,
+.backup-card > .backup-safety-card,
+.backup-card > .backup-restore-confirm {
+  grid-column: 1 / -1;
+}
+.backup-card .setting-field > small {
+  color: var(--muted);
+  font-size: .68rem;
+  line-height: 1.4;
+}
+.backup-passphrase-warning,
+.backup-destructive-warning {
+  padding: 13px 14px;
+  border-radius: 15px;
+  background: #fff5df;
+  color: #6e4c05;
+}
+.backup-passphrase-warning p,
+.backup-destructive-warning p { color: #735c2a; }
+.backup-card > .button,
+.backup-inline-form > .button,
+.backup-restore-confirm > .button { width: 100%; }
+.backup-file-picker {
+  min-width: 0;
+  min-height: 128px;
+  padding: 18px;
+  border: 2px dashed #a6c8bb;
+  border-radius: 17px;
+  background: var(--primary-soft);
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 5px;
+  text-align: center;
+  cursor: pointer;
+}
+.backup-file-picker input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.backup-file-picker > span { color: var(--primary); font-size: 1.55rem; font-weight: 950; }
+.backup-file-picker small { color: var(--muted); font-size: .7rem; }
+.backup-selected-file,
+.backup-preview-head {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+.backup-selected-file > span,
+.backup-preview-head > span {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #e5f4eb;
+  color: #17633f;
+  display: grid;
+  place-items: center;
+  font-weight: 950;
+}
+.backup-selected-file > div,
+.backup-preview-head > div { min-width: 0; display: grid; gap: 3px; }
+.backup-selected-file strong,
+.backup-preview-head strong,
+.backup-selected-file small,
+.backup-preview-head small { overflow-wrap: anywhere; }
+.backup-selected-file small,
+.backup-preview-head small { color: var(--muted); font-size: .68rem; }
+.backup-selected-file button {
+  min-height: 42px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  font-weight: 850;
+  cursor: pointer;
+}
+.backup-inline-form,
+.backup-restore-confirm { display: grid; gap: 11px; }
+.backup-preview { min-width: 0; display: grid; gap: 11px; }
+.backup-preview-head { grid-template-columns: 36px minmax(0, 1fr); background: #f1f8f4; }
+.backup-preview dl {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.backup-preview dl > div {
+  min-width: 0;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  gap: 3px;
+}
+.backup-preview dl > div:nth-child(odd) { border-right: 1px solid var(--border); }
+.backup-preview dl > div:nth-last-child(-n + 2) { border-bottom: 0; }
+.backup-preview dt { color: var(--muted); font-size: .66rem; }
+.backup-preview dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: .78rem; font-weight: 850; }
+.backup-safety-card {
+  padding: 14px;
+  border: 1px solid #bad5c9;
+  border-radius: 16px;
+  background: #f3f9f6;
+  display: grid;
+  gap: 12px;
+}
+.backup-restore-confirm > label {
+  min-height: 56px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  font-size: .76rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+.backup-restore-confirm input { width: 21px; height: 21px; accent-color: var(--danger); }
+.backup-restore-confirm .button-danger { min-height: 58px; }
+@media(max-width:520px) {
+  .backup-card { grid-template-columns: 1fr; padding: 15px; }
+  .backup-card > * { grid-column: 1 !important; }
+}
+@media(max-width:350px) {
+  .backup-intro { grid-template-columns: 38px minmax(0, 1fr); padding: 14px; }
+  .backup-intro > span { width: 38px; height: 38px; }
+  .backup-selected-file { grid-template-columns: 32px minmax(0, 1fr); }
+  .backup-selected-file > button { grid-column: 2; justify-self: start; padding: 0; }
+  .backup-preview dl { grid-template-columns: 1fr; }
+  .backup-preview dl > div,
+  .backup-preview dl > div:nth-child(odd),
+  .backup-preview dl > div:nth-last-child(-n + 2) { border-right: 0; border-bottom: 1px solid var(--border); }
+  .backup-preview dl > div:last-child { border-bottom: 0; }
+}
+
 /* UX-024 · Branding- und Katalog-Feinschliff */
 .company-logo-default-note {
   grid-column: 1 / -1;

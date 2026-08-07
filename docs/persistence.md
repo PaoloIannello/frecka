@@ -1,8 +1,8 @@
 # Lokale Settings-, Katalog-, Kunden-, Beleg- und Gutscheinpersistenz
 
-**Stand:** PERSIST-005
+**Stand:** BACKUP-001 auf Basis PERSIST-005
 **Geltungsbereich:** Vollständige FRECKA-Einstellungen, Katalog, Kundenstammdaten, abgeschlossene Belege, offene Zahlungen, Stornos, Gutschriften, Gutscheine und Gutschein-Historien
-**Nicht enthalten:** Entwürfe, QR-Grafiken, E-Mail-, Kamera- und Druckstatus, PDF- und Backup-Dateien
+**Nicht enthalten:** Entwürfe, QR-Grafiken, E-Mail-, Kamera- und Druckstatus, PDF-Dateien sowie eine dauerhafte Ablage von Backup-Dateien
 
 ## Ausgangsfluss vor PERSIST-001a
 
@@ -77,6 +77,8 @@ UI- und Renderfunktionen greifen niemals direkt auf `indexedDB` zu. Nur `js/pers
 - Gutscheinformat-Version: `1`
 
 Das Upgrade von Schema-Version 4 auf 5 legt ausschließlich den neuen `vouchers`-Store an; alle bisherigen Stores und Datensätze bleiben unverändert. Die älteren Upgradepfade ergänzen weiterhin alle später hinzugekommenen Stores. Es werden dabei keine Demo-Geschäftsdaten ungefragt geschrieben. Datenbankschema- und Datenformatversionen werden unabhängig versioniert.
+
+BACKUP-001 verändert das Datenbankschema nicht. Die zentrale Persistenzschicht ergänzt `exportTenantSnapshot`, `validateTenantSnapshot` und `restoreTenantSnapshot`. Export liest alle fünf Stores konsistent; Restore ersetzt sie nach einer vollständigen Vorabprüfung in einer einzigen Readwrite-Transaktion. Das verschlüsselte Dateiformat und der genaue Ablauf sind in `docs/backup-restore.md` beschrieben.
 
 Der Settings-Datensatz enthält ausschließlich:
 
@@ -199,9 +201,9 @@ Beim Laden werden verwaiste Zuordnungen entfernt. Ein Standardort ist nur gülti
 
 ## Automatisierter Browser-Smoke-Test
 
-`tests/persistence-smoke.html` führt ohne zusätzliche Bibliothek native IndexedDB-Prüfungen aus. Die Seite muss über HTTP oder HTTPS geöffnet werden und startet automatisch. Jeder Lauf verwendet einen zufälligen Datenbanknamen mit dem Präfix `frecka-persist-smoke-`, zeigt jeden Fall als PASS oder FAIL und löscht anschließend ausschließlich diese Testdatenbank. Ein Guard schützt die Produktionsdatenbank `frecka`.
+`tests/persistence-smoke.html` führt ohne zusätzliche Bibliothek native IndexedDB- und Web-Crypto-Prüfungen aus. Die Seite muss über HTTP oder HTTPS geöffnet werden und startet automatisch. Jeder Lauf verwendet einen zufälligen Datenbanknamen mit dem Präfix `frecka-persist-smoke-`, zeigt jeden Fall als PASS oder FAIL und löscht anschließend ausschließlich diese Testdatenbank. Ein Guard schützt die Produktionsdatenbank `frecka`.
 
-Geprüft werden weiterhin alle Fälle aus PERSIST-001a bis PERSIST-004. PERSIST-005 ergänzt das Upgrade 4 → 5, Voucher-Roundtrip, Centwerte, QR- und Belegreferenzen, unveränderliche Snapshots und Historien, atomaren Verkauf, Teil- und Voll-Einlösung, idempotente Wiederholung, Duplikat- und Restwertschutz, Transaktionsfehler ohne halbe Datensätze oder Nummernverbrauch, erweiterte Kundensuche sowie den tenant- und storeisolierten Voucher-Reset. Der aktuelle Browserlauf umfasst 49 isolierte Fälle.
+Geprüft werden weiterhin alle Fälle aus PERSIST-001a bis PERSIST-004. PERSIST-005 ergänzt das Upgrade 4 → 5, Voucher-Roundtrip, Centwerte, QR- und Belegreferenzen, unveränderliche Snapshots und Historien, atomaren Verkauf, Teil- und Voll-Einlösung, idempotente Wiederholung, Duplikat- und Restwertschutz, Transaktionsfehler ohne halbe Datensätze oder Nummernverbrauch, erweiterte Kundensuche sowie den tenant- und storeisolierten Voucher-Reset. BACKUP-001 ergänzt Snapshot-, Verschlüsselungs-, Manipulations-, Export-, Restore- und Rollbackprüfungen einschließlich des Einspielens in einen leeren Mandanten. Der aktuelle Browserlauf umfasst 68 isolierte Fälle.
 
 ## Reset
 
@@ -219,7 +221,7 @@ Alle fünf feingranularen Resetaktionen sind Entwicklungswerkzeuge. Sie liegen z
 
 ## ADR-Status
 
-ADR-0002 dokumentiert IndexedDB bereits als verbindliche lokale Persistenztechnologie. PERSIST-005 folgt dieser Entscheidung und erweitert nur den dort vorgesehenen Store- und Transaktionszuschnitt; ein neues ADR ist nicht erforderlich.
+ADR-0002 dokumentiert IndexedDB als verbindliche lokale Persistenztechnologie. BACKUP-001 folgt dieser Entscheidung, ergänzt aber ein langfristig kompatibles Dateiformat, konkrete Kryptoparameter und die Restore-Semantik. Dafür wird ein eigenes ADR empfohlen; entsprechend der Aufgabenbegrenzung wurde es in diesem Block nicht angelegt.
 
 ## Manueller Safari-/iPhone-Smoke-Test
 

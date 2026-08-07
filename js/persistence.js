@@ -64,6 +64,13 @@
   const dangerousKeys = new Set(["__proto__", "prototype", "constructor"]);
   const sensitiveKeyPattern = /(password|passphrase|credential|secret|access.?token|refresh.?token|private.?key)/i;
   const setupStatuses = new Set(["not-started", "started", "completed"]);
+  const tenantSnapshotConstants = Object.freeze({
+    backupFormat: "FRECKA_TENANT_SNAPSHOT",
+    backupFormatVersion: 1,
+    appDataSchemaVersion: constants.databaseVersion,
+    appVersion: "BACKUP-001",
+    storeKeys: Object.freeze(["settings", "catalog", "customers", "receipts", "vouchers"])
+  });
 
   class PersistenceError extends Error {
     constructor(code, userMessage, cause = null) {
@@ -1367,6 +1374,231 @@
       result[key] = mergePreservingUnknown(isPlainObject(existing) || Array.isArray(existing) ? existing[key] : undefined, next[key]);
     });
     return result;
+  }
+
+  function sortedSerializable(value) {
+    if (Array.isArray(value)) return value.map(sortedSerializable);
+    if (!isPlainObject(value)) return value;
+    return Object.keys(value).sort().reduce((result, key) => {
+      result[key] = sortedSerializable(value[key]);
+      return result;
+    }, {});
+  }
+
+  function sameSerializableValue(left, right) {
+    return JSON.stringify(sortedSerializable(left)) === JSON.stringify(sortedSerializable(right));
+  }
+
+  function projectKnownFields(source, shape) {
+    if (Array.isArray(shape)) {
+      const sourceArray = Array.isArray(source) ? source : [];
+      if (sourceArray.length !== shape.length) return sourceArray;
+      return shape.map((entry, index) => projectKnownFields(sourceArray[index], entry));
+    }
+    if (!isPlainObject(shape)) return source;
+    const sourceObject = isPlainObject(source) ? source : {};
+    return Object.keys(shape).reduce((result, key) => {
+      result[key] = projectKnownFields(sourceObject[key], shape[key]);
+      return result;
+    }, {});
+  }
+
+  function catalogValidationView(record) {
+    const view = cloneSafe(record);
+    (view?.templateImports || []).forEach(entry => {
+      delete entry.status;
+      delete entry.needsReviewCount;
+    });
+    return view;
+  }
+
+  function assertSnapshotRecord(result, rawRecord, label, sanitizer, validationView = value => value) {
+    const normalizedView = validationView(result.record);
+    const rawView = validationView(rawRecord);
+    const knownRawFields = projectKnownFields(rawView, normalizedView);
+    const sanitizedRaw = sanitizer(rawRecord);
+    if (result.repairs.length
+      || !sameSerializableValue(normalizedView, knownRawFields)
+      || !sameSerializableValue(rawRecord, sanitizedRaw)) {
+      throw new PersistenceError(
+        "BACKUP_VALIDATION_FAILED",
+        `${label} sind unvollständig oder widersprüchlich. Die Sicherung wurde nicht eingespielt.`
+      );
+    }
+    return sanitizer(mergePreservingUnknown(rawRecord, result.record));
+  }
+
+  function validateTenantSnapshot(snapshotInput, expectedTenantId = constants.tenantId) {
+    let snapshot;
+    try {
+      snapshot = cloneSerializable(snapshotInput);
+    } catch (cause) {
+      throw new PersistenceError("BACKUP_VALIDATION_FAILED", "Die Sicherungsdaten konnten nicht gelesen werden.", cause);
+    }
+    if (!isPlainObject(snapshot)
+      || snapshot.backupFormat !== tenantSnapshotConstants.backupFormat
+      || snapshot.backupFormatVersion !== tenantSnapshotConstants.backupFormatVersion) {
+      throw new PersistenceError("BACKUP_FORMAT_UNSUPPORTED", "Diese Sicherungsdatei besitzt kein unterstütztes FRECKA-Format.");
+    }
+    if (snapshot.appDataSchemaVersion !== constants.databaseVersion) {
+      throw new PersistenceError(
+        "BACKUP_SCHEMA_UNSUPPORTED",
+        snapshot.appDataSchemaVersion > constants.databaseVersion
+          ? "Diese Sicherung stammt aus einer neueren FRECKA-Version. Bitte zuerst FRECKA aktualisieren."
+          : "Für diese ältere Sicherung ist noch keine Datenmigration verfügbar."
+      );
+    }
+    const safeTenantId = nullableStringId(expectedTenantId) || constants.tenantId;
+    if (nullableStringId(snapshot.tenantId) !== safeTenantId) {
+      throw new PersistenceError("BACKUP_TENANT_MISMATCH", "Diese Sicherung gehört zu einer anderen FRECKA-Instanz.");
+    }
+    if (stableIso(snapshot.createdAt, "") !== snapshot.createdAt) {
+      throw new PersistenceError("BACKUP_VALIDATION_FAILED", "Die Sicherung enthält keinen gültigen Erstellungszeitpunkt.");
+    }
+    if (!isPlainObject(snapshot.stores)
+      || tenantSnapshotConstants.storeKeys.some(key => !isPlainObject(snapshot.stores[key]))) {
+      throw new PersistenceError("BACKUP_INCOMPLETE", "Die Sicherung ist unvollständig. Es fehlen lokale FRECKA-Daten.");
+    }
+    tenantSnapshotConstants.storeKeys.forEach(key => {
+      if (nullableStringId(snapshot.stores[key].tenantId) !== safeTenantId) {
+        throw new PersistenceError("BACKUP_TENANT_MISMATCH", "Die Sicherung enthält Daten einer anderen FRECKA-Instanz.");
+      }
+    });
+
+    const settings = assertSnapshotRecord(
+      normalizeSettingsRecord(snapshot.stores.settings, snapshot.stores.settings, safeTenantId),
+      snapshot.stores.settings,
+      "Die Einstellungen",
+      stripExcludedData
+    );
+    const catalog = assertSnapshotRecord(
+      normalizeCatalogRecord(snapshot.stores.catalog, snapshot.stores.catalog, settings.businessAreas, safeTenantId),
+      snapshot.stores.catalog,
+      "Die Katalogdaten",
+      stripExcludedCatalogData,
+      catalogValidationView
+    );
+    const customers = assertSnapshotRecord(
+      normalizeCustomersRecord(snapshot.stores.customers, snapshot.stores.customers, safeTenantId),
+      snapshot.stores.customers,
+      "Die Kundendaten",
+      stripExcludedCustomersData
+    );
+    const receipts = assertSnapshotRecord(
+      normalizeReceiptsRecord(snapshot.stores.receipts, snapshot.stores.receipts, safeTenantId),
+      snapshot.stores.receipts,
+      "Die Belegdaten",
+      stripExcludedReceiptsData
+    );
+    const vouchers = assertSnapshotRecord(
+      normalizeVouchersRecord(snapshot.stores.vouchers, snapshot.stores.vouchers, safeTenantId),
+      snapshot.stores.vouchers,
+      "Die Gutscheindaten",
+      stripExcludedVouchersData
+    );
+
+    assertUniqueVoucherSources(vouchers.vouchers);
+    const receiptByNumber = new Map(receipts.receipts.map(receipt => [receipt.number, receipt]));
+    const receiptById = new Map(receipts.receipts.map(receipt => [receipt.id, receipt]));
+    const customerIds = new Set(customers.customers.map(customer => customer.id));
+    const requireReceipt = (reference, message) => {
+      if (reference && !receiptByNumber.has(reference) && !receiptById.has(reference)) {
+        throw new PersistenceError("BACKUP_REFERENCE_INVALID", message);
+      }
+    };
+
+    receipts.receipts.forEach(receipt => {
+      requireReceipt(receipt.reference, `Der Beleg ${receipt.number} verweist auf einen nicht enthaltenen Ursprungsbeleg.`);
+      (receipt.references?.correctionNumbers || []).forEach(reference => {
+        requireReceipt(reference, `Der Beleg ${receipt.number} enthält eine ungültige Korrekturreferenz.`);
+      });
+      if (receipt.customerId && !customerIds.has(receipt.customerId) && !receipt.customerSnapshot) {
+        throw new PersistenceError("BACKUP_REFERENCE_INVALID", `Der Beleg ${receipt.number} enthält keine nachvollziehbaren Kundendaten.`);
+      }
+    });
+
+    vouchers.vouchers.forEach(voucher => {
+      const saleReceipt = receiptByNumber.get(voucher.saleReceiptReference) || receiptById.get(voucher.saleReceiptReference);
+      if (saleReceipt?.voucherReference && saleReceipt.voucherReference !== voucher.reference) {
+        throw new PersistenceError("BACKUP_REFERENCE_INVALID", `Der Verkaufsbeleg des Gutscheins ${voucher.code} enthält eine widersprüchliche Gutscheinreferenz.`);
+      }
+      if (voucher.customerId && !customerIds.has(voucher.customerId) && !voucher.customerSnapshot) {
+        throw new PersistenceError("BACKUP_REFERENCE_INVALID", `Der Gutschein ${voucher.code} enthält keine nachvollziehbaren Kundendaten.`);
+      }
+      if (!voucher.history.length || voucher.history[0].type !== "sold") {
+        throw new PersistenceError("BACKUP_VOUCHER_HISTORY_INVALID", `Die Historie des Gutscheins ${voucher.code} beginnt nicht mit dem Verkauf.`);
+      }
+      const historyIds = new Set();
+      let expectedBalanceCents = voucher.issuedValueCents;
+      voucher.history.forEach((entry, index) => {
+        if (historyIds.has(entry.id)) {
+          throw new PersistenceError("BACKUP_VOUCHER_HISTORY_INVALID", `Die Historie des Gutscheins ${voucher.code} enthält einen doppelten Eintrag.`);
+        }
+        historyIds.add(entry.id);
+        if (index === 0) {
+          if (entry.amountCents !== voucher.issuedValueCents || entry.balanceAfterCents !== voucher.issuedValueCents) {
+            throw new PersistenceError("BACKUP_VOUCHER_HISTORY_INVALID", `Der Verkaufseintrag des Gutscheins ${voucher.code} besitzt widersprüchliche Werte.`);
+          }
+          return;
+        }
+        if (entry.type === "sold") {
+          throw new PersistenceError("BACKUP_VOUCHER_HISTORY_INVALID", `Die Historie des Gutscheins ${voucher.code} enthält mehr als einen Verkauf.`);
+        }
+        if (["partial_redemption", "full_redemption", "cancelled"].includes(entry.type)) {
+          expectedBalanceCents -= entry.amountCents;
+        } else if (entry.type === "credit") {
+          expectedBalanceCents += entry.amountCents;
+        } else {
+          expectedBalanceCents = entry.balanceAfterCents;
+        }
+        if (expectedBalanceCents < 0
+          || expectedBalanceCents > voucher.issuedValueCents
+          || entry.balanceAfterCents !== expectedBalanceCents
+          || (entry.type === "partial_redemption" && expectedBalanceCents === 0)
+          || (["full_redemption", "cancelled"].includes(entry.type) && expectedBalanceCents !== 0)) {
+          throw new PersistenceError("BACKUP_VOUCHER_HISTORY_INVALID", `Die Historie des Gutscheins ${voucher.code} enthält einen widersprüchlichen Restwert.`);
+        }
+      });
+      if (voucher.currentValueCents !== voucher.history.at(-1).balanceAfterCents) {
+        throw new PersistenceError("BACKUP_VOUCHER_HISTORY_INVALID", `Der Restwert des Gutscheins ${voucher.code} stimmt nicht mit seiner Historie überein.`);
+      }
+    });
+
+    const prefix = settings.receiptSettings.yearPrefix;
+    const highestSequence = receipts.receipts.reduce((highest, receipt) => {
+      const match = String(receipt.number || "").match(new RegExp(`^${prefix}-(\\d{6})$`));
+      return match ? Math.max(highest, Number(match[1])) : highest;
+    }, 0);
+    if (settings.receiptSettings.nextNumber <= highestSequence) {
+      throw new PersistenceError("BACKUP_NUMBER_SEQUENCE_INVALID", "Der Belegnummernstand der Sicherung würde eine Nummernkollision verursachen.");
+    }
+
+    const normalizedSnapshot = {
+      backupFormat: tenantSnapshotConstants.backupFormat,
+      backupFormatVersion: tenantSnapshotConstants.backupFormatVersion,
+      appDataSchemaVersion: constants.databaseVersion,
+      tenantId: safeTenantId,
+      createdAt: snapshot.createdAt,
+      app: {
+        version: trimmedString(snapshot.app?.version, tenantSnapshotConstants.appVersion),
+        build: trimmedString(snapshot.app?.build)
+      },
+      stores: { settings, catalog, customers, receipts, vouchers }
+    };
+    return {
+      snapshot: normalizedSnapshot,
+      summary: {
+        createdAt: normalizedSnapshot.createdAt,
+        companyName: settings.company.name,
+        businessAreas: settings.businessAreas.length,
+        serviceLocations: settings.serviceLocations.length,
+        categories: catalog.categories.length,
+        catalogItems: catalog.items.length,
+        customers: customers.customers.length,
+        receipts: receipts.receipts.length,
+        vouchers: vouchers.vouchers.length
+      }
+    };
   }
 
   function stripExcludedData(record) {
@@ -3011,6 +3243,120 @@
       databasePromise = null;
     }
 
+    function exportTenantSnapshot(options = {}) {
+      const fallbackRecords = isPlainObject(options.fallbackRecords) ? options.fallbackRecords : {};
+      return queued(async () => {
+        const database = await openDatabase();
+        const storeNames = [storeName, catalogStoreName, customersStoreName, receiptsStoreName, vouchersStoreName];
+        const recordKeys = tenantSnapshotConstants.storeKeys;
+        const records = {};
+        await new Promise((resolve, reject) => {
+          let settled = false;
+          let failure = null;
+          let transaction;
+          try {
+            transaction = database.transaction(storeNames, "readonly");
+            storeNames.forEach((currentStoreName, index) => {
+              const request = transaction.objectStore(currentStoreName).get(tenantId);
+              request.onsuccess = () => {
+                records[recordKeys[index]] = request.result || cloneSafe(fallbackRecords[recordKeys[index]]) || null;
+              };
+              request.onerror = () => {
+                failure = new PersistenceError("BACKUP_READ_FAILED", "Die lokalen Daten konnten nicht vollständig für die Sicherung gelesen werden.", request.error);
+              };
+            });
+          } catch (cause) {
+            reject(new PersistenceError("BACKUP_READ_FAILED", "Die lokalen Daten konnten nicht für die Sicherung gelesen werden.", cause));
+            return;
+          }
+          transaction.oncomplete = () => {
+            if (settled) return;
+            settled = true;
+            if (failure) reject(failure);
+            else resolve();
+          };
+          transaction.onabort = () => {
+            if (settled) return;
+            settled = true;
+            reject(failure || new PersistenceError("TRANSACTION_ABORTED", "Das Erstellen der Sicherung wurde abgebrochen.", transaction.error));
+          };
+          transaction.onerror = () => {
+            if (!failure) failure = new PersistenceError("BACKUP_READ_FAILED", "Die lokalen Daten konnten nicht vollständig für die Sicherung gelesen werden.", transaction.error);
+          };
+        });
+        const candidate = {
+          backupFormat: tenantSnapshotConstants.backupFormat,
+          backupFormatVersion: tenantSnapshotConstants.backupFormatVersion,
+          appDataSchemaVersion: constants.databaseVersion,
+          tenantId,
+          createdAt: new Date().toISOString(),
+          app: {
+            version: trimmedString(options.appVersion, tenantSnapshotConstants.appVersion),
+            build: trimmedString(options.appBuild)
+          },
+          stores: records
+        };
+        return validateTenantSnapshot(candidate, tenantId).snapshot;
+      });
+    }
+
+    function restoreTenantSnapshot(snapshotInput, options = {}) {
+      const validated = validateTenantSnapshot(snapshotInput, tenantId);
+      return queued(async () => {
+        const database = await openDatabase();
+        const storeNames = [storeName, catalogStoreName, customersStoreName, receiptsStoreName, vouchersStoreName];
+        const recordKeys = tenantSnapshotConstants.storeKeys;
+        const allowTestFailure = databaseName.startsWith("frecka-test-")
+          || databaseName.startsWith("frecka-backup-test-")
+          || databaseName.startsWith("frecka-persist-smoke-");
+        const simulatedFailureAfterStore = allowTestFailure && Number.isInteger(options.simulateFailureAfterStore)
+          ? options.simulateFailureAfterStore
+          : null;
+        await new Promise((resolve, reject) => {
+          let settled = false;
+          let failure = null;
+          let transaction;
+          try {
+            transaction = database.transaction(storeNames, "readwrite");
+            storeNames.forEach((currentStoreName, index) => {
+              const request = transaction.objectStore(currentStoreName).put(cloneSafe(validated.snapshot.stores[recordKeys[index]]));
+              request.onerror = () => {
+                if (!failure) failure = new PersistenceError("BACKUP_RESTORE_FAILED", "Die Wiederherstellung ist fehlgeschlagen. Der bisherige Datenstand bleibt erhalten.", request.error);
+              };
+              if (simulatedFailureAfterStore === index) {
+                request.onsuccess = () => {
+                  failure = new PersistenceError("BACKUP_RESTORE_TEST_ABORT", "Simulierter Abbruch der Wiederherstellung.");
+                  transaction.abort();
+                };
+              }
+            });
+          } catch (cause) {
+            reject(new PersistenceError("BACKUP_RESTORE_FAILED", "Die Wiederherstellung konnte nicht gestartet werden. Der bisherige Datenstand bleibt erhalten.", cause));
+            return;
+          }
+          transaction.oncomplete = () => {
+            if (settled) return;
+            settled = true;
+            if (failure) reject(failure);
+            else resolve();
+          };
+          transaction.onabort = () => {
+            if (settled) return;
+            settled = true;
+            reject(failure || new PersistenceError("BACKUP_RESTORE_FAILED", "Die Wiederherstellung ist fehlgeschlagen. Der bisherige Datenstand bleibt erhalten.", transaction.error));
+          };
+          transaction.onerror = () => {
+            if (!failure) failure = new PersistenceError("BACKUP_RESTORE_FAILED", "Die Wiederherstellung ist fehlgeschlagen. Der bisherige Datenstand bleibt erhalten.", transaction.error);
+          };
+        });
+        return {
+          snapshot: cloneSafe(validated.snapshot),
+          records: cloneSafe(validated.snapshot.stores),
+          summary: cloneSafe(validated.summary)
+        };
+      });
+    }
+
     return Object.freeze({
       openDatabase,
       readSettings,
@@ -3034,6 +3380,9 @@
       recordReceiptPayment,
       saveReceiptNote,
       commitReceiptCorrection,
+      exportTenantSnapshot,
+      validateTenantSnapshot: snapshot => validateTenantSnapshot(snapshot, tenantId),
+      restoreTenantSnapshot,
       closeDatabase,
       tenantId
     });
@@ -3053,6 +3402,8 @@
     normalizeReceiptsRecord,
     snapshotVouchers,
     normalizeVouchersRecord,
+    validateTenantSnapshot,
+    tenantSnapshotConstants,
     customerMatchesSearch,
     PersistenceError,
     constants

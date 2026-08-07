@@ -7,6 +7,7 @@
   const cleanupNoteElement = document.getElementById("cleanupNote");
   const runButton = document.getElementById("runTests");
   const api = globalThis.FRECKA_PERSISTENCE;
+  const backupApi = globalThis.FRECKA_BACKUP;
   const testDatabasePrefix = "frecka-persist-smoke-";
   let running = false;
 
@@ -295,6 +296,49 @@
     return api.snapshotVouchers(vouchersRuntimeFixture(), tenantId);
   }
 
+  function completeTenantSnapshotFixture(tenantId, options = {}) {
+    const settings = recordFixture(tenantId, "completed");
+    settings.company.name = options.companyName || "Backup Teststudio";
+    settings.receiptSettings.nextNumber = 77;
+    const catalog = catalogRecordFixture(tenantId);
+    const customers = customersRecordFixture(tenantId);
+    const voucher = voucherDraftFixture("voucher-backup", {
+      reference: "vch_backup",
+      code: "FRKA-BACK-UP01",
+      saleReceipt: {
+        id: "receipt-sale-voucher-backup",
+        number: "2030-000075",
+        soldAt: "2030-01-01T09:00:00.000Z",
+        payment: "Bar",
+        customerId: "customer-anna"
+      },
+      history: [{
+        type: "sold",
+        occurredAt: "2030-01-01T09:00:00.000Z",
+        date: "01.01.2030",
+        time: "10:00",
+        amount: 100,
+        balanceAfter: 100,
+        receiptNumber: "2030-000075"
+      }]
+    });
+    const saleReceipt = voucherSaleReceiptFixture(voucher, "receipt-sale-voucher-backup");
+    saleReceipt.number = "2030-000075";
+    saleReceipt.voucherReference = voucher.reference;
+    const normalReceipt = receiptDraftFixture("receipt-existing", { number: "2030-000076" });
+    const receipts = api.snapshotReceipts({ receipts: [saleReceipt, normalReceipt] }, tenantId);
+    const vouchers = api.snapshotVouchers({ vouchers: [voucher] }, tenantId);
+    return {
+      backupFormat: api.tenantSnapshotConstants.backupFormat,
+      backupFormatVersion: api.tenantSnapshotConstants.backupFormatVersion,
+      appDataSchemaVersion: api.constants.databaseVersion,
+      tenantId,
+      createdAt: options.createdAt || "2030-02-01T12:00:00.000Z",
+      app: { version: "BACKUP-001", build: "test" },
+      stores: { settings, catalog, customers, receipts, vouchers }
+    };
+  }
+
   function voucherSaleReceiptFixture(voucher, id = `receipt-sale-${voucher.id}`) {
     return receiptDraftFixture(id, {
       receiptKind: "voucher-sale",
@@ -453,6 +497,18 @@
   }
 
   function buildTests(context) {
+    const cryptoPassphrase = "Sehr sicherer Backup Testsatz 2030";
+    const wrongCryptoPassphrase = "Ganz andere sichere Passphrase";
+    const cryptoPayload = {
+      backupFormat: "TEST_PAYLOAD",
+      company: "Vertrauliches Teststudio",
+      customers: [{ name: "Vertrauliche Testperson" }]
+    };
+    let encryptedFixturePromise = null;
+    const encryptedFixture = () => {
+      encryptedFixturePromise ||= backupApi.encryptTenantSnapshot(cryptoPayload, cryptoPassphrase);
+      return encryptedFixturePromise;
+    };
     return [
       {
         name: "Erststart liefert null und initialisiert Settings-, Katalog-, Kunden-, Beleg- und Gutscheinschema",
@@ -1455,6 +1511,268 @@
           assertEqual(calls, 2, "Factory wurde beim Retry nicht erneut aufgerufen");
           database.close();
           persistence.closeDatabase();
+        }
+      },
+      {
+        name: "Backup- und Snapshot-APIs sind zentral verfügbar",
+        run: async () => {
+          const persistence = context.makeClient("backup-api");
+          assert(typeof persistence.exportTenantSnapshot === "function", "exportTenantSnapshot fehlt");
+          assert(typeof persistence.validateTenantSnapshot === "function", "validateTenantSnapshot fehlt");
+          assert(typeof persistence.restoreTenantSnapshot === "function", "restoreTenantSnapshot fehlt");
+          assert(typeof backupApi?.encryptTenantSnapshot === "function", "Verschlüsselungs-API fehlt");
+          assertEqual(api.constants.databaseVersion, 5, "Backup führte unerwartet eine neue Schema-Version ein");
+        }
+      },
+      {
+        name: "Vollständiger Tenant-Snapshot wird ohne Reparatur validiert",
+        run: async () => {
+          const tenantId = "test-backup-valid";
+          const validated = api.validateTenantSnapshot(completeTenantSnapshotFixture(tenantId), tenantId);
+          assertEqual(validated.snapshot.backupFormatVersion, 1, "Falsche Backup-Formatversion");
+          assertEqual(validated.summary.catalogItems, 2, "Katalogzählung ist falsch");
+          assertEqual(validated.summary.customers, 2, "Kundenzählung ist falsch");
+          assertEqual(validated.summary.receipts, 2, "Belegzählung ist falsch");
+          assertEqual(validated.summary.vouchers, 1, "Gutscheinzählung ist falsch");
+        }
+      },
+      {
+        name: "Unvollständiger Snapshot wird vor jeder Wiederherstellung abgelehnt",
+        run: async () => {
+          const tenantId = "test-backup-incomplete";
+          const snapshot = completeTenantSnapshotFixture(tenantId);
+          delete snapshot.stores.customers;
+          await assertRejects(
+            () => api.validateTenantSnapshot(snapshot, tenantId),
+            "BACKUP_INCOMPLETE",
+            "Fehlender Kundenstore"
+          );
+        }
+      },
+      {
+        name: "Mandantenfremde Sicherung wird abgelehnt",
+        run: async () => {
+          const snapshot = completeTenantSnapshotFixture("tenant-fremd");
+          await assertRejects(
+            () => api.validateTenantSnapshot(snapshot, "tenant-lokal"),
+            "BACKUP_TENANT_MISMATCH",
+            "Fremder Tenant"
+          );
+        }
+      },
+      {
+        name: "Ungültige Referenztypen werden vor dem Restore abgelehnt",
+        run: async () => {
+          const tenantId = "test-backup-reference";
+          const snapshot = completeTenantSnapshotFixture(tenantId);
+          snapshot.stores.vouchers.vouchers[0].redemptionReferences.push(42);
+          await assertRejects(
+            () => api.validateTenantSnapshot(snapshot, tenantId),
+            "BACKUP_VALIDATION_FAILED",
+            "Ungültiger Referenztyp"
+          );
+          const invalidHistory = completeTenantSnapshotFixture(tenantId);
+          invalidHistory.stores.vouchers.vouchers[0].history[0].balanceAfterCents = 9000;
+          invalidHistory.stores.vouchers.vouchers[0].history[0].balanceAfter = 90;
+          await assertRejects(
+            () => api.validateTenantSnapshot(invalidHistory, tenantId),
+            "BACKUP_VOUCHER_HISTORY_INVALID",
+            "Widersprüchlicher Historienwert"
+          );
+        }
+      },
+      {
+        name: "Kollisionsgefährlicher Belegnummernstand wird abgelehnt",
+        run: async () => {
+          const tenantId = "test-backup-number";
+          const snapshot = completeTenantSnapshotFixture(tenantId);
+          snapshot.stores.settings.receiptSettings.nextNumber = 76;
+          await assertRejects(
+            () => api.validateTenantSnapshot(snapshot, tenantId),
+            "BACKUP_NUMBER_SEQUENCE_INVALID",
+            "Unsicherer Nummernstand"
+          );
+        }
+      },
+      {
+        name: "AES-GCM-Sicherung lässt sich mit der richtigen Passphrase entschlüsseln",
+        run: async () => {
+          const encrypted = await encryptedFixture();
+          const decrypted = await backupApi.decryptTenantSnapshot(encrypted, cryptoPassphrase);
+          assertDeepEqual(decrypted, cryptoPayload, "Entschlüsselter Inhalt weicht ab");
+        }
+      },
+      {
+        name: "Gleiche Daten und Passphrase erzeugen unterschiedliche Ciphertexte",
+        run: async () => {
+          const first = await encryptedFixture();
+          const second = await backupApi.encryptTenantSnapshot(cryptoPayload, cryptoPassphrase);
+          assert(first !== second, "Salt und IV erzeugten keinen neuen Ciphertext");
+        }
+      },
+      {
+        name: "Sicherungsdatei enthält keine Geschäftsdaten oder Passphrase im Klartext",
+        run: async () => {
+          const encrypted = await encryptedFixture();
+          assert(!encrypted.includes("Vertrauliches Teststudio"), "Unternehmensname steht im Klartext in der Datei");
+          assert(!encrypted.includes("Vertrauliche Testperson"), "Kundenname steht im Klartext in der Datei");
+          assert(!encrypted.includes(cryptoPassphrase), "Passphrase steht im Klartext in der Datei");
+          const envelope = JSON.parse(encrypted);
+          assertEqual(envelope.crypto.kdf.iterations, 600000, "PBKDF2-Iterationszahl ist falsch");
+          assertEqual(envelope.crypto.cipher.name, "AES-GCM", "Falsches Verschlüsselungsverfahren");
+          assert(!hasOwn(envelope, "key") && !hasOwn(envelope.crypto, "passphrase"), "Schlüsselmaterial wurde gespeichert");
+        }
+      },
+      {
+        name: "Falsche Passphrase liefert einen klaren Entschlüsselungsfehler",
+        run: async () => {
+          await assertRejects(
+            async () => backupApi.decryptTenantSnapshot(await encryptedFixture(), wrongCryptoPassphrase),
+            "BACKUP_DECRYPT_FAILED",
+            "Falsche Passphrase"
+          );
+        }
+      },
+      {
+        name: "Manipulierter Ciphertext wird durch AES-GCM erkannt",
+        run: async () => {
+          const envelope = JSON.parse(await encryptedFixture());
+          const index = Math.max(1, Math.floor(envelope.payload.length / 2));
+          envelope.payload = `${envelope.payload.slice(0, index)}${envelope.payload[index] === "A" ? "B" : "A"}${envelope.payload.slice(index + 1)}`;
+          await assertRejects(
+            () => backupApi.decryptTenantSnapshot(JSON.stringify(envelope), cryptoPassphrase),
+            "BACKUP_DECRYPT_FAILED",
+            "Manipulierter Ciphertext"
+          );
+        }
+      },
+      {
+        name: "Manipulierter Dateikopf wird authentifiziert",
+        run: async () => {
+          const envelope = JSON.parse(await encryptedFixture());
+          envelope.crypto.cipher.iv = envelope.crypto.cipher.iv.replace(/^./, value => value === "A" ? "B" : "A");
+          await assertRejects(
+            () => backupApi.decryptTenantSnapshot(JSON.stringify(envelope), cryptoPassphrase),
+            "BACKUP_DECRYPT_FAILED",
+            "Manipulierter Header"
+          );
+        }
+      },
+      {
+        name: "Abgeschnittene und unbekannte Sicherungsformate werden getrennt gemeldet",
+        run: async () => {
+          await assertRejects(
+            () => backupApi.decryptTenantSnapshot("{\"backupFormat\":", cryptoPassphrase),
+            "BACKUP_FILE_INVALID",
+            "Abgeschnittene Datei"
+          );
+          const envelope = JSON.parse(await encryptedFixture());
+          envelope.backupFormatVersion = 999;
+          await assertRejects(
+            () => backupApi.decryptTenantSnapshot(JSON.stringify(envelope), cryptoPassphrase),
+            "BACKUP_FORMAT_UNSUPPORTED",
+            "Unbekannte Dateiversion"
+          );
+        }
+      },
+      {
+        name: "Export ergänzt leere Stores ausschließlich aus zentralen Laufzeit-Snapshots",
+        run: async () => {
+          const persistence = context.makeClient("backup-export-fallback");
+          const fallback = completeTenantSnapshotFixture(persistence.tenantId);
+          const exported = await persistence.exportTenantSnapshot({
+            fallbackRecords: fallback.stores,
+            appVersion: "BACKUP-001",
+            appBuild: "smoke"
+          });
+          assertEqual(exported.stores.settings.company.name, "Backup Teststudio", "Settings-Fallback fehlt");
+          assertEqual(exported.stores.catalog.items.length, 2, "Katalog-Fallback fehlt");
+          assertEqual(exported.stores.customers.customers.length, 2, "Kunden-Fallback fehlt");
+          assertEqual(exported.stores.receipts.receipts.length, 2, "Beleg-Fallback fehlt");
+          assertEqual(exported.stores.vouchers.vouchers.length, 1, "Gutschein-Fallback fehlt");
+        }
+      },
+      {
+        name: "Persistierte Stores haben beim Export Vorrang vor Fallbackdaten",
+        run: async () => {
+          const persistence = context.makeClient("backup-export-stored");
+          const stored = completeTenantSnapshotFixture(persistence.tenantId, { companyName: "Persistierter Betrieb" });
+          const fallback = completeTenantSnapshotFixture(persistence.tenantId, { companyName: "Fallback Betrieb" });
+          await persistence.restoreTenantSnapshot(stored);
+          const exported = await persistence.exportTenantSnapshot({ fallbackRecords: fallback.stores });
+          assertEqual(exported.stores.settings.company.name, "Persistierter Betrieb", "Fallback überschrieb persistierte Daten");
+        }
+      },
+      {
+        name: "Restore befüllt einen vollständig leeren Testmandanten",
+        run: async () => {
+          const persistence = context.makeClient("backup-restore-empty");
+          assertEqual(await persistence.readSettings(), null, "Testmandant enthielt bereits Einstellungen");
+          assertEqual(await persistence.readCatalog(), null, "Testmandant enthielt bereits Katalogdaten");
+          assertEqual(await persistence.readCustomers(), null, "Testmandant enthielt bereits Kundendaten");
+          assertEqual(await persistence.readReceipts(), null, "Testmandant enthielt bereits Belege");
+          assertEqual(await persistence.readVouchers(), null, "Testmandant enthielt bereits Gutscheine");
+          const target = completeTenantSnapshotFixture(persistence.tenantId, { companyName: "Neu wiederhergestellt" });
+          await persistence.restoreTenantSnapshot(target);
+          assertEqual((await persistence.readSettings()).company.name, "Neu wiederhergestellt", "Settings fehlen nach Leer-Restore");
+          assertEqual((await persistence.readCatalog()).items.length, 2, "Katalog fehlt nach Leer-Restore");
+          assertEqual((await persistence.readCustomers()).customers.length, 2, "Kunden fehlen nach Leer-Restore");
+          assertEqual((await persistence.readReceipts()).receipts.length, 2, "Belege fehlen nach Leer-Restore");
+          assertEqual((await persistence.readVouchers()).vouchers.length, 1, "Gutscheine fehlen nach Leer-Restore");
+        }
+      },
+      {
+        name: "Restore überschreibt alle fünf Stores gemeinsam",
+        run: async () => {
+          const persistence = context.makeClient("backup-restore-full");
+          const before = completeTenantSnapshotFixture(persistence.tenantId, { companyName: "Vorher" });
+          const target = completeTenantSnapshotFixture(persistence.tenantId, { companyName: "Nachher", createdAt: "2030-03-01T12:00:00.000Z" });
+          target.stores.customers.customers[0].lastName = "Wiederhergestellt";
+          target.stores.catalog.items[0].name = "Wiederhergestellte Leistung";
+          target.stores.receipts.receipts[1].note = "Wiederhergestellter Beleg";
+          target.stores.vouchers.vouchers[0].qrLink = "https://example.invalid/restored";
+          await persistence.restoreTenantSnapshot(before);
+          const restored = await persistence.restoreTenantSnapshot(target);
+          assertEqual(restored.records.settings.company.name, "Nachher", "Settings wurden nicht ersetzt");
+          assertEqual((await persistence.readCustomers()).customers[0].lastName, "Wiederhergestellt", "Kunden wurden nicht ersetzt");
+          assertEqual((await persistence.readCatalog()).items[0].name, "Wiederhergestellte Leistung", "Katalog wurde nicht ersetzt");
+          assertEqual((await persistence.readReceipts()).receipts[1].note, "Wiederhergestellter Beleg", "Belege wurden nicht ersetzt");
+          assertEqual((await persistence.readVouchers()).vouchers[0].qrLink, "https://example.invalid/restored", "Gutscheine wurden nicht ersetzt");
+        }
+      },
+      {
+        name: "Simulierter Restore-Fehler rollt alle Stores atomar zurück",
+        run: async () => {
+          const persistence = context.makeClient("backup-restore-rollback");
+          const before = completeTenantSnapshotFixture(persistence.tenantId, { companyName: "Unverändert" });
+          const target = completeTenantSnapshotFixture(persistence.tenantId, { companyName: "Darf nicht bleiben" });
+          target.stores.catalog.items[0].name = "Darf nicht bleiben";
+          await persistence.restoreTenantSnapshot(before);
+          await assertRejects(
+            () => persistence.restoreTenantSnapshot(target, { simulateFailureAfterStore: 1 }),
+            "BACKUP_RESTORE_TEST_ABORT",
+            "Simulierter Restore-Abbruch"
+          );
+          assertEqual((await persistence.readSettings()).company.name, "Unverändert", "Settings wurden trotz Abbruch verändert");
+          assertEqual((await persistence.readCatalog()).items[0].name, before.stores.catalog.items[0].name, "Katalog wurde trotz Abbruch verändert");
+          assertDeepEqual(await persistence.readCustomers(), before.stores.customers, "Kunden wurden trotz Abbruch verändert");
+          assertDeepEqual(await persistence.readReceipts(), before.stores.receipts, "Belege wurden trotz Abbruch verändert");
+          assertDeepEqual(await persistence.readVouchers(), before.stores.vouchers, "Gutscheine wurden trotz Abbruch verändert");
+        }
+      },
+      {
+        name: "Nach Restore kann sofort wieder vollständig gesichert werden",
+        run: async () => {
+          const persistence = context.makeClient("backup-after-restore");
+          const target = completeTenantSnapshotFixture(persistence.tenantId, { companyName: "Rundlauf Betrieb" });
+          await persistence.restoreTenantSnapshot(target);
+          const exported = await persistence.exportTenantSnapshot();
+          const encrypted = await backupApi.encryptTenantSnapshot(exported, cryptoPassphrase);
+          const decrypted = await backupApi.decryptTenantSnapshot(encrypted, cryptoPassphrase);
+          const validated = persistence.validateTenantSnapshot(decrypted);
+          assertEqual(validated.snapshot.stores.settings.company.name, "Rundlauf Betrieb", "Restore-Export-Rundlauf verlor Einstellungen");
+          assertEqual(validated.snapshot.stores.vouchers.vouchers[0].history.length, 1, "Gutscheinhistorie ging im Rundlauf verloren");
+          assertEqual(validated.snapshot.stores.receipts.receipts[0].companySnapshot.name, "Teststudio Nord", "Belegsnapshot ging im Rundlauf verloren");
         }
       },
       {

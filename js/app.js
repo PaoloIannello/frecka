@@ -2,6 +2,7 @@
   "use strict";
   const data = window.PROTOTYPE_DATA;
   const persistence = globalThis.FRECKA_PERSISTENCE;
+  const backup = globalThis.FRECKA_BACKUP;
   const defaultSettingsRecord = persistence?.snapshotSettings
     ? persistence.snapshotSettings(data, "not-started")
     : null;
@@ -89,8 +90,18 @@
     receiptsReadyForWrites: false,
     vouchersReadyForWrites: false,
     settingsStorageNotice: "",
-    settingsStorageNoticeIsError: false
+    settingsStorageNoticeIsError: false,
+    backupStage: "select",
+    backupNotice: "",
+    backupNoticeIsError: false,
+    backupBusy: false,
+    backupRestoreFilename: "",
+    backupRestoreSummary: null,
+    backupSafetyCreated: false
   };
+
+  let pendingRestoreFile = null;
+  let pendingRestoreSnapshot = null;
 
   const mainContent = document.getElementById("mainContent");
   const companyName = document.getElementById("companyName");
@@ -107,7 +118,7 @@
   const bottomSheetTitle = document.getElementById("bottomSheetTitle");
   const bottomSheetContent = document.getElementById("bottomSheetContent");
   const bottomSheetClose = document.getElementById("bottomSheetClose");
-  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "settings-company", "settings-location", "settings-taxes", "settings-payments", "settings-business-areas", "settings-catalog", "settings-help", "setup-wizard"]);
+  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "settings-company", "settings-location", "settings-taxes", "settings-payments", "settings-business-areas", "settings-catalog", "settings-help", "settings-backup", "setup-wizard"]);
   const validRoutes = new Set(["home", "receipts", "customers", "vouchers", "settings", ...flowRoutes]);
 
   const escapeHtml = value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -2681,7 +2692,7 @@
     payments: ["Zahlungsarten", ["Aktive Zahlungsarten erscheinen beim Belegabschluss.", "Mindestens eine normale Zahlungsart muss aktiv bleiben.", "Es besteht keine Verbindung zu Zahlungsanbietern."]],
     openPayments: ["Offene Zahlungen", ["Offene Zahlungen sind nur für Ausnahmefälle gedacht, wenn ein Kunde später bezahlt.", "FRECKA ersetzt keine Buchhaltung und überwacht keine Bankkonten.", "Teilzahlungen und Mahnungen werden nicht verwaltet."]],
     receiptTexts: ["Belegtexte", ["Dankes- und Fußtext sind freiwillig.", "Sie werden als Momentaufnahme in neue Belege übernommen.", "Bereits erstellte Belege ändern sich nicht rückwirkend."]],
-    backup: ["Backup", ["Backups werden später verschlüsselt in einem Speicher des Kunden abgelegt.", "In diesem Prototyp ist noch keine Sicherung möglich.", "FRECKA speichert keine Kundendaten zentral."]],
+    backup: ["Sicherung & Wiederherstellung", ["Die Sicherungsdatei enthält alle lokalen FRECKA-Daten dieses Betriebs.", "Sie wird vor dem Download mit deiner Passphrase verschlüsselt.", "Ohne diese Passphrase kann die Sicherung nicht wiederhergestellt werden.", "FRECKA speichert weder Datei noch Passphrase zentral."]],
     export: ["Export", ["Exporte werden später aus den lokalen Daten erzeugt.", "Format und Zeitraum sollen vor dem Export klar auswählbar sein.", "Aktuell wird noch keine Datei erstellt."]],
     update: ["Update", ["Updates ersetzen ausschließlich Programmcode.", "Geschäftsdaten bleiben lokal auf dem Endgerät.", "Die Synology ist nur als späterer Update-Server vorgesehen."]],
     tse: ["TSE", ["Dieser Prototyp besitzt keine TSE-Anbindung.", "Ob eine TSE erforderlich ist, wird nicht automatisch beurteilt.", "Vor produktiver Nutzung muss die konkrete Pflicht fachlich geprüft werden.", "Die spätere Einrichtung erhält einen eigenen Assistenten."]]
@@ -2923,7 +2934,7 @@
     { id: "settings-catalog", icon: "≡", title: "Leistungen & Produkte", note: "Katalog je Geschäftsbereich verwalten", available: true },
     { id: "settings-help", icon: "?", title: "Hilfe & Lernen", note: "Erste Schritte und häufige Fragen", available: true },
     { icon: "◎", title: "Benutzer", note: "Für eine spätere Version vorbereitet" },
-    { icon: "↥", title: "Backup und Wiederherstellung", note: "Für eine spätere Version vorbereitet", help: "backup" },
+    { id: "settings-backup", icon: "↥", title: "Sicherung & Wiederherstellung", note: "Verschlüsselte Gesamtsicherung erstellen oder einspielen", available: true },
     { icon: "⇥", title: "Export", note: "Für eine spätere Version vorbereitet", help: "export" },
     { icon: "↻", title: "Update", note: "Für eine spätere Version vorbereitet", help: "update" },
     { icon: "T", title: "TSE-Vorbereitung", note: "Für eine spätere Version vorbereitet", help: "tse" }
@@ -3357,6 +3368,164 @@
       </details>
       <p class="prototype-note">Einstellungen, Katalog, Kunden, Belege und Gutscheine werden lokal und mandantenbezogen gespeichert.</p>
     </section>`;
+  }
+
+  function backupFallbackRecords() {
+    if (!persistence?.snapshotSettings || !persistence?.snapshotCatalog || !persistence?.snapshotCustomers
+      || !persistence?.snapshotReceipts || !persistence?.snapshotVouchers) {
+      throw Object.assign(new Error("Die Sicherungsfunktionen wurden nicht geladen."), {
+        code: "BACKUP_UNAVAILABLE",
+        userMessage: "Die lokalen Daten können in diesem Browser derzeit nicht gesichert werden."
+      });
+    }
+    return {
+      settings: persistence.snapshotSettings(data, state.setup.status, persistence.tenantId),
+      catalog: persistence.snapshotCatalog(data, persistence.tenantId),
+      customers: persistence.snapshotCustomers(data, persistence.tenantId),
+      receipts: persistence.snapshotReceipts(data, persistence.tenantId),
+      vouchers: persistence.snapshotVouchers(data, persistence.tenantId)
+    };
+  }
+
+  async function currentTenantSnapshot() {
+    if (!persistence?.exportTenantSnapshot) {
+      throw Object.assign(new Error("Die Sicherungsfunktionen wurden nicht geladen."), {
+        code: "BACKUP_UNAVAILABLE",
+        userMessage: "Die lokalen Daten können in diesem Browser derzeit nicht gesichert werden."
+      });
+    }
+    return persistence.exportTenantSnapshot({
+      fallbackRecords: backupFallbackRecords(),
+      appVersion: data.version || "BACKUP-001",
+      appBuild: data.build || ""
+    });
+  }
+
+  function resetRestoreFlow(keepNotice = false) {
+    pendingRestoreFile = null;
+    pendingRestoreSnapshot = null;
+    state.backupStage = "select";
+    state.backupRestoreFilename = "";
+    state.backupRestoreSummary = null;
+    state.backupSafetyCreated = false;
+    if (!keepNotice) {
+      state.backupNotice = "";
+      state.backupNoticeIsError = false;
+    }
+  }
+
+  function localBackupDate(value) {
+    if (!Number.isFinite(Date.parse(value))) return "Unbekannt";
+    return new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+  }
+
+  function backupNoticeMarkup() {
+    if (!state.backupNotice) return "";
+    return `<div class="settings-save-notice ${state.backupNoticeIsError ? "is-error" : ""}" role="${state.backupNoticeIsError ? "alert" : "status"}">${escapeHtml(state.backupNotice)}</div>`;
+  }
+
+  function restoreStepMarkup() {
+    if (state.backupStage === "unlock") {
+      return `<div class="backup-selected-file"><span aria-hidden="true">✓</span><div><strong>${escapeHtml(state.backupRestoreFilename)}</strong><small>Datei ausgewählt</small></div><button type="button" data-action="backup-restore-cancel">Ändern</button></div>
+        <form id="backupUnlockForm" class="backup-inline-form">
+          <label class="setting-field full"><span>Passphrase der Sicherung</span><input name="passphrase" type="password" autocomplete="current-password" minlength="${backup?.constants?.minimumPassphraseLength || 12}" maxlength="1024" required></label>
+          <button class="button button-primary" type="submit" ${state.backupBusy ? "disabled" : ""}>${state.backupBusy ? "Wird geprüft …" : "Sicherung prüfen"}</button>
+        </form>`;
+    }
+    if (state.backupStage === "preview" && state.backupRestoreSummary) {
+      const summary = state.backupRestoreSummary;
+      return `<article class="backup-preview" aria-label="Inhalt der geprüften Sicherung">
+          <div class="backup-preview-head"><span aria-hidden="true">✓</span><div><strong>Sicherung vollständig geprüft</strong><small>${escapeHtml(state.backupRestoreFilename)}</small></div></div>
+          <dl>
+            <div><dt>Erstellt</dt><dd>${escapeHtml(localBackupDate(summary.createdAt))}</dd></div>
+            <div><dt>Unternehmen</dt><dd>${escapeHtml(summary.companyName || "Ohne Bezeichnung")}</dd></div>
+            <div><dt>Katalog</dt><dd>${summary.catalogItems} Einträge</dd></div>
+            <div><dt>Kunden</dt><dd>${summary.customers}</dd></div>
+            <div><dt>Belege</dt><dd>${summary.receipts}</dd></div>
+            <div><dt>Gutscheine</dt><dd>${summary.vouchers}</dd></div>
+          </dl>
+        </article>
+        <section class="backup-safety-card">
+          <div><strong>${state.backupSafetyCreated ? "✓ Aktueller Stand wurde gesichert" : "Aktuellen Stand zuerst sichern"}</strong><p>Empfohlen: Lade vor dem Überschreiben eine neue verschlüsselte Sicherung des jetzigen Datenstands herunter.</p></div>
+          ${state.backupSafetyCreated ? "" : `<form id="backupSafetyForm" class="backup-inline-form">
+            <label class="setting-field full"><span>Neue Passphrase für das Sicherheitsbackup</span><input name="passphrase" type="password" autocomplete="new-password" minlength="${backup?.constants?.minimumPassphraseLength || 12}" maxlength="1024" required></label>
+            <label class="setting-field full"><span>Passphrase wiederholen</span><input name="passphraseConfirm" type="password" autocomplete="new-password" minlength="${backup?.constants?.minimumPassphraseLength || 12}" maxlength="1024" required></label>
+            <button class="button button-secondary" type="submit" ${state.backupBusy ? "disabled" : ""}>Sicherheitsbackup herunterladen</button>
+          </form>`}
+        </section>
+        <form id="backupRestoreConfirmForm" class="backup-restore-confirm">
+          <div class="backup-destructive-warning"><strong>Lokale Daten werden vollständig ersetzt</strong><p>Einstellungen, Katalog, Kunden, Belege und Gutscheine dieses Betriebs werden gemeinsam überschrieben. Bei einem Fehler bleibt der bisherige Stand unverändert.</p></div>
+          <label><input name="restoreConfirmed" type="checkbox" required><span>Ich möchte die geprüfte Sicherung jetzt vollständig wiederherstellen.</span></label>
+          <button class="button button-danger" type="submit" ${state.backupBusy ? "disabled" : ""}>${state.backupBusy ? "Wird wiederhergestellt …" : "Sicherung wiederherstellen"}</button>
+          <button class="button button-ghost" type="button" data-action="backup-restore-cancel">Abbrechen</button>
+        </form>`;
+    }
+    return `<label class="backup-file-picker">
+        <input id="backupRestoreFile" type="file" accept=".frecka-backup,application/vnd.frecka.backup+json,application/json">
+        <span aria-hidden="true">↥</span><strong>Sicherungsdatei auswählen</strong><small>Nur Dateien mit der Endung .frecka-backup</small>
+      </label>`;
+  }
+
+  function attachBackupFileBehavior() {
+    document.getElementById("backupRestoreFile")?.addEventListener("change", event => {
+      const file = event.target.files?.[0] || null;
+      if (!file) return;
+      pendingRestoreFile = file;
+      pendingRestoreSnapshot = null;
+      state.backupStage = "unlock";
+      state.backupRestoreFilename = file.name;
+      state.backupRestoreSummary = null;
+      state.backupSafetyCreated = false;
+      state.backupNotice = "";
+      state.backupNoticeIsError = false;
+      renderSettingsBackup();
+    });
+  }
+
+  function renderSettingsBackup() {
+    mainContent.innerHTML = `<section class="flow-page settings-form-page backup-page page-enter">
+      <div class="flow-head compact-flow-head">
+        <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
+        <p class="eyebrow">Einstellungen</p>
+        <h1 class="flow-title">Sicherung & Wiederherstellung</h1>
+        <p class="page-copy">Alle lokalen FRECKA-Daten dieses Betriebs in einer verschlüsselten Datei sichern.</p>
+      </div>
+      ${backupNoticeMarkup()}
+      <section class="backup-intro"><span aria-hidden="true">⌂</span><div><strong>Deine Daten bleiben bei dir</strong><p>Die Datei wird auf diesem Gerät verschlüsselt und nur an den von dir gewählten Speicherort heruntergeladen. Es findet keine Serverübertragung statt.</p></div></section>
+      <form id="backupCreateForm" class="settings-form backup-card">
+        ${cardTitle("Neue Sicherung erstellen", "backup")}
+        <p class="backup-card-copy">Die Sicherung enthält Einstellungen, Katalog, Kunden, Belege und Gutscheine einschließlich ihrer Historien.</p>
+        <label class="setting-field full"><span>Neue Passphrase</span><input name="passphrase" type="password" autocomplete="new-password" minlength="${backup?.constants?.minimumPassphraseLength || 12}" maxlength="1024" required><small>Mindestens ${backup?.constants?.minimumPassphraseLength || 12} Zeichen. FRECKA speichert diese Passphrase nicht.</small></label>
+        <label class="setting-field full"><span>Passphrase wiederholen</span><input name="passphraseConfirm" type="password" autocomplete="new-password" minlength="${backup?.constants?.minimumPassphraseLength || 12}" maxlength="1024" required></label>
+        <div class="backup-passphrase-warning"><strong>Passphrase sicher aufbewahren</strong><p>Ohne sie kann die Sicherung nicht wiederhergestellt werden. Es gibt keine zentrale Rücksetzung.</p></div>
+        <button class="button button-primary" type="submit" ${state.backupBusy ? "disabled" : ""}>${state.backupBusy ? "Sicherung wird erstellt …" : "Verschlüsselte Sicherung herunterladen"}</button>
+      </form>
+      <section class="backup-card backup-restore-card">
+        ${cardTitle("Sicherung wiederherstellen", "backup")}
+        <p class="backup-card-copy">FRECKA entschlüsselt und prüft die gesamte Datei, bevor lokale Daten verändert werden.</p>
+        ${restoreStepMarkup()}
+      </section>
+      <p class="prototype-note">Die Sicherung wird ausschließlich lokal verarbeitet. Passphrasen werden weder protokolliert noch gespeichert.</p>
+    </section>`;
+    attachBackupFileBehavior();
+  }
+
+  function applyRestoredTenantRecords(records) {
+    applySettingsRecord(records.settings);
+    applyCatalogRecord(records.catalog);
+    applyCustomersRecord(records.customers);
+    applyReceiptsRecord(records.receipts);
+    applyVouchersRecord(records.vouchers);
+    state.cart = [];
+    state.selectedCustomerId = null;
+    state.customerChoice = "none";
+    state.finishedReceipt = null;
+    state.receiptDetailNumber = null;
+    state.voucherDetailReference = null;
+    state.receiptsReadyForWrites = true;
+    state.vouchersReadyForWrites = true;
+    refreshSettingsDerivedState();
+    refreshBusinessSwitcher();
   }
 
   function renderCompanySettings() {
@@ -3903,6 +4072,7 @@
       "settings-business-areas",
       "settings-catalog",
       "settings-help",
+      "settings-backup",
       "setup-wizard"
     ].includes(state.route));
     if (state.route === "home") renderHome();
@@ -3932,6 +4102,7 @@
     else if (state.route === "settings-business-areas") renderBusinessAreaSettings();
     else if (state.route === "settings-catalog") renderCatalogSettings();
     else if (state.route === "settings-help") renderHelpLearning();
+    else if (state.route === "settings-backup") renderSettingsBackup();
     else if (state.route === "setup-wizard") renderSetupWizard();
     else renderPlaceholder(state.route);
     if (state.settingsStorageNotice && !["home", "settings"].includes(state.route)) {
@@ -4569,11 +4740,18 @@
         state.catalogEditingCategoryId = null;
         state.catalogSettingsNotice = "";
       }
+      if (route.dataset.route === "settings-backup" && state.route !== "settings-backup") resetRestoreFlow();
+      if (state.route === "settings-backup" && route.dataset.route !== "settings-backup") resetRestoreFlow();
       if (["vouchers", "voucher-detail", "voucher-preview"].includes(route.dataset.route)) state.voucherNotice = "";
       navigate(route.dataset.route);
       return;
     }
     const action = event.target.closest("[data-action]")?.dataset.action;
+    if (action === "backup-restore-cancel") {
+      resetRestoreFlow();
+      renderSettingsBackup();
+      return;
+    }
     if (action === "settings-reset") {
       openConfirmDialog({
         title: "Gespeicherte Einstellungen zurücksetzen?",
@@ -4887,6 +5065,143 @@
       event.preventDefault();
       return;
     }
+    const backupCreateForm = event.target.closest("#backupCreateForm");
+    if (backupCreateForm) {
+      event.preventDefault();
+      const formData = new FormData(backupCreateForm);
+      const passphrase = String(formData.get("passphrase") || "");
+      const confirmation = String(formData.get("passphraseConfirm") || "");
+      if (passphrase !== confirmation) {
+        state.backupNotice = "Die beiden Passphrasen stimmen nicht überein.";
+        state.backupNoticeIsError = true;
+        renderSettingsBackup();
+        return;
+      }
+      state.backupBusy = true;
+      state.backupNotice = "";
+      renderSettingsBackup();
+      try {
+        if (!backup?.encryptTenantSnapshot || !backup?.downloadBackup) throw new Error("Backup module unavailable");
+        const snapshot = await currentTenantSnapshot();
+        const encrypted = await backup.encryptTenantSnapshot(snapshot, passphrase);
+        backup.downloadBackup(encrypted, backup.backupFilename(snapshot.createdAt));
+        state.backupNotice = "Die verschlüsselte Gesamtsicherung wurde zum Download bereitgestellt.";
+        state.backupNoticeIsError = false;
+      } catch (error) {
+        logPersistenceError("Sicherung erstellen fehlgeschlagen", error);
+        state.backupNotice = persistenceErrorMessage(error, "Die Sicherung konnte nicht erstellt werden.");
+        state.backupNoticeIsError = true;
+      } finally {
+        state.backupBusy = false;
+      }
+      renderSettingsBackup();
+      return;
+    }
+
+    const backupUnlockForm = event.target.closest("#backupUnlockForm");
+    if (backupUnlockForm) {
+      event.preventDefault();
+      const passphrase = String(new FormData(backupUnlockForm).get("passphrase") || "");
+      if (!pendingRestoreFile) {
+        resetRestoreFlow();
+        state.backupNotice = "Bitte zuerst eine Sicherungsdatei auswählen.";
+        state.backupNoticeIsError = true;
+        renderSettingsBackup();
+        return;
+      }
+      state.backupBusy = true;
+      state.backupNotice = "";
+      renderSettingsBackup();
+      try {
+        if (!backup?.decryptTenantSnapshot || !persistence?.validateTenantSnapshot) throw new Error("Restore module unavailable");
+        const decryptedSnapshot = await backup.decryptTenantSnapshot(pendingRestoreFile, passphrase);
+        const validated = persistence.validateTenantSnapshot(decryptedSnapshot);
+        pendingRestoreSnapshot = validated.snapshot;
+        state.backupRestoreSummary = validated.summary;
+        state.backupStage = "preview";
+        state.backupNotice = "Die Datei wurde entschlüsselt und vollständig geprüft. Noch wurden keine lokalen Daten verändert.";
+        state.backupNoticeIsError = false;
+      } catch (error) {
+        pendingRestoreSnapshot = null;
+        state.backupRestoreSummary = null;
+        state.backupStage = "unlock";
+        logPersistenceError("Sicherung prüfen fehlgeschlagen", error);
+        state.backupNotice = persistenceErrorMessage(error, "Die Sicherung konnte nicht geprüft werden.");
+        state.backupNoticeIsError = true;
+      } finally {
+        state.backupBusy = false;
+      }
+      renderSettingsBackup();
+      return;
+    }
+
+    const backupSafetyForm = event.target.closest("#backupSafetyForm");
+    if (backupSafetyForm) {
+      event.preventDefault();
+      const formData = new FormData(backupSafetyForm);
+      const passphrase = String(formData.get("passphrase") || "");
+      const confirmation = String(formData.get("passphraseConfirm") || "");
+      if (passphrase !== confirmation) {
+        state.backupNotice = "Die Passphrasen für das Sicherheitsbackup stimmen nicht überein.";
+        state.backupNoticeIsError = true;
+        renderSettingsBackup();
+        return;
+      }
+      state.backupBusy = true;
+      state.backupNotice = "";
+      renderSettingsBackup();
+      try {
+        const snapshot = await currentTenantSnapshot();
+        const encrypted = await backup.encryptTenantSnapshot(snapshot, passphrase);
+        backup.downloadBackup(encrypted, backup.backupFilename(snapshot.createdAt, "vor-wiederherstellung"));
+        state.backupSafetyCreated = true;
+        state.backupNotice = "Der aktuelle Datenstand wurde als verschlüsseltes Sicherheitsbackup zum Download bereitgestellt.";
+        state.backupNoticeIsError = false;
+      } catch (error) {
+        logPersistenceError("Sicherheitsbackup erstellen fehlgeschlagen", error);
+        state.backupNotice = persistenceErrorMessage(error, "Das Sicherheitsbackup konnte nicht erstellt werden.");
+        state.backupNoticeIsError = true;
+      } finally {
+        state.backupBusy = false;
+      }
+      renderSettingsBackup();
+      return;
+    }
+
+    const backupRestoreConfirmForm = event.target.closest("#backupRestoreConfirmForm");
+    if (backupRestoreConfirmForm) {
+      event.preventDefault();
+      if (!new FormData(backupRestoreConfirmForm).has("restoreConfirmed") || !pendingRestoreSnapshot) {
+        state.backupNotice = "Bitte die Wiederherstellung ausdrücklich bestätigen.";
+        state.backupNoticeIsError = true;
+        renderSettingsBackup();
+        return;
+      }
+      state.backupBusy = true;
+      state.backupNotice = "";
+      renderSettingsBackup();
+      try {
+        const restored = await persistence.restoreTenantSnapshot(pendingRestoreSnapshot);
+        applyRestoredTenantRecords(restored.records);
+        pendingRestoreFile = null;
+        pendingRestoreSnapshot = null;
+        state.backupStage = "select";
+        state.backupRestoreFilename = "";
+        state.backupRestoreSummary = null;
+        state.backupSafetyCreated = false;
+        state.backupNotice = "Die Sicherung wurde vollständig wiederhergestellt. FRECKA verwendet jetzt den wiederhergestellten Datenstand.";
+        state.backupNoticeIsError = false;
+      } catch (error) {
+        logPersistenceError("Sicherung wiederherstellen fehlgeschlagen", error);
+        state.backupNotice = persistenceErrorMessage(error, "Die Wiederherstellung ist fehlgeschlagen. Der bisherige Datenstand bleibt erhalten.");
+        state.backupNoticeIsError = true;
+      } finally {
+        state.backupBusy = false;
+      }
+      renderSettingsBackup();
+      return;
+    }
+
     const setupWizardForm = event.target.closest("#setupWizardForm");
     if (setupWizardForm) {
       event.preventDefault();

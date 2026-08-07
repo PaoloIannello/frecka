@@ -1,6 +1,6 @@
-# FRECKA – PERSIST-005
+# FRECKA – BACKUP-001
 
-Klickbarer UX-Prototyp mit lokaler IndexedDB-Persistenz für Einstellungen, Katalog, Kundenstammdaten, abgeschlossene Belege und Gutscheine.
+Browserbasierter FRECKA-Prototyp mit lokaler IndexedDB-Persistenz sowie verschlüsselter Gesamtsicherung und atomarer Wiederherstellung.
 
 ## Start
 
@@ -10,23 +10,22 @@ Klickbarer UX-Prototyp mit lokaler IndexedDB-Persistenz für Einstellungen, Kata
 
 Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufklappen und bearbeiten → Weiter → Kunde optional und Zahlungsart simulieren → Demo abschließen.
 
-## Neu in PERSIST-005
+## Neu in BACKUP-001
 
-- Datenbankschema 5 mit zusätzlichem mandantenbezogenem Store `vouchers`
-- atomarer Gutscheinverkauf mit Verkaufsbeleg, Historie und gemeinsamem Nummernstand
-- atomare Teil- und Voll-Einlösung mit Einlösungsbeleg, Zahlungsstatus und Restwert
-- dauerhafte, chronologisch angehängte Gutschein-Historien und Belegreferenzen
-- unveränderliche Unternehmens-, Branding-, Geschäftsbereichs-, Leistungsort- und Kundensnapshots
-- eindeutige Gutschein-IDs, opake Referenzen und sichtbare Codes sowie geprüfte Restwertgrenzen
-- QR-Referenz und App-Link ohne gespeicherte QR-Grafik
-- eine Kundensuche für Name, Firma, Telefon, Mobil, E-Mail, Straße, PLZ und Ort
-- zweistufig eingeklappter Entwicklerbereich mit storeisoliertem Voucher-Reset
+- eine zentrale Tenant-Snapshot-API für Einstellungen, Katalog, Kunden, Belege und Gutscheine
+- verschlüsselte `.frecka-backup`-Dateien mit PBKDF2-HMAC-SHA-256 und AES-GCM-256 über Web Crypto
+- vollständige Prüfung von Format, Mandant, Stores, IDs, Referenzen, Werten und Nummernstand vor jedem Restore
+- Vorschau des Sicherungsinhalts vor dem Überschreiben
+- angebotenes verschlüsseltes Sicherheitsbackup des aktuellen Stands
+- atomarer Restore aller fünf IndexedDB-Stores ohne Teilzustände
+- keine Passphrase, Schlüssel, Geschäftsdaten oder Sicherungsdatei in zentraler Speicherung
+- 67 native Browser-Smoke-Tests ohne neue Testabhängigkeit
 
 ## Nicht umgesetzt
 
-Noch keine Persistenz für Belegentwürfe. Keine Backup- oder Exportfunktion, Zahlungsanbieteranbindung, PDF-Erzeugung, E-Mail, produktiver QR-Scan, TSE oder Fiskalisierung.
+Noch keine Persistenz für Belegentwürfe. Keine Cloudablage, Synchronisation, automatische Backups, allgemeine Exportfunktion, Zahlungsanbieteranbindung, PDF-Erzeugung, E-Mail, produktiver QR-Scan, TSE oder Fiskalisierung.
 
-Der Datenbankvertrag, Fehlerpfade und die ausführbaren Prüfungen sind in `docs/persistence.md` dokumentiert.
+Der Datenbankvertrag steht in `docs/persistence.md`; Dateiformat, Sicherheitsmodell, Restore-Ablauf und Prüfungen stehen in `docs/backup-restore.md`.
 
 
 ## Ergänzung UX-004b

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FRECKA – PERSIST-005 Smoke-Test</title>
+  <title>FRECKA – BACKUP-001 Smoke-Test</title>
   <style>
     :root {
       color-scheme: light;
@@ -104,8 +104,8 @@
 </head>
 <body>
   <main>
-    <h1>PERSIST-005 Smoke-Test</h1>
-    <p>Native Browserprüfung der zentralen Settings-, Katalog-, Kunden-, Beleg- und Gutscheinpersistenz. Es werden ausschließlich zufällig benannte Testdatenbanken verwendet und am Ende des Laufs wieder gelöscht.</p>
+    <h1>BACKUP-001 Smoke-Test</h1>
+    <p>Native Browserprüfung der zentralen Persistenz sowie der verschlüsselten Gesamtsicherung und atomaren Wiederherstellung. Es werden ausschließlich zufällig benannte Testdatenbanken verwendet und am Ende des Laufs wieder gelöscht.</p>
 
     <section class="panel run-meta" aria-label="Testlauf">
       <strong>Produktionsdatenbank bleibt unberührt</strong>
@@ -122,7 +122,8 @@
     </section>
   </main>
 
-  <script src="../js/persistence.js"></script>
-  <script src="persistence-smoke.js"></script>
+  <script src="../js/persistence.js?v=backup001b"></script>
+  <script src="../js/backup.js?v=backup001b"></script>
+  <script src="persistence-smoke.js?v=backup001b"></script>
 </body>
 </html>
