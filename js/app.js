@@ -5,6 +5,7 @@
   const backup = globalThis.FRECKA_BACKUP;
   const exportApi = globalThis.FRECKA_EXPORT;
   const qrService = globalThis.FRECKA_QR;
+  const documentService = globalThis.FRECKA_DOCUMENTS;
   const developerModeEnabled = new URLSearchParams(window.location.search).get("developer") === "1";
   const defaultSettingsRecord = persistence?.snapshotSettings
     ? persistence.snapshotSettings(data, "not-started")
@@ -224,13 +225,105 @@
     return qrService?.buildAppLink(kind, reference) || "";
   }
 
+  function qrModelMarkup(qr, { variant = "inline", caption = "", label = "QR-Code anzeigen" } = {}) {
+    if (!qr?.svg || !qr?.kind || !qr?.reference) {
+      return `<div class="frecka-qr-error" role="alert">Der QR-Code konnte nicht erzeugt werden.</div>`;
+    }
+    return `<button class="frecka-qr frecka-qr-${escapeHtml(variant)}" type="button" data-qr-open-kind="${escapeHtml(qr.kind)}" data-qr-open-reference="${escapeHtml(qr.reference)}" aria-label="${escapeHtml(label)}">${qr.svg}${caption ? `<span>${escapeHtml(caption)}</span>` : ""}</button>`;
+  }
+
   function qrMarkup(kind, reference, { variant = "inline", caption = "", label = "QR-Code anzeigen" } = {}) {
     try {
       if (!qrService?.create) throw new Error("QR service unavailable");
       const qr = qrService.create(kind, reference, { label });
-      return `<button class="frecka-qr frecka-qr-${escapeHtml(variant)}" type="button" data-qr-open-kind="${escapeHtml(qr.kind)}" data-qr-open-reference="${escapeHtml(qr.reference)}" aria-label="${escapeHtml(label)}">${qr.svg}${caption ? `<span>${escapeHtml(caption)}</span>` : ""}</button>`;
+      return qrModelMarkup(qr, { variant, caption, label });
     } catch (error) {
       return `<div class="frecka-qr-error" role="alert">${escapeHtml(error?.userMessage || "Der QR-Code konnte nicht erzeugt werden.")}</div>`;
+    }
+  }
+
+  function receiptDocumentModel(receipt) {
+    if (!documentService?.createReceiptDocumentModel) {
+      throw Object.assign(new Error("Document service unavailable"), {
+        userMessage: "Die Dokumentenansicht ist momentan nicht verfügbar."
+      });
+    }
+    const linkedVoucher = receipt?.receiptKind === "voucher-sale"
+      ? voucherByReference(receipt.voucherReference)
+      : receipt?.voucherPayment ? voucherByReference(receipt.voucherPayment.reference) : null;
+    return documentService.createReceiptDocumentModel(receipt, {
+      qrService,
+      companyIdentity: persistence?.companyIdentity,
+      company: data.company,
+      linkedVoucher
+    });
+  }
+
+  function voucherDocumentModel(voucher) {
+    if (!documentService?.createVoucherDocumentModel) {
+      throw Object.assign(new Error("Document service unavailable"), {
+        userMessage: "Die Dokumentenansicht ist momentan nicht verfügbar."
+      });
+    }
+    return documentService.createVoucherDocumentModel(voucher, {
+      qrService,
+      companyIdentity: persistence?.companyIdentity,
+      company: data.company
+    });
+  }
+
+  function openPendingPdfWindow() {
+    let previewWindow = null;
+    try {
+      previewWindow = window.open("about:blank", "_blank");
+      if (previewWindow) {
+        previewWindow.opener = null;
+        previewWindow.document.title = "FRECKA PDF wird erstellt";
+        previewWindow.document.body.textContent = "FRECKA erstellt das PDF lokal auf diesem Gerät …";
+        previewWindow.document.body.style.cssText = "margin:0;padding:2rem;font:16px system-ui,sans-serif;color:#17202a;background:#f5f7f6";
+      }
+    } catch (error) {
+      previewWindow = null;
+    }
+    return previewWindow;
+  }
+
+  async function openDocumentPdf(model) {
+    const previewWindow = openPendingPdfWindow();
+    try {
+      if (!documentService?.createPdfBlob) throw new Error("Document service unavailable");
+      const blob = await documentService.createPdfBlob(model);
+      const namedFile = typeof File === "function"
+        ? new File([blob], model.filename, { type: "application/pdf", lastModified: Date.now() })
+        : blob;
+      const objectUrl = URL.createObjectURL(namedFile);
+      if (previewWindow && !previewWindow.closed) {
+        previewWindow.location.replace(objectUrl);
+      } else {
+        const link = document.createElement("a");
+        link.href = objectUrl;
+        link.download = model.filename;
+        link.target = "_blank";
+        link.rel = "noopener";
+        document.body.append(link);
+        link.click();
+        link.remove();
+      }
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 300000);
+      return true;
+    } catch (error) {
+      try { previewWindow?.close(); } catch (closeError) { /* Fenster ist möglicherweise bereits geschlossen. */ }
+      const message = error?.userMessage || "Das PDF konnte nicht erstellt werden.";
+      if (model.type === "voucher") state.voucherNotice = message;
+      else state.successNotice = message;
+      if (model.type === "voucher") {
+        if (state.route === "voucher-preview") renderVoucherPreview();
+        else if (state.route === "voucher-sale-success") renderVoucherSaleSuccess();
+        else renderVoucherDetail();
+      } else if (state.route === "receipt-preview") renderReceiptPreview();
+      else if (state.route === "receipt-success") renderReceiptSuccess();
+      else renderReceiptDetail();
+      return false;
     }
   }
 
@@ -1296,8 +1389,8 @@
 
       <section class="success-actions" aria-label="Aktionen nach dem Belegabschluss">
         ${paidVoucher ? `<button class="success-action-card" type="button" data-open-linked-voucher="${escapeHtml(paidVoucher.reference)}"><span aria-hidden="true">◇</span><strong>Gutschein öffnen</strong><small>${escapeHtml(maskVoucherCode(paidVoucher.code))}</small></button>` : ""}
-        <button class="success-action-card" type="button" data-route="receipt-preview">
-          <span aria-hidden="true">▤</span><strong>PDF anzeigen</strong><small>Belegvorschau öffnen</small>
+        <button class="success-action-card" type="button" data-action="receipt-pdf">
+          <span aria-hidden="true">▤</span><strong>PDF anzeigen</strong><small>PDF lokal erzeugen</small>
         </button>
         <button class="success-action-card" type="button" data-action="simulate-email">
           <span aria-hidden="true">✉</span><strong>Per E-Mail senden</strong><small>${receipt.customerEmail ? escapeHtml(receipt.customerEmail) : "Versand simulieren"}</small>
@@ -1323,75 +1416,74 @@
       navigate(state.receiptPreviewNumber ? "receipts" : "home", false);
       return;
     }
-    const isVoucherSale = receipt.receiptKind === "voucher-sale";
-    const linkedVoucher = isVoucherSale
-      ? voucherByReference(receipt.voucherReference)
-      : receipt.voucherPayment ? voucherByReference(receipt.voucherPayment.reference) : null;
-    const createdAt = formatGermanDateTime({ date: receipt.date, time: receipt.time, iso: receipt.completedAt || receipt.createdAt || receipt.sortKey });
-    const taxGroups = Array.isArray(receipt.taxGroups) ? receipt.taxGroups : [];
-    const showTaxDetails = !isVoucherSale && Number.isFinite(Number(receipt.netTotal)) && taxGroups.length > 0;
-    const receiptIssuer = receipt.contextSnapshot?.company
-      ?? receipt.presentationSnapshot?.issuer
-      ?? data.company;
-    const receiptBranding = receipt.contextSnapshot?.branding ?? receipt.presentationSnapshot?.branding ?? null;
-    const receiptBrandingName = distinctBrandingName(receiptBranding, receiptIssuer);
+    let model;
+    try {
+      model = receiptDocumentModel(receipt);
+    } catch (error) {
+      mainContent.innerHTML = `<section class="flow-page page-enter"><div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-route="${escapeHtml(state.receiptPreviewReturnRoute)}"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">Dokument</p><h1 class="flow-title">Beleg nicht darstellbar</h1><p class="page-copy" role="alert">${escapeHtml(error?.userMessage || "Die Belegvorschau konnte nicht erstellt werden.")}</p></div></section>`;
+      return;
+    }
+    const isVoucherSale = model.kind.code === "voucher-sale";
+    const receiptBrandingName = model.branding.visibleName;
 
     mainContent.innerHTML = `<section class="flow-page receipt-preview-page page-enter">
       <div class="flow-head compact-flow-head">
         <button class="button button-back" type="button" data-route="${escapeHtml(state.receiptPreviewReturnRoute)}"><span aria-hidden="true">←</span> Zurück</button>
-        <p class="eyebrow">Kassenbon</p>
-        <h1 class="flow-title">${isVoucherSale ? "Verkaufsbeleg" : "Digitaler Beleg"}</h1>
-        <p class="page-copy">Kassenzettelansicht für Druck oder PDF-Sicherung.</p>
+        <p class="eyebrow">Dokumentvorschau</p>
+        <h1 class="flow-title">${escapeHtml(model.kind.title)}</h1>
+        <p class="page-copy">Diese Darstellung ist die gemeinsame Grundlage für Bildschirmansicht und PDF.</p>
       </div>
 
       <article class="receipt-paper ${isVoucherSale ? "is-voucher-sale" : ""}">
         <header>
-          ${brandingLogoMarkup(receiptBranding)}
+          ${brandingLogoMarkup(model.branding)}
           ${receiptBrandingName ? `<em class="document-visible-name">${escapeHtml(receiptBrandingName)}</em>` : ""}
-          ${companyIdentityMarkup(receiptIssuer)}
-          <small>${escapeHtml(receiptIssuer.street || "")}</small>
-          <small>${escapeHtml(addressCityLine(receiptIssuer))}</small>
-          <small>Steuernummer: ${escapeHtml(receiptIssuer.taxNumber || "nicht hinterlegt")}</small>
-          ${receiptIssuer.vatId ? `<small>USt-IdNr.: ${escapeHtml(receiptIssuer.vatId)}</small>` : ""}
+          ${companyIdentityMarkup(model.issuer)}
+          ${model.issuer.street ? `<small>${escapeHtml(model.issuer.street)}</small>` : ""}
+          ${model.issuer.cityLine ? `<small>${escapeHtml(model.issuer.cityLine)}</small>` : ""}
+          ${model.issuer.taxNumber ? `<small>Steuernummer: ${escapeHtml(model.issuer.taxNumber)}</small>` : ""}
+          ${model.issuer.vatId ? `<small>USt-IdNr.: ${escapeHtml(model.issuer.vatId)}</small>` : ""}
         </header>
 
         <div class="receipt-paper-meta">
-          <span>Beleg ${escapeHtml(receipt.number)}</span>
-          <span>${escapeHtml(createdAt)}</span>
+          <span>Beleg ${escapeHtml(model.number)}</span>
+          <span>${escapeHtml(model.dateTime)}</span>
         </div>
-        <div class="receipt-paper-kind"><span>Belegart</span><strong>${escapeHtml(receiptKindLabel(receipt))}</strong></div>
+        <div class="receipt-paper-kind"><span>Belegart</span><strong>${escapeHtml(model.kind.label)}</strong></div>
 
         <div class="receipt-paper-items">
-          ${receipt.items.map(item => `<div class="receipt-paper-item">
+          ${model.positions.map(item => `<div class="receipt-paper-item">
             <span>
               <strong>${escapeHtml(item.title)}</strong>
-              <small>${item.quantity} × ${formatCurrency(item.originalUnitPrice ?? item.unitPrice)}</small>
-              ${Number(item.discountTotal || 0) > 0 ? `<em>${escapeHtml(item.discountLabel || "Rabatt")} <b>−${formatCurrency(item.discountTotal)}</b></em>` : ""}
+              <small>${item.quantity} × ${formatCurrency(item.originalUnitCents / 100)}</small>
+              ${item.discountCents > 0 ? `<em>${escapeHtml(item.discountLabel)} <b>−${formatCurrency(item.discountCents / 100)}</b></em>` : ""}
             </span>
-            <strong>${formatCurrency(item.total)}</strong>
+            <strong>${formatCurrency(item.totalCents / 100)}</strong>
           </div>`).join("")}
         </div>
 
-        ${receipt.customer ? `<div class="receipt-paper-customer"><span>Kunde</span><strong>${escapeHtml(receipt.customer.name)}</strong>${customerAddressLines(receipt.customer).map(line => `<small>${escapeHtml(line)}</small>`).join("")}</div>` : ""}
-        <div class="receipt-paper-row"><span>Zahlungsstatus</span><strong>${receipt.paymentStatus === "open" ? "Offen" : "Bezahlt"}</strong></div>
-        ${receipt.paymentStatus === "open" ? "" : `<div class="receipt-paper-row"><span>Zahlungsart</span><strong>${escapeHtml(receiptPaymentMethodLabel(receipt))}</strong></div>`}
-        ${receipt.voucherPayment ? `<div class="receipt-paper-voucher-payment"><span><small>Bezahlt mit Gutschein</small><strong>${escapeHtml(maskVoucherCode(receipt.voucherPayment.code))}</strong></span><strong>${formatCurrency(receipt.voucherPayment.amount)}</strong></div>` : ""}
-        ${receipt.remainderPayment ? `<div class="receipt-paper-row"><span>Restzahlung · ${escapeHtml(receipt.remainderPayment.method)}</span><strong>${formatCurrency(receipt.remainderPayment.amount)}</strong></div>` : ""}
-        ${linkedVoucher ? `<div class="receipt-paper-voucher-link"><span>Verknüpfter Gutschein</span><strong>${escapeHtml(maskVoucherCode(linkedVoucher.code))}</strong></div>` : ""}
+        ${model.customer ? `<div class="receipt-paper-customer"><span>Kunde</span><strong>${escapeHtml(model.customer.name)}</strong>${[model.customer.street, model.customer.cityLine].filter(Boolean).map(line => `<small>${escapeHtml(line)}</small>`).join("")}</div>` : ""}
+        <div class="receipt-paper-row"><span>Zahlungsstatus</span><strong>${escapeHtml(model.paymentStatusLabel)}</strong></div>
+        ${model.paymentStatus === "open" ? "" : `<div class="receipt-paper-row"><span>Zahlungsart</span><strong>${escapeHtml(model.paymentMethod)}</strong></div>`}
+        ${model.voucherPayment ? `<div class="receipt-paper-voucher-payment"><span><small>Bezahlt mit Gutschein</small><strong>${escapeHtml(maskVoucherCode(model.voucherPayment.code))}</strong></span><strong>${formatCurrency(model.voucherPayment.amountCents / 100)}</strong></div>` : ""}
+        ${model.remainderPayment ? `<div class="receipt-paper-row"><span>Restzahlung · ${escapeHtml(model.remainderPayment.method)}</span><strong>${formatCurrency(model.remainderPayment.amountCents / 100)}</strong></div>` : ""}
+        ${model.linkedVoucher?.code ? `<div class="receipt-paper-voucher-link"><span>Verknüpfter Gutschein</span><strong>${escapeHtml(maskVoucherCode(model.linkedVoucher.code))}</strong></div>` : ""}
+        ${model.correctionReference ? `<div class="receipt-paper-row"><span>Bezug</span><strong>${escapeHtml(model.correctionReference)}</strong></div>` : ""}
 
-        ${showTaxDetails ? `<div class="receipt-paper-totals">
-          ${receipt.discountTotal > 0 ? `<div><span>Zwischensumme</span><strong>${formatCurrency(receipt.originalTotal)}</strong></div>
-          <div class="receipt-discount-total"><span>Rabatt gesamt</span><strong>−${formatCurrency(receipt.discountTotal)}</strong></div>` : ""}
-          <div><span>Netto</span><strong>${formatCurrency(receipt.netTotal)}</strong></div>
-          ${taxGroups.map(group => `<div><span>MwSt. ${group.rate}%</span><strong>${formatCurrency(group.tax)}</strong></div>`).join("")}
+        ${!isVoucherSale && model.taxes.length ? `<div class="receipt-paper-totals">
+          ${model.totals.discountCents > 0 ? `<div><span>Zwischensumme</span><strong>${formatCurrency(model.totals.subtotalCents / 100)}</strong></div>
+          <div class="receipt-discount-total"><span>Rabatt gesamt</span><strong>−${formatCurrency(model.totals.discountCents / 100)}</strong></div>` : ""}
+          <div><span>Netto</span><strong>${formatCurrency(model.totals.netCents / 100)}</strong></div>
+          ${model.taxes.map(group => `<div><span>MwSt. ${group.rate}%</span><strong>${formatCurrency(group.taxCents / 100)}</strong></div>`).join("")}
         </div>` : ""}
 
-        <div class="receipt-paper-total"><span>${isVoucherSale ? "Gesamtbetrag" : "Gesamt brutto"}</span><strong>${formatCurrency(receipt.total)}</strong></div>
-        <footer>${receipt.receiptTextSnapshot ? escapeHtml(receipt.receiptTextSnapshot.thankYouText || "") : "Vielen Dank für Ihren Besuch."}${receipt.receiptTextSnapshot?.footerText ? `<small>${escapeHtml(receipt.receiptTextSnapshot.footerText)}</small>` : ""}</footer>
-        <div class="receipt-paper-qr">${qrMarkup("receipt", receipt.id, { variant: "receipt", caption: "Digitaler Beleg", label: "QR-Code zum digitalen Beleg im Vollbild anzeigen" })}</div>
+        <div class="receipt-paper-total"><span>${isVoucherSale ? "Gesamtbetrag" : "Gesamt brutto"}</span><strong>${formatCurrency(model.totals.grossCents / 100)}</strong></div>
+        <footer>${escapeHtml(model.texts.thankYou)}${model.texts.footer ? `<small>${escapeHtml(model.texts.footer)}</small>` : ""}</footer>
+        <div class="receipt-paper-qr">${qrModelMarkup(model.qr, { variant: "receipt", caption: "Digitaler Beleg", label: "QR-Code zum digitalen Beleg im Vollbild anzeigen" })}</div>
       </article>
 
-      <button class="button button-primary preview-download" type="button" data-action="receipt-print">Drucken / als PDF sichern</button>
+      ${state.successNotice ? `<div class="success-notice" role="status">${escapeHtml(state.successNotice)}</div>` : ""}
+      <button class="button button-primary preview-download" type="button" data-action="receipt-pdf">PDF öffnen</button>
     </section>`;
   }
 
@@ -2752,7 +2844,7 @@
       <section class="voucher-sale-success-actions" aria-label="Aktionen nach dem Gutscheinverkauf">
         <button class="button button-primary" type="button" data-route="voucher-preview">Gutschein anzeigen</button>
         ${saleReceipt ? `<button class="button button-secondary" type="button" data-preview-receipt="${escapeHtml(saleReceipt.number)}">Verkaufsbeleg anzeigen</button>` : ""}
-        <button class="button button-secondary" type="button" data-action="voucher-pdf">Gutschein als PDF speichern</button>
+        <button class="button button-secondary" type="button" data-action="voucher-pdf">Gutschein-PDF öffnen</button>
         <button class="button button-secondary" type="button" data-action="voucher-email">Gutschein per E-Mail senden · Simulation</button>
         <button class="button button-ghost" type="button" data-route="vouchers">Zur Gutscheinübersicht</button>
       </section>
@@ -2822,7 +2914,7 @@
 
       <section class="voucher-detail-actions" aria-label="Gutscheinaktionen">
         <button class="button button-primary" type="button" data-route="voucher-preview">Gutschein anzeigen</button>
-        <button class="button button-secondary" type="button" data-action="voucher-pdf">Als PDF speichern</button>
+        <button class="button button-secondary" type="button" data-action="voucher-pdf">PDF öffnen</button>
         <button class="button button-secondary" type="button" data-action="voucher-email">Per E-Mail senden</button>
       </section>
     </section>`;
@@ -2834,15 +2926,19 @@
       navigate("vouchers", false);
       return;
     }
-    const presentation = voucherPresentation(voucher);
-    const voucherBranding = presentation.branding ?? voucher.contextSnapshot?.branding ?? null;
-    const voucherBrandingName = distinctBrandingName(voucherBranding, presentation.issuer);
+    let model;
+    try {
+      model = voucherDocumentModel(voucher);
+    } catch (error) {
+      mainContent.innerHTML = `<section class="flow-page page-enter"><div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-route="voucher-detail"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">Dokument</p><h1 class="flow-title">Gutschein nicht darstellbar</h1><p class="page-copy" role="alert">${escapeHtml(error?.userMessage || "Die Gutscheinvorschau konnte nicht erstellt werden.")}</p></div></section>`;
+      return;
+    }
     mainContent.innerHTML = `<section class="flow-page voucher-preview-page page-enter">
       <div class="flow-head compact-flow-head voucher-preview-controls">
         <button class="button button-back" type="button" data-route="voucher-detail"><span aria-hidden="true">←</span> Zurück</button>
-        <p class="eyebrow">Feste Vorlage · Version 1.0</p>
+        <p class="eyebrow">Dokumentvorschau · Version 1.0</p>
         <h1 class="flow-title">Gutschein anzeigen</h1>
-        <p class="page-copy">Neutrale Druckansicht ohne individuelle Designkonfiguration.</p>
+        <p class="page-copy">Diese Darstellung ist die gemeinsame Grundlage für Bildschirmansicht und PDF.</p>
       </div>
 
       ${state.voucherNotice ? `<div class="voucher-notice voucher-preview-controls" role="status">${escapeHtml(state.voucherNotice)}</div>` : ""}
@@ -2850,29 +2946,30 @@
       <article class="voucher-sheet">
         <header>
           <span>Gutschein</span>
-          ${brandingLogoMarkup(voucherBranding)}
-          ${voucherBrandingName ? `<em class="document-visible-name">${escapeHtml(voucherBrandingName)}</em>` : ""}
+          ${brandingLogoMarkup(model.branding)}
+          ${model.branding.visibleName ? `<em class="document-visible-name">${escapeHtml(model.branding.visibleName)}</em>` : ""}
           <small class="voucher-sheet-label">Aussteller</small>
-          ${companyIdentityMarkup(presentation.issuer, "small")}
-          <small>${escapeHtml(presentation.issuer.street)}</small>
-          <small>${escapeHtml(addressCityLine(presentation.issuer))}</small>
+          ${companyIdentityMarkup(model.issuer, "small")}
+          ${model.issuer.street ? `<small>${escapeHtml(model.issuer.street)}</small>` : ""}
+          ${model.issuer.cityLine ? `<small>${escapeHtml(model.issuer.cityLine)}</small>` : ""}
         </header>
-        ${voucher.displayName ? `<div class="voucher-sheet-recipient"><span>Name auf dem Gutschein</span><strong>${escapeHtml(voucher.displayName)}</strong></div>` : ""}
-        <div class="voucher-sheet-value"><span>Wert</span><strong>${formatCurrency(voucher.issuedValue)}</strong></div>
+        ${model.displayName ? `<div class="voucher-sheet-recipient"><span>Name auf dem Gutschein</span><strong>${escapeHtml(model.displayName)}</strong></div>` : ""}
+        <div class="voucher-sheet-value"><span>Wert</span><strong>${formatCurrency(model.issuedValueCents / 100)}</strong></div>
+        ${model.currentValueCents !== model.issuedValueCents ? `<div class="voucher-sheet-status"><span>Restwert</span><strong>${formatCurrency(model.currentValueCents / 100)}</strong></div>` : ""}
         <div class="voucher-sheet-qr">
-          ${qrMarkup("voucher", voucherQrReference(voucher), { variant: "voucher-sheet", label: "Gutschein-QR-Code im Vollbild anzeigen" })}
+          ${qrModelMarkup(model.qr, { variant: "voucher-sheet", label: "Gutschein-QR-Code im Vollbild anzeigen" })}
         </div>
-        <div class="voucher-sheet-status"><span>Status</span><strong class="voucher-status ${voucherStatusClass(voucher)}">${escapeHtml(voucherStatusLabel(voucher))}</strong></div>
-        <div class="voucher-sheet-code"><span>Gutscheincode</span><strong>${escapeHtml(voucher.code)}</strong></div>
+        <div class="voucher-sheet-status"><span>Status</span><strong class="voucher-status ${voucherStatusClass(voucher)}">${escapeHtml(model.statusLabel)}</strong></div>
+        <div class="voucher-sheet-code"><span>Gutscheincode</span><strong>${escapeHtml(model.code)}</strong></div>
         <div class="voucher-sheet-location">
           <span>Einlösbar bei</span>
-          <strong>${escapeHtml(presentation.redemptionLocation.name || "Leistungsort")}</strong><small>${escapeHtml(presentation.redemptionLocation.street)}</small><small>${escapeHtml(addressCityLine(presentation.redemptionLocation))}</small>${presentation.redemptionLocation.voucherNote ? `<small>${escapeHtml(presentation.redemptionLocation.voucherNote)}</small>` : ""}
+          <strong>${escapeHtml(model.redemptionLocation.name)}</strong>${model.redemptionLocation.street ? `<small>${escapeHtml(model.redemptionLocation.street)}</small>` : ""}${model.redemptionLocation.cityLine ? `<small>${escapeHtml(model.redemptionLocation.cityLine)}</small>` : ""}${model.redemptionLocation.voucherNote ? `<small>${escapeHtml(model.redemptionLocation.voucherNote)}</small>` : ""}
         </div>
         <footer>Bitte Gutscheincode oder QR-Code bei der Einlösung vorzeigen.</footer>
       </article>
 
-      <p class="prototype-note voucher-preview-controls">Der QR-Code enthält ausschließlich den stabilen FRECKA-App-Link. Die Gutscheindaten bleiben lokal auf diesem Gerät.</p>
-      <button class="button button-primary voucher-print-button voucher-preview-controls" type="button" data-action="voucher-print">Drucken / als PDF sichern</button>
+      <p class="prototype-note voucher-preview-controls">Der QR-Code enthält ausschließlich denselben stabilen FRECKA-App-Link wie die Bildschirmansicht. Die Gutscheindaten bleiben lokal auf diesem Gerät.</p>
+      <button class="button button-primary voucher-print-button voucher-preview-controls" type="button" data-action="voucher-pdf">PDF öffnen</button>
     </section>`;
   }
 
@@ -5337,15 +5434,27 @@
       renderVoucherSale();
     }
     if (action === "voucher-pdf") {
-      state.voucherNotice = "Noch wurde keine PDF-Datei erzeugt. In der Druckansicht kann der Browserdialog zum Speichern als PDF geöffnet werden.";
-      navigate("voucher-preview");
+      const voucher = voucherByReference(state.voucherDetailReference || state.voucherSaleCreatedReference);
+      if (!voucher) {
+        state.voucherNotice = "Der Gutschein für das PDF wurde nicht gefunden.";
+        if (state.route === "voucher-sale-success") renderVoucherSaleSuccess();
+        else renderVoucherDetail();
+        return;
+      }
+      try {
+        await openDocumentPdf(voucherDocumentModel(voucher));
+      } catch (error) {
+        state.voucherNotice = error?.userMessage || "Das Gutschein-PDF konnte nicht erstellt werden.";
+        if (state.route === "voucher-sale-success") renderVoucherSaleSuccess();
+        else renderVoucherDetail();
+      }
+      return;
     }
     if (action === "voucher-email") {
       state.voucherNotice = "Der E-Mail-Versand ist in diesem Prototyp noch nicht eingerichtet. Es wurde keine E-Mail gesendet.";
       if (state.route === "voucher-sale-success") renderVoucherSaleSuccess();
       else renderVoucherDetail();
     }
-    if (action === "voucher-print") window.print();
     if (action === "new-receipt") startNewReceipt();
     if (action === "resume-receipt") {
       if (!state.cart.length) {
@@ -5402,7 +5511,25 @@
         : "Für diesen Beleg ist keine E-Mail-Adresse hinterlegt.";
       renderReceiptDetail();
     }
-    if (action === "receipt-print") window.print();
+    if (action === "receipt-pdf") {
+      const receipt = state.receiptPreviewNumber
+        ? receiptByNumber(state.receiptPreviewNumber)
+        : state.finishedReceipt || receiptByNumber(state.receiptDetailNumber);
+      if (!receipt) {
+        state.successNotice = "Der Beleg für das PDF wurde nicht gefunden.";
+        state.route === "receipt-success" ? renderReceiptSuccess() : renderReceiptDetail();
+        return;
+      }
+      try {
+        await openDocumentPdf(receiptDocumentModel(receipt));
+      } catch (error) {
+        state.successNotice = error?.userMessage || "Das Beleg-PDF konnte nicht erstellt werden.";
+        if (state.route === "receipt-preview") renderReceiptPreview();
+        else if (state.route === "receipt-success") renderReceiptSuccess();
+        else renderReceiptDetail();
+      }
+      return;
+    }
     if (action === "copy-receipt") {
       const receipt = receiptByNumber(state.receiptDetailNumber);
       if (receipt && receipt.receiptKind !== "voucher-sale") {
@@ -5459,10 +5586,6 @@
       const email = state.finishedReceipt?.customerEmail;
       state.successNotice = email ? `E-Mail-Versand an ${email} wurde simuliert.` : "E-Mail-Versand wurde simuliert.";
       renderReceiptSuccess();
-    }
-    if (action === "simulate-pdf-download") {
-      state.successNotice = "PDF-Download wurde simuliert.";
-      navigate("receipt-success");
     }
     if (action === "new-after-finish") {
       state.finishedReceipt = null;

@@ -1,6 +1,6 @@
-# FRECKA – QR-001
+# FRECKA – DOCUMENT-001
 
-Browserbasierter FRECKA-Prototyp mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem CSV-Export und zentraler QR-Laufzeitengine.
+Browserbasierter FRECKA-Prototyp 0.9.0 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem CSV-Export sowie zentraler QR- und Dokumentenengine.
 
 ## Start
 
@@ -10,7 +10,20 @@ Browserbasierter FRECKA-Prototyp mit lokaler IndexedDB-Persistenz, verschlüssel
 
 Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufklappen und bearbeiten → Weiter → Kunde optional und Zahlungsart simulieren → Demo abschließen.
 
-## Neu in QR-001
+## Neu in DOCUMENT-001
+
+- reine, eingefrorene Dokumentmodelle für Belege und Gutscheine ohne DOM- oder IndexedDB-Abhängigkeit
+- dieselbe Projektion für Bildschirmvorschau und PDF; spätere Versandwege müssen sie wiederverwenden
+- echte, vollständig lokale PDFs mit durchsuchbarem Text und vektoriellem QR-Code
+- schmale digitale Belege ohne Leistungserbringungsort und Gutscheine mit gespeichertem Einlöseort
+- unveränderte Snapshot-, Cent-, Beleg- und Gutscheinwerte ohne zweite Geschäftslogik
+- sichere Dateinamen ohne Kundendaten
+- lokal vendortes `pdf-lib` 1.17.1 unter MIT-Lizenz; kein CDN und kein Server
+- 113 bestandene native Browser-Smoke-Tests sowie automatisiertes PDF-Rendering mit Text- und Sichtprüfung
+
+Der vollständige Dokumentvertrag steht in `docs/documents-pdf.md`.
+
+## Grundlage aus QR-001
 
 - eine einzige öffentliche QR-API in `js/qr.js` für beliebige FRECKA-App-Links
 - stabile Links im Format `#/receipt/<referenz>` und `#/voucher/<referenz>`
@@ -55,9 +68,9 @@ Der vollständige Exportvertrag steht in `docs/export.md`.
 
 ## Nicht umgesetzt
 
-Noch keine Persistenz für Belegentwürfe. Keine Cloudablage, Synchronisation, automatische Backups, ZIP-Erzeugung, Zahlungsanbieteranbindung, PDF-Erzeugung, E-Mail, Synology-Export, Kamera-QR-Scan, TSE oder Fiskalisierung.
+Noch keine Persistenz für Belegentwürfe. Keine Cloudablage, Synchronisation, automatische Backups, ZIP-Erzeugung, Zahlungsanbieteranbindung, E-Mail, Synology-Export, Kamera-QR-Scan, TSE, Fiskalisierung oder eigener Druckworkflow. Öffnen, Sichern und Teilen der PDFs auf iPhone und iPad bleibt bis zur realen Zielgeräteabnahme offen.
 
-Der Datenbankvertrag steht in `docs/persistence.md`; Dateiformat, Sicherheitsmodell, Restore-Ablauf und Prüfungen stehen in `docs/backup-restore.md`; Projektion, CSV-Vertrag und Datenschutz des Exports stehen in `docs/export.md`; QR-Service, App-Link-Struktur und Laufzeitdarstellung stehen in `docs/qr.md`.
+Der Datenbankvertrag steht in `docs/persistence.md`; Dateiformat, Sicherheitsmodell, Restore-Ablauf und Prüfungen stehen in `docs/backup-restore.md`; Projektion, CSV-Vertrag und Datenschutz des Exports stehen in `docs/export.md`; QR-Service, App-Link-Struktur und Laufzeitdarstellung stehen in `docs/qr.md`; Dokumentmodelle und PDF-Vertrag stehen in `docs/documents-pdf.md`.
 
 
 ## Ergänzung UX-004b

@@ -63,7 +63,7 @@ Neue Funktionen werden nur aufgenommen, wenn sie den einfachen Kernablauf für d
 - Web App Manifest;
 - statische Auslieferung.
 
-Seit PERSIST-001a speichert der Prototyp die vollständigen Einstellungen über eine zentrale, versionierte IndexedDB-Schicht. PERSIST-002 ergänzt den Katalog, PERSIST-003 die Kundenstammdaten, PERSIST-004 normale Belege, offene Zahlungen, Stornos sowie Gutschriften und PERSIST-005 Gutscheine samt Historie. Verkauf und Einlösung bestätigen Nummernstand, Beleg, Gutschein und Historie atomar. BACKUP-001 ergänzt einen vollständigen Tenant-Snapshot, eine lokal verschlüsselte `.frecka-backup`-Datei und einen atomaren Restore aller fünf Stores. HARDEN-001 macht Kunden deaktivierbar statt löschbar und härtet Sicherungskennwort, Dateiname und iOS-Dateiauswahl UX-seitig. EXPORT-001 verwendet denselben geprüften Tenant-Snapshot für eine zentrale, formatneutrale Exportprojektion und sichere CSV-Dateien; es führt weder neue Stores noch eigene Sammelroutinen ein. QR-001 ergänzt einen einzigen laufzeitbasierten QR-Service für stabile Beleg- und Gutschein-App-Links. QR-Matrizen und SVGs werden nicht gespeichert; Beleg, Gutschein und spätere Ausgabewege verwenden dieselbe API. Belegentwürfe bleiben bis zu ihrem Persistenzblock ausschließlich im Arbeitsspeicher. Dieser Zwischenstand darf nicht mit der vollständigen Zielarchitektur verwechselt werden.
+Seit PERSIST-001a speichert der Prototyp die vollständigen Einstellungen über eine zentrale, versionierte IndexedDB-Schicht. PERSIST-002 ergänzt den Katalog, PERSIST-003 die Kundenstammdaten, PERSIST-004 normale Belege, offene Zahlungen, Stornos sowie Gutschriften und PERSIST-005 Gutscheine samt Historie. Verkauf und Einlösung bestätigen Nummernstand, Beleg, Gutschein und Historie atomar. BACKUP-001 ergänzt einen vollständigen Tenant-Snapshot, eine lokal verschlüsselte `.frecka-backup`-Datei und einen atomaren Restore aller fünf Stores. HARDEN-001 macht Kunden deaktivierbar statt löschbar und härtet Sicherungskennwort, Dateiname und iOS-Dateiauswahl UX-seitig. EXPORT-001 verwendet denselben geprüften Tenant-Snapshot für eine zentrale, formatneutrale Exportprojektion und sichere CSV-Dateien; es führt weder neue Stores noch eigene Sammelroutinen ein. QR-001 ergänzt einen einzigen laufzeitbasierten QR-Service für stabile Beleg- und Gutschein-App-Links. QR-Matrizen und SVGs werden nicht gespeichert; Beleg, Gutschein und spätere Ausgabewege verwenden dieselbe API. DOCUMENT-001 ergänzt daraus reine Beleg- und Gutscheindokumentmodelle sowie echte lokale PDFs mit durchsuchbarem Text und vektoriellen QR-Codes. Bildschirmvorschau und PDF verwenden dieselbe Projektion; PDFs werden nicht persistiert. Belegentwürfe bleiben bis zu ihrem Persistenzblock ausschließlich im Arbeitsspeicher. Dieser Zwischenstand darf nicht mit der vollständigen Zielarchitektur verwechselt werden.
 
 ### Verbindliche Zielbasis
 
@@ -72,6 +72,7 @@ Seit PERSIST-001a speichert der Prototyp die vollständigen Einstellungen über 
 - IndexedDB als Hauptdatenbank für Geschäftsdaten;
 - Web Crypto API für kryptografische Funktionen;
 - lokal ausgelieferter, fest versionierter Nayuki-QR-Kern hinter der einzigen FRECKA-QR-Service-API;
+- lokal ausgeliefertes, fest versioniertes `pdf-lib` hinter der einzigen FRECKA-Dokumenten-API;
 - statische, versionierte Programmdateien auf der Synology als Update-Quelle;
 - standardisierte Browser-APIs bevorzugt vor zusätzlichen Laufzeitabhängigkeiten.
 
@@ -79,7 +80,7 @@ Ein Build-System, Framework, eine UI-Bibliothek oder zusätzliche Backend-Kompon
 
 ## 6. Offline-First-Konzept
 
-- Nach erfolgreicher Erstinstallation müssen alle Kernabläufe ohne Internet funktionieren: App starten, Beleg erfassen und bearbeiten, lokale Stammdaten verwenden, vorhandene Belege und Gutscheine einschließlich ihrer QR-Codes anzeigen, den lokalen CSV-Export erzeugen sowie eine verschlüsselte Gesamtsicherung erstellen und wiederherstellen.
+- Nach erfolgreicher Erstinstallation müssen alle Kernabläufe ohne Internet funktionieren: App starten, Beleg erfassen und bearbeiten, lokale Stammdaten verwenden, vorhandene Belege und Gutscheine einschließlich ihrer QR-Codes anzeigen, lokale Beleg- und Gutschein-PDFs erzeugen, den lokalen CSV-Export erzeugen sowie eine verschlüsselte Gesamtsicherung erstellen und wiederherstellen.
 - Der Service Worker hält eine versionierte, in sich konsistente App-Shell aus HTML, CSS, JavaScript, Manifest und notwendigen statischen Assets vor.
 - Geschäftsdaten werden nicht im Service-Worker-Cache gespeichert. Dafür ist ausschließlich die Persistenzschicht auf Basis von IndexedDB zuständig.
 - Schreibvorgänge werden zuerst lokal und transaktional abgeschlossen. Die UI bestätigt einen Vorgang erst nach erfolgreicher lokaler Speicherung.
@@ -89,7 +90,7 @@ Ein Build-System, Framework, eine UI-Bibliothek oder zusätzliche Backend-Kompon
 
 ## 7. Datenhaltung
 
-IndexedDB ist die verbindliche Hauptdatenbank. Einstellungen werden seit PERSIST-001a, Katalogdaten seit PERSIST-002, Kundenstammdaten seit PERSIST-003, abgeschlossene Belege einschließlich offener Zahlungen, Stornos, Gutschriften und Aktivitäten seit PERSIST-004 sowie Gutscheine einschließlich Restwerten, Referenzen, Snapshots und unveränderlich angehängter Historien seit PERSIST-005 darin gespeichert. BACKUP-001 kann diesen vollständigen mandantenbezogenen Stand verschlüsselt exportieren und nach Vollprüfung atomar wiederherstellen. EXPORT-001 liest denselben validierten Snapshot, projiziert ihn ausschließlich im Arbeitsspeicher und verändert keine gespeicherten Daten. QR-001 leitet aus stabilen Referenzen ausschließlich zur Laufzeit App-Link, QR-Matrix und SVG ab; QR-Grafiken gehören weder in IndexedDB noch in Backup oder Export. Belegentwürfe folgen in einem getrennten, ausdrücklich beauftragten Persistenzblock.
+IndexedDB ist die verbindliche Hauptdatenbank. Einstellungen werden seit PERSIST-001a, Katalogdaten seit PERSIST-002, Kundenstammdaten seit PERSIST-003, abgeschlossene Belege einschließlich offener Zahlungen, Stornos, Gutschriften und Aktivitäten seit PERSIST-004 sowie Gutscheine einschließlich Restwerten, Referenzen, Snapshots und unveränderlich angehängter Historien seit PERSIST-005 darin gespeichert. BACKUP-001 kann diesen vollständigen mandantenbezogenen Stand verschlüsselt exportieren und nach Vollprüfung atomar wiederherstellen. EXPORT-001 liest denselben validierten Snapshot, projiziert ihn ausschließlich im Arbeitsspeicher und verändert keine gespeicherten Daten. QR-001 leitet aus stabilen Referenzen ausschließlich zur Laufzeit App-Link, QR-Matrix und SVG ab; QR-Grafiken gehören weder in IndexedDB noch in Backup oder Export. DOCUMENT-001 projiziert dieselben gespeicherten Geschäftsvorgänge im Arbeitsspeicher zu Bildschirm- und PDF-Dokumenten. PDF-Dateien und ihre Blob-URLs gehören nicht in IndexedDB, Backup oder Export. Belegentwürfe folgen in einem getrennten, ausdrücklich beauftragten Persistenzblock.
 
 Verbindliche Regeln:
 
@@ -200,7 +201,7 @@ Die Version 1.0 liefert einen kleinen, stabilen und vollständig offline nutzbar
 - Leistungen, Produkte, Mengen, Preise, Rabatte, Steuern und Zahlungsarten nachvollziehbar behandeln;
 - Kunden optional verwalten und Belegen zuordnen;
 - Belegübersicht, Detailansicht und fachlich nachvollziehbare Korrekturen bereitstellen;
-- Belegausgabe beziehungsweise Export im definierten v1-Umfang umsetzen;
+- die mit DOCUMENT-001 implementierte Beleg- und Gutscheinausgabe als lokale PDF auf realen Zielgeräten freigeben;
 - Belege und Gutscheine über einen gemeinsamen, ausschließlich lokalen QR-Service zugänglich machen;
 - Gutschein-Grundfunktionen nur aufnehmen, wenn der vollständige und testbare v1-Ablauf klar definiert ist.
 

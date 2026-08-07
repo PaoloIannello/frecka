@@ -10,6 +10,7 @@
   const backupApi = globalThis.FRECKA_BACKUP;
   const exportApi = globalThis.FRECKA_EXPORT;
   const qrApi = globalThis.FRECKA_QR;
+  const documentApi = globalThis.FRECKA_DOCUMENTS;
   const testDatabasePrefix = "frecka-persist-smoke-";
   let running = false;
 
@@ -499,6 +500,23 @@
     });
   }
 
+  const documentOptions = () => ({
+    qrService: qrApi,
+    companyIdentity: api.companyIdentity,
+    baseUrl: "https://app.example.invalid/frecka/"
+  });
+
+  function receiptDocumentFixture(overrides = {}) {
+    return receiptDraftFixture(overrides.id || "receipt-document-test", {
+      number: "2030-000099",
+      ...overrides
+    });
+  }
+
+  function pdfHeader(bytes) {
+    return new TextDecoder("ascii").decode(bytes.slice(0, 8));
+  }
+
   function resultMarkup(name, passed, error = null) {
     const item = document.createElement("li");
     item.className = `result ${passed ? "is-pass" : "is-fail"}`;
@@ -740,6 +758,262 @@
           assertThrows(() => qrApi.create("mail", "ref-1"), "QR_KIND_INVALID", "Unbekannter QR-Typ");
           assertThrows(() => qrApi.encodeAppLink("javascript:alert(1)"), "QR_APP_LINK_INVALID", "Unsicheres Linkprotokoll");
           assertThrows(() => qrApi.parseAppLink("#/voucher/", "https://app.example.invalid/frecka/"), "QR_REFERENCE_INVALID", "Unvollständiger Gutscheinlink");
+        }
+      },
+      {
+        name: "Zentrale Dokumentenengine und produktive PDF-Bibliothek sind geladen",
+        run: async () => {
+          assert(documentApi && typeof documentApi.createReceiptDocumentModel === "function", "FRECKA_DOCUMENTS wurde nicht geladen");
+          assertEqual(documentApi.DOCUMENT_VERSION, "DOCUMENT-001", "Falsche Dokumentenengine-Version");
+          assertEqual(typeof documentApi.createVoucherDocumentModel, "function", "Gutscheinprojektion fehlt");
+          assertEqual(typeof documentApi.createPdfBytes, "function", "PDF-Erzeugung fehlt");
+          assert(globalThis.PDFLib?.PDFDocument, "Lokale PDF-Bibliothek wurde nicht geladen");
+        }
+      },
+      {
+        name: "Belegprojektion ist rein, unveränderlich und snapshotbasiert",
+        run: async () => {
+          const receipt = receiptDocumentFixture();
+          const before = clone(receipt);
+          const model = documentApi.createReceiptDocumentModel(receipt, documentOptions());
+          assertDeepEqual(receipt, before, "Dokumentprojektion veränderte den Beleg");
+          assert(Object.isFrozen(model) && Object.isFrozen(model.positions) && Object.isFrozen(model.qr.matrix), "Dokumentmodell ist veränderbar");
+          assertEqual(model.issuer.displayName, "Teststudio Nord", "Unternehmenssnapshot wurde nicht verwendet");
+          assertEqual(model.branding.visibleName, "Snapshot Studio", "Branding-Snapshot wurde nicht verwendet");
+        }
+      },
+      {
+        name: "Normale Belege enthalten keinen Leistungserbringungsort",
+        run: async () => {
+          const model = documentApi.createReceiptDocumentModel(receiptDocumentFixture(), documentOptions());
+          assertEqual(model.serviceLocation, null, "Leistungsort gelangte in das Belegdokument");
+          assert(!JSON.stringify(model).includes("Hauptstudio"), "Leistungsort wurde an anderer Stelle des Belegmodells ausgegeben");
+        }
+      },
+      {
+        name: "Beleg ohne Kunde bleibt ohne leere Kundendarstellung",
+        run: async () => {
+          const model = documentApi.createReceiptDocumentModel(receiptDocumentFixture({ customer: null, customerSnapshot: null, customerId: null }), documentOptions());
+          assertEqual(model.customer, null, "Leerer Kunde wurde als Dokumentkunde angelegt");
+        }
+      },
+      {
+        name: "Beleg mit Kunde übernimmt ausschließlich den Kundensnapshot",
+        run: async () => {
+          const model = documentApi.createReceiptDocumentModel(receiptDocumentFixture(), documentOptions());
+          assertEqual(model.customer.name, "Anna Muster", "Kundenname fehlt");
+          assertEqual(model.customer.street, "Altstraße 1", "Kundenanschrift fehlt");
+          assertEqual(model.customer.cityLine, "93047 Regensburg", "Kundenort fehlt");
+        }
+      },
+      {
+        name: "Rabattbeleg übernimmt gespeicherte Positions- und Summenwerte",
+        run: async () => {
+          const model = documentApi.createReceiptDocumentModel(receiptDocumentFixture({
+            items: [{ title: "Waschen & Schneiden", quantity: 1, originalUnitPrice: 50, unitPrice: 45, discountTotal: 5, discountLabel: "Treuerabatt", total: 45, netTotal: 37.82, taxAmount: 7.18, taxRate: 19 }],
+            originalTotal: 50, discountTotal: 5, netTotal: 37.82, taxTotal: 7.18, total: 45,
+            taxGroups: [{ rate: 19, net: 37.82, tax: 7.18, gross: 45 }]
+          }), documentOptions());
+          assertEqual(model.positions[0].discountCents, 500, "Positionsrabatt wurde neu oder falsch berechnet");
+          assertEqual(model.totals.discountCents, 500, "Gesamtrabatt wurde neu oder falsch berechnet");
+          assertEqual(model.totals.grossCents, 4500, "Belegsumme wurde verändert");
+        }
+      },
+      {
+        name: "Mehrere Steuersätze bleiben getrennte Dokumentzeilen",
+        run: async () => {
+          const model = documentApi.createReceiptDocumentModel(receiptDocumentFixture({
+            taxGroups: [{ rate: 19, tax: 6.23, net: 32.77, gross: 39 }, { rate: 7, tax: 0.98, net: 14.02, gross: 15 }],
+            netTotal: 46.79, taxTotal: 7.21, total: 54
+          }), documentOptions());
+          assertEqual(model.taxes.length, 2, "Steuergruppen wurden zusammengeführt");
+          assertEqual(model.taxes[0].taxCents, 623, "19-Prozent-Steuerwert wurde verändert");
+          assertEqual(model.taxes[1].taxCents, 98, "7-Prozent-Steuerwert wurde verändert");
+        }
+      },
+      {
+        name: "Offene Zahlung bleibt fachlich von bezahltem Beleg getrennt",
+        run: async () => {
+          const model = documentApi.createReceiptDocumentModel(receiptDocumentFixture({ paymentStatus: "open", paymentMethod: null, payment: null }), documentOptions());
+          assertEqual(model.paymentStatus, "open", "Offener Zahlungsstatus ging verloren");
+          assertEqual(model.paymentStatusLabel, "Offen", "Offene Zahlung ist falsch beschriftet");
+        }
+      },
+      {
+        name: "Gutscheinzahlung und Restzahlung bleiben getrennt im Belegmodell",
+        run: async () => {
+          const model = documentApi.createReceiptDocumentModel(receiptDocumentFixture({
+            total: 130,
+            voucherPayment: { reference: "vch_existing", code: "FRKA-EXST-0001", amount: 100, balanceAfter: 0 },
+            remainderPayment: { method: "Bar", amount: 30 },
+            paymentMethod: "Gutschein + Bar"
+          }), documentOptions());
+          assertEqual(model.voucherPayment.amountCents, 10000, "Gutscheinbetrag ist falsch");
+          assertEqual(model.remainderPayment.amountCents, 3000, "Restzahlung ist falsch");
+          assertEqual(model.remainderPayment.method, "Bar", "Restzahlungsart ist falsch");
+        }
+      },
+      {
+        name: "Storno und Gutschrift behalten negative Beträge und Korrekturbezug",
+        run: async () => {
+          const correction = receiptDocumentFixture({
+            id: "receipt-credit-document", number: "2030-000100", type: "credit", status: "credited", reference: "2030-000099",
+            items: [{ title: "Gutschrift Testhaarschnitt", quantity: 1, originalUnitPrice: -39, unitPrice: -39, total: -39, netTotal: -32.77, taxAmount: -6.23, taxRate: 19 }],
+            originalTotal: -39, netTotal: -32.77, taxTotal: -6.23, total: -39,
+            taxGroups: [{ rate: 19, net: -32.77, tax: -6.23, gross: -39 }]
+          });
+          const credit = documentApi.createReceiptDocumentModel(correction, documentOptions());
+          const cancellation = documentApi.createReceiptDocumentModel({ ...correction, id: "receipt-cancel-document", number: "2030-000101", type: "cancellation", status: "cancelled" }, documentOptions());
+          assertEqual(credit.kind.label, "Gutschrift", "Gutschriftbelegart fehlt");
+          assertEqual(cancellation.kind.label, "Stornobeleg", "Stornobelegart fehlt");
+          assertEqual(credit.totals.grossCents, -3900, "Negativer Korrekturbetrag wurde umgedeutet");
+          assertEqual(credit.correctionReference, "2030-000099", "Korrekturbezug fehlt");
+        }
+      },
+      {
+        name: "Gutscheinverkaufsbeleg bleibt eigener Belegtyp ohne Steuerneuberechnung",
+        run: async () => {
+          const voucher = voucherDraftFixture("voucher-document-sale", { reference: "vch_document_sale", code: "FRKA-DOCU-0001" });
+          const receipt = { ...voucherSaleReceiptFixture(voucher), number: "2030-000102" };
+          const model = documentApi.createReceiptDocumentModel(receipt, { ...documentOptions(), linkedVoucher: voucher });
+          assertEqual(model.kind.code, "voucher-sale", "Gutscheinverkauf wurde normalem Beleg gleichgesetzt");
+          assertEqual(model.taxes.length, 0, "Gutscheinverkauf erhielt erfundene Steuerzeilen");
+          assertEqual(model.linkedVoucher.code, "FRKA-DOCU-0001", "Verknüpfter Gutscheincode fehlt");
+        }
+      },
+      {
+        name: "Gutscheindokument enthält Aussteller, Einlöseort und unveränderliche Werte",
+        run: async () => {
+          const voucher = voucherDraftFixture("voucher-document");
+          const model = documentApi.createVoucherDocumentModel(voucher, documentOptions());
+          assertEqual(model.issuer.displayName, "Teststudio Nord", "Gutscheinaussteller fehlt");
+          assertEqual(model.redemptionLocation.name, "Hauptstudio", "Einlöseort fehlt");
+          assertEqual(model.issuedValueCents, 10000, "Ursprungswert ist falsch");
+          assertEqual(model.currentValueCents, 10000, "Restwert ist falsch");
+          assertEqual(model.saleReceipt.number, "", "Verkaufsbeleg wurde erfunden");
+        }
+      },
+      {
+        name: "Teil- und Volleinlösung erscheinen korrekt im Gutscheindokument",
+        run: async () => {
+          const partial = documentApi.createVoucherDocumentModel(voucherDraftFixture("voucher-partial-document", { currentValue: 35 }), documentOptions());
+          const redeemed = documentApi.createVoucherDocumentModel(voucherDraftFixture("voucher-redeemed-document", { currentValue: 0 }), documentOptions());
+          assertEqual(partial.statusLabel, "Teilweise eingelöst", "Teilstatus fehlt");
+          assertEqual(partial.currentValueCents, 3500, "Teilrestwert ist falsch");
+          assertEqual(redeemed.statusLabel, "Vollständig eingelöst", "Vollstatus fehlt");
+          assertEqual(redeemed.currentValueCents, 0, "Voll eingelöster Gutschein hat Restwert");
+        }
+      },
+      {
+        name: "Bildschirmmodell und PDF verwenden exakt denselben Beleg-QR-Link",
+        run: async () => {
+          const model = documentApi.createReceiptDocumentModel(receiptDocumentFixture(), documentOptions());
+          assertEqual(model.qr.appLink, qrApi.buildAppLink("receipt", model.id, documentOptions().baseUrl), "Beleg-QR-Link weicht vom QR-Service ab");
+          assertDeepEqual(model.qr.matrix, qrApi.create("receipt", model.id, { baseUrl: documentOptions().baseUrl }).matrix, "Beleg-QR-Matrix weicht vom QR-Service ab");
+        }
+      },
+      {
+        name: "Bildschirmmodell und PDF verwenden exakt denselben Gutschein-QR-Link",
+        run: async () => {
+          const model = documentApi.createVoucherDocumentModel(voucherDraftFixture("voucher-qr-document"), documentOptions());
+          assertEqual(model.qr.appLink, qrApi.buildAppLink("voucher", model.reference, documentOptions().baseUrl), "Gutschein-QR-Link weicht vom QR-Service ab");
+          assertDeepEqual(model.qr.matrix, qrApi.create("voucher", model.reference, { baseUrl: documentOptions().baseUrl }).matrix, "Gutschein-QR-Matrix weicht vom QR-Service ab");
+        }
+      },
+      {
+        name: "Dokumentdatum ist deutsch und enthält keinen ISO-Zeitstempel",
+        run: async () => {
+          const receipt = documentApi.createReceiptDocumentModel(receiptDocumentFixture({ date: "", time: "", completedAt: "2030-01-05T12:34:56.789Z" }), documentOptions());
+          const voucher = documentApi.createVoucherDocumentModel(voucherDraftFixture("voucher-date-document", { soldAt: "", soldTime: "", soldAtIso: "2030-01-05T12:34:56.789Z" }), documentOptions());
+          [receipt.dateTime, voucher.soldAt].forEach(value => {
+            assert(/^\d{2}\.\d{2}\.\d{4} • \d{2}:\d{2}$/u.test(value), `Deutsches Dokumentdatum fehlt: ${value}`);
+            assert(!/T|Z$|\d{2}:\d{2}:\d{2}|\.\d{3}(?:Z|$)/u.test(value), `ISO-Bestandteil sichtbar: ${value}`);
+          });
+        }
+      },
+      {
+        name: "Unternehmerdarstellung und Branding-Priorität werden im Modell vereinheitlicht",
+        run: async () => {
+          const model = documentApi.createReceiptDocumentModel(receiptDocumentFixture({
+            companySnapshot: { name: "", owner: "Alex Beispiel", street: "Testweg 1", zip: "12345", city: "Teststadt" },
+            brandingSnapshot: { logoMode: "custom", visibleName: "Salon Licht", logo: { id: "area-logo", source: "business-area", label: "Bereichslogo", simulated: true } }
+          }), documentOptions());
+          assertEqual(model.issuer.name, "", "Leere Geschäftsbezeichnung wurde ausgegeben");
+          assertEqual(model.issuer.owner, "Alex Beispiel", "Pflichtangabe Unternehmer fehlt");
+          assertEqual(model.branding.visibleName, "Salon Licht", "Sichtbare Geschäftsbezeichnung fehlt");
+          assertEqual(model.branding.logo.initials, "GB", "Geschäftsbereichslogo verlor seine Priorität");
+          const withoutLogo = documentApi.createReceiptDocumentModel(receiptDocumentFixture({
+            brandingSnapshot: { logoMode: "none", visibleName: "Salon Licht", logo: { id: "stale-logo", source: "business-area" } }
+          }), documentOptions());
+          assertEqual(withoutLogo.branding.logo, null, "Logo-Modus ‚kein Logo‘ ließ ein altes Logo sichtbar");
+        }
+      },
+      {
+        name: "Beleg-PDF wird lokal als echtes PDF mit Metadaten erzeugt",
+        run: async () => {
+          const model = documentApi.createReceiptDocumentModel(receiptDocumentFixture(), documentOptions());
+          const bytes = await documentApi.createPdfBytes(model);
+          assert(pdfHeader(bytes).startsWith("%PDF-"), "Belegausgabe ist kein PDF");
+          assert(bytes.length > 4000, "Beleg-PDF ist unerwartet klein");
+          const parsed = await globalThis.PDFLib.PDFDocument.load(bytes);
+          assertEqual(parsed.getTitle(), `FRECKA Beleg ${model.number}`, "PDF-Titel ist falsch");
+          assertEqual(parsed.getPageCount(), 1, "Normaler Beleg wurde unnötig auf mehrere Seiten verteilt");
+        }
+      },
+      {
+        name: "Gutschein-PDF wird lokal als echtes PDF mit stabiler Dateibenennung erzeugt",
+        run: async () => {
+          const model = documentApi.createVoucherDocumentModel(voucherDraftFixture("voucher-pdf-document", { code: "FRKA-ÄNNE-0001" }), documentOptions());
+          const bytes = await documentApi.createPdfBytes(model);
+          assert(pdfHeader(bytes).startsWith("%PDF-"), "Gutscheinausgabe ist kein PDF");
+          assertEqual(model.filename, "FRECKA-Gutschein-FRKA-ANNE-0001.pdf", "Gutschein-Dateiname ist nicht stabil oder dateisystemsicher");
+          const parsed = await globalThis.PDFLib.PDFDocument.load(bytes);
+          assertEqual(parsed.getPageCount(), 1, "Gutschein-PDF passt nicht auf eine Seite");
+        }
+      },
+      {
+        name: "Langer Beleg wird vollständig auf mehrere schmale Seiten umgebrochen",
+        run: async () => {
+          const items = Array.from({ length: 35 }, (_, index) => ({
+            id: `long-${index}`, title: `Ausführliche Leistung mit Umlaut ÄÖÜ Nummer ${index + 1}`, quantity: 1,
+            originalUnitPrice: 10, unitPrice: 10, total: 10, netTotal: 8.4, taxAmount: 1.6, taxRate: 19
+          }));
+          const model = documentApi.createReceiptDocumentModel(receiptDocumentFixture({ items, total: 350, originalTotal: 350, netTotal: 294, taxTotal: 56, taxGroups: [{ rate: 19, net: 294, tax: 56, gross: 350 }] }), documentOptions());
+          const bytes = await documentApi.createPdfBytes(model);
+          const parsed = await globalThis.PDFLib.PDFDocument.load(bytes);
+          assert(parsed.getPageCount() > 1, "Langer Beleg wurde abgeschnitten statt umgebrochen");
+        }
+      },
+      {
+        name: "PDF-Blob trägt den korrekten Dateityp und enthält keine persistierten Bilddaten",
+        run: async () => {
+          const model = documentApi.createReceiptDocumentModel(receiptDocumentFixture(), documentOptions());
+          const blob = await documentApi.createPdfBlob(model);
+          assertEqual(blob.type, "application/pdf", "PDF-Blob besitzt falschen MIME-Type");
+          assert(blob.size > 4000, "PDF-Blob ist leer");
+          assert(!["png", "dataUrl", "qrImage"].some(key => Object.prototype.hasOwnProperty.call(model.qr, key)), "QR-Bilddaten gelangten ins Dokumentmodell");
+        }
+      },
+      {
+        name: "Ungültige Dokumentdaten liefern klare Fehler statt leerer PDFs",
+        run: async () => {
+          assertThrows(() => documentApi.createReceiptDocumentModel({}, documentOptions()), "DOCUMENT_RECEIPT_INVALID", "Beleg ohne Referenz");
+          assertThrows(() => documentApi.createVoucherDocumentModel({ reference: "vch_invalid", code: "FRKA-TEST", issuedValue: 50, currentValue: 60, contextSnapshot: { company: { owner: "Test" } } }, documentOptions()), "DOCUMENT_VOUCHER_VALUE_INVALID", "Ungültiger Gutscheinwert");
+          assertThrows(() => documentApi.createVoucherDocumentModel({ reference: "vch_without_location", code: "FRKA-ORT-0001", issuedValue: 50, currentValue: 50, contextSnapshot: { company: { owner: "Test" } } }, documentOptions()), "DOCUMENT_LOCATION_INVALID", "Gutschein ohne Einlöseort");
+          await assertRejects(() => documentApi.createPdfBytes({ documentVersion: "falsch", type: "receipt" }), "DOCUMENT_MODEL_VERSION_INVALID", "Falsche Dokumentversion");
+        }
+      },
+      {
+        name: "Bereits projizierte Dokumente ändern sich nicht durch spätere Stammdatenänderungen",
+        run: async () => {
+          const receipt = receiptDocumentFixture();
+          const model = documentApi.createReceiptDocumentModel(receipt, documentOptions());
+          receipt.companySnapshot.name = "Nachträglich geändert";
+          receipt.customerSnapshot.name = "Andere Person";
+          receipt.serviceLocationSnapshot.name = "Anderer Ort";
+          assertEqual(model.issuer.displayName, "Teststudio Nord", "Dokumentmodell änderte den Aussteller rückwirkend");
+          assertEqual(model.customer.name, "Anna Muster", "Dokumentmodell änderte den Kunden rückwirkend");
+          assert(!JSON.stringify(model).includes("Anderer Ort"), "Dokumentmodell änderte den Leistungsort rückwirkend");
         }
       },
       {
