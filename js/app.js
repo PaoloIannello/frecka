@@ -5,6 +5,7 @@
   const backup = globalThis.FRECKA_BACKUP;
   const exportApi = globalThis.FRECKA_EXPORT;
   const qrService = globalThis.FRECKA_QR;
+  const developerModeEnabled = new URLSearchParams(window.location.search).get("developer") === "1";
   const defaultSettingsRecord = persistence?.snapshotSettings
     ? persistence.snapshotSettings(data, "not-started")
     : null;
@@ -17,7 +18,6 @@
     activeBusinessArea: null,
     activeCategory: "favorites",
     search: "",
-    openReceiptVisible: Boolean(data.openReceipt?.exists),
     cart: [],
     cartExpanded: false,
     customerChoice: "none",
@@ -111,7 +111,8 @@
     exportBusy: false,
     exportNotice: "",
     exportNoticeIsError: false,
-    exportResult: null
+    exportResult: null,
+    exportResultView: ""
   };
 
   let pendingRestoreFile = null;
@@ -723,12 +724,15 @@
   }
 
   function renderHome() {
-    const openReceipt = state.openReceiptVisible ? `<section class="open-receipt" aria-labelledby="openReceiptTitle">
-      <div class="open-receipt-header"><h2 id="openReceiptTitle">Offener Beleg</h2><span class="status-pill">Entwurf</span></div>
-      <p>${data.openReceipt.itemCount} Positionen · ${escapeHtml(data.openReceipt.customer)} · ${escapeHtml(data.openReceipt.lastEdited)}</p>
+    const draftCount = cartCount();
+    const hasDraft = draftCount > 0;
+    const draftCustomer = selectedCustomer()?.name || "Ohne Kundenzuordnung";
+    const openReceipt = hasDraft ? `<section class="open-receipt" aria-labelledby="openReceiptTitle">
+      <div class="open-receipt-header"><h2 id="openReceiptTitle">Belegentwurf</h2><span class="status-pill">Entwurf</span></div>
+      <p>${draftCount} ${draftCount === 1 ? "Position" : "Positionen"} · ${formatCurrency(cartTotal())} · ${escapeHtml(draftCustomer)}</p>
       <div class="open-receipt-actions"><button class="button button-secondary" type="button" data-action="resume-receipt">Weiter bearbeiten</button><button class="button button-ghost" type="button" data-action="discard-receipt">Verwerfen</button></div>
     </section>` : "";
-    mainContent.innerHTML = `<div class="home-layout page-enter">${state.settingsStorageNotice ? `<div class="settings-save-notice ${state.settingsStorageNoticeIsError ? "is-error" : ""}" role="${state.settingsStorageNoticeIsError ? "alert" : "status"}">${escapeHtml(state.settingsStorageNotice)}</div>` : ""}${state.setupFirstStartVisible ? setupStartHint() : ""}<section class="hero-card"><p class="eyebrow">${escapeHtml(getAreaLabel())}</p><h1>Was möchtest du erfassen?</h1><p class="hero-copy">Leistungen und Produkte direkt auswählen.</p><button class="button button-primary" type="button" data-action="new-receipt"><span aria-hidden="true">＋</span><span>Neuer Beleg</span></button></section>${openReceipt}</div>`;
+    mainContent.innerHTML = `<div class="home-layout ${hasDraft ? "has-draft" : "has-no-draft"} page-enter">${state.settingsStorageNotice ? `<div class="settings-save-notice ${state.settingsStorageNoticeIsError ? "is-error" : ""}" role="${state.settingsStorageNoticeIsError ? "alert" : "status"}">${escapeHtml(state.settingsStorageNotice)}</div>` : ""}${state.setupFirstStartVisible ? setupStartHint() : ""}<section class="hero-card"><p class="eyebrow">${escapeHtml(getAreaLabel())}</p><h1>Was möchtest du erfassen?</h1><p class="hero-copy">Leistungen und Produkte direkt auswählen.</p><button class="button button-primary" type="button" data-action="new-receipt"><span aria-hidden="true">＋</span><span>Neuer Beleg</span></button></section>${openReceipt}</div>`;
   }
 
   function catalogItems() {
@@ -1258,7 +1262,6 @@
     state.checkoutSubmitting = false;
     state.checkoutOpenPaymentConfirm = false;
     state.successNotice = "";
-    state.openReceiptVisible = false;
     state.cart = [];
     navigate("receipt-success");
   }
@@ -3530,6 +3533,26 @@
     return "";
   }
 
+  function appVersionMarkup() {
+    return `<footer class="app-version" aria-label="Versionsinformation"><strong>FRECKA</strong><span>Version ${escapeHtml(data.version || "–")}</span><small>Build ${escapeHtml(data.build || "Entwicklungsstand")}</small></footer>`;
+  }
+
+  function developerToolsMarkup() {
+    if (!developerModeEnabled) return "";
+    return `<details class="development-tools">
+      <summary>Entwicklerbereich · nicht für den Betrieb</summary>
+      <div class="development-tools-warning"><strong>Nur für Entwicklung und Tests</strong><span>Diese Aktionen setzen jeweils genau einen lokalen Datenspeicher dieses Mandanten zurück.</span></div>
+      <details class="development-reset-group">
+        <summary>Lokale Datenspeicher zurücksetzen</summary>
+        <section class="settings-reset-card"><h2>Lokale Einstellungen</h2><p>Unternehmensdaten, Leistungsorte, Steuern, Zahlungsarten und Geschäftsbereiche werden ausschließlich auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="settings-reset">Gespeicherte Einstellungen zurücksetzen</button><small>Katalog, Kunden, Belege und Gutscheine werden dadurch nicht gelöscht.</small></section>
+        <section class="settings-reset-card"><h2>Lokaler Katalog</h2><p>Kategorien, Leistungen, Produkte und Vorlagenimporte werden getrennt von den Einstellungen auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="catalog-reset">Gespeicherten Katalog zurücksetzen</button><small>Einstellungen, Kunden, Belege und Gutscheine werden dadurch nicht gelöscht.</small></section>
+        <section class="settings-reset-card"><h2>Lokale Kunden</h2><p>Kundenstammdaten werden getrennt von Einstellungen und Katalog ausschließlich auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="customers-reset">Gespeicherte Kunden zurücksetzen</button><small>Einstellungen, Katalog, Belege und Gutscheine werden dadurch nicht gelöscht.</small></section>
+        <section class="settings-reset-card"><h2>Lokale Belege</h2><p>Belege, offene Zahlungen, Stornos, Gutschriften und ihre Aktivitäten werden getrennt gespeichert.</p><button class="button button-danger" type="button" data-action="receipts-reset">Gespeicherte Belege zurücksetzen</button><small>Einstellungen und ihr Nummernstand, Katalog, Kunden und Gutscheine bleiben unverändert. Dadurch entstehen keine Nummernkollisionen.</small></section>
+        <section class="settings-reset-card"><h2>Lokale Gutscheine</h2><p>Gutscheinstammdaten, Restwerte, Snapshots und Historien werden im eigenen mandantenbezogenen Store gespeichert.</p><button class="button button-danger" type="button" data-action="vouchers-reset">Gespeicherte Gutscheine zurücksetzen</button><small>Einstellungen, Nummernstand, Katalog, Kunden und Belege bleiben unverändert.</small></section>
+      </details>
+    </details>`;
+  }
+
   function renderSettings() {
     mainContent.innerHTML = `<section class="settings-overview page-enter">
       <header class="settings-head">
@@ -3539,7 +3562,7 @@
       </header>
       ${state.settingsStorageNotice ? `<div class="settings-save-notice ${state.settingsStorageNoticeIsError ? "is-error" : ""}" role="${state.settingsStorageNoticeIsError ? "alert" : "status"}">${escapeHtml(state.settingsStorageNotice)}</div>` : ""}
       ${state.setupFirstStartVisible ? setupStartHint() : ""}
-      <button class="button button-secondary setup-restart" type="button" data-action="setup-start">${state.setup.status === "completed" ? "Ersteinrichtung erneut starten" : state.setup.status === "started" ? "Ersteinrichtung fortsetzen" : "Ersteinrichtung starten"}</button>
+      <button class="button button-secondary setup-restart" type="button" data-action="${state.setup.status === "completed" ? "setup-restart" : "setup-start"}">${state.setup.status === "completed" ? "Ersteinrichtung erneut starten" : state.setup.status === "started" ? "Ersteinrichtung fortsetzen" : "Ersteinrichtung starten"}</button>
       <div class="settings-list" aria-label="Einstellungsbereiche">
         ${settingsSections.map(section => section.available ? `<button class="settings-entry" type="button" data-route="${escapeHtml(section.id)}">
           <span class="settings-entry-icon" aria-hidden="true">${escapeHtml(section.icon)}</span>
@@ -3551,19 +3574,9 @@
           <span class="settings-entry-tools">${section.help ? helpButton(section.help, section.title) : ""}<span class="settings-pending-badge">Geplant</span></span>
         </article>`).join("")}
       </div>
-      <details class="development-tools">
-        <summary>Entwicklerbereich · nicht für den Betrieb</summary>
-        <div class="development-tools-warning"><strong>Nur für Entwicklung und Tests</strong><span>Diese Aktionen setzen jeweils genau einen lokalen Datenspeicher dieses Mandanten zurück.</span></div>
-        <details class="development-reset-group">
-          <summary>Lokale Datenspeicher zurücksetzen</summary>
-          <section class="settings-reset-card"><h2>Lokale Einstellungen</h2><p>Unternehmensdaten, Leistungsorte, Steuern, Zahlungsarten und Geschäftsbereiche werden ausschließlich auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="settings-reset">Gespeicherte Einstellungen zurücksetzen</button><small>Katalog, Kunden, Belege und Gutscheine werden dadurch nicht gelöscht.</small></section>
-          <section class="settings-reset-card"><h2>Lokaler Katalog</h2><p>Kategorien, Leistungen, Produkte und Vorlagenimporte werden getrennt von den Einstellungen auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="catalog-reset">Gespeicherten Katalog zurücksetzen</button><small>Einstellungen, Kunden, Belege und Gutscheine werden dadurch nicht gelöscht.</small></section>
-          <section class="settings-reset-card"><h2>Lokale Kunden</h2><p>Kundenstammdaten werden getrennt von Einstellungen und Katalog ausschließlich auf diesem Gerät gespeichert.</p><button class="button button-danger" type="button" data-action="customers-reset">Gespeicherte Kunden zurücksetzen</button><small>Einstellungen, Katalog, Belege und Gutscheine werden dadurch nicht gelöscht.</small></section>
-          <section class="settings-reset-card"><h2>Lokale Belege</h2><p>Belege, offene Zahlungen, Stornos, Gutschriften und ihre Aktivitäten werden getrennt gespeichert.</p><button class="button button-danger" type="button" data-action="receipts-reset">Gespeicherte Belege zurücksetzen</button><small>Einstellungen und ihr Nummernstand, Katalog, Kunden und Gutscheine bleiben unverändert. Dadurch entstehen keine Nummernkollisionen.</small></section>
-          <section class="settings-reset-card"><h2>Lokale Gutscheine</h2><p>Gutscheinstammdaten, Restwerte, Snapshots und Historien werden im eigenen mandantenbezogenen Store gespeichert.</p><button class="button button-danger" type="button" data-action="vouchers-reset">Gespeicherte Gutscheine zurücksetzen</button><small>Einstellungen, Nummernstand, Katalog, Kunden und Belege bleiben unverändert.</small></section>
-        </details>
-      </details>
+      ${developerToolsMarkup()}
       <p class="prototype-note">Einstellungen, Katalog, Kunden, Belege und Gutscheine werden lokal und mandantenbezogen gespeichert.</p>
+      ${appVersionMarkup()}
     </section>`;
   }
 
@@ -3712,6 +3725,7 @@
     state.exportNotice = "";
     state.exportNoticeIsError = false;
     state.exportResult = null;
+    state.exportResultView = "";
   }
 
   function exportNoticeMarkup() {
@@ -3743,12 +3757,27 @@
     if (!result) return "";
     const projection = result.projection;
     const exportCompany = companyIdentityValue({ name: projection.companyName, owner: projection.companyOwner });
+    const saveFiles = state.exportResultView === "save" ? `<section class="export-result-panel" aria-labelledby="exportSaveTitle">
+      <div><h3 id="exportSaveTitle">Auf Gerät speichern</h3><p>Wähle die Dateien aus, die du lokal speichern möchtest.</p></div>
+      <div class="export-file-list" aria-label="Exportdateien speichern">
+        ${result.files.map(file => `<button class="export-file" type="button" data-export-download="${escapeHtml(file.name)}"><span aria-hidden="true">⇩</span><span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(formatExportFileSize(file.content))}</small></span><em>Speichern</em></button>`).join("")}
+      </div>
+      <p class="export-download-note">Die Dateien werden einzeln gespeichert. So vermeidet FRECKA blockierte Mehrfachdownloads und benötigt keine zusätzliche ZIP-Bibliothek.</p>
+    </section>` : "";
+    const inspectFiles = state.exportResultView === "view" ? `<section class="export-result-panel" aria-labelledby="exportViewTitle">
+      <div><h3 id="exportViewTitle">Dateien ansehen</h3><p>Die Vorschau bleibt lokal auf diesem Gerät.</p></div>
+      <div class="export-preview-list">
+        ${result.files.map(file => `<details class="export-file-preview"><summary><span aria-hidden="true">≡</span><span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(formatExportFileSize(file.content))}</small></span><em>Ansehen</em></summary><pre tabindex="0">${escapeHtml(file.content.length > 4000 ? `${file.content.slice(0, 4000)}\n…` : file.content)}</pre></details>`).join("")}
+      </div>
+    </section>` : "";
     return `<section class="export-result" aria-labelledby="exportResultTitle">
       <div class="export-result-head"><span aria-hidden="true">✓</span><div><h2 id="exportResultTitle">Export ist vorbereitet</h2><p>${escapeHtml([exportCompany.name, exportCompany.owner].filter(Boolean).join(" · "))} · ${escapeHtml(formatGermanDateTime({ iso: projection.generatedAt }))}</p><small>${projection.receipts.length} ${projection.receipts.length === 1 ? "Beleg" : "Belege"} · ${projection.receiptPositions.length} ${projection.receiptPositions.length === 1 ? "Position" : "Positionen"} · ${projection.vouchers.length} ${projection.vouchers.length === 1 ? "Gutschein" : "Gutscheine"} · ${projection.voucherHistory.length} ${projection.voucherHistory.length === 1 ? "Historieneintrag" : "Historieneinträge"}</small></div></div>
-      <div class="export-file-list" aria-label="Exportdateien">
-        ${result.files.map(file => `<button class="export-file" type="button" data-export-download="${escapeHtml(file.name)}"><span aria-hidden="true">⇩</span><span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(formatExportFileSize(file.content))}</small></span><em>Download</em></button>`).join("")}
+      <div class="export-result-actions" aria-label="Export verwenden">
+        <button class="export-result-action is-primary" type="button" data-export-result-action="save" aria-expanded="${state.exportResultView === "save" ? "true" : "false"}"><span aria-hidden="true">⇩</span><span><strong>Auf Gerät speichern</strong><small>Exportdateien lokal ablegen</small></span></button>
+        <button class="export-result-action" type="button" data-export-result-action="send"><span aria-hidden="true">✉</span><span><strong>An Steuerberatung senden</strong><small>Noch nicht aktiviert</small></span></button>
+        <button class="export-result-action" type="button" data-export-result-action="view" aria-expanded="${state.exportResultView === "view" ? "true" : "false"}"><span aria-hidden="true">≡</span><span><strong>Dateien ansehen</strong><small>Inhalt lokal prüfen</small></span></button>
       </div>
-      <p class="export-download-note">Jede Datei wird einzeln geladen. So vermeidet FRECKA blockierte Mehrfachdownloads und benötigt keine zusätzliche ZIP-Bibliothek.</p>
+      ${saveFiles}${inspectFiles}
     </section>`;
   }
 
@@ -3769,6 +3798,7 @@
         state.exportDateTo = fallbackRange?.dateTo || "";
       }
       state.exportResult = null;
+      state.exportResultView = "";
       state.exportNotice = "";
       state.exportNoticeIsError = false;
       renderSettingsExport();
@@ -4339,14 +4369,13 @@
       <div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">Einstellungen</p><h1 class="flow-title">Hilfe & Lernen</h1><p class="page-copy">Hier entsteht eine kompakte Hilfe direkt in FRECKA.</p></div>
       <div class="help-learning-list">${items.map(([icon, title, note]) => `<article><span aria-hidden="true">${escapeHtml(icon)}</span><div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(note)}</small></div><em>Demnächst</em></article>`).join("")}</div>
       <p class="prototype-note">Noch keine Inhalte, Videos oder externe Hilfe.</p>
+      ${appVersionMarkup()}
     </section>`;
   }
 
   function renderPlaceholder(routeKey) {
     const page = data.placeholders[routeKey];
-    const tools = routeKey === "settings" ? `<div class="prototype-tools"><label><input id="toggleOpenReceipt" type="checkbox" ${state.openReceiptVisible ? "checked" : ""}> Offenen Beleg auf der Startseite simulieren</label></div>` : "";
-    mainContent.innerHTML = `<div class="placeholder-page page-enter"><section class="placeholder-card"><div class="placeholder-icon" aria-hidden="true">${page.icon}</div><p class="eyebrow">UX-019 Platzhalter</p><h1>${escapeHtml(page.title)}</h1><p>${escapeHtml(page.note)}</p>${tools}<p class="build-label">${data.version} · Build ${data.build}</p></section></div>`;
-    document.getElementById("toggleOpenReceipt")?.addEventListener("change", event => { state.openReceiptVisible = event.target.checked; });
+    mainContent.innerHTML = `<div class="placeholder-page page-enter"><section class="placeholder-card"><div class="placeholder-icon" aria-hidden="true">${page.icon}</div><p class="eyebrow">In Vorbereitung</p><h1>${escapeHtml(page.title)}</h1><p>${escapeHtml(page.note)}</p>${appVersionMarkup()}</section></div>`;
   }
 
   function renderRoute(pushHistory = true) {
@@ -4500,10 +4529,11 @@
   }
 
   function openDiscardDialog() {
+    const draftCount = cartCount();
     openConfirmDialog({
-      title: "Offenen Beleg verwerfen?",
-      text: "Der simulierte Entwurf wird entfernt. Es werden keine echten Daten gelöscht.",
-      confirmLabel: "Beleg verwerfen",
+      title: "Belegentwurf verwerfen?",
+      text: `Dieser Entwurf mit ${draftCount} ${draftCount === 1 ? "Position" : "Positionen"} wird verworfen. Abgeschlossene Belege und offene Zahlungen bleiben unverändert.`,
+      confirmLabel: "Entwurf verwerfen",
       action: "discard-open-receipt",
       danger: true
     });
@@ -4520,6 +4550,21 @@
     const qrOpen = event.target.closest("[data-qr-open-kind][data-qr-open-reference]");
     if (qrOpen) {
       openQrFullscreen(qrOpen.dataset.qrOpenKind, qrOpen.dataset.qrOpenReference);
+      return;
+    }
+    if (event.target.closest("[data-export-mail-close]")) {
+      closeBottomSheet();
+      return;
+    }
+    const exportResultAction = event.target.closest("[data-export-result-action]");
+    if (exportResultAction && state.exportResult) {
+      const action = exportResultAction.dataset.exportResultAction;
+      if (action === "send") {
+        openBottomSheet("An Steuerberatung senden", `<div class="export-send-placeholder"><span aria-hidden="true">✉</span><strong>Noch nicht verfügbar</strong><p>Diese Funktion wird mit DOCUMENT-001 aktiviert.</p><button class="button button-primary" type="button" data-export-mail-close>Verstanden</button></div>`);
+        return;
+      }
+      state.exportResultView = state.exportResultView === action ? "" : action;
+      renderSettingsExport();
       return;
     }
     const exportDownload = event.target.closest("[data-export-download]");
@@ -5222,9 +5267,18 @@
       navigate("setup-wizard");
       return;
     }
+    if (action === "setup-restart") {
+      if (state.setup.status !== "completed") return;
+      state.setupStep = 1;
+      state.setupNotice = "";
+      state.setupTestPreviewVisible = false;
+      state.setupFirstStartVisible = false;
+      navigate("setup-wizard");
+      return;
+    }
     if (action === "setup-later") {
       state.setupFirstStartVisible = false;
-      renderSettings();
+      state.route === "home" ? renderHome() : renderSettings();
       return;
     }
     if (action === "business-area-add") {
@@ -5294,7 +5348,10 @@
     if (action === "voucher-print") window.print();
     if (action === "new-receipt") startNewReceipt();
     if (action === "resume-receipt") {
-      state.cart = [{ ...(data.catalog.hair[0]), basePrice: data.catalog.hair[0].price, quantity: 1, discountPercent: 0, discountAmount: 0, discountType: "percent", priceOverride: null }, { ...(data.catalog.hair[1]), basePrice: data.catalog.hair[1].price, quantity: 1, discountPercent: 0, discountAmount: 0, discountType: "percent", priceOverride: null }];
+      if (!state.cart.length) {
+        renderHome();
+        return;
+      }
       state.cartExpanded = true;
       navigate("catalog");
     }
@@ -5439,6 +5496,7 @@
       state.exportNotice = "";
       state.exportNoticeIsError = false;
       state.exportResult = null;
+      state.exportResultView = "";
       renderSettingsExport();
       try {
         if (!exportApi?.createExportFiles) throw new Error("Export module unavailable");
@@ -5612,7 +5670,7 @@
       }
       const previousSetupStatus = state.setup.status;
       const nextSetupStep = state.setupStep + 1;
-      state.setup.status = nextSetupStep === setupSteps.length ? "completed" : "started";
+      state.setup.status = previousSetupStatus === "completed" || nextSetupStep === setupSteps.length ? "completed" : "started";
       try {
         await persistCurrentSettings();
       } catch (persistenceError) {
@@ -6092,7 +6150,10 @@
     }
 
     if (pendingAction === "discard-open-receipt") {
-      state.openReceiptVisible = false;
+      state.cart = [];
+      state.cartExpanded = false;
+      state.selectedCustomerId = null;
+      state.customerChoice = "none";
       closeDiscardDialog();
       renderHome();
       return;

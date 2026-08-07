@@ -1,6 +1,6 @@
 window.PROTOTYPE_DATA = Object.freeze({
-  version: "QR-001",
-  build: "2026-08-07",
+  version: "1.0.0",
+  build: "UX-HARDEN-START-EXPORT",
   company: {
     name: "Studio Beispiel",
     owner: "Angel Luzolo",
@@ -435,7 +435,6 @@ window.PROTOTYPE_DATA = Object.freeze({
       ]
     }
   ],
-  openReceipt: { exists: true, customer: "Ohne Kundenzuordnung", lastEdited: "vor wenigen Minuten", itemCount: 2 },
   placeholders: {
     receipts: { title: "Belege", icon: "▤", note: "Die Belegübersicht folgt in einem späteren UX-Block." },
     customers: { title: "Kunden", icon: "◎", note: "Kunden suchen, auswählen und neu anlegen." },
