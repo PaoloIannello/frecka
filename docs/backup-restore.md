@@ -136,7 +136,7 @@ Fehlerlogs enthalten nur Vorgang und Fehlercode. Passphrase, Schlüsselmaterial,
 
 ## Tests
 
-`tests/persistence-smoke.html` prüft ohne zusätzliche Bibliothek die gesamte bisherige Persistenz sowie BACKUP-001 und HARDEN-001. Der aktuelle Lauf umfasst 70 Fälle. Die Ergänzungen decken insbesondere Format- und Mandantenprüfung, Vollständigkeit, Referenzen, Nummernstand, Verschlüsselungs-Roundtrip, zufällige Ciphertexte, Klartextausschluss, falsches Kennwort, Payload- und Headermanipulation, abgeschnittene und unbekannte Formate, Export mit und ohne persistierte Stores, Restore in einen leeren Mandanten, vollständiges Überschreiben, atomaren Rollback, erneute Sicherung nach Restore, reversiblen Kundenstatus sowie iOS-robusten Dateinamen und Downloadtyp ab.
+`tests/persistence-smoke.html` prüft ohne zusätzliche Bibliothek die gesamte bisherige Persistenz sowie BACKUP-001, HARDEN-001 und EXPORT-001. Der aktuelle Lauf umfasst 79 Fälle. Die Backup-Ergänzungen decken insbesondere Format- und Mandantenprüfung, Vollständigkeit, Referenzen, Nummernstand, Verschlüsselungs-Roundtrip, zufällige Ciphertexte, Klartextausschluss, falsches Kennwort, Payload- und Headermanipulation, abgeschnittene und unbekannte Formate, Export mit und ohne persistierte Stores, Restore in einen leeren Mandanten, vollständiges Überschreiben, atomaren Rollback, erneute Sicherung nach Restore, reversiblen Kundenstatus sowie iOS-robusten Dateinamen und Downloadtyp ab. Die fachlichen Exportfälle sind in `docs/export.md` beschrieben.
 
 Jeder Lauf verwendet ausschließlich eine zufällig benannte Testdatenbank mit Guard gegen `frecka` und löscht diese anschließend. Ein simulierter Restore-Abbruch ist nur für eindeutig benannte Testdatenbanken freigeschaltet.
 

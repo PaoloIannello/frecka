@@ -3,6 +3,7 @@
   const data = window.PROTOTYPE_DATA;
   const persistence = globalThis.FRECKA_PERSISTENCE;
   const backup = globalThis.FRECKA_BACKUP;
+  const exportApi = globalThis.FRECKA_EXPORT;
   const defaultSettingsRecord = persistence?.snapshotSettings
     ? persistence.snapshotSettings(data, "not-started")
     : null;
@@ -98,7 +99,17 @@
     backupBusy: false,
     backupRestoreFilename: "",
     backupRestoreSummary: null,
-    backupSafetyCreated: false
+    backupSafetyCreated: false,
+    exportType: "tax-advisor",
+    exportPeriodType: "current-month",
+    exportDateFrom: "",
+    exportDateTo: "",
+    exportBusinessAreaId: "all",
+    exportIncludeCustomers: false,
+    exportBusy: false,
+    exportNotice: "",
+    exportNoticeIsError: false,
+    exportResult: null
   };
 
   let pendingRestoreFile = null;
@@ -119,7 +130,7 @@
   const bottomSheetTitle = document.getElementById("bottomSheetTitle");
   const bottomSheetContent = document.getElementById("bottomSheetContent");
   const bottomSheetClose = document.getElementById("bottomSheetClose");
-  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "settings-company", "settings-location", "settings-taxes", "settings-payments", "settings-business-areas", "settings-catalog", "settings-help", "settings-backup", "setup-wizard"]);
+  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "settings-company", "settings-location", "settings-taxes", "settings-payments", "settings-business-areas", "settings-catalog", "settings-help", "settings-backup", "settings-export", "setup-wizard"]);
   const validRoutes = new Set(["home", "receipts", "customers", "vouchers", "settings", ...flowRoutes]);
 
   const escapeHtml = value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -2708,7 +2719,7 @@
     openPayments: ["Offene Zahlungen", ["Offene Zahlungen sind nur für Ausnahmefälle gedacht, wenn ein Kunde später bezahlt.", "FRECKA ersetzt keine Buchhaltung und überwacht keine Bankkonten.", "Teilzahlungen und Mahnungen werden nicht verwaltet."]],
     receiptTexts: ["Belegtexte", ["Dankes- und Fußtext sind freiwillig.", "Sie werden als Momentaufnahme in neue Belege übernommen.", "Bereits erstellte Belege ändern sich nicht rückwirkend."]],
     backup: ["Sicherung & Wiederherstellung", ["Die Sicherungsdatei enthält alle lokalen FRECKA-Daten dieses Betriebs.", "Sie wird vor dem Speichern mit deinem Sicherungskennwort verschlüsselt.", "Ohne dieses Kennwort kann die Sicherung nicht wiederhergestellt werden.", "FRECKA speichert weder Datei noch Sicherungskennwort zentral."]],
-    export: ["Export", ["Exporte werden später aus den lokalen Daten erzeugt.", "Format und Zeitraum sollen vor dem Export klar auswählbar sein.", "Aktuell wird noch keine Datei erstellt."]],
+    export: ["Export", ["Der Export wird ausschließlich aus dem geprüften lokalen FRECKA-Snapshot erzeugt.", "Zeitraum und Geschäftsbereich begrenzen die enthaltenen Belege und Gutscheine.", "Kundendaten sind nur im Exporttyp „Eigene Daten“ optional enthalten.", "Die Dateien werden auf diesem Gerät erstellt und nicht an FRECKA übertragen."]],
     update: ["Update", ["Updates ersetzen ausschließlich Programmcode.", "Geschäftsdaten bleiben lokal auf dem Endgerät.", "Die Synology ist nur als späterer Update-Server vorgesehen."]],
     tse: ["TSE", ["Dieser Prototyp besitzt keine TSE-Anbindung.", "Ob eine TSE erforderlich ist, wird nicht automatisch beurteilt.", "Vor produktiver Nutzung muss die konkrete Pflicht fachlich geprüft werden.", "Die spätere Einrichtung erhält einen eigenen Assistenten."]]
   };
@@ -2950,7 +2961,7 @@
     { id: "settings-help", icon: "?", title: "Hilfe & Lernen", note: "Erste Schritte und häufige Fragen", available: true },
     { icon: "◎", title: "Benutzer", note: "Für eine spätere Version vorbereitet" },
     { id: "settings-backup", icon: "↥", title: "Sicherung & Wiederherstellung", note: "Verschlüsselte Gesamtsicherung erstellen oder einspielen", available: true },
-    { icon: "⇥", title: "Export", note: "Für eine spätere Version vorbereitet", help: "export" },
+    { id: "settings-export", icon: "⇥", title: "Export", note: "CSV-Dateien für Steuerberatung oder eigene Daten", available: true },
     { icon: "↻", title: "Update", note: "Für eine spätere Version vorbereitet", help: "update" },
     { icon: "T", title: "TSE-Vorbereitung", note: "Für eine spätere Version vorbereitet", help: "tse" }
   ];
@@ -3525,6 +3536,106 @@
     attachBackupFileBehavior();
   }
 
+  function resetExportFlow() {
+    state.exportBusy = false;
+    state.exportNotice = "";
+    state.exportNoticeIsError = false;
+    state.exportResult = null;
+  }
+
+  function exportNoticeMarkup() {
+    if (!state.exportNotice) return "";
+    return `<div class="settings-save-notice ${state.exportNoticeIsError ? "is-error" : ""}" role="${state.exportNoticeIsError ? "alert" : "status"}">${escapeHtml(state.exportNotice)}</div>`;
+  }
+
+  function formatExportFileSize(content) {
+    const bytes = new Blob([content]).size;
+    if (bytes < 1024) return `${bytes} Byte`;
+    return `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(bytes / 1024)} KB`;
+  }
+
+  function downloadExportFile(file) {
+    if (!file?.name || typeof file.content !== "string") return;
+    const url = URL.createObjectURL(new Blob([file.content], { type: file.mimeType || "text/plain;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = file.name;
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function exportResultMarkup() {
+    const result = state.exportResult;
+    if (!result) return "";
+    const projection = result.projection;
+    return `<section class="export-result" aria-labelledby="exportResultTitle">
+      <div class="export-result-head"><span aria-hidden="true">✓</span><div><h2 id="exportResultTitle">Export ist vorbereitet</h2><p>${projection.receipts.length} Belege · ${projection.receiptPositions.length} Positionen · ${projection.vouchers.length} Gutscheine · ${projection.voucherHistory.length} Historieneinträge</p></div></div>
+      <div class="export-file-list" aria-label="Exportdateien">
+        ${result.files.map(file => `<button class="export-file" type="button" data-export-download="${escapeHtml(file.name)}"><span aria-hidden="true">⇩</span><span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(formatExportFileSize(file.content))}</small></span><em>Download</em></button>`).join("")}
+      </div>
+      <p class="export-download-note">Jede Datei wird einzeln geladen. So vermeidet FRECKA blockierte Mehrfachdownloads und benötigt keine zusätzliche ZIP-Bibliothek.</p>
+    </section>`;
+  }
+
+  function attachExportFormBehavior() {
+    const form = document.getElementById("exportForm");
+    form?.addEventListener("change", () => {
+      const formData = new FormData(form);
+      const nextType = String(formData.get("exportType") || "tax-advisor");
+      state.exportType = nextType;
+      state.exportPeriodType = String(formData.get("periodType") || "current-month");
+      state.exportBusinessAreaId = String(formData.get("businessAreaId") || "all");
+      if (nextType === "own-data") state.exportIncludeCustomers = formData.has("includeCustomers");
+      state.exportDateFrom = String(formData.get("dateFrom") || state.exportDateFrom || "");
+      state.exportDateTo = String(formData.get("dateTo") || state.exportDateTo || "");
+      if (state.exportPeriodType === "custom" && (!state.exportDateFrom || !state.exportDateTo)) {
+        const fallbackRange = exportApi?.resolvePeriod?.("current-month");
+        state.exportDateFrom = fallbackRange?.dateFrom || "";
+        state.exportDateTo = fallbackRange?.dateTo || "";
+      }
+      state.exportResult = null;
+      state.exportNotice = "";
+      state.exportNoticeIsError = false;
+      renderSettingsExport();
+    });
+  }
+
+  function renderSettingsExport() {
+    const customDates = state.exportPeriodType === "custom";
+    const includeCustomers = state.exportType === "own-data";
+    mainContent.innerHTML = `<section class="flow-page settings-form-page export-page page-enter">
+      <div class="flow-head compact-flow-head">
+        <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
+        <p class="eyebrow">Einstellungen</p>
+        <h1 class="flow-title">Export</h1>
+        <p class="page-copy">Belege und Gutscheine als klar dokumentierte CSV-Dateien ausgeben.</p>
+      </div>
+      ${exportNoticeMarkup()}
+      <section class="export-privacy"><span aria-hidden="true">⌂</span><div><strong>Bleibt vollständig auf diesem Gerät</strong><p>FRECKA liest einmal den zentralen, geprüften Datensnapshot. Der Export verändert keine Geschäftsdaten und wird an keinen Server übertragen.</p></div></section>
+      <form id="exportForm" class="settings-form export-form">
+        ${cardTitle("Export zusammenstellen", "export")}
+        <fieldset class="export-choice-group"><legend>Wofür brauchst du den Export?</legend>
+          <label class="export-choice"><input type="radio" name="exportType" value="tax-advisor" ${state.exportType === "tax-advisor" ? "checked" : ""}><span><strong>Steuerberatung</strong><small>Belege, Positionen und Gutscheindaten ohne Kundenstammdaten</small></span></label>
+          <label class="export-choice"><input type="radio" name="exportType" value="own-data" ${state.exportType === "own-data" ? "checked" : ""}><span><strong>Eigene Daten</strong><small>Gleicher fachlicher Export, optional mit zugeordneten Kunden</small></span></label>
+        </fieldset>
+        <div class="export-filter-grid">
+          <label class="setting-field"><span>Zeitraum</span><select name="periodType"><option value="current-month" ${state.exportPeriodType === "current-month" ? "selected" : ""}>Aktueller Monat</option><option value="last-month" ${state.exportPeriodType === "last-month" ? "selected" : ""}>Letzter Monat</option><option value="custom" ${customDates ? "selected" : ""}>Eigenes Datum</option></select></label>
+          <label class="setting-field"><span>Geschäftsbereich</span><select name="businessAreaId"><option value="all">Alle Geschäftsbereiche</option>${data.businessAreas.map(area => `<option value="${escapeHtml(area.id)}" ${state.exportBusinessAreaId === area.id ? "selected" : ""}>${escapeHtml(area.label)}</option>`).join("")}</select></label>
+          ${customDates ? `<label class="setting-field"><span>Von</span><input type="date" name="dateFrom" value="${escapeHtml(state.exportDateFrom)}" required></label><label class="setting-field"><span>Bis</span><input type="date" name="dateTo" value="${escapeHtml(state.exportDateTo)}" required></label>` : ""}
+        </div>
+        ${includeCustomers ? `<label class="export-customer-option"><input type="checkbox" name="includeCustomers" ${state.exportIncludeCustomers ? "checked" : ""}><span><strong>Zugeordnete Kunden einschließen</strong><small>Es werden nur Kunden exportiert, die in den gefilterten Belegen oder Gutscheinen vorkommen.</small></span></label>` : ""}
+        <div class="export-format-note"><strong>CSV-Standard in FRECKA</strong><p>UTF-8, Semikolon, deutsche Dezimaldarstellung und Schutz vor Tabellenformeln. Datum: TT.MM.JJJJ, Uhrzeit: HH:mm.</p></div>
+        <button class="button button-primary" type="submit" ${state.exportBusy ? "disabled" : ""}>${state.exportBusy ? "Export wird erstellt …" : "Export vorbereiten"}</button>
+      </form>
+      ${exportResultMarkup()}
+      <p class="prototype-note">Keine DATEV-Importschnittstelle. PDF, Mail, QR und Synology sind nicht Bestandteil dieses Exports.</p>
+    </section>`;
+    attachExportFormBehavior();
+  }
+
   function applyRestoredTenantRecords(records) {
     applySettingsRecord(records.settings);
     applyCatalogRecord(records.catalog);
@@ -4090,6 +4201,7 @@
       "settings-catalog",
       "settings-help",
       "settings-backup",
+      "settings-export",
       "setup-wizard"
     ].includes(state.route));
     if (state.route === "home") renderHome();
@@ -4120,6 +4232,7 @@
     else if (state.route === "settings-catalog") renderCatalogSettings();
     else if (state.route === "settings-help") renderHelpLearning();
     else if (state.route === "settings-backup") renderSettingsBackup();
+    else if (state.route === "settings-export") renderSettingsExport();
     else if (state.route === "setup-wizard") renderSetupWizard();
     else renderPlaceholder(state.route);
     if (state.settingsStorageNotice && !["home", "settings"].includes(state.route)) {
@@ -4230,6 +4343,12 @@
 
   document.addEventListener("click", async event => {
     if (!state.settingsReady) return;
+    const exportDownload = event.target.closest("[data-export-download]");
+    if (exportDownload) {
+      const file = state.exportResult?.files?.find(entry => entry.name === exportDownload.dataset.exportDownload);
+      if (file) downloadExportFile(file);
+      return;
+    }
     const catalogView = event.target.closest("[data-catalog-manager-view]");
     if (catalogView) {
       state.catalogManagerView = catalogView.dataset.catalogManagerView;
@@ -4807,6 +4926,8 @@
       }
       if (route.dataset.route === "settings-backup" && state.route !== "settings-backup") resetRestoreFlow();
       if (state.route === "settings-backup" && route.dataset.route !== "settings-backup") resetRestoreFlow();
+      if (route.dataset.route === "settings-export" && state.route !== "settings-export") resetExportFlow();
+      if (state.route === "settings-export" && route.dataset.route !== "settings-export") resetExportFlow();
       if (["vouchers", "voucher-detail", "voucher-preview"].includes(route.dataset.route)) state.voucherNotice = "";
       navigate(route.dataset.route);
       return;
@@ -5128,6 +5249,44 @@
   document.addEventListener("submit", async event => {
     if (!state.settingsReady || pendingSettingsWrites) {
       event.preventDefault();
+      return;
+    }
+    const exportForm = event.target.closest("#exportForm");
+    if (exportForm) {
+      event.preventDefault();
+      const formData = new FormData(exportForm);
+      state.exportType = String(formData.get("exportType") || "tax-advisor");
+      state.exportPeriodType = String(formData.get("periodType") || "current-month");
+      state.exportBusinessAreaId = String(formData.get("businessAreaId") || "all");
+      state.exportIncludeCustomers = state.exportType === "own-data" && formData.has("includeCustomers");
+      state.exportDateFrom = String(formData.get("dateFrom") || state.exportDateFrom || "");
+      state.exportDateTo = String(formData.get("dateTo") || state.exportDateTo || "");
+      state.exportBusy = true;
+      state.exportNotice = "";
+      state.exportNoticeIsError = false;
+      state.exportResult = null;
+      renderSettingsExport();
+      try {
+        if (!exportApi?.createExportFiles) throw new Error("Export module unavailable");
+        const snapshot = await currentTenantSnapshot();
+        state.exportResult = exportApi.createExportFiles(snapshot, {
+          exportType: state.exportType,
+          periodType: state.exportPeriodType,
+          dateFrom: state.exportDateFrom,
+          dateTo: state.exportDateTo,
+          businessAreaId: state.exportBusinessAreaId,
+          includeCustomers: state.exportIncludeCustomers
+        });
+        state.exportNotice = `${state.exportResult.files.length} Exportdateien wurden lokal vorbereitet.`;
+        state.exportNoticeIsError = false;
+      } catch (error) {
+        logPersistenceError("Export erstellen fehlgeschlagen", error);
+        state.exportNotice = error?.userMessage || "Der Export konnte nicht erstellt werden.";
+        state.exportNoticeIsError = true;
+      } finally {
+        state.exportBusy = false;
+      }
+      renderSettingsExport();
       return;
     }
     const backupCreateForm = event.target.closest("#backupCreateForm");

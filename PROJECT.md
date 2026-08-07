@@ -63,7 +63,7 @@ Neue Funktionen werden nur aufgenommen, wenn sie den einfachen Kernablauf für d
 - Web App Manifest;
 - statische Auslieferung.
 
-Seit PERSIST-001a speichert der Prototyp die vollständigen Einstellungen über eine zentrale, versionierte IndexedDB-Schicht. PERSIST-002 ergänzt den Katalog, PERSIST-003 die Kundenstammdaten, PERSIST-004 normale Belege, offene Zahlungen, Stornos sowie Gutschriften und PERSIST-005 Gutscheine samt Historie. Verkauf und Einlösung bestätigen Nummernstand, Beleg, Gutschein und Historie atomar. BACKUP-001 ergänzt einen vollständigen Tenant-Snapshot, eine lokal verschlüsselte `.frecka-backup`-Datei und einen atomaren Restore aller fünf Stores. HARDEN-001 macht Kunden deaktivierbar statt löschbar und härtet Sicherungskennwort, Dateiname und iOS-Dateiauswahl UX-seitig. Belegentwürfe bleiben bis zu ihrem Persistenzblock ausschließlich im Arbeitsspeicher. Dieser Zwischenstand darf nicht mit der vollständigen Zielarchitektur verwechselt werden.
+Seit PERSIST-001a speichert der Prototyp die vollständigen Einstellungen über eine zentrale, versionierte IndexedDB-Schicht. PERSIST-002 ergänzt den Katalog, PERSIST-003 die Kundenstammdaten, PERSIST-004 normale Belege, offene Zahlungen, Stornos sowie Gutschriften und PERSIST-005 Gutscheine samt Historie. Verkauf und Einlösung bestätigen Nummernstand, Beleg, Gutschein und Historie atomar. BACKUP-001 ergänzt einen vollständigen Tenant-Snapshot, eine lokal verschlüsselte `.frecka-backup`-Datei und einen atomaren Restore aller fünf Stores. HARDEN-001 macht Kunden deaktivierbar statt löschbar und härtet Sicherungskennwort, Dateiname und iOS-Dateiauswahl UX-seitig. EXPORT-001 verwendet denselben geprüften Tenant-Snapshot für eine zentrale, formatneutrale Exportprojektion und sichere CSV-Dateien; es führt weder neue Stores noch eigene Sammelroutinen ein. Belegentwürfe bleiben bis zu ihrem Persistenzblock ausschließlich im Arbeitsspeicher. Dieser Zwischenstand darf nicht mit der vollständigen Zielarchitektur verwechselt werden.
 
 ### Verbindliche Zielbasis
 
@@ -78,7 +78,7 @@ Ein Build-System, Framework, eine UI-Bibliothek oder zusätzliche Backend-Kompon
 
 ## 6. Offline-First-Konzept
 
-- Nach erfolgreicher Erstinstallation müssen alle Kernabläufe ohne Internet funktionieren: App starten, Beleg erfassen und bearbeiten, lokale Stammdaten verwenden, vorhandene Belege anzeigen sowie eine verschlüsselte Gesamtsicherung erstellen und wiederherstellen.
+- Nach erfolgreicher Erstinstallation müssen alle Kernabläufe ohne Internet funktionieren: App starten, Beleg erfassen und bearbeiten, lokale Stammdaten verwenden, vorhandene Belege anzeigen, den lokalen CSV-Export erzeugen sowie eine verschlüsselte Gesamtsicherung erstellen und wiederherstellen.
 - Der Service Worker hält eine versionierte, in sich konsistente App-Shell aus HTML, CSS, JavaScript, Manifest und notwendigen statischen Assets vor.
 - Geschäftsdaten werden nicht im Service-Worker-Cache gespeichert. Dafür ist ausschließlich die Persistenzschicht auf Basis von IndexedDB zuständig.
 - Schreibvorgänge werden zuerst lokal und transaktional abgeschlossen. Die UI bestätigt einen Vorgang erst nach erfolgreicher lokaler Speicherung.
@@ -88,7 +88,7 @@ Ein Build-System, Framework, eine UI-Bibliothek oder zusätzliche Backend-Kompon
 
 ## 7. Datenhaltung
 
-IndexedDB ist die verbindliche Hauptdatenbank. Einstellungen werden seit PERSIST-001a, Katalogdaten seit PERSIST-002, Kundenstammdaten seit PERSIST-003, abgeschlossene Belege einschließlich offener Zahlungen, Stornos, Gutschriften und Aktivitäten seit PERSIST-004 sowie Gutscheine einschließlich Restwerten, Referenzen, Snapshots und unveränderlich angehängter Historien seit PERSIST-005 darin gespeichert. BACKUP-001 kann diesen vollständigen mandantenbezogenen Stand verschlüsselt exportieren und nach Vollprüfung atomar wiederherstellen. Belegentwürfe folgen in einem getrennten, ausdrücklich beauftragten Persistenzblock.
+IndexedDB ist die verbindliche Hauptdatenbank. Einstellungen werden seit PERSIST-001a, Katalogdaten seit PERSIST-002, Kundenstammdaten seit PERSIST-003, abgeschlossene Belege einschließlich offener Zahlungen, Stornos, Gutschriften und Aktivitäten seit PERSIST-004 sowie Gutscheine einschließlich Restwerten, Referenzen, Snapshots und unveränderlich angehängter Historien seit PERSIST-005 darin gespeichert. BACKUP-001 kann diesen vollständigen mandantenbezogenen Stand verschlüsselt exportieren und nach Vollprüfung atomar wiederherstellen. EXPORT-001 liest denselben validierten Snapshot, projiziert ihn ausschließlich im Arbeitsspeicher und verändert keine gespeicherten Daten. Belegentwürfe folgen in einem getrennten, ausdrücklich beauftragten Persistenzblock.
 
 Verbindliche Regeln:
 
@@ -102,6 +102,7 @@ Verbindliche Regeln:
 - Ein verschlüsseltes Backup umfasst Daten, Formatversion, Integritätsinformationen und die für einen kontrollierten Import nötigen Metadaten.
 - Der optionale Cloudspeicher wird ausschließlich vom Kunden ausgewählt und kontrolliert. FRECKA besitzt dort kein zentrales Konto und keine eigene Kopie.
 - Vor einem Import werden Entschlüsselung, Integrität, Formatversion und Kompatibilität geprüft. Ein Import darf den vorhandenen Bestand nicht ohne ausdrückliche Bestätigung ersetzen.
+- Unverschlüsselte Fachexporte sind bewusste Nutzerdownloads. Kundendaten werden dabei nur für den Exporttyp „Eigene Daten“ und nach ausdrücklicher Auswahl auf die im Filter referenzierten Kunden begrenzt.
 
 ## 8. Update-Strategie
 

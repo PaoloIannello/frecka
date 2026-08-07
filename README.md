@@ -1,6 +1,6 @@
-# FRECKA – HARDEN-001
+# FRECKA – EXPORT-001
 
-Browserbasierter FRECKA-Prototyp mit lokaler IndexedDB-Persistenz sowie verschlüsselter Gesamtsicherung und atomarer Wiederherstellung.
+Browserbasierter FRECKA-Prototyp mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung und snapshotbasiertem CSV-Export.
 
 ## Start
 
@@ -10,7 +10,19 @@ Browserbasierter FRECKA-Prototyp mit lokaler IndexedDB-Persistenz sowie verschl�
 
 Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufklappen und bearbeiten → Weiter → Kunde optional und Zahlungsart simulieren → Demo abschließen.
 
-## Neu in HARDEN-001
+## Neu in EXPORT-001
+
+- eine gemeinsame, formatneutrale Exportprojektion auf Basis der vorhandenen Tenant-Snapshot-API
+- Zeitraumfilter für aktuellen Monat, letzten Monat und ein eigenes Datum
+- Geschäftsbereichsfilter über stabile IDs und historische Snapshots
+- `Belege.csv`, `Belegpositionen.csv`, `Gutscheine.csv`, `Gutschein-Historie.csv` und `Export-Info.txt`
+- optionale, datensparsame `Kunden.csv` ausschließlich beim Exporttyp „Eigene Daten“
+- UTF-8-BOM, Semikolon, deutsche Dezimalwerte, sauberes Escaping und CSV-Injection-Schutz
+- 79 native Browser-Smoke-Tests ohne neue Testabhängigkeit
+
+Der vollständige Exportvertrag steht in `docs/export.md`.
+
+## Grundlage aus HARDEN-001
 
 - verständliche Sicherungskennwort-Texte in der gesamten Produktoberfläche
 - iOS-robuste Auswahl von `.frecka-backup`-Dateien ohne unzuverlässigen Dateityp-Vorfilter
@@ -27,13 +39,13 @@ Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufkla
 - angebotenes verschlüsseltes Sicherheitsbackup des aktuellen Stands
 - atomarer Restore aller fünf IndexedDB-Stores ohne Teilzustände
 - keine Passphrase, Schlüssel, Geschäftsdaten oder Sicherungsdatei in zentraler Speicherung
-- 70 native Browser-Smoke-Tests ohne neue Testabhängigkeit
+- zentrale und validierte Tenant-Snapshot-API für Backup, Restore und Export
 
 ## Nicht umgesetzt
 
-Noch keine Persistenz für Belegentwürfe. Keine Cloudablage, Synchronisation, automatische Backups, allgemeine Exportfunktion, Zahlungsanbieteranbindung, PDF-Erzeugung, E-Mail, produktiver QR-Scan, TSE oder Fiskalisierung.
+Noch keine Persistenz für Belegentwürfe. Keine Cloudablage, Synchronisation, automatische Backups, ZIP-Erzeugung, Zahlungsanbieteranbindung, PDF-Erzeugung, E-Mail, Synology-Export, produktiver QR-Scan, TSE oder Fiskalisierung.
 
-Der Datenbankvertrag steht in `docs/persistence.md`; Dateiformat, Sicherheitsmodell, Restore-Ablauf und Prüfungen stehen in `docs/backup-restore.md`.
+Der Datenbankvertrag steht in `docs/persistence.md`; Dateiformat, Sicherheitsmodell, Restore-Ablauf und Prüfungen stehen in `docs/backup-restore.md`; Projektion, CSV-Vertrag und Datenschutz des Exports stehen in `docs/export.md`.
 
 
 ## Ergänzung UX-004b

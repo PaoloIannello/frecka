@@ -8,6 +8,7 @@
   const runButton = document.getElementById("runTests");
   const api = globalThis.FRECKA_PERSISTENCE;
   const backupApi = globalThis.FRECKA_BACKUP;
+  const exportApi = globalThis.FRECKA_EXPORT;
   const testDatabasePrefix = "frecka-persist-smoke-";
   let running = false;
 
@@ -337,6 +338,137 @@
       app: { version: "BACKUP-001", build: "test" },
       stores: { settings, catalog, customers, receipts, vouchers }
     };
+  }
+
+  function completeExportSnapshotFixture(tenantId) {
+    const snapshot = completeTenantSnapshotFixture(tenantId, {
+      companyName: "Frisör Änne & Söhne",
+      createdAt: "2030-02-01T12:00:00.000Z"
+    });
+    snapshot.app = { version: "EXPORT-001", build: "test" };
+    const paid = receiptDraftFixture("receipt-export-paid", {
+      number: "2030-000101",
+      completedAt: "2030-01-05T09:15:00.000Z",
+      createdAt: "2030-01-05T09:15:00.000Z",
+      updatedAt: "2030-01-05T09:15:00.000Z",
+      date: "05.01.2030",
+      time: "09:15",
+      items: [{
+        id: "service-injection", type: "service", title: "=SUM(1+1); \"Ölpflege\"", quantity: 1,
+        unitPrice: 65.43, originalUnitPrice: 70, total: 65.43, originalTotal: 70,
+        discountTotal: 4.57, taxRate: 19, netTotal: 54.98, taxAmount: 10.45
+      }],
+      total: 65.43,
+      originalTotal: 70,
+      discountTotal: 4.57,
+      netTotal: 54.98,
+      taxTotal: 10.45,
+      paymentMethod: "Bar"
+    });
+    const open = receiptDraftFixture("receipt-export-open", {
+      number: "2030-000102",
+      completedAt: "2030-01-10T10:30:00.000Z",
+      createdAt: "2030-01-10T10:30:00.000Z",
+      updatedAt: "2030-01-10T10:30:00.000Z",
+      date: "10.01.2030",
+      time: "10:30",
+      paymentStatus: "open",
+      paymentMethod: "later",
+      paymentRecordedAt: null
+    });
+    const cancellation = receiptDraftFixture("receipt-export-cancellation", {
+      number: "2030-000103",
+      type: "cancellation",
+      receiptType: "cancellation",
+      status: "cancelled",
+      reference: "2030-000101",
+      completedAt: "2030-01-12T11:00:00.000Z",
+      createdAt: "2030-01-12T11:00:00.000Z",
+      updatedAt: "2030-01-12T11:00:00.000Z",
+      date: "12.01.2030",
+      time: "11:00",
+      items: [{ title: "Storno Testhaarschnitt", type: "service", quantity: 1, unitPrice: -39, total: -39, taxRate: 19, netTotal: -32.77, taxAmount: -6.23 }],
+      total: -39,
+      originalTotal: -39,
+      netTotal: -32.77,
+      taxTotal: -6.23
+    });
+    const coachingCredit = receiptDraftFixture("receipt-export-credit", {
+      number: "2030-000104",
+      type: "credit",
+      receiptType: "credit",
+      status: "credited",
+      reference: "2030-000099",
+      businessAreaId: "coaching",
+      businessAreaSnapshot: { id: "coaching", label: "Coaching", visibleName: "Test-Coaching" },
+      completedAt: "2030-01-15T12:00:00.000Z",
+      createdAt: "2030-01-15T12:00:00.000Z",
+      updatedAt: "2030-01-15T12:00:00.000Z",
+      date: "15.01.2030",
+      time: "12:00",
+      items: [{ title: "Kulanz", type: "service", quantity: 1, unitPrice: -10, total: -10, taxRate: 19, netTotal: -8.4, taxAmount: -1.6 }],
+      total: -10,
+      originalTotal: -10,
+      netTotal: -8.4,
+      taxTotal: -1.6
+    });
+    const february = receiptDraftFixture("receipt-export-february", {
+      number: "2030-000105",
+      completedAt: "2030-02-02T08:00:00.000Z",
+      createdAt: "2030-02-02T08:00:00.000Z",
+      updatedAt: "2030-02-02T08:00:00.000Z",
+      date: "02.02.2030",
+      time: "08:00"
+    });
+    snapshot.stores.receipts = api.snapshotReceipts({ receipts: [paid, open, cancellation, coachingCredit, february] }, tenantId);
+
+    const decemberVoucher = voucherDraftFixture("voucher-export-december", {
+      reference: "vch_export_december",
+      code: "FRKA-DEC0-0001",
+      soldAt: "20.12.2029",
+      soldTime: "09:00",
+      createdAt: "2029-12-20T09:00:00.000Z",
+      updatedAt: "2030-01-08T10:00:00.000Z",
+      currentValue: 80,
+      saleReceipt: { id: "receipt-voucher-december", number: "2029-000099", soldAt: "2029-12-20T09:00:00.000Z", payment: "Bar", customerId: "customer-anna" },
+      history: [
+        { type: "sold", occurredAt: "2029-12-20T09:00:00.000Z", amount: 100, balanceAfter: 100, receiptNumber: "2029-000099" },
+        { type: "partial_redemption", occurredAt: "2030-01-08T10:00:00.000Z", amount: 20, balanceAfter: 80, receiptNumber: "2030-000100" }
+      ]
+    });
+    const januaryVoucher = voucherDraftFixture("voucher-export-january", {
+      reference: "vch_export_january",
+      code: "FRKA-JAN0-0001",
+      soldAt: "10.01.2030",
+      soldTime: "09:00",
+      createdAt: "2030-01-10T09:00:00.000Z",
+      updatedAt: "2030-01-25T15:00:00.000Z",
+      currentValue: 0,
+      saleReceipt: { id: "receipt-voucher-january", number: "2030-000106", soldAt: "2030-01-10T09:00:00.000Z", payment: "Karte", customerId: "customer-anna" },
+      history: [
+        { type: "sold", occurredAt: "2030-01-10T09:00:00.000Z", amount: 100, balanceAfter: 100, receiptNumber: "2030-000106" },
+        { type: "partial_redemption", occurredAt: "2030-01-20T14:00:00.000Z", amount: 40, balanceAfter: 60, receiptNumber: "2030-000107" },
+        { type: "full_redemption", occurredAt: "2030-01-25T15:00:00.000Z", amount: 60, balanceAfter: 0, receiptNumber: "2030-000108" }
+      ]
+    });
+    const coachingVoucher = voucherDraftFixture("voucher-export-coaching", {
+      reference: "vch_export_coaching",
+      code: "FRKA-COAC-0001",
+      businessAreaId: "coaching",
+      soldAt: "18.01.2030",
+      soldTime: "09:00",
+      createdAt: "2030-01-18T09:00:00.000Z",
+      saleReceipt: { id: "receipt-voucher-coaching", number: "2030-000109", soldAt: "2030-01-18T09:00:00.000Z", payment: "Bar", customerId: "customer-anna" },
+      contextSnapshot: {
+        company: { name: "Frisör Änne & Söhne" },
+        branding: { logoMode: "none", visibleName: "Test-Coaching", logo: null },
+        businessArea: { id: "coaching", label: "Coaching", visibleName: "Test-Coaching" },
+        serviceLocation: { id: "location-mobile", name: "Mobiler Raum" }
+      },
+      history: [{ type: "sold", occurredAt: "2030-01-18T09:00:00.000Z", amount: 100, balanceAfter: 100, receiptNumber: "2030-000109" }]
+    });
+    snapshot.stores.vouchers = api.snapshotVouchers({ vouchers: [decemberVoucher, januaryVoucher, coachingVoucher] }, tenantId);
+    return snapshot;
   }
 
   function voucherSaleReceiptFixture(voucher, id = `receipt-sale-${voucher.id}`) {
@@ -1543,6 +1675,161 @@
           assert(typeof persistence.restoreTenantSnapshot === "function", "restoreTenantSnapshot fehlt");
           assert(typeof backupApi?.encryptTenantSnapshot === "function", "Verschlüsselungs-API fehlt");
           assertEqual(api.constants.databaseVersion, 5, "Backup führte unerwartet eine neue Schema-Version ein");
+        }
+      },
+      {
+        name: "Exportkern ist rein snapshotbasiert und verändert das Datenbankschema nicht",
+        run: async () => {
+          assert(typeof exportApi?.createExportProjection === "function", "Zentrale Exportprojektion fehlt");
+          assert(typeof exportApi?.createExportFiles === "function", "Exportdatei-API fehlt");
+          assertEqual(exportApi.constants.exportFormatVersion, 1, "Falsche Exportformatversion");
+          assertEqual(api.constants.databaseVersion, 5, "Export führte unerwartet eine neue Schema-Version ein");
+        }
+      },
+      {
+        name: "Exportzeitraum löst aktuellen, letzten und eigenen Monat korrekt auf",
+        run: async () => {
+          const reference = new Date(2030, 1, 15, 12, 0, 0);
+          assertDeepEqual(exportApi.resolvePeriod("current-month", reference), { type: "current-month", dateFrom: "2030-02-01", dateTo: "2030-02-28" }, "Aktueller Monat ist falsch");
+          assertDeepEqual(exportApi.resolvePeriod("last-month", reference), { type: "last-month", dateFrom: "2030-01-01", dateTo: "2030-01-31" }, "Letzter Monat ist falsch");
+          assertDeepEqual(exportApi.resolvePeriod({ type: "custom", dateFrom: "2030-01-05", dateTo: "2030-01-18" }), { type: "custom", dateFrom: "2030-01-05", dateTo: "2030-01-18" }, "Eigener Zeitraum ist falsch");
+          let invalidCode = "";
+          try {
+            exportApi.resolvePeriod({ type: "custom", dateFrom: "2030-02-10", dateTo: "2030-02-01" });
+          } catch (error) {
+            invalidCode = error.code;
+          }
+          assertEqual(invalidCode, "INVALID_PERIOD", "Umgekehrter Zeitraum wurde nicht abgelehnt");
+        }
+      },
+      {
+        name: "Zeitraum und Geschäftsbereich filtern Belege, Gutscheine und Historie konsistent",
+        run: async () => {
+          const snapshot = completeExportSnapshotFixture("test-export-filter");
+          const projection = exportApi.createExportProjection(snapshot, {
+            exportType: "tax-advisor",
+            periodType: "custom",
+            dateFrom: "2030-01-01",
+            dateTo: "2030-01-31",
+            businessAreaId: "hair",
+            generatedAt: "2030-02-01T12:00:00.000Z"
+          });
+          assertDeepEqual(projection.receipts.map(row => row.receiptNumber), ["2030-000101", "2030-000102", "2030-000103"], "Belegfilter ist falsch");
+          assertDeepEqual(projection.vouchers.map(row => row.code), ["FRKA-JAN0-0001"], "Gutscheinfilter ist falsch");
+          assertEqual(projection.voucherHistory.length, 4, "Historienfilter ließ Ereignisse eines früher ausgestellten Gutscheins aus");
+          assert(projection.voucherHistory.some(row => row.code === "FRKA-DEC0-0001"), "Einlösung eines älteren Gutscheins fehlt im Zeitraum");
+        }
+      },
+      {
+        name: "Offene Zahlungen, Storno und Gutschrift bleiben im Export unterscheidbar",
+        run: async () => {
+          const projection = exportApi.createExportProjection(completeExportSnapshotFixture("test-export-status"), {
+            exportType: "tax-advisor",
+            periodType: "custom",
+            dateFrom: "2030-01-01",
+            dateTo: "2030-01-31",
+            businessAreaId: "all"
+          });
+          const open = projection.receipts.find(row => row.receiptNumber === "2030-000102");
+          const cancellation = projection.receipts.find(row => row.receiptNumber === "2030-000103");
+          const credit = projection.receipts.find(row => row.receiptNumber === "2030-000104");
+          assertEqual(open.paymentStatus, "Offen", "Offene Zahlung wurde als bezahlt exportiert");
+          assertEqual(open.paymentMethod, "Später", "Zahlungsart der offenen Zahlung ist falsch");
+          assertEqual(cancellation.receiptType, "Stornobeleg", "Stornobelegart fehlt");
+          assertEqual(cancellation.cancellation, "Stornobeleg", "Stornokennzeichnung fehlt");
+          assertEqual(cancellation.gross, "-39,00", "Negativer Stornobetrag ist falsch");
+          assertEqual(credit.receiptType, "Gutschrift", "Gutschriftbelegart fehlt");
+          assertEqual(credit.credit, "Gutschrift", "Gutschriftkennzeichnung fehlt");
+          assertEqual(credit.gross, "-10,00", "Negativer Gutschriftsbetrag ist falsch");
+        }
+      },
+      {
+        name: "CSV nutzt UTF-8-BOM, Semikolon, deutsche Centwerte, Escaping und Injection-Schutz",
+        run: async () => {
+          const exported = exportApi.createExportFiles(completeExportSnapshotFixture("test-export-csv"), {
+            exportType: "tax-advisor",
+            periodType: "custom",
+            dateFrom: "2030-01-01",
+            dateTo: "2030-01-31",
+            businessAreaId: "hair"
+          });
+          const receiptsCsv = exported.files.find(file => file.name === "Belege.csv")?.content || "";
+          const positionsCsv = exported.files.find(file => file.name === "Belegpositionen.csv")?.content || "";
+          assert(receiptsCsv.startsWith("\uFEFF\"Belegnummer\";\"Belegart\""), "UTF-8-BOM oder Semikolonheader fehlt");
+          assert(receiptsCsv.includes("\"65,43\""), "Centwert besitzt keine deutsche Dezimaldarstellung");
+          assert(positionsCsv.includes("\"'=SUM(1+1); \"\"Ölpflege\"\"\""), "Formel, Semikolon, Umlaute oder Anführungszeichen wurden nicht sicher escaped");
+          assertEqual(exportApi.protectCsvValue(" +CMD"), "' +CMD", "Formel mit führendem Leerzeichen blieb aktivierbar");
+          assertEqual(exportApi.protectCsvValue("-10,00"), "-10,00", "Fachlicher negativer Betrag wurde in Text umgewandelt");
+          assertEqual(exportApi.protectCsvValue("-10+CMD"), "'-10+CMD", "Nichtnumerischer Minuswert blieb aktivierbar");
+          assertEqual(exportApi.protectCsvValue("Normal"), "Normal", "Ungefährlicher Text wurde verändert");
+        }
+      },
+      {
+        name: "Gutschein-Historie bleibt eine eigene chronologische CSV ohne Mehrfachwerte",
+        run: async () => {
+          const exported = exportApi.createExportFiles(completeExportSnapshotFixture("test-export-history"), {
+            exportType: "tax-advisor",
+            periodType: "custom",
+            dateFrom: "2030-01-01",
+            dateTo: "2030-01-31",
+            businessAreaId: "hair"
+          });
+          const names = exported.files.map(file => file.name);
+          assert(names.includes("Gutscheine.csv"), "Gutscheindatei fehlt");
+          assert(names.includes("Gutschein-Historie.csv"), "Eigene Historiendatei fehlt");
+          const history = exported.projection.voucherHistory;
+          assertDeepEqual(history.map(row => row.date), ["08.01.2030", "10.01.2030", "20.01.2030", "25.01.2030"], "Historie ist nicht chronologisch");
+          assert(history.every(row => Object.values(row).every(value => !Array.isArray(value))), "Historienzeile enthält einen Mehrfachwert");
+          assertEqual(history.at(-1).balanceAfter, "0,00", "Vollständige Einlösung besitzt falschen Restwert");
+        }
+      },
+      {
+        name: "Steuerberatung exportiert keine Kunden, Eigene Daten nur zugeordnete Kunden",
+        run: async () => {
+          const snapshot = completeExportSnapshotFixture("test-export-privacy");
+          const options = { periodType: "custom", dateFrom: "2030-01-01", dateTo: "2030-01-31", businessAreaId: "hair", includeCustomers: true };
+          const taxFiles = exportApi.createExportFiles(snapshot, { ...options, exportType: "tax-advisor" });
+          const ownFiles = exportApi.createExportFiles(snapshot, { ...options, exportType: "own-data" });
+          assert(!taxFiles.files.some(file => file.name === "Kunden.csv"), "Steuerberatungsexport enthält Kundenstammdaten");
+          assert(ownFiles.files.some(file => file.name === "Kunden.csv"), "Eigene Daten enthalten trotz Auswahl keine Kundendatei");
+          assertDeepEqual(ownFiles.projection.customers.map(customer => customer.id), ["customer-anna"], "Nicht zugeordnete Kunden wurden exportiert");
+        }
+      },
+      {
+        name: "Export-Info dokumentiert Version, Filter, Zählungen und DATEV-Grenze korrekt",
+        run: async () => {
+          const exported = exportApi.createExportFiles(completeExportSnapshotFixture("test-export-info"), {
+            exportType: "tax-advisor",
+            periodType: "custom",
+            dateFrom: "2030-01-01",
+            dateTo: "2030-01-31",
+            businessAreaId: "hair",
+            generatedAt: "2030-02-01T12:34:00.000Z"
+          });
+          const info = exported.files.find(file => file.name === "Export-Info.txt")?.content || "";
+          assert(info.includes("FRECKA-Version: EXPORT-001"), "FRECKA-Version fehlt");
+          assert(info.includes("Zeitraum: 01.01.2030 bis 31.01.2030"), "Dokumentierter Zeitraum ist falsch");
+          assert(info.includes("Anzahl Belege: 3"), "Belegzählung ist falsch");
+          assert(info.includes("Anzahl Gutscheine: 1"), "Gutscheinzählung ist falsch");
+          assert(info.includes("Dies ist ein FRECKA-Export.\r\nKeine bestätigte DATEV-Importschnittstelle."), "DATEV-Hinweis fehlt oder behauptet zu viel");
+        }
+      },
+      {
+        name: "Export erzeugt nur die freigegebenen Dateien und verändert den Snapshot nicht",
+        run: async () => {
+          const snapshot = completeExportSnapshotFixture("test-export-immutable");
+          const before = clone(snapshot);
+          const exported = exportApi.createExportFiles(snapshot, {
+            exportType: "own-data",
+            periodType: "custom",
+            dateFrom: "2030-01-01",
+            dateTo: "2030-01-31",
+            businessAreaId: "all",
+            includeCustomers: true
+          });
+          assertDeepEqual(exported.files.map(file => file.name), ["Belege.csv", "Belegpositionen.csv", "Gutscheine.csv", "Gutschein-Historie.csv", "Kunden.csv", "Export-Info.txt"], "Dateisatz enthält fehlende oder zusätzliche Dateien");
+          assert(!exported.files.some(file => /qr|pdf|mail|synology|zip/i.test(file.name)), "Nicht freigegebener Exporttyp wurde erzeugt");
+          assertDeepEqual(snapshot, before, "Export hat den zentralen Snapshot verändert");
         }
       },
       {

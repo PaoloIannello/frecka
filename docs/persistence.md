@@ -1,6 +1,6 @@
 # Lokale Settings-, Katalog-, Kunden-, Beleg- und Gutscheinpersistenz
 
-**Stand:** BACKUP-001 auf Basis PERSIST-005
+**Stand:** EXPORT-001 auf Basis PERSIST-005 und BACKUP-001
 **Geltungsbereich:** Vollständige FRECKA-Einstellungen, Katalog, Kundenstammdaten, abgeschlossene Belege, offene Zahlungen, Stornos, Gutschriften, Gutscheine und Gutschein-Historien
 **Nicht enthalten:** Entwürfe, QR-Grafiken, E-Mail-, Kamera- und Druckstatus, PDF-Dateien sowie eine dauerhafte Ablage von Backup-Dateien
 
@@ -79,6 +79,8 @@ UI- und Renderfunktionen greifen niemals direkt auf `indexedDB` zu. Nur `js/pers
 Das Upgrade von Schema-Version 4 auf 5 legt ausschließlich den neuen `vouchers`-Store an; alle bisherigen Stores und Datensätze bleiben unverändert. Die älteren Upgradepfade ergänzen weiterhin alle später hinzugekommenen Stores. Es werden dabei keine Demo-Geschäftsdaten ungefragt geschrieben. Datenbankschema- und Datenformatversionen werden unabhängig versioniert.
 
 BACKUP-001 verändert das Datenbankschema nicht. Die zentrale Persistenzschicht ergänzt `exportTenantSnapshot`, `validateTenantSnapshot` und `restoreTenantSnapshot`. Export liest alle fünf Stores konsistent; Restore ersetzt sie nach einer vollständigen Vorabprüfung in einer einzigen Readwrite-Transaktion. Das verschlüsselte Dateiformat und der genaue Ablauf sind in `docs/backup-restore.md` beschrieben.
+
+EXPORT-001 verändert das Datenbankschema ebenfalls nicht. Der fachliche Export ruft dieselbe Funktion `exportTenantSnapshot` auf und übergibt den validierten Snapshot an die reine Projektion in `js/export.js`. Das Exportmodul öffnet keine Datenbank, liest keine UI-Listen und schreibt keine Daten. Der CSV-Vertrag und die Datenschutzgrenzen sind in `docs/export.md` dokumentiert.
 
 Der Settings-Datensatz enthält ausschließlich:
 
@@ -203,7 +205,7 @@ Beim Laden werden verwaiste Zuordnungen entfernt. Ein Standardort ist nur gülti
 
 `tests/persistence-smoke.html` führt ohne zusätzliche Bibliothek native IndexedDB- und Web-Crypto-Prüfungen aus. Die Seite muss über HTTP oder HTTPS geöffnet werden und startet automatisch. Jeder Lauf verwendet einen zufälligen Datenbanknamen mit dem Präfix `frecka-persist-smoke-`, zeigt jeden Fall als PASS oder FAIL und löscht anschließend ausschließlich diese Testdatenbank. Ein Guard schützt die Produktionsdatenbank `frecka`.
 
-Geprüft werden weiterhin alle Fälle aus PERSIST-001a bis PERSIST-004. PERSIST-005 ergänzt das Upgrade 4 → 5, Voucher-Roundtrip, Centwerte, QR- und Belegreferenzen, unveränderliche Snapshots und Historien, atomaren Verkauf, Teil- und Voll-Einlösung, idempotente Wiederholung, Duplikat- und Restwertschutz, Transaktionsfehler ohne halbe Datensätze oder Nummernverbrauch, erweiterte Kundensuche sowie den tenant- und storeisolierten Voucher-Reset. BACKUP-001 ergänzt Snapshot-, Verschlüsselungs-, Manipulations-, Export-, Restore- und Rollbackprüfungen einschließlich des Einspielens in einen leeren Mandanten. HARDEN-001 ergänzt den reversiblen Kundenstatus sowie Dateinamen- und Downloadtypprüfungen. Der aktuelle Browserlauf umfasst 70 isolierte Fälle.
+Geprüft werden weiterhin alle Fälle aus PERSIST-001a bis PERSIST-004. PERSIST-005 ergänzt das Upgrade 4 → 5, Voucher-Roundtrip, Centwerte, QR- und Belegreferenzen, unveränderliche Snapshots und Historien, atomaren Verkauf, Teil- und Voll-Einlösung, idempotente Wiederholung, Duplikat- und Restwertschutz, Transaktionsfehler ohne halbe Datensätze oder Nummernverbrauch, erweiterte Kundensuche sowie den tenant- und storeisolierten Voucher-Reset. BACKUP-001 ergänzt Snapshot-, Verschlüsselungs-, Manipulations-, Export-, Restore- und Rollbackprüfungen einschließlich des Einspielens in einen leeren Mandanten. HARDEN-001 ergänzt den reversiblen Kundenstatus sowie Dateinamen- und Downloadtypprüfungen. EXPORT-001 ergänzt Zeitraum- und Geschäftsbereichsfilter, offene Zahlungen, Storno, Gutschrift, Gutscheinhistorie, CSV-Regeln, Injection-Schutz, Datenschutz und Snapshot-Unveränderlichkeit. Der aktuelle Browserlauf umfasst 79 isolierte Fälle.
 
 ## Reset
 
