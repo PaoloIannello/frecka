@@ -447,7 +447,7 @@
     if (model.correctionReference) height += 18;
     height += 76 + wrapText(fonts.regular, model.texts.thankYou, 8, contentWidth).length * 10;
     if (model.texts.footer) height += wrapText(fonts.regular, model.texts.footer, 7, contentWidth).length * 9;
-    height += 270;
+    height += model.qr?.matrix?.length ? 270 : 34;
     return Math.max(500, Math.min(MAX_RECEIPT_HEIGHT, height));
   }
 
@@ -603,11 +603,13 @@
     if (model.texts.footer) paragraph(model.texts.footer, { center: true, size: 7, color: colors.muted, gap: 9 });
     y -= 8;
 
-    const qrSize = Math.min(178, contentWidth);
-    ensure(qrSize + 28);
-    drawQrMatrix(page, model.qr, (RECEIPT_WIDTH - qrSize) / 2, y - qrSize, qrSize, colors);
-    y -= qrSize + 14;
-    drawCentered(page, fonts.bold, "Digitaler Beleg", 8, y, colors.ink, RECEIPT_WIDTH);
+    if (model.qr?.matrix?.length) {
+      const qrSize = contentWidth;
+      ensure(qrSize + 28);
+      drawQrMatrix(page, model.qr, (RECEIPT_WIDTH - qrSize) / 2, y - qrSize, qrSize, colors);
+      y -= qrSize + 14;
+      drawCentered(page, fonts.bold, "Digitaler Beleg", 8, y, colors.ink, RECEIPT_WIDTH);
+    }
     return pdf.save();
   }
 
@@ -654,9 +656,11 @@
       drawCentered(page, fonts.regular, recipient, 10, y, colors.ink, pageWidth);
       y -= 18;
     }
-    const qrSize = 125;
-    drawQrMatrix(page, model.qr, (pageWidth - qrSize) / 2, y - qrSize, qrSize, colors);
-    y -= qrSize + 15;
+    if (model.qr?.matrix?.length) {
+      const qrSize = 125;
+      drawQrMatrix(page, model.qr, (pageWidth - qrSize) / 2, y - qrSize, qrSize, colors);
+      y -= qrSize + 15;
+    }
     drawCentered(page, fonts.regular, "Gutscheincode", 8, y, colors.muted, pageWidth);
     y -= 15;
     drawCentered(page, fonts.bold, model.code, 14, y, colors.ink, pageWidth);

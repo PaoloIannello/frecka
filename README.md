@@ -1,14 +1,31 @@
-# FRECKA – DOCUMENT-001
+# FRECKA – COMM-001 / QR-002
 
-Browserbasierter FRECKA-Prototyp 0.9.0 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem CSV-Export sowie zentraler QR- und Dokumentenengine.
+Browserbasierter FRECKA-Prototyp 0.9.0 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem CSV-Export sowie zentraler Dokument-, QR-, Public-Viewer- und Share-Infrastruktur. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
 
 ## Start
 
-Über einen lokalen HTTP-Server oder ein HTTPS-Testdeployment öffnen. Ein direkter `file://`-Start ist für verlässliche IndexedDB-Tests nicht vorgesehen.
+Über `localhost` oder ein HTTPS-Testdeployment öffnen. Der native Teilen-Dialog steht nur bereit, wenn der Browser den Kontext als sicher einstuft; auf einem unsicheren HTTP-Deployment bleibt der lokale Speichern-Fallback. Ein direkter `file://`-Start ist für verlässliche IndexedDB-Tests nicht vorgesehen.
 
 ## Kernablauf
 
 Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufklappen und bearbeiten → Weiter → Kunde optional und Zahlungsart simulieren → Demo abschließen.
+
+## Neu in COMM-001 / QR-002
+
+- ein einziger zentraler Share-Service für echte `File`-Objekte, öffentliche Links und den lokalen Speichern-Fallback
+- Feature Detection über sicheren Kontext, `navigator.share()` und die exakte Prüfung der tatsächlichen Dateien mit `navigator.canShare({ files })`
+- Ausgabeaktionen **PDF anzeigen**, **QR-Code anzeigen** und **Teilen** für normale Belege, Gutscheine und Gutschein-Verkaufsbelege
+- Wiederverwendung der bestehenden Dokumentenengine: PDF-Anzeige und Teilen verwenden dasselbe echte, vollständig lokal erzeugte PDF
+- Fallbackfolge für Dokumente: PDF-Datei → öffentlicher Kundenlink → lokales Speichern
+- Exportauswahl vor dem Teilen; `Kunden.csv` erscheint nur, wenn sie im Export enthalten ist, und bleibt bis zur ausdrücklichen Auswahl abgewählt
+- Exportdateien werden nur dann gemeinsam geteilt, wenn der Browser exakt die gewählte Dateimenge bestätigt; andernfalls bleibt das bestehende einzelne Speichern auf dem Gerät
+- ein öffentlicher Read-only-Viewer für Belege und Gutscheine, der seine datensparsame, versionierte Darstellung ausschließlich aus dem URL-Fragment liest
+- geräteübergreifender QR-Kundenbeleg ohne serverseitige Belegablage und ohne Zugriff auf lokale Unternehmerdaten des Kundengeräts
+- öffentliche Darstellung ohne interne Historien, Notizen, Kunden-Telefonnummern, Kunden-E-Mail-Adressen oder rohe FRECKA-Stores
+
+Der native Teilen-Dialog kann je nach Gerät unterschiedliche installierte Ziele anbieten. FRECKA ermittelt diese Ziele nicht, versendet nichts automatisch und bestätigt keine Zustellung. Ein öffentlicher Link ist außerdem kein kryptografisch verifizierter Originalbeleg.
+
+Die Architekturverträge stehen in `docs/sharing.md` und `docs/public-receipt-qr.md`.
 
 ## Neu in DOCUMENT-001
 
@@ -19,21 +36,22 @@ Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufkla
 - unveränderte Snapshot-, Cent-, Beleg- und Gutscheinwerte ohne zweite Geschäftslogik
 - sichere Dateinamen ohne Kundendaten
 - lokal vendortes `pdf-lib` 1.17.1 unter MIT-Lizenz; kein CDN und kein Server
-- 113 bestandene native Browser-Smoke-Tests sowie automatisiertes PDF-Rendering mit Text- und Sichtprüfung
+- 125 bestandene native Browser-Smoke-Tests sowie automatisiertes PDF-Rendering mit Text- und Sichtprüfung
 
 Der vollständige Dokumentvertrag steht in `docs/documents-pdf.md`.
 
-## Grundlage aus QR-001
+## Grundlage aus QR-001 und QR-002
 
 - eine einzige öffentliche QR-API in `js/qr.js` für beliebige FRECKA-App-Links
-- stabile Links im Format `#/receipt/<referenz>` und `#/voucher/<referenz>`
+- klar getrennte interne Verwaltungslinks im Format `#/receipt/<referenz>` beziehungsweise `#/voucher/<referenz>` und transportable öffentliche Kundenlinks
 - echte, zur Laufzeit erzeugte QR-Codes als skalierbares SVG; keine dauerhaft gespeicherten QR-Bilder
 - große, zentrierte Beleg-QR-Codes und Gutschein-QR-Codes über dieselbe Komponente
 - fokussierte, bildschirmfüllende PWA-Ansicht ohne Navigation, Menüs oder Werkzeugleisten
 - lokale Deep-Link-Auflösung nach Reload sowie verständliche Fehlerzustände für ungültige oder auf dem Gerät nicht vorhandene Referenzen
-- 87 native Browser-Smoke-Tests ohne neues Testframework
+- Public Viewer ohne Unternehmernavigation, Einstellungen oder ungefragte lokale Speicherung
+- Public-Viewer-Boot-Test ohne `IndexedDB.open`, reproduzierbare QR-Dichtemessung und Einbindung in den 125-Fälle-Gesamtlauf
 
-Der vollständige QR-Vertrag steht in `docs/qr.md`.
+Der grundlegende QR-Vertrag steht in `docs/qr.md`; öffentlicher Payload, Fragmenttransport, Datenschutz und Größenlimits stehen in `docs/public-receipt-qr.md`.
 
 ## Grundlage aus EXPORT-001
 
@@ -68,9 +86,11 @@ Der vollständige Exportvertrag steht in `docs/export.md`.
 
 ## Nicht umgesetzt
 
-Noch keine Persistenz für Belegentwürfe. Keine Cloudablage, Synchronisation, automatische Backups, ZIP-Erzeugung, Zahlungsanbieteranbindung, E-Mail, Synology-Export, Kamera-QR-Scan, TSE, Fiskalisierung oder eigener Druckworkflow. Öffnen, Sichern und Teilen der PDFs auf iPhone und iPad bleibt bis zur realen Zielgeräteabnahme offen.
+Noch keine Persistenz für Belegentwürfe. Keine Cloudablage, Synchronisation, automatische Backups, ZIP-Erzeugung, Zahlungsanbieteranbindung, automatische E-Mail oder Versandbestätigung, Synology-Export, Kamera-QR-Scanner, TSE, Fiskalisierung oder eigener Druckworkflow. COMM-001 führt weder eine neue PDF-Architektur noch einen Belegserver ein.
 
-Der Datenbankvertrag steht in `docs/persistence.md`; Dateiformat, Sicherheitsmodell, Restore-Ablauf und Prüfungen stehen in `docs/backup-restore.md`; Projektion, CSV-Vertrag und Datenschutz des Exports stehen in `docs/export.md`; QR-Service, App-Link-Struktur und Laufzeitdarstellung stehen in `docs/qr.md`; Dokumentmodelle und PDF-Vertrag stehen in `docs/documents-pdf.md`.
+Web Share bleibt vollständig feature-basiert: Ein vorhandener Button ist keine Zusage, dass ein bestimmtes Betriebssystem, ein bestimmtes Share-Ziel oder Multiple-File-Sharing verfügbar ist. Die reale Abnahme auf iPhone/iPad, Android und Desktop sowie Scanversuche mit echten Gerätekameras sind vor einer Produktfreigabe weiterhin ein offenes Release-Gate.
+
+Der Datenbankvertrag steht in `docs/persistence.md`; Dateiformat, Sicherheitsmodell, Restore-Ablauf und Prüfungen stehen in `docs/backup-restore.md`; Projektion, CSV-Vertrag und Datenschutz des Exports stehen in `docs/export.md`; QR-Service, App-Link-Struktur und Laufzeitdarstellung stehen in `docs/qr.md`; öffentliche QR-Dokumente stehen in `docs/public-receipt-qr.md`; Share-Service und Plattformfallbacks stehen in `docs/sharing.md`; Dokumentmodelle und PDF-Vertrag stehen in `docs/documents-pdf.md`.
 
 
 ## Ergänzung UX-004b
@@ -115,7 +135,7 @@ Für Netlify ausschließlich `UX-007-NETLIFY.zip` hochladen.
 
 ## UX-009
 
-Nach dem simulierten Abschluss erscheint eine Erfolgsseite mit PDF-Vorschau, E-Mail-Simulation, zentral erzeugtem QR-Code sowie direktem Neustart.
+Nach dem simulierten Abschluss erscheint eine Erfolgsseite mit PDF-Vorschau, zentral erzeugtem QR-Code sowie direktem Neustart. Die damalige E-Mail-Simulation wurde mit COMM-001 durch die zentrale native Aktion „Teilen“ ersetzt; FRECKA selbst versendet keine E-Mail.
 
 Für Netlify ausschließlich `UX-009-NETLIFY.zip` hochladen.
 

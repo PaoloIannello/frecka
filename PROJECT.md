@@ -4,7 +4,7 @@
 **Geltungsbereich:** Alle zukünftigen Produkt-, Architektur- und Entwicklungsarbeiten an FRECKA  
 **Letzte Aktualisierung:** 7. August 2026
 
-Dieses Dokument beschreibt die verbindliche Zielrichtung von FRECKA. Der aktuelle Stand ist ein browserbasierter Prototyp mit lokaler IndexedDB-Persistenz für Einstellungen, Katalog, Kunden, Belege und Gutscheine sowie manueller verschlüsselter Gesamtsicherung und atomarer Wiederherstellung. Aussagen zu noch offenen Teilen der Zielarchitektur kennzeichnen nicht automatisch bereits implementierte Funktionen. Abweichungen von diesen Leitlinien benötigen eine dokumentierte Architekturentscheidung (ADR) mit Begründung, Folgen und Migrationsweg.
+Dieses Dokument beschreibt die verbindliche Zielrichtung von FRECKA. Der aktuelle Stand ist ein browserbasierter Prototyp mit lokaler IndexedDB-Persistenz für Einstellungen, Katalog, Kunden, Belege und Gutscheine sowie manueller verschlüsselter Gesamtsicherung und atomarer Wiederherstellung. COMM-001 / QR-002 ergänzt einen zentralen, zustandslosen Share-Service und geräteübergreifende Kundenlinks mit einer datensparsamen Dokumentprojektion im URL-Fragment; eine zentrale Belegablage entsteht dadurch nicht. Aussagen zu noch offenen Teilen der Zielarchitektur kennzeichnen nicht automatisch bereits implementierte Funktionen. Abweichungen von diesen Leitlinien benötigen eine dokumentierte Architekturentscheidung (ADR) mit Begründung, Folgen und Migrationsweg.
 
 ## 1. Projektvision
 
@@ -52,6 +52,9 @@ Neue Funktionen werden nur aufgenommen, wenn sie den einfachen Kernablauf für d
 - Neue Abhängigkeiten und Frameworks benötigen einen belegbaren Nutzen, eine Wartbarkeitsprüfung und eine dokumentierte Entscheidung.
 - Progressive Enhancement gilt als Grundsatz: Kernabläufe müssen auf unterstützten mobilen Browsern robust funktionieren.
 - Rechtlich oder fachlich relevante Regeln werden nicht stillschweigend in der Darstellung versteckt, sondern als testbare Geschäftslogik umgesetzt.
+- Ausgabe- und Kommunikationswege verwenden zentrale, fachlich neutrale Services. Der Share-Service erzeugt und sammelt keine Geschäftsdaten, besitzt keine Persistenz und erhält ausschließlich bereits erzeugte Dateien, Links und Anzeigemetadaten.
+- Der öffentliche Kundenviewer ist eine zustandslose Route derselben statischen Anwendung. Er liest ausschließlich eine versionierte Whitelist-Payload aus dem URL-Fragment, startet keine Unternehmer-Persistenz und importiert fremde Dokumente nicht in IndexedDB.
+- Interne Verwaltungs-Deep-Links und öffentliche Kundenlinks sind getrennte Formate. Beide verwenden dieselbe QR-Engine; weder Beleg- noch Gutscheinlogik darf im Link-, Share- oder Viewer-Code dupliziert werden.
 
 ## 5. Technologiestack
 
@@ -63,7 +66,7 @@ Neue Funktionen werden nur aufgenommen, wenn sie den einfachen Kernablauf für d
 - Web App Manifest;
 - statische Auslieferung.
 
-Seit PERSIST-001a speichert der Prototyp die vollständigen Einstellungen über eine zentrale, versionierte IndexedDB-Schicht. PERSIST-002 ergänzt den Katalog, PERSIST-003 die Kundenstammdaten, PERSIST-004 normale Belege, offene Zahlungen, Stornos sowie Gutschriften und PERSIST-005 Gutscheine samt Historie. Verkauf und Einlösung bestätigen Nummernstand, Beleg, Gutschein und Historie atomar. BACKUP-001 ergänzt einen vollständigen Tenant-Snapshot, eine lokal verschlüsselte `.frecka-backup`-Datei und einen atomaren Restore aller fünf Stores. HARDEN-001 macht Kunden deaktivierbar statt löschbar und härtet Sicherungskennwort, Dateiname und iOS-Dateiauswahl UX-seitig. EXPORT-001 verwendet denselben geprüften Tenant-Snapshot für eine zentrale, formatneutrale Exportprojektion und sichere CSV-Dateien; es führt weder neue Stores noch eigene Sammelroutinen ein. QR-001 ergänzt einen einzigen laufzeitbasierten QR-Service für stabile Beleg- und Gutschein-App-Links. QR-Matrizen und SVGs werden nicht gespeichert; Beleg, Gutschein und spätere Ausgabewege verwenden dieselbe API. DOCUMENT-001 ergänzt daraus reine Beleg- und Gutscheindokumentmodelle sowie echte lokale PDFs mit durchsuchbarem Text und vektoriellen QR-Codes. Bildschirmvorschau und PDF verwenden dieselbe Projektion; PDFs werden nicht persistiert. Belegentwürfe bleiben bis zu ihrem Persistenzblock ausschließlich im Arbeitsspeicher. Dieser Zwischenstand darf nicht mit der vollständigen Zielarchitektur verwechselt werden.
+Seit PERSIST-001a speichert der Prototyp die vollständigen Einstellungen über eine zentrale, versionierte IndexedDB-Schicht. PERSIST-002 ergänzt den Katalog, PERSIST-003 die Kundenstammdaten, PERSIST-004 normale Belege, offene Zahlungen, Stornos sowie Gutschriften und PERSIST-005 Gutscheine samt Historie. Verkauf und Einlösung bestätigen Nummernstand, Beleg, Gutschein und Historie atomar. BACKUP-001 ergänzt einen vollständigen Tenant-Snapshot, eine lokal verschlüsselte `.frecka-backup`-Datei und einen atomaren Restore aller fünf Stores. HARDEN-001 macht Kunden deaktivierbar statt löschbar und härtet Sicherungskennwort, Dateiname und iOS-Dateiauswahl UX-seitig. EXPORT-001 verwendet denselben geprüften Tenant-Snapshot für eine zentrale, formatneutrale Exportprojektion und sichere CSV-Dateien; es führt weder neue Stores noch eigene Sammelroutinen ein. QR-001 ergänzt einen einzigen laufzeitbasierten QR-Service für stabile Beleg- und Gutschein-App-Links. QR-Matrizen und SVGs werden nicht gespeichert; Beleg, Gutschein und spätere Ausgabewege verwenden dieselbe API. DOCUMENT-001 ergänzt daraus reine Beleg- und Gutscheindokumentmodelle sowie echte lokale PDFs mit durchsuchbarem Text und vektoriellen QR-Codes. Bildschirmvorschau und PDF verwenden dieselbe Projektion; PDFs werden nicht persistiert. COMM-001 / QR-002 ergänzt Web-Share-Feature-Detection mit PDF-, Link- und Download-Fallbacks sowie das versionierte Public-Format `FPD/v1`. Beleg- und Gutscheindaten werden dafür ausschließlich als validierte Whitelist im Fragment eines statischen Viewer-Links transportiert; Share-Service und Viewer besitzen weder eine eigene Fachdatenstruktur noch Persistenz. Belegentwürfe bleiben bis zu ihrem Persistenzblock ausschließlich im Arbeitsspeicher. Dieser Zwischenstand darf nicht mit der vollständigen Zielarchitektur verwechselt werden.
 
 ### Verbindliche Zielbasis
 
@@ -73,6 +76,7 @@ Seit PERSIST-001a speichert der Prototyp die vollständigen Einstellungen über 
 - Web Crypto API für kryptografische Funktionen;
 - lokal ausgelieferter, fest versionierter Nayuki-QR-Kern hinter der einzigen FRECKA-QR-Service-API;
 - lokal ausgeliefertes, fest versioniertes `pdf-lib` hinter der einzigen FRECKA-Dokumenten-API;
+- Web Share API und Compression Streams API hinter zentralen, per Feature Detection abgesicherten Services;
 - statische, versionierte Programmdateien auf der Synology als Update-Quelle;
 - standardisierte Browser-APIs bevorzugt vor zusätzlichen Laufzeitabhängigkeiten.
 
@@ -85,16 +89,19 @@ Ein Build-System, Framework, eine UI-Bibliothek oder zusätzliche Backend-Kompon
 - Geschäftsdaten werden nicht im Service-Worker-Cache gespeichert. Dafür ist ausschließlich die Persistenzschicht auf Basis von IndexedDB zuständig.
 - Schreibvorgänge werden zuerst lokal und transaktional abgeschlossen. Die UI bestätigt einen Vorgang erst nach erfolgreicher lokaler Speicherung.
 - Netzwerkfunktionen sind Zusatzfunktionen. Sie müssen einen eindeutigen Offline-, Fehler- und Wiederholungszustand besitzen.
+- PDFs, QR-Matrizen und zum Teilen vorbereitete Dateien werden weiterhin ausschließlich zur Laufzeit erzeugt. Die lokale PDF-Erzeugung und der Download-Fallback bleiben offline nutzbar; native Share-Ziele und das Öffnen eines Kundenlinks auf einem zweiten Gerät hängen von Browser, Betriebssystem und erreichbarer statischer App-Adresse ab.
+- Der geräteübergreifende Public Viewer lädt nur die statische App-Shell aus dem Netz. Der sichtbare Dokumentinhalt liegt im URL-Fragment, wird nicht an einen FRECKA-Server übertragen und nicht in die lokale IndexedDB des zweiten Geräts importiert.
+- Web Share wird ausschließlich per Feature Detection verwendet. Fehlt Datei-Sharing, wird soweit möglich der Public-Link geteilt; fehlt auch URL-Sharing, bleibt der lokale Datei-Download als verständlicher Fallback.
 - Ein Update darf einen aktiven Arbeitsablauf nicht unterbrechen. Eine neue Version wird im Hintergrund vorbereitet und erst nach Nutzerhinweis zu einem sicheren Zeitpunkt aktiviert.
 - Cache-Namen, App-Version, Datenbankschema und Backupformat werden unabhängig, aber nachvollziehbar versioniert.
 
 ## 7. Datenhaltung
 
-IndexedDB ist die verbindliche Hauptdatenbank. Einstellungen werden seit PERSIST-001a, Katalogdaten seit PERSIST-002, Kundenstammdaten seit PERSIST-003, abgeschlossene Belege einschließlich offener Zahlungen, Stornos, Gutschriften und Aktivitäten seit PERSIST-004 sowie Gutscheine einschließlich Restwerten, Referenzen, Snapshots und unveränderlich angehängter Historien seit PERSIST-005 darin gespeichert. BACKUP-001 kann diesen vollständigen mandantenbezogenen Stand verschlüsselt exportieren und nach Vollprüfung atomar wiederherstellen. EXPORT-001 liest denselben validierten Snapshot, projiziert ihn ausschließlich im Arbeitsspeicher und verändert keine gespeicherten Daten. QR-001 leitet aus stabilen Referenzen ausschließlich zur Laufzeit App-Link, QR-Matrix und SVG ab; QR-Grafiken gehören weder in IndexedDB noch in Backup oder Export. DOCUMENT-001 projiziert dieselben gespeicherten Geschäftsvorgänge im Arbeitsspeicher zu Bildschirm- und PDF-Dokumenten. PDF-Dateien und ihre Blob-URLs gehören nicht in IndexedDB, Backup oder Export. Belegentwürfe folgen in einem getrennten, ausdrücklich beauftragten Persistenzblock.
+IndexedDB ist die verbindliche Hauptdatenbank. Einstellungen werden seit PERSIST-001a, Katalogdaten seit PERSIST-002, Kundenstammdaten seit PERSIST-003, abgeschlossene Belege einschließlich offener Zahlungen, Stornos, Gutschriften und Aktivitäten seit PERSIST-004 sowie Gutscheine einschließlich Restwerten, Referenzen, Snapshots und unveränderlich angehängter Historien seit PERSIST-005 darin gespeichert. BACKUP-001 kann diesen vollständigen mandantenbezogenen Stand verschlüsselt exportieren und nach Vollprüfung atomar wiederherstellen. EXPORT-001 liest denselben validierten Snapshot, projiziert ihn ausschließlich im Arbeitsspeicher und verändert keine gespeicherten Daten. QR-001 leitet aus stabilen Referenzen ausschließlich zur Laufzeit App-Link, QR-Matrix und SVG ab; QR-Grafiken gehören weder in IndexedDB noch in Backup oder Export. DOCUMENT-001 projiziert dieselben gespeicherten Geschäftsvorgänge im Arbeitsspeicher zu Bildschirm- und PDF-Dokumenten. COMM-001 / QR-002 erzeugt daraus eine eigenständig versionierte, datensparsame Public-Whitelist und hält sie ausschließlich im Arbeitsspeicher. Public-Payload, Share-Vorgang, PDF-Dateien, Blob-URLs, QR-Matrizen und SVGs gehören nicht in IndexedDB, Backup oder Export. Belegentwürfe folgen in einem getrennten, ausdrücklich beauftragten Persistenzblock.
 
 Verbindliche Regeln:
 
-- Geschäftsdaten bleiben ausschließlich lokal auf dem Endgerät, sofern der Nutzer nicht ausdrücklich einen verschlüsselten Backup-Export auslöst.
+- Geschäftsdaten bleiben ausschließlich lokal auf dem Endgerät, sofern der Nutzer nicht ausdrücklich Backup, Export, Teilen oder einen öffentlichen Kundenlink auslöst. FRECKA erhält dabei keine zentrale Kopie.
 - Kundendaten werden niemals zentral bei FRECKA oder auf der Synology gespeichert.
 - `localStorage` ist nicht für Geschäftsdaten zulässig. Es darf höchstens unkritische, leicht wiederherstellbare UI-Präferenzen enthalten.
 - Datensätze besitzen stabile IDs, Erstellungs- und Änderungszeitpunkte sowie eine dokumentierte Schemaversion, soweit für Migration und Nachvollziehbarkeit erforderlich.
@@ -105,6 +112,8 @@ Verbindliche Regeln:
 - Der optionale Cloudspeicher wird ausschließlich vom Kunden ausgewählt und kontrolliert. FRECKA besitzt dort kein zentrales Konto und keine eigene Kopie.
 - Vor einem Import werden Entschlüsselung, Integrität, Formatversion und Kompatibilität geprüft. Ein Import darf den vorhandenen Bestand nicht ohne ausdrückliche Bestätigung ersetzen.
 - Unverschlüsselte Fachexporte sind bewusste Nutzerdownloads. Kundendaten werden dabei nur für den Exporttyp „Eigene Daten“ und nach ausdrücklicher Auswahl auf die im Filter referenzierten Kunden begrenzt.
+- Öffentliche Fragmentlinks werden nicht als zweite Belegablage behandelt. Der Public Viewer liest sie zustandslos und darf weder Datensätze anlegen noch vorhandene Unternehmerdaten verändern.
+- Die Public-Payload enthält ausschließlich den sichtbaren Dokumentinhalt. Interne IDs, Rohsnapshots, Historien, Notizen sowie nicht angezeigte Telefon- und E-Mail-Daten sind ausgeschlossen.
 
 ## 8. Update-Strategie
 
@@ -121,10 +130,14 @@ Die Synology dient ausschließlich als Update-Server. Sie stellt statische Progr
 ## 9. Sicherheitsprinzipien
 
 - **Datensparsamkeit:** Es werden nur Daten erhoben und gespeichert, die für den konkreten Geschäftszweck erforderlich sind.
-- **Keine zentrale Datensammlung:** Keine Kundendaten, Belege, Kataloge oder Nutzungsprofile werden an FRECKA, die Synology oder Dritte übertragen.
+- **Keine zentrale Datensammlung:** Kundendaten, Belege, Kataloge oder Nutzungsprofile werden nicht automatisch an FRECKA, die Synology oder Dritte übertragen. Nur eine ausdrückliche Nutzeraktion darf ausgewählte Dateien oder Links an ein vom Betriebssystem angebotenes Share-Ziel übergeben; FRECKA erhält keine zentrale Kopie.
 - **Verschlüsselte Backups:** Backupdaten werden vor Verlassen der Anwendung mit einer etablierten, durch die Web Crypto API bereitgestellten authentifizierten Verschlüsselung geschützt. Schlüssel oder Passphrasen werden nicht gemeinsam mit dem Backup gespeichert oder an FRECKA übertragen.
 - **Sichere Voreinstellungen:** Exporte, Netzwerkzugriffe und potenziell irreversible Aktionen benötigen eine klare Nutzerhandlung.
 - **Integrität:** Backup- und Updateformate werden auf Manipulation, Vollständigkeit und unterstützte Versionen geprüft.
+- **Public-Link-Integrität:** `FPD/v1` wird vor der Anzeige auf Format, Version, Größe, Wertebereiche und eine SHA-256-Prüfsumme geprüft. Diese Prüfsumme erkennt unbeabsichtigte Beschädigung, ist aber keine Signatur und beweist weder Herausgeber noch kryptografische Echtheit.
+- **Bewusste Lesbarkeit:** Wer einen öffentlichen QR-Code oder Link besitzt, kann den darin transportierten sichtbaren Dokumentinhalt lesen und weitergeben. Diese Eigenschaft ist für den serverlosen Abruf technisch notwendig und wird nicht als Vertraulichkeit dargestellt.
+- **Begrenzte Public-Payload:** `FPD/v1` erlaubt höchstens 25 Positionen, 16 KiB Rohdaten, 900 Transportbytes, 1.280 Zeichen im vollständigen Link und QR-Version 30 bei Fehlerkorrektur M. Bei Übergröße wird kein praktisch unzuverlässiger QR erzeugt; QR-loses PDF, dateibasiertes Teilen soweit möglich und lokaler Download bilden den sicheren Fallback.
+- **Bewusstes Teilen:** Native Share-Aufrufe erfolgen nur aus einer echten Nutzeraktion und nach Feature Detection. FRECKA behauptet weder vorhandene Ziel-Apps noch einen erfolgreichen Versand, wenn das Betriebssystem nur den Teilen-Dialog übernommen hat.
 - **Websicherheit:** Eingaben werden validiert, Ausgaben kontextgerecht kodiert und eine restriktive Content Security Policy wird angestrebt. Kein `eval`, keine dynamische Ausführung fremder Skripte und keine ungeprüften Drittinhalte.
 - **Abhängigkeitssicherheit:** Externe Pakete werden sparsam eingesetzt, versioniert, geprüft und regelmäßig aktualisiert. Drittanbieter-CDNs dürfen für den Offline-Kernbetrieb nicht erforderlich sein.
 - **Geheimnisse:** Zugangsdaten, Schlüssel und echte Kundendaten gehören weder in Quellcode noch in Git, Logs, Demo- oder Testdaten.
@@ -140,6 +153,7 @@ Die Synology dient ausschließlich als Update-Server. Sie stellt statische Progr
 - FRECKA unterstützt bestehende Arbeitsabläufe des Betriebs, statt sie unnötig zu ersetzen.
 - Primäre Aktionen sind gut erreichbar, konsistent benannt und visuell klar von sekundären oder destruktiven Aktionen getrennt.
 - Die Anwendung zeigt jederzeit verständlich, ob Daten gespeichert, ein Vorgang offen, die Verbindung offline oder ein Update bereit ist.
+- Teilen bietet auf unterstützten Geräten den nativen Systemdialog an. Fehlen Datei- oder Mehrfachdatei-Sharing, erklärt FRECKA den tatsächlichen Zustand und bietet Link beziehungsweise Download an, statt einzelne Ziel-Apps fest zu verdrahten oder einen Versand zu behaupten.
 - Kein Kernablauf darf durch fehlendes Netz blockiert oder durch einen ungeplanten Reload verloren gehen.
 - Formulare vermeiden unnötige Pflichtfelder, erhalten Eingaben bei Fehlern und verwenden passende mobile Eingabetypen.
 - Touch-Ziele, Kontraste, Fokusführung, Tastaturbedienung, semantische Struktur und verständliche Beschriftungen orientieren sich mindestens an WCAG 2.2 AA.
@@ -202,7 +216,9 @@ Die Version 1.0 liefert einen kleinen, stabilen und vollständig offline nutzbar
 - Kunden optional verwalten und Belegen zuordnen;
 - Belegübersicht, Detailansicht und fachlich nachvollziehbare Korrekturen bereitstellen;
 - die mit DOCUMENT-001 implementierte Beleg- und Gutscheinausgabe als lokale PDF auf realen Zielgeräten freigeben;
-- Belege und Gutscheine über einen gemeinsamen, ausschließlich lokalen QR-Service zugänglich machen;
+- Belege und Gutscheine über einen gemeinsamen, ausschließlich zur Laufzeit arbeitenden QR-Service zugänglich machen;
+- interne Verwaltungslinks und die mit QR-002 implementierten öffentlichen `FPD/v1`-Kundenlinks über dieselbe QR-Engine ausgeben, ohne zentrale Belegablage;
+- Beleg-, Gutschein- und Gutscheinverkaufsbeleg-PDFs über den zentralen Share-Service mit Web-Share-Feature-Detection und ehrlichen Link-/Download-Fallbacks bereitstellen;
 - Gutschein-Grundfunktionen nur aufnehmen, wenn der vollständige und testbare v1-Ablauf klar definiert ist.
 
 ### Datensouveränität und Betrieb
@@ -220,6 +236,9 @@ Die Version 1.0 liefert einen kleinen, stabilen und vollständig offline nutzbar
 - Migrationen aus allen freigegebenen Vorversionen sind getestet;
 - verschlüsseltes Backup und Restore sind erfolgreich auf Zielgeräten geprüft;
 - die Synology empfängt keine Geschäftsdaten;
+- Public Viewer und Share-Service erzeugen keine zentrale oder zusätzliche lokale Geschäftsdatenablage;
+- Public-QRs innerhalb der freigegebenen Größengrenzen sowie PDF-, URL- und Download-Fallbacks sind mit realen iOS-/iPadOS- und Android-Geräten geprüft;
+- Kamera-Scans der maximal zugelassenen QR-Dichte und native Share-Abläufe sind auf realen Zielgeräten abgenommen; ein erfolgreicher Encoder- oder Browser-Smoke-Test allein genügt nicht;
 - Sicherheits-, Datenschutz-, Barrierefreiheits- und Performanceprüfung sind abgeschlossen;
 - Nutzer- und Wiederherstellungsdokumentation ist vorhanden.
 
@@ -236,7 +255,9 @@ Mögliche Entwicklungsfelder:
 - zusätzliche Ausgabe-, Druck- und Integrationswege mit klarer Einwilligung und lokaler Kontrolle;
 - Mehrsprachigkeit und weitergehende Barrierefreiheit;
 - branchenspezifische, modular aktivierbare Funktionen;
-- weitergehende Diagnose- und Supportwerkzeuge ohne Übertragung sensibler Geschäftsdaten.
+- weitergehende Diagnose- und Supportwerkzeuge ohne Übertragung sensibler Geschäftsdaten;
+- AUTH-001 als eigener Architektur- und Produktblock für optionale Mehrbenutzernutzung, lokale Anmeldegeheimnisse, Rollen und Sitzungssperre, ohne COMM-001 nachträglich mit halber Authentifizierungslogik zu vermischen;
+- eine kryptografisch signierte Echtheitsprüfung öffentlicher Dokumente nur als separater Sicherheitsblock mit geprüfter Schlüssel-, Signatur-, Rotations- und Wiederherstellungsarchitektur; SHA-256-Prüfsummen allein werden dafür niemals umgedeutet.
 
 Für jede Erweiterung gelten vor Aufnahme in die Roadmap folgende Fragen:
 

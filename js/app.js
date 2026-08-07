@@ -1,11 +1,42 @@
 (async () => {
   "use strict";
+  // Code-Updates dürfen auch im zustandslosen Public Viewer veraltete Runtime-Caches entfernen.
+  // Geschäftsdaten und IndexedDB bleiben davon unberührt.
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.getRegistrations()
+      .then(registrations => Promise.all(registrations.map(registration => registration.unregister())))
+      .catch(() => {});
+  }
+  if ("caches" in window) {
+    caches.keys()
+      .then(keys => Promise.all(keys.map(key => caches.delete(key))))
+      .catch(() => {});
+  }
+  const publicViewer = globalThis.FRECKA_PUBLIC_VIEWER;
+  const publicViewerRequested = publicViewer?.isRequested?.(window.location.href)
+    || window.location.hash === "#/p"
+    || window.location.hash.startsWith("#/p/");
+  if (publicViewerRequested) {
+    if (publicViewer?.mount) {
+      await publicViewer.mount(window.location.href);
+    } else {
+      document.body.classList.add("public-document-mode");
+      document.querySelector(".app-header")?.setAttribute("hidden", "");
+      document.getElementById("bottomNav")?.setAttribute("hidden", "");
+      const main = document.getElementById("mainContent");
+      if (main) main.innerHTML = '<section class="public-viewer-error" role="alert"><span aria-hidden="true">!</span><h1>Dokument nicht verfügbar</h1><p>Diese FRECKA-Version kann den digitalen Link nicht öffnen.</p></section>';
+    }
+    return;
+  }
   const data = window.PROTOTYPE_DATA;
   const persistence = globalThis.FRECKA_PERSISTENCE;
   const backup = globalThis.FRECKA_BACKUP;
   const exportApi = globalThis.FRECKA_EXPORT;
   const qrService = globalThis.FRECKA_QR;
   const documentService = globalThis.FRECKA_DOCUMENTS;
+  const publicDocumentService = globalThis.FRECKA_PUBLIC_DOCUMENTS;
+  const shareService = globalThis.FRECKA_SHARING;
+  const documentView = globalThis.FRECKA_DOCUMENT_VIEW;
   const developerModeEnabled = new URLSearchParams(window.location.search).get("developer") === "1";
   const defaultSettingsRecord = persistence?.snapshotSettings
     ? persistence.snapshotSettings(data, "not-started")
@@ -118,6 +149,10 @@
 
   let pendingRestoreFile = null;
   let pendingRestoreSnapshot = null;
+  const publicDocumentCache = new Map();
+  const documentPdfFileCache = new Map();
+  let receiptPreviewRenderToken = 0;
+  let voucherPreviewRenderToken = 0;
 
   const mainContent = document.getElementById("mainContent");
   const companyName = document.getElementById("companyName");
@@ -225,21 +260,14 @@
     return qrService?.buildAppLink(kind, reference) || "";
   }
 
-  function qrModelMarkup(qr, { variant = "inline", caption = "", label = "QR-Code anzeigen" } = {}) {
+  function qrModelMarkup(qr, { variant = "inline", caption = "", label = "QR-Code anzeigen", publicKey = "" } = {}) {
     if (!qr?.svg || !qr?.kind || !qr?.reference) {
       return `<div class="frecka-qr-error" role="alert">Der QR-Code konnte nicht erzeugt werden.</div>`;
     }
-    return `<button class="frecka-qr frecka-qr-${escapeHtml(variant)}" type="button" data-qr-open-kind="${escapeHtml(qr.kind)}" data-qr-open-reference="${escapeHtml(qr.reference)}" aria-label="${escapeHtml(label)}">${qr.svg}${caption ? `<span>${escapeHtml(caption)}</span>` : ""}</button>`;
-  }
-
-  function qrMarkup(kind, reference, { variant = "inline", caption = "", label = "QR-Code anzeigen" } = {}) {
-    try {
-      if (!qrService?.create) throw new Error("QR service unavailable");
-      const qr = qrService.create(kind, reference, { label });
-      return qrModelMarkup(qr, { variant, caption, label });
-    } catch (error) {
-      return `<div class="frecka-qr-error" role="alert">${escapeHtml(error?.userMessage || "Der QR-Code konnte nicht erzeugt werden.")}</div>`;
-    }
+    const target = publicKey
+      ? `data-public-qr-key="${escapeHtml(publicKey)}"`
+      : `data-qr-open-kind="${escapeHtml(qr.kind)}" data-qr-open-reference="${escapeHtml(qr.reference)}"`;
+    return `<button class="frecka-qr frecka-qr-${escapeHtml(variant)}" type="button" ${target} aria-label="${escapeHtml(label)}">${qr.svg}${caption ? `<span>${escapeHtml(caption)}</span>` : ""}</button>`;
   }
 
   function receiptDocumentModel(receipt) {
@@ -272,6 +300,189 @@
     });
   }
 
+  function publicDocumentRecord(kind, reference) {
+    if (kind === "receipt") return receiptById(reference) || receiptByNumber(reference);
+    if (kind === "voucher") return voucherByReference(reference) || voucherByQrReference(reference);
+    return null;
+  }
+
+  function publicDocumentKey(kind, record) {
+    const reference = kind === "receipt" ? record?.id || record?.number : record?.reference || voucherQrReference(record);
+    const stamp = [record?.updatedAt, record?.status, record?.currentValueCents, record?.currentValue].filter(value => value !== undefined && value !== null).join("|");
+    return `${kind}:${reference}:${stamp}`;
+  }
+
+  function baseDocumentModel(kind, record) {
+    return kind === "receipt" ? receiptDocumentModel(record) : voucherDocumentModel(record);
+  }
+
+  function publicDocumentEntry(kind, reference) {
+    const record = publicDocumentRecord(kind, reference);
+    if (!record) {
+      throw Object.assign(new Error("Document record missing"), {
+        code: "DOCUMENT_NOT_FOUND",
+        userMessage: kind === "receipt" ? "Der Beleg wurde nicht gefunden." : "Der Gutschein wurde nicht gefunden."
+      });
+    }
+    const key = publicDocumentKey(kind, record);
+    let entry = publicDocumentCache.get(key);
+    if (!entry) {
+      entry = { key, kind, record, bundle: null, error: null, promise: null };
+      entry.promise = Promise.resolve()
+        .then(() => {
+          if (!publicDocumentService?.createPublicBundle) {
+            throw Object.assign(new Error("Public document service unavailable"), { userMessage: "Der öffentliche Dokumentlink ist momentan nicht verfügbar." });
+          }
+          return publicDocumentService.createPublicBundle(baseDocumentModel(kind, record), { qrService });
+        })
+        .then(bundle => { entry.bundle = bundle; return bundle; })
+        .catch(error => { entry.error = error; throw error; });
+      publicDocumentCache.set(key, entry);
+    }
+    return entry;
+  }
+
+  async function ensurePublicDocument(kind, reference) {
+    const entry = publicDocumentEntry(kind, reference);
+    return { key: entry.key, bundle: entry.bundle || await entry.promise, record: entry.record };
+  }
+
+  function modelWithoutCustomerQr(kind, record) {
+    const model = baseDocumentModel(kind, record);
+    return Object.freeze({ ...model, qr: null });
+  }
+
+  async function documentPdfSource(kind, reference) {
+    const entry = publicDocumentEntry(kind, reference);
+    try {
+      const bundle = entry.bundle || await entry.promise;
+      return { key: entry.key, model: bundle.model, bundle };
+    } catch (error) {
+      return { key: `${entry.key}:no-public-qr`, model: modelWithoutCustomerQr(kind, entry.record), bundle: null, publicError: error };
+    }
+  }
+
+  async function createDocumentPdfFile(model, cacheKey = "") {
+    const key = cacheKey || `${model.type}:${model.reference || model.number || model.code}:${model.qr?.appLink || "no-qr"}`;
+    if (documentPdfFileCache.has(key)) return documentPdfFileCache.get(key);
+    const pending = Promise.resolve().then(async () => {
+      if (!documentService?.createPdfBlob) throw new Error("Document sharing unavailable");
+      const blob = await documentService.createPdfBlob(model);
+      if (shareService?.createFile) {
+        try { return shareService.createFile(blob, { name: model.filename, type: "application/pdf" }); } catch (error) { /* Blob-Fallback folgt. */ }
+      }
+      Object.defineProperty(blob, "name", { value: model.filename, configurable: true });
+      return blob;
+    }).catch(error => {
+      documentPdfFileCache.delete(key);
+      throw error;
+    });
+    documentPdfFileCache.set(key, pending);
+    return pending;
+  }
+
+  function prewarmDocumentOutput(kind, reference) {
+    let entry;
+    try { entry = publicDocumentEntry(kind, reference); } catch (error) { return; }
+    entry.promise
+      .then(bundle => createDocumentPdfFile(bundle.model, entry.key))
+      .catch(() => createDocumentPdfFile(modelWithoutCustomerQr(kind, entry.record), `${entry.key}:no-public-qr`).catch(() => {}));
+  }
+
+  function documentOutputActionsMarkup(kind, reference, { variant = "buttons" } = {}) {
+    const escapedKind = escapeHtml(kind);
+    const escapedReference = escapeHtml(reference);
+    const actions = [
+      ["pdf", "▤", "PDF anzeigen", "PDF lokal erzeugen"],
+      ["qr", "▦", "QR-Code anzeigen", "Auf einem zweiten Gerät öffnen"],
+      ["share", "↗", "Teilen", "Nativen Teilen-Dialog öffnen"]
+    ];
+    if (variant === "cards") {
+      return actions.map(([action, icon, label, hint]) => `<button class="success-action-card" type="button" data-document-output-action="${action}" data-document-kind="${escapedKind}" data-document-reference="${escapedReference}"><span aria-hidden="true">${icon}</span><strong>${label}</strong><small>${hint}</small></button>`).join("");
+    }
+    return `<div class="document-output-actions" aria-label="Dokument ausgeben">${actions.map(([action, icon, label]) => `<button class="button ${action === "share" ? "button-primary" : "button-secondary"}" type="button" data-document-output-action="${action}" data-document-kind="${escapedKind}" data-document-reference="${escapedReference}"><span aria-hidden="true">${icon}</span>${label}</button>`).join("")}</div>`;
+  }
+
+  function publicQrSlotMarkup(kind, reference, { variant = "inline", caption = "", label = "QR-Code anzeigen" } = {}) {
+    return `<div class="public-qr-slot" data-public-qr-slot-kind="${escapeHtml(kind)}" data-public-qr-slot-reference="${escapeHtml(reference)}" data-public-qr-slot-variant="${escapeHtml(variant)}" data-public-qr-slot-caption="${escapeHtml(caption)}" data-public-qr-slot-label="${escapeHtml(label)}"><span class="persistence-loading-spinner" aria-hidden="true"></span><small>QR wird vorbereitet …</small></div>`;
+  }
+
+  function hydratePublicQrSlots(root = mainContent) {
+    root.querySelectorAll("[data-public-qr-slot-kind][data-public-qr-slot-reference]").forEach(slot => {
+      const { publicQrSlotKind: kind, publicQrSlotReference: reference } = slot.dataset;
+      ensurePublicDocument(kind, reference)
+        .then(({ key, bundle }) => {
+          if (!slot.isConnected) return;
+          slot.outerHTML = qrModelMarkup(bundle.model.qr, {
+            variant: slot.dataset.publicQrSlotVariant || "inline",
+            caption: slot.dataset.publicQrSlotCaption || "",
+            label: slot.dataset.publicQrSlotLabel || "QR-Code anzeigen",
+            publicKey: key
+          });
+        })
+        .catch(error => {
+          if (!slot.isConnected) return;
+          slot.innerHTML = `<div class="frecka-qr-error" role="alert">${escapeHtml(error?.userMessage || "Der öffentliche QR-Code konnte nicht erzeugt werden.")}</div>`;
+        });
+    });
+  }
+
+  function refreshDocumentRoute() {
+    if (state.route === "receipt-success") renderReceiptSuccess();
+    else if (state.route === "receipt-preview") renderReceiptPreview();
+    else if (state.route === "receipt-detail") renderReceiptDetail();
+    else if (state.route === "voucher-sale-success") renderVoucherSaleSuccess();
+    else if (state.route === "voucher-preview") renderVoucherPreview();
+    else if (state.route === "voucher-detail") renderVoucherDetail();
+  }
+
+  function setDocumentOutputNotice(kind, message) {
+    if (!message) return;
+    if (kind === "voucher") state.voucherNotice = message;
+    else state.successNotice = message;
+    refreshDocumentRoute();
+  }
+
+  const activeDocumentShares = new Set();
+  async function handleDocumentOutputAction(action, kind, reference) {
+    const operationKey = `${action}:${kind}:${reference}`;
+    if (activeDocumentShares.has(operationKey)) return;
+    activeDocumentShares.add(operationKey);
+    try {
+      if (action === "qr") {
+        const { bundle } = await ensurePublicDocument(kind, reference);
+        openPublicQrFullscreen(bundle.model.qr);
+        return;
+      }
+      const source = await documentPdfSource(kind, reference);
+      if (action === "pdf") {
+        const opened = await openDocumentPdf(source.model, source.key);
+        if (opened && source.publicError) setDocumentOutputNotice(kind, source.publicError.userMessage || "Der öffentliche QR-Code ist für dieses umfangreiche Dokument nicht verfügbar.");
+        return;
+      }
+      if (action === "share") {
+        const file = await createDocumentPdfFile(source.model, source.key);
+        const recordLabel = source.model.type === "receipt" ? source.model.number : source.model.code;
+        const result = await shareService.sharePreferred({
+          files: [file],
+          url: source.bundle?.link || "",
+          metadata: {
+            title: `${source.model.type === "receipt" ? source.model.kind.title : "Gutschein"} ${recordLabel}`,
+            text: source.model.type === "receipt" ? "Digitaler FRECKA-Beleg" : "Digitaler FRECKA-Gutschein"
+          },
+          downloadFile: file
+        });
+        if (result.status === "shared") setDocumentOutputNotice(kind, "Der Teilen-Dialog wurde an das Betriebssystem übergeben.");
+        else if (result.status === "downloaded") setDocumentOutputNotice(kind, "Teilen ist hier nicht verfügbar. Das PDF wurde stattdessen zum Speichern bereitgestellt.");
+        else if (result.status === "unsupported") setDocumentOutputNotice(kind, "Teilen ist in diesem Browser nicht verfügbar.");
+      }
+    } catch (error) {
+      setDocumentOutputNotice(kind, error?.userMessage || "Die Dokumentausgabe konnte nicht vorbereitet werden.");
+    } finally {
+      activeDocumentShares.delete(operationKey);
+    }
+  }
+
   function openPendingPdfWindow() {
     let previewWindow = null;
     try {
@@ -288,14 +499,10 @@
     return previewWindow;
   }
 
-  async function openDocumentPdf(model) {
+  async function openDocumentPdf(model, cacheKey = "") {
     const previewWindow = openPendingPdfWindow();
     try {
-      if (!documentService?.createPdfBlob) throw new Error("Document service unavailable");
-      const blob = await documentService.createPdfBlob(model);
-      const namedFile = typeof File === "function"
-        ? new File([blob], model.filename, { type: "application/pdf", lastModified: Date.now() })
-        : blob;
+      const namedFile = await createDocumentPdfFile(model, cacheKey);
       const objectUrl = URL.createObjectURL(namedFile);
       if (previewWindow && !previewWindow.closed) {
         previewWindow.location.replace(objectUrl);
@@ -336,11 +543,11 @@
     }
   }
 
-  function openQrFullscreen(kind, reference) {
+  function showQrFullscreen(qrFactory) {
     qrFullscreenReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     try {
-      if (!qrService?.create) throw new Error("QR service unavailable");
-      const qr = qrService.create(kind, reference, { label: "FRECKA QR-Code" });
+      const qr = qrFactory();
+      if (!qr?.svg) throw new Error("QR service unavailable");
       qrFullscreenCode.innerHTML = qr.svg;
     } catch (error) {
       qrFullscreenCode.innerHTML = `<p class="qr-fullscreen-error" role="alert">${escapeHtml(error?.userMessage || "Der QR-Code konnte nicht erzeugt werden.")}</p>`;
@@ -374,6 +581,17 @@
         qrNativeFullscreenOwned = false;
       }
     }
+  }
+
+  function openQrFullscreen(kind, reference) {
+    showQrFullscreen(() => {
+      if (!qrService?.create) throw new Error("QR service unavailable");
+      return qrService.create(kind, reference, { label: "FRECKA QR-Code" });
+    });
+  }
+
+  function openPublicQrFullscreen(qr) {
+    showQrFullscreen(() => qr);
   }
 
   function closeQrFullscreen(exitNativeFullscreen = true) {
@@ -482,10 +700,14 @@
 
   function applyReceiptsRecord(record) {
     replaceSettingsArray(data.receipts, Array.isArray(record?.receipts) ? record.receipts : []);
+    publicDocumentCache.clear();
+    documentPdfFileCache.clear();
   }
 
   function applyVouchersRecord(record) {
     replaceSettingsArray(data.vouchers, Array.isArray(record?.vouchers) ? record.vouchers : []);
+    publicDocumentCache.clear();
+    documentPdfFileCache.clear();
   }
 
   function calculateReceiptCounter() {
@@ -1389,15 +1611,7 @@
 
       <section class="success-actions" aria-label="Aktionen nach dem Belegabschluss">
         ${paidVoucher ? `<button class="success-action-card" type="button" data-open-linked-voucher="${escapeHtml(paidVoucher.reference)}"><span aria-hidden="true">◇</span><strong>Gutschein öffnen</strong><small>${escapeHtml(maskVoucherCode(paidVoucher.code))}</small></button>` : ""}
-        <button class="success-action-card" type="button" data-action="receipt-pdf">
-          <span aria-hidden="true">▤</span><strong>PDF anzeigen</strong><small>PDF lokal erzeugen</small>
-        </button>
-        <button class="success-action-card" type="button" data-action="simulate-email">
-          <span aria-hidden="true">✉</span><strong>Per E-Mail senden</strong><small>${receipt.customerEmail ? escapeHtml(receipt.customerEmail) : "Versand simulieren"}</small>
-        </button>
-        <button class="success-action-card" type="button" data-qr-open-kind="receipt" data-qr-open-reference="${escapeHtml(receipt.id)}">
-          <span aria-hidden="true">▦</span><strong>QR-Code anzeigen</strong><small>Digitalen Beleg öffnen</small>
-        </button>
+        ${documentOutputActionsMarkup("receipt", receipt.id || receipt.number, { variant: "cards" })}
         <button class="success-action-card primary" type="button" data-action="new-after-finish">
           <span aria-hidden="true">＋</span><strong>Neuen Beleg erstellen</strong><small>Direkt weiterarbeiten</small>
         </button>
@@ -1408,24 +1622,41 @@
         <button class="button button-ghost" type="button" data-action="home-after-finish">Zur Startseite</button>
       </div>
     </section>`;
+    prewarmDocumentOutput("receipt", receipt.id || receipt.number);
   }
 
-  function renderReceiptPreview() {
+  async function renderReceiptPreview() {
     const receipt = state.receiptPreviewNumber ? receiptByNumber(state.receiptPreviewNumber) : state.finishedReceipt;
     if (!receipt) {
       navigate(state.receiptPreviewNumber ? "receipts" : "home", false);
       return;
     }
+    const renderToken = ++receiptPreviewRenderToken;
+    const expectedNumber = receipt.number;
+    const previewIsCurrent = () => renderToken === receiptPreviewRenderToken
+      && state.route === "receipt-preview"
+      && (state.receiptPreviewNumber ? state.receiptPreviewNumber === expectedNumber : state.finishedReceipt === receipt);
+    mainContent.innerHTML = `<section class="document-preparing" aria-live="polite"><span class="persistence-loading-spinner" aria-hidden="true"></span><strong>Digitaler Beleg wird vorbereitet …</strong></section>`;
     let model;
+    let publicKey = "";
+    let publicPreviewNotice = "";
     try {
-      model = receiptDocumentModel(receipt);
+      const prepared = await ensurePublicDocument("receipt", receipt.id || receipt.number);
+      if (!previewIsCurrent()) return;
+      model = prepared.bundle.model;
+      publicKey = prepared.key;
     } catch (error) {
-      mainContent.innerHTML = `<section class="flow-page page-enter"><div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-route="${escapeHtml(state.receiptPreviewReturnRoute)}"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">Dokument</p><h1 class="flow-title">Beleg nicht darstellbar</h1><p class="page-copy" role="alert">${escapeHtml(error?.userMessage || "Die Belegvorschau konnte nicht erstellt werden.")}</p></div></section>`;
-      return;
+      if (!previewIsCurrent()) return;
+      try {
+        model = modelWithoutCustomerQr("receipt", receipt);
+        publicPreviewNotice = error?.userMessage || "Der öffentliche QR-Code ist für dieses Dokument nicht verfügbar. PDF und Teilen bleiben möglich.";
+      } catch (modelError) {
+        if (!previewIsCurrent()) return;
+        mainContent.innerHTML = `<section class="flow-page page-enter"><div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-route="${escapeHtml(state.receiptPreviewReturnRoute)}"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">Dokument</p><h1 class="flow-title">Beleg nicht darstellbar</h1><p class="page-copy" role="alert">${escapeHtml(modelError?.userMessage || "Die Belegvorschau konnte nicht erstellt werden.")}</p></div></section>`;
+        return;
+      }
     }
-    const isVoucherSale = model.kind.code === "voucher-sale";
-    const receiptBrandingName = model.branding.visibleName;
-
+    if (!previewIsCurrent()) return;
     mainContent.innerHTML = `<section class="flow-page receipt-preview-page page-enter">
       <div class="flow-head compact-flow-head">
         <button class="button button-back" type="button" data-route="${escapeHtml(state.receiptPreviewReturnRoute)}"><span aria-hidden="true">←</span> Zurück</button>
@@ -1434,57 +1665,13 @@
         <p class="page-copy">Diese Darstellung ist die gemeinsame Grundlage für Bildschirmansicht und PDF.</p>
       </div>
 
-      <article class="receipt-paper ${isVoucherSale ? "is-voucher-sale" : ""}">
-        <header>
-          ${brandingLogoMarkup(model.branding)}
-          ${receiptBrandingName ? `<em class="document-visible-name">${escapeHtml(receiptBrandingName)}</em>` : ""}
-          ${companyIdentityMarkup(model.issuer)}
-          ${model.issuer.street ? `<small>${escapeHtml(model.issuer.street)}</small>` : ""}
-          ${model.issuer.cityLine ? `<small>${escapeHtml(model.issuer.cityLine)}</small>` : ""}
-          ${model.issuer.taxNumber ? `<small>Steuernummer: ${escapeHtml(model.issuer.taxNumber)}</small>` : ""}
-          ${model.issuer.vatId ? `<small>USt-IdNr.: ${escapeHtml(model.issuer.vatId)}</small>` : ""}
-        </header>
+      ${documentView.renderReceipt(model, { qrKey: publicKey })}
 
-        <div class="receipt-paper-meta">
-          <span>Beleg ${escapeHtml(model.number)}</span>
-          <span>${escapeHtml(model.dateTime)}</span>
-        </div>
-        <div class="receipt-paper-kind"><span>Belegart</span><strong>${escapeHtml(model.kind.label)}</strong></div>
-
-        <div class="receipt-paper-items">
-          ${model.positions.map(item => `<div class="receipt-paper-item">
-            <span>
-              <strong>${escapeHtml(item.title)}</strong>
-              <small>${item.quantity} × ${formatCurrency(item.originalUnitCents / 100)}</small>
-              ${item.discountCents > 0 ? `<em>${escapeHtml(item.discountLabel)} <b>−${formatCurrency(item.discountCents / 100)}</b></em>` : ""}
-            </span>
-            <strong>${formatCurrency(item.totalCents / 100)}</strong>
-          </div>`).join("")}
-        </div>
-
-        ${model.customer ? `<div class="receipt-paper-customer"><span>Kunde</span><strong>${escapeHtml(model.customer.name)}</strong>${[model.customer.street, model.customer.cityLine].filter(Boolean).map(line => `<small>${escapeHtml(line)}</small>`).join("")}</div>` : ""}
-        <div class="receipt-paper-row"><span>Zahlungsstatus</span><strong>${escapeHtml(model.paymentStatusLabel)}</strong></div>
-        ${model.paymentStatus === "open" ? "" : `<div class="receipt-paper-row"><span>Zahlungsart</span><strong>${escapeHtml(model.paymentMethod)}</strong></div>`}
-        ${model.voucherPayment ? `<div class="receipt-paper-voucher-payment"><span><small>Bezahlt mit Gutschein</small><strong>${escapeHtml(maskVoucherCode(model.voucherPayment.code))}</strong></span><strong>${formatCurrency(model.voucherPayment.amountCents / 100)}</strong></div>` : ""}
-        ${model.remainderPayment ? `<div class="receipt-paper-row"><span>Restzahlung · ${escapeHtml(model.remainderPayment.method)}</span><strong>${formatCurrency(model.remainderPayment.amountCents / 100)}</strong></div>` : ""}
-        ${model.linkedVoucher?.code ? `<div class="receipt-paper-voucher-link"><span>Verknüpfter Gutschein</span><strong>${escapeHtml(maskVoucherCode(model.linkedVoucher.code))}</strong></div>` : ""}
-        ${model.correctionReference ? `<div class="receipt-paper-row"><span>Bezug</span><strong>${escapeHtml(model.correctionReference)}</strong></div>` : ""}
-
-        ${!isVoucherSale && model.taxes.length ? `<div class="receipt-paper-totals">
-          ${model.totals.discountCents > 0 ? `<div><span>Zwischensumme</span><strong>${formatCurrency(model.totals.subtotalCents / 100)}</strong></div>
-          <div class="receipt-discount-total"><span>Rabatt gesamt</span><strong>−${formatCurrency(model.totals.discountCents / 100)}</strong></div>` : ""}
-          <div><span>Netto</span><strong>${formatCurrency(model.totals.netCents / 100)}</strong></div>
-          ${model.taxes.map(group => `<div><span>MwSt. ${group.rate}%</span><strong>${formatCurrency(group.taxCents / 100)}</strong></div>`).join("")}
-        </div>` : ""}
-
-        <div class="receipt-paper-total"><span>${isVoucherSale ? "Gesamtbetrag" : "Gesamt brutto"}</span><strong>${formatCurrency(model.totals.grossCents / 100)}</strong></div>
-        <footer>${escapeHtml(model.texts.thankYou)}${model.texts.footer ? `<small>${escapeHtml(model.texts.footer)}</small>` : ""}</footer>
-        <div class="receipt-paper-qr">${qrModelMarkup(model.qr, { variant: "receipt", caption: "Digitaler Beleg", label: "QR-Code zum digitalen Beleg im Vollbild anzeigen" })}</div>
-      </article>
-
+      ${publicPreviewNotice ? `<div class="success-notice" role="status">${escapeHtml(publicPreviewNotice)}</div>` : ""}
       ${state.successNotice ? `<div class="success-notice" role="status">${escapeHtml(state.successNotice)}</div>` : ""}
-      <button class="button button-primary preview-download" type="button" data-action="receipt-pdf">PDF öffnen</button>
+      ${documentOutputActionsMarkup("receipt", receipt.id || receipt.number)}
     </section>`;
+    prewarmDocumentOutput("receipt", receipt.id || receipt.number);
   }
 
   function resolveQrDeepLink(value) {
@@ -2051,7 +2238,7 @@
 
       <section class="receipt-primary-actions">
         <button class="button button-secondary" type="button" data-preview-receipt="${escapeHtml(receipt.number)}">${receipt.receiptKind === "voucher-sale" ? "Kassenbon anzeigen" : "Beleg anzeigen"}</button>
-        <button class="button button-secondary" type="button" data-action="receipt-email-demo">Erneut per E-Mail senden</button>
+        ${documentOutputActionsMarkup("receipt", receipt.id || receipt.number)}
         ${receipt.receiptKind === "voucher-sale" ? "" : `<button class="button button-secondary" type="button" data-action="copy-receipt">Duplizieren</button>`}
       </section>
 
@@ -2065,6 +2252,7 @@
 
       ${state.successNotice ? `<div class="success-notice receipt-action-notice" role="status">${escapeHtml(state.successNotice)}</div>` : ""}
     </section>`;
+    prewarmDocumentOutput("receipt", receipt.id || receipt.number);
   }
 
   function renderReceiptCredit() {
@@ -2832,8 +3020,8 @@
         <div class="voucher-sale-result-value"><span>Gutscheinwert</span><strong>${formatCurrency(voucher.issuedValue)}</strong></div>
         <div class="voucher-code-block"><span>Gutscheincode</span><strong>${escapeHtml(voucher.code)}</strong><small>Zum Abschreiben auf einen eigenen vorgedruckten Gutschein</small></div>
         <div class="voucher-qr-block">
-          ${qrMarkup("voucher", voucherQrReference(voucher), { variant: "voucher", label: "Gutschein-QR-Code im Vollbild anzeigen" })}
-          <div><strong>QR-Code</strong><small>Code und QR verweisen auf dieselbe stabile Gutscheinidentität.</small></div>
+          ${publicQrSlotMarkup("voucher", voucher.reference, { variant: "voucher", label: "Gutschein-QR-Code im Vollbild anzeigen" })}
+          <div><strong>QR-Code</strong><small>Öffnet diesen Gutschein auf einem zweiten Gerät.</small></div>
         </div>
         <div class="voucher-sale-result-meta"><span>Status</span><strong class="voucher-status is-active">Aktiv</strong></div>
         <div class="voucher-sale-result-meta"><span>Verkaufsbeleg</span><strong>${escapeHtml(saleReceipt?.number || "Demo-Bezug fehlt")}</strong></div>
@@ -2844,11 +3032,14 @@
       <section class="voucher-sale-success-actions" aria-label="Aktionen nach dem Gutscheinverkauf">
         <button class="button button-primary" type="button" data-route="voucher-preview">Gutschein anzeigen</button>
         ${saleReceipt ? `<button class="button button-secondary" type="button" data-preview-receipt="${escapeHtml(saleReceipt.number)}">Verkaufsbeleg anzeigen</button>` : ""}
-        <button class="button button-secondary" type="button" data-action="voucher-pdf">Gutschein-PDF öffnen</button>
-        <button class="button button-secondary" type="button" data-action="voucher-email">Gutschein per E-Mail senden · Simulation</button>
+        <div class="document-output-group"><h2>Gutschein ausgeben</h2>${documentOutputActionsMarkup("voucher", voucher.reference)}</div>
+        ${saleReceipt ? `<div class="document-output-group"><h2>Verkaufsbeleg ausgeben</h2>${documentOutputActionsMarkup("receipt", saleReceipt.id || saleReceipt.number)}</div>` : ""}
         <button class="button button-ghost" type="button" data-route="vouchers">Zur Gutscheinübersicht</button>
       </section>
     </section>`;
+    hydratePublicQrSlots();
+    prewarmDocumentOutput("voucher", voucher.reference);
+    if (saleReceipt) prewarmDocumentOutput("receipt", saleReceipt.id || saleReceipt.number);
   }
 
   function renderVoucherDetail() {
@@ -2857,7 +3048,6 @@
       navigate("vouchers", false);
       return;
     }
-    const appLink = voucherAppLink(voucherQrReference(voucher));
     const presentation = voucherPresentation(voucher);
     const saleReceipt = linkedVoucherSaleReceipt(voucher);
     const voucherBrandingName = distinctBrandingName(presentation.branding, presentation.issuer);
@@ -2873,11 +3063,10 @@
       <section class="voucher-identity-card">
         <div class="voucher-code-block"><span>Gutscheincode</span><strong>${escapeHtml(voucher.code)}</strong><small>Zum Übertragen auf einen vorhandenen Papiergutschein</small></div>
         <div class="voucher-qr-block">
-          ${qrMarkup("voucher", voucherQrReference(voucher), { variant: "voucher", label: "Gutschein-QR-Code im Vollbild anzeigen" })}
-          <div><strong>QR-Code</strong><small>Verweist auf dieselbe Gutscheinidentität wie der sichtbare Code.</small></div>
+          ${publicQrSlotMarkup("voucher", voucher.reference, { variant: "voucher", label: "Gutschein-QR-Code im Vollbild anzeigen" })}
+          <div><strong>QR-Code</strong><small>Öffnet den sichtbaren Gutschein auf einem zweiten Gerät.</small></div>
         </div>
-        <p class="voucher-local-note">Der App-Link kann den Gutschein nur auf einem Gerät öffnen, auf dem dieser Gutschein lokal vorhanden ist. Eine geräteübergreifende Auflösung ist nicht eingerichtet.</p>
-        <code class="voucher-app-link">${escapeHtml(appLink)}</code>
+        <p class="voucher-local-note">Der Kundenlink trägt ausschließlich die sichtbaren, datensparsamen Gutscheininhalte im QR. Er lädt keine lokalen Verwaltungsdaten.</p>
       </section>
 
       <section class="voucher-facts">
@@ -2914,25 +3103,45 @@
 
       <section class="voucher-detail-actions" aria-label="Gutscheinaktionen">
         <button class="button button-primary" type="button" data-route="voucher-preview">Gutschein anzeigen</button>
-        <button class="button button-secondary" type="button" data-action="voucher-pdf">PDF öffnen</button>
-        <button class="button button-secondary" type="button" data-action="voucher-email">Per E-Mail senden</button>
+        ${documentOutputActionsMarkup("voucher", voucher.reference)}
       </section>
     </section>`;
+    hydratePublicQrSlots();
+    prewarmDocumentOutput("voucher", voucher.reference);
   }
 
-  function renderVoucherPreview() {
+  async function renderVoucherPreview() {
     const voucher = voucherByReference(state.voucherDetailReference);
     if (!voucher) {
       navigate("vouchers", false);
       return;
     }
+    const renderToken = ++voucherPreviewRenderToken;
+    const expectedReference = voucher.reference;
+    const previewIsCurrent = () => renderToken === voucherPreviewRenderToken
+      && state.route === "voucher-preview"
+      && state.voucherDetailReference === expectedReference;
+    mainContent.innerHTML = `<section class="document-preparing" aria-live="polite"><span class="persistence-loading-spinner" aria-hidden="true"></span><strong>Gutschein wird vorbereitet …</strong></section>`;
     let model;
+    let publicKey = "";
+    let publicPreviewNotice = "";
     try {
-      model = voucherDocumentModel(voucher);
+      const prepared = await ensurePublicDocument("voucher", voucher.reference);
+      if (!previewIsCurrent()) return;
+      model = prepared.bundle.model;
+      publicKey = prepared.key;
     } catch (error) {
-      mainContent.innerHTML = `<section class="flow-page page-enter"><div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-route="voucher-detail"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">Dokument</p><h1 class="flow-title">Gutschein nicht darstellbar</h1><p class="page-copy" role="alert">${escapeHtml(error?.userMessage || "Die Gutscheinvorschau konnte nicht erstellt werden.")}</p></div></section>`;
-      return;
+      if (!previewIsCurrent()) return;
+      try {
+        model = modelWithoutCustomerQr("voucher", voucher);
+        publicPreviewNotice = error?.userMessage || "Der öffentliche QR-Code ist für diesen Gutschein nicht verfügbar. PDF und Teilen bleiben möglich.";
+      } catch (modelError) {
+        if (!previewIsCurrent()) return;
+        mainContent.innerHTML = `<section class="flow-page page-enter"><div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-route="voucher-detail"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">Dokument</p><h1 class="flow-title">Gutschein nicht darstellbar</h1><p class="page-copy" role="alert">${escapeHtml(modelError?.userMessage || "Die Gutscheinvorschau konnte nicht erstellt werden.")}</p></div></section>`;
+        return;
+      }
     }
+    if (!previewIsCurrent()) return;
     mainContent.innerHTML = `<section class="flow-page voucher-preview-page page-enter">
       <div class="flow-head compact-flow-head voucher-preview-controls">
         <button class="button button-back" type="button" data-route="voucher-detail"><span aria-hidden="true">←</span> Zurück</button>
@@ -2942,35 +3151,14 @@
       </div>
 
       ${state.voucherNotice ? `<div class="voucher-notice voucher-preview-controls" role="status">${escapeHtml(state.voucherNotice)}</div>` : ""}
+      ${publicPreviewNotice ? `<div class="voucher-notice voucher-preview-controls" role="status">${escapeHtml(publicPreviewNotice)}</div>` : ""}
 
-      <article class="voucher-sheet">
-        <header>
-          <span>Gutschein</span>
-          ${brandingLogoMarkup(model.branding)}
-          ${model.branding.visibleName ? `<em class="document-visible-name">${escapeHtml(model.branding.visibleName)}</em>` : ""}
-          <small class="voucher-sheet-label">Aussteller</small>
-          ${companyIdentityMarkup(model.issuer, "small")}
-          ${model.issuer.street ? `<small>${escapeHtml(model.issuer.street)}</small>` : ""}
-          ${model.issuer.cityLine ? `<small>${escapeHtml(model.issuer.cityLine)}</small>` : ""}
-        </header>
-        ${model.displayName ? `<div class="voucher-sheet-recipient"><span>Name auf dem Gutschein</span><strong>${escapeHtml(model.displayName)}</strong></div>` : ""}
-        <div class="voucher-sheet-value"><span>Wert</span><strong>${formatCurrency(model.issuedValueCents / 100)}</strong></div>
-        ${model.currentValueCents !== model.issuedValueCents ? `<div class="voucher-sheet-status"><span>Restwert</span><strong>${formatCurrency(model.currentValueCents / 100)}</strong></div>` : ""}
-        <div class="voucher-sheet-qr">
-          ${qrModelMarkup(model.qr, { variant: "voucher-sheet", label: "Gutschein-QR-Code im Vollbild anzeigen" })}
-        </div>
-        <div class="voucher-sheet-status"><span>Status</span><strong class="voucher-status ${voucherStatusClass(voucher)}">${escapeHtml(model.statusLabel)}</strong></div>
-        <div class="voucher-sheet-code"><span>Gutscheincode</span><strong>${escapeHtml(model.code)}</strong></div>
-        <div class="voucher-sheet-location">
-          <span>Einlösbar bei</span>
-          <strong>${escapeHtml(model.redemptionLocation.name)}</strong>${model.redemptionLocation.street ? `<small>${escapeHtml(model.redemptionLocation.street)}</small>` : ""}${model.redemptionLocation.cityLine ? `<small>${escapeHtml(model.redemptionLocation.cityLine)}</small>` : ""}${model.redemptionLocation.voucherNote ? `<small>${escapeHtml(model.redemptionLocation.voucherNote)}</small>` : ""}
-        </div>
-        <footer>Bitte Gutscheincode oder QR-Code bei der Einlösung vorzeigen.</footer>
-      </article>
+      ${documentView.renderVoucher(model, { qrKey: publicKey })}
 
-      <p class="prototype-note voucher-preview-controls">Der QR-Code enthält ausschließlich denselben stabilen FRECKA-App-Link wie die Bildschirmansicht. Die Gutscheindaten bleiben lokal auf diesem Gerät.</p>
-      <button class="button button-primary voucher-print-button voucher-preview-controls" type="button" data-action="voucher-pdf">PDF öffnen</button>
+      <p class="prototype-note voucher-preview-controls">Der QR-Code trägt ausschließlich den sichtbaren Gutscheininhalt im Linkfragment und funktioniert ohne zentrale Belegablage.</p>
+      ${documentOutputActionsMarkup("voucher", voucher.reference)}
     </section>`;
+    prewarmDocumentOutput("voucher", voucher.reference);
   }
 
   const helpTopics = {
@@ -3849,6 +4037,30 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  const defaultExportShareFiles = new Set(["Belege.csv", "Belegpositionen.csv", "Gutscheine.csv", "Gutschein-Historie.csv", "Export-Info.txt"]);
+
+  function exportShareSelectionMarkup() {
+    const files = state.exportResult?.files || [];
+    return `<form id="exportShareForm" class="export-share-form">
+      <p>Wähle die Dateien. FRECKA versendet nichts automatisch; das Ziel bestimmst du anschließend im Teilen-Dialog deines Geräts.</p>
+      <fieldset><legend>Dateien auswählen</legend>
+        ${files.map(file => `<label class="export-share-file"><input type="checkbox" name="exportShareFile" value="${escapeHtml(file.name)}" ${defaultExportShareFiles.has(file.name) ? "checked" : ""}><span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(formatExportFileSize(file.content))}</small></span></label>`).join("")}
+      </fieldset>
+      ${files.some(file => file.name === "Kunden.csv") ? `<p class="export-share-privacy">Kunden.csv bleibt bewusst abgewählt, bis du die Datei ausdrücklich auswählst.</p>` : ""}
+      <div id="exportShareNotice" class="export-share-notice" hidden></div>
+      <button class="button button-primary" type="button" data-export-share-selected>Ausgewählte Dateien teilen</button>
+    </form>`;
+  }
+
+  function exportFileForSharing(file) {
+    const mimeType = String(file.mimeType || (file.name.endsWith(".csv") ? "text/csv" : "text/plain")).split(";")[0];
+    return shareService.createFile(file.content, { name: file.name, type: mimeType });
+  }
+
+  function showExportShareFallback(message) {
+    bottomSheetContent.innerHTML = `<div class="export-share-fallback" role="status"><span aria-hidden="true">⇩</span><strong>Gemeinsames Teilen ist hier nicht verfügbar</strong><p>${escapeHtml(message)}</p><button class="button button-primary" type="button" data-export-share-save>Auf Gerät speichern</button></div>`;
+  }
+
   function exportResultMarkup() {
     const result = state.exportResult;
     if (!result) return "";
@@ -3871,7 +4083,7 @@
       <div class="export-result-head"><span aria-hidden="true">✓</span><div><h2 id="exportResultTitle">Export ist vorbereitet</h2><p>${escapeHtml([exportCompany.name, exportCompany.owner].filter(Boolean).join(" · "))} · ${escapeHtml(formatGermanDateTime({ iso: projection.generatedAt }))}</p><small>${projection.receipts.length} ${projection.receipts.length === 1 ? "Beleg" : "Belege"} · ${projection.receiptPositions.length} ${projection.receiptPositions.length === 1 ? "Position" : "Positionen"} · ${projection.vouchers.length} ${projection.vouchers.length === 1 ? "Gutschein" : "Gutscheine"} · ${projection.voucherHistory.length} ${projection.voucherHistory.length === 1 ? "Historieneintrag" : "Historieneinträge"}</small></div></div>
       <div class="export-result-actions" aria-label="Export verwenden">
         <button class="export-result-action is-primary" type="button" data-export-result-action="save" aria-expanded="${state.exportResultView === "save" ? "true" : "false"}"><span aria-hidden="true">⇩</span><span><strong>Auf Gerät speichern</strong><small>Exportdateien lokal ablegen</small></span></button>
-        <button class="export-result-action" type="button" data-export-result-action="send"><span aria-hidden="true">✉</span><span><strong>An Steuerberatung senden</strong><small>Noch nicht aktiviert</small></span></button>
+        <button class="export-result-action" type="button" data-export-result-action="send"><span aria-hidden="true">↗</span><span><strong>An Steuerberatung senden</strong><small>Dateien auswählen und teilen</small></span></button>
         <button class="export-result-action" type="button" data-export-result-action="view" aria-expanded="${state.exportResultView === "view" ? "true" : "false"}"><span aria-hidden="true">≡</span><span><strong>Dateien ansehen</strong><small>Inhalt lokal prüfen</small></span></button>
       </div>
       ${saveFiles}${inspectFiles}
@@ -4644,20 +4856,88 @@
 
   document.addEventListener("click", async event => {
     if (!state.settingsReady) return;
+    const publicQrOpen = event.target.closest("[data-public-qr-key]");
+    if (publicQrOpen) {
+      const entry = publicDocumentCache.get(publicQrOpen.dataset.publicQrKey);
+      try {
+        const bundle = entry?.bundle || await entry?.promise;
+        if (!bundle?.model?.qr) throw new Error("Public QR missing");
+        openPublicQrFullscreen(bundle.model.qr);
+      } catch (error) {
+        setDocumentOutputNotice(entry?.kind || "receipt", error?.userMessage || "Der öffentliche QR-Code konnte nicht geöffnet werden.");
+      }
+      return;
+    }
+    const documentOutputAction = event.target.closest("[data-document-output-action][data-document-kind][data-document-reference]");
+    if (documentOutputAction) {
+      await handleDocumentOutputAction(
+        documentOutputAction.dataset.documentOutputAction,
+        documentOutputAction.dataset.documentKind,
+        documentOutputAction.dataset.documentReference
+      );
+      return;
+    }
     const qrOpen = event.target.closest("[data-qr-open-kind][data-qr-open-reference]");
     if (qrOpen) {
       openQrFullscreen(qrOpen.dataset.qrOpenKind, qrOpen.dataset.qrOpenReference);
       return;
     }
-    if (event.target.closest("[data-export-mail-close]")) {
+    if (event.target.closest("[data-export-share-save]")) {
       closeBottomSheet();
+      state.exportResultView = "save";
+      renderSettingsExport();
+      return;
+    }
+    const exportShareSelected = event.target.closest("[data-export-share-selected]");
+    if (exportShareSelected && state.exportResult) {
+      const form = document.getElementById("exportShareForm");
+      const notice = document.getElementById("exportShareNotice");
+      const selectedNames = form ? new FormData(form).getAll("exportShareFile").map(String) : [];
+      if (!selectedNames.length) {
+        if (notice) { notice.hidden = false; notice.classList.add("is-error"); notice.textContent = "Wähle mindestens eine Datei aus."; }
+        return;
+      }
+      exportShareSelected.disabled = true;
+      try {
+        const files = selectedNames
+          .map(name => state.exportResult.files.find(file => file.name === name))
+          .filter(Boolean)
+          .map(exportFileForSharing);
+        if (!shareService.canShareFiles(files)) {
+          showExportShareFallback("Dein Browser kann diese Dateiauswahl nicht gemeinsam an den nativen Teilen-Dialog übergeben. Du kannst alle Dateien stattdessen einzeln speichern.");
+          return;
+        }
+        const result = await shareService.shareFiles(files, { title: "FRECKA-Export für die Steuerberatung", text: "FRECKA-Exportdateien" });
+        if (result.status === "shared") {
+          closeBottomSheet();
+          state.exportNotice = "Der Teilen-Dialog wurde an das Betriebssystem übergeben.";
+          state.exportNoticeIsError = false;
+          renderSettingsExport();
+        } else if (result.status === "cancelled" && notice) {
+          notice.hidden = false;
+          notice.classList.remove("is-error");
+          notice.textContent = "Teilen wurde abgebrochen. Deine Auswahl bleibt erhalten.";
+        }
+      } catch (error) {
+        if (error?.code === "SHARE_FILE_UNAVAILABLE" || !shareService?.canShareFiles) {
+          showExportShareFallback("Dein Browser stellt Exportdateien nicht als gemeinsam teilbare Dateien bereit. Du kannst alle Dateien stattdessen einzeln speichern.");
+          return;
+        }
+        if (notice) {
+          notice.hidden = false;
+          notice.classList.add("is-error");
+          notice.textContent = error?.userMessage || "Der Teilen-Dialog konnte nicht geöffnet werden.";
+        }
+      } finally {
+        exportShareSelected.disabled = false;
+      }
       return;
     }
     const exportResultAction = event.target.closest("[data-export-result-action]");
     if (exportResultAction && state.exportResult) {
       const action = exportResultAction.dataset.exportResultAction;
       if (action === "send") {
-        openBottomSheet("An Steuerberatung senden", `<div class="export-send-placeholder"><span aria-hidden="true">✉</span><strong>Noch nicht verfügbar</strong><p>Diese Funktion wird mit DOCUMENT-001 aktiviert.</p><button class="button button-primary" type="button" data-export-mail-close>Verstanden</button></div>`);
+        openBottomSheet("An Steuerberatung senden", exportShareSelectionMarkup());
         return;
       }
       state.exportResultView = state.exportResultView === action ? "" : action;
@@ -5433,28 +5713,6 @@
       state.voucherSaleCustomerId = null;
       renderVoucherSale();
     }
-    if (action === "voucher-pdf") {
-      const voucher = voucherByReference(state.voucherDetailReference || state.voucherSaleCreatedReference);
-      if (!voucher) {
-        state.voucherNotice = "Der Gutschein für das PDF wurde nicht gefunden.";
-        if (state.route === "voucher-sale-success") renderVoucherSaleSuccess();
-        else renderVoucherDetail();
-        return;
-      }
-      try {
-        await openDocumentPdf(voucherDocumentModel(voucher));
-      } catch (error) {
-        state.voucherNotice = error?.userMessage || "Das Gutschein-PDF konnte nicht erstellt werden.";
-        if (state.route === "voucher-sale-success") renderVoucherSaleSuccess();
-        else renderVoucherDetail();
-      }
-      return;
-    }
-    if (action === "voucher-email") {
-      state.voucherNotice = "Der E-Mail-Versand ist in diesem Prototyp noch nicht eingerichtet. Es wurde keine E-Mail gesendet.";
-      if (state.route === "voucher-sale-success") renderVoucherSaleSuccess();
-      else renderVoucherDetail();
-    }
     if (action === "new-receipt") startNewReceipt();
     if (action === "resume-receipt") {
       if (!state.cart.length) {
@@ -5501,32 +5759,6 @@
           if (!pendingSettingsWrites) setSettingsWritePending(false);
         }
         renderReceiptDetail();
-      }
-      return;
-    }
-    if (action === "receipt-email-demo") {
-      const receipt = receiptByNumber(state.receiptDetailNumber);
-      state.successNotice = receipt?.customer?.email
-        ? `E-Mail-Versand an ${receipt.customer.email} wurde simuliert.`
-        : "Für diesen Beleg ist keine E-Mail-Adresse hinterlegt.";
-      renderReceiptDetail();
-    }
-    if (action === "receipt-pdf") {
-      const receipt = state.receiptPreviewNumber
-        ? receiptByNumber(state.receiptPreviewNumber)
-        : state.finishedReceipt || receiptByNumber(state.receiptDetailNumber);
-      if (!receipt) {
-        state.successNotice = "Der Beleg für das PDF wurde nicht gefunden.";
-        state.route === "receipt-success" ? renderReceiptSuccess() : renderReceiptDetail();
-        return;
-      }
-      try {
-        await openDocumentPdf(receiptDocumentModel(receipt));
-      } catch (error) {
-        state.successNotice = error?.userMessage || "Das Beleg-PDF konnte nicht erstellt werden.";
-        if (state.route === "receipt-preview") renderReceiptPreview();
-        else if (state.route === "receipt-success") renderReceiptSuccess();
-        else renderReceiptDetail();
       }
       return;
     }
@@ -5582,11 +5814,6 @@
       });
     }
     if (action === "finish-demo") finishReceipt();
-    if (action === "simulate-email") {
-      const email = state.finishedReceipt?.customerEmail;
-      state.successNotice = email ? `E-Mail-Versand an ${email} wurde simuliert.` : "E-Mail-Versand wurde simuliert.";
-      renderReceiptSuccess();
-    }
     if (action === "new-after-finish") {
       state.finishedReceipt = null;
       startNewReceipt();
@@ -6415,20 +6642,6 @@
     const deepLinkRoute = event.state?.route ? null : resolveQrDeepLink(window.location.hash);
     navigate(event.state?.route ?? deepLinkRoute ?? (window.location.hash.replace("#/", "") || "home"), false);
   });
-
-  // Prototype deployments must always show the latest Netlify upload.
-  // Remove service workers and caches left by older UX builds.
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.getRegistrations()
-      .then(registrations => Promise.all(registrations.map(registration => registration.unregister())))
-      .catch(() => {});
-  }
-  if ("caches" in window) {
-    caches.keys()
-      .then(keys => Promise.all(keys.map(key => caches.delete(key))))
-      .catch(() => {});
-  }
-
 
   function updateBrowserBottomOffset() {
     const viewport = window.visualViewport;

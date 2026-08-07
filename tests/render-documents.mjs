@@ -10,11 +10,14 @@ const outputDirectory = join(projectDirectory, "tmp", "pdfs");
 const require = createRequire(import.meta.url);
 
 globalThis.PDFLib = require(join(projectDirectory, "vendor", "pdf-lib-v1.17.1.min.js"));
+globalThis.location = new URL("https://app.example.invalid/frecka/");
 
 for (const relativePath of [
   "vendor/qrcodegen-v1.8.0-es6.js",
+  "js/config.js",
   "js/qr.js",
-  "js/documents.js"
+  "js/documents.js",
+  "js/public-documents.js"
 ]) {
   const absolutePath = join(projectDirectory, relativePath);
   vm.runInThisContext(await readFile(absolutePath, "utf8"), { filename: absolutePath });
@@ -101,15 +104,20 @@ const voucher = {
 
 const receiptModel = globalThis.FRECKA_DOCUMENTS.createReceiptDocumentModel(receipt, options);
 const voucherModel = globalThis.FRECKA_DOCUMENTS.createVoucherDocumentModel(voucher, options);
+const [publicReceipt, publicVoucher] = await Promise.all([
+  globalThis.FRECKA_PUBLIC_DOCUMENTS.createPublicBundle(receiptModel, { baseUrl: options.baseUrl, qrService: options.qrService }),
+  globalThis.FRECKA_PUBLIC_DOCUMENTS.createPublicBundle(voucherModel, { baseUrl: options.baseUrl, qrService: options.qrService })
+]);
 
 await mkdir(outputDirectory, { recursive: true });
 await Promise.all([
-  writeFile(join(outputDirectory, receiptModel.filename), await globalThis.FRECKA_DOCUMENTS.createPdfBytes(receiptModel)),
-  writeFile(join(outputDirectory, voucherModel.filename), await globalThis.FRECKA_DOCUMENTS.createPdfBytes(voucherModel))
+  writeFile(join(outputDirectory, publicReceipt.model.filename), await globalThis.FRECKA_DOCUMENTS.createPdfBytes(publicReceipt.model)),
+  writeFile(join(outputDirectory, publicVoucher.model.filename), await globalThis.FRECKA_DOCUMENTS.createPdfBytes(publicVoucher.model))
 ]);
 
 console.log(JSON.stringify({
   outputDirectory,
-  files: [receiptModel.filename, voucherModel.filename],
-  links: [receiptModel.qr.appLink, voucherModel.qr.appLink]
+  files: [publicReceipt.model.filename, publicVoucher.model.filename],
+  links: [publicReceipt.link, publicVoucher.link],
+  qrVersions: [publicReceipt.qrVersion, publicVoucher.qrVersion]
 }, null, 2));

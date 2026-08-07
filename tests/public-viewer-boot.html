@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>FRECKA Public-Viewer-Boot-Test</title>
+  <link rel="stylesheet" href="../styles.css">
+  <script>
+    (() => {
+      "use strict";
+      const knownPublicHash = "#/p/r/1/d/eJwtTstqw0AM_JVFh56URrt2YvvYkIYWWihNH4dlDxtbiU0cUXZt2g_of_QvcurNP1YcF8SARqOZsbB5WgNqhABowZBZzohImwSQkMbDyFFOmU4NjZpNaOJwDmr4FmF1pbbDuRYGhJuWv7xUwasVN_Gj4Xb2Kh0H4frEoRFAePByYPXYx45D7IIfflhdsqBIKM3UMx9Y4q4PB0DQJpmni-U8ywvSgLC-1SZJF8ssL8ChhTvvwyeH49QE0DiUvm3RWnj3saxZxnZlLdxULEoDGtRFQajzEYgQXgL3HPzOd53aD79BbTt_Oh17qWJZ-30HzqGdfohwpgl1QZOBQ2t1cdndf_AFAMax8NZwy6LWXo6T9X0dWNSKY1_W16PIOfcHLMlzOQ.yqg3gkiq3owO7h1jtLpKAYK1ZvvQpg4w3oMJM9kE_h0";
+      if (!location.hash.startsWith("#/p/")) location.hash = knownPublicHash;
+      // Erzwingt den älteren Browserpfad: PDF-Blob bleibt speicherbar, auch wenn File-Sharing fehlt.
+      try { Object.defineProperty(globalThis, "File", { configurable: true, value: undefined }); } catch (error) { /* Browser schützt den Konstruktor; der normale Pfad bleibt testbar. */ }
+      window.__freckaIndexedDbOpenCount = 0;
+      const prototype = globalThis.IDBFactory?.prototype;
+      const originalOpen = prototype?.open;
+      if (prototype && typeof originalOpen === "function") {
+        Object.defineProperty(prototype, "open", {
+          configurable: true,
+          value(...args) {
+            window.__freckaIndexedDbOpenCount += 1;
+            return originalOpen.apply(this, args);
+          }
+        });
+      }
+    })();
+  </script>
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <header class="app-header"><strong>Produktkopf darf nicht booten</strong></header>
+    <main id="mainContent" class="main-content" tabindex="-1" aria-busy="true"></main>
+    <nav id="bottomNav" aria-label="Hauptnavigation"><button type="button">Produktnavigation darf nicht booten</button></nav>
+  </div>
+  <output id="bootTestResult" hidden></output>
+
+  <script src="../vendor/qrcodegen-v1.8.0-es6.js"></script>
+  <script src="../vendor/pdf-lib-v1.17.1.min.js"></script>
+  <script src="../js/config.js"></script>
+  <script src="../js/qr.js"></script>
+  <script src="../js/documents.js"></script>
+  <script src="../js/public-documents.js"></script>
+  <script src="../js/sharing.js"></script>
+  <script src="../js/document-view.js"></script>
+  <script src="../js/public-viewer.js"></script>
+  <script src="../js/data.js"></script>
+  <script src="../js/persistence.js"></script>
+  <script src="../js/backup.js"></script>
+  <script src="../js/export.js"></script>
+  <script src="../js/app.js"></script>
+  <script>
+    (() => {
+      "use strict";
+      const output = document.getElementById("bootTestResult");
+      let attempts = 0;
+      const finish = () => {
+        attempts += 1;
+        const mounted = Boolean(document.querySelector("[data-public-viewer-mounted]"));
+        const pdfButton = document.querySelector('[data-public-viewer-action="pdf"]');
+        const pdfReady = pdfButton?.disabled === false && pdfButton.textContent.trim() === "PDF speichern";
+        if ((!mounted || !pdfReady) && attempts < 50) {
+          setTimeout(finish, 100);
+          return;
+        }
+        const openCount = Number(window.__freckaIndexedDbOpenCount || 0);
+        const productUiHidden = document.querySelector(".app-header")?.hidden === true
+          && document.getElementById("bottomNav")?.hidden === true;
+        const passed = mounted && openCount === 0 && productUiHidden && pdfReady;
+        output.hidden = false;
+        output.dataset.result = passed ? "pass" : "fail";
+        output.textContent = `${passed ? "PASS" : "FAIL"} · Public Viewer: IndexedDB.open ${openCount} · Produktnavigation ${productUiHidden ? "aus" : "an"} · Blob-PDF ${pdfReady ? "bereit" : "fehlt"}`;
+        document.documentElement.dataset.bootTest = passed ? "pass" : "fail";
+      };
+      finish();
+    })();
+  </script>
+</body>
+</html>

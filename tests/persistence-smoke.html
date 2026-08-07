@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FRECKA – DOCUMENT-001 Smoke-Test</title>
+  <title>FRECKA – COMM-001 / QR-002 Smoke-Test</title>
   <style>
     :root {
       color-scheme: light;
@@ -104,8 +104,8 @@
 </head>
 <body>
   <main>
-    <h1>DOCUMENT-001 Smoke-Test</h1>
-    <p>Native Browserprüfung der zentralen Dokumenten- und QR-Engine, Persistenz, Sicherung und snapshotbasierten Exportprojektion. Es werden ausschließlich zufällig benannte Testdatenbanken verwendet und am Ende des Laufs wieder gelöscht.</p>
+    <h1>COMM-001 / QR-002 Smoke-Test</h1>
+    <p>Native Browserprüfung von Public-QR, Teilen, Dokumentenengine, Persistenz, Sicherung und Exportprojektion. Es werden ausschließlich zufällig benannte Testdatenbanken verwendet und am Ende des Laufs wieder gelöscht.</p>
 
     <section class="panel run-meta" aria-label="Testlauf">
       <strong>Produktionsdatenbank bleibt unberührt</strong>
@@ -122,13 +122,17 @@
     </section>
   </main>
 
-  <script src="../vendor/qrcodegen-v1.8.0-es6.js?v=document001-1"></script>
-  <script src="../vendor/pdf-lib-v1.17.1.min.js?v=document001-1"></script>
-  <script src="../js/qr.js?v=document001-1"></script>
-  <script src="../js/documents.js?v=document001-1"></script>
-  <script src="../js/persistence.js?v=document001-1"></script>
-  <script src="../js/backup.js?v=document001-1"></script>
-  <script src="../js/export.js?v=document001-1"></script>
-  <script src="persistence-smoke.js?v=document001-1"></script>
+  <script src="../vendor/qrcodegen-v1.8.0-es6.js?v=comm001-1"></script>
+  <script src="../vendor/pdf-lib-v1.17.1.min.js?v=comm001-1"></script>
+  <script src="../js/config.js?v=comm001-1"></script>
+  <script src="../js/qr.js?v=comm001-1"></script>
+  <script src="../js/documents.js?v=comm001-1"></script>
+  <script src="../js/public-documents.js?v=comm001-1"></script>
+  <script src="../js/sharing.js?v=comm001-1"></script>
+  <script src="../js/document-view.js?v=comm001-1"></script>
+  <script src="../js/persistence.js?v=comm001-1"></script>
+  <script src="../js/backup.js?v=comm001-1"></script>
+  <script src="../js/export.js?v=comm001-1"></script>
+  <script src="persistence-smoke.js?v=comm001-1"></script>
 </body>
 </html>

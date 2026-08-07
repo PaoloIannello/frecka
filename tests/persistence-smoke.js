@@ -11,6 +11,9 @@
   const exportApi = globalThis.FRECKA_EXPORT;
   const qrApi = globalThis.FRECKA_QR;
   const documentApi = globalThis.FRECKA_DOCUMENTS;
+  const publicDocumentApi = globalThis.FRECKA_PUBLIC_DOCUMENTS;
+  const sharingApi = globalThis.FRECKA_SHARING;
+  const documentViewApi = globalThis.FRECKA_DOCUMENT_VIEW;
   const testDatabasePrefix = "frecka-persist-smoke-";
   let running = false;
 
@@ -40,6 +43,17 @@
       await operation();
     } catch (error) {
       assertEqual(error?.code, expectedCode, `${message}: falscher Fehlercode`);
+      assert(typeof error?.userMessage === "string" && error.userMessage.length > 0, `${message}: verständliche Meldung fehlt`);
+      return;
+    }
+    throw new Error(`${message}: Promise wurde nicht abgelehnt`);
+  }
+
+  async function assertRejectsOneOf(operation, expectedCodes, message) {
+    try {
+      await operation();
+    } catch (error) {
+      assert(expectedCodes.includes(error?.code), `${message}: falscher Fehlercode ${error?.code}`);
       assert(typeof error?.userMessage === "string" && error.userMessage.length > 0, `${message}: verständliche Meldung fehlt`);
       return;
     }
@@ -768,6 +782,259 @@
           assertEqual(typeof documentApi.createVoucherDocumentModel, "function", "Gutscheinprojektion fehlt");
           assertEqual(typeof documentApi.createPdfBytes, "function", "PDF-Erzeugung fehlt");
           assert(globalThis.PDFLib?.PDFDocument, "Lokale PDF-Bibliothek wurde nicht geladen");
+        }
+      },
+      {
+        name: "Public-Dokument-, View- und Share-Services sind zentral und versioniert geladen",
+        run: async () => {
+          assertEqual(publicDocumentApi.PUBLIC_DOCUMENT_VERSION, "QR-002", "Falsche Public-Dokumentversion");
+          assertEqual(publicDocumentApi.FORMAT_MARKER, "FPD", "Falsches Public-Formatkennzeichen");
+          assertEqual(publicDocumentApi.FORMAT_VERSION, 1, "Falsche Public-Formatversion");
+          assertEqual(publicDocumentApi.constants.errorCorrection, "M", "Falsche QR-Fehlerkorrektur");
+          assertEqual(publicDocumentApi.constants.maxPositions, 25, "Positionsgrenze ist nicht dokumentiert");
+          assertEqual(sharingApi.SHARE_VERSION, "COMM-001", "Falsche Share-Service-Version");
+          assertEqual(typeof sharingApi.createShareService, "function", "Injizierbarer Share-Service fehlt");
+          assertEqual(documentViewApi.DOCUMENT_VIEW_VERSION, "COMM-001", "Gemeinsame Dokumentansicht fehlt");
+        }
+      },
+      {
+        name: "Öffentlicher Beleg roundtript ohne lokale ID und mit identischen Centbeträgen",
+        run: async () => {
+          const source = receiptDocumentFixture({
+            internalNote: "Darf nie öffentlich werden",
+            customer: { id: "customer-private", name: "Anna Muster", email: "anna@example.invalid", phone: "0123", street: "Altstraße 1", zip: "93047", city: "Regensburg" },
+            customerSnapshot: { id: "customer-private", name: "Anna Muster", email: "anna@example.invalid", phone: "0123", street: "Altstraße 1", zip: "93047", city: "Regensburg" }
+          });
+          const before = clone(source);
+          const localModel = documentApi.createReceiptDocumentModel(source, documentOptions());
+          const bundle = await publicDocumentApi.createPublicBundle(localModel, { baseUrl: "https://app.example.invalid/frecka/", qrService: qrApi });
+          const decoded = await publicDocumentApi.decodePublicLink(bundle.link, { qrService: qrApi });
+          assert(bundle.link.includes("#/p/r/1/d/"), "Public-Link nutzt nicht die eigene Fragmentroute");
+          assert(!bundle.link.includes("#/receipt/"), "Interner Beleg-Deep-Link wurde öffentlich verwendet");
+          assertEqual(decoded.model.totals.grossCents, localModel.totals.grossCents, "Bruttobetrag änderte sich im Transport");
+          assertEqual(decoded.model.totals.netCents, localModel.totals.netCents, "Nettobetrag änderte sich im Transport");
+          assertEqual(decoded.model.totals.taxCents, localModel.totals.taxCents, "Steuerbetrag änderte sich im Transport");
+          assertEqual(decoded.model.customer.name, "Anna Muster", "Sichtbarer Kundenname fehlt");
+          assertEqual(decoded.model.serviceLocation, null, "Normaler Public-Beleg enthält einen Leistungsort");
+          assertDeepEqual(source, before, "Public-Projektion veränderte den Geschäftsbeleg");
+        }
+      },
+      {
+        name: "Public-Payload ist datensparsam und enthält keine Kontakte, Notizen, Historien oder Rohsnapshots",
+        run: async () => {
+          const source = receiptDocumentFixture({
+            id: "receipt-secret-internal-id",
+            internalNote: "INTERN-NOTIZ-SECRET",
+            activity: [{ label: "HISTORY-SECRET" }],
+            companySnapshot: { name: "Studio", owner: "Testperson", phone: "COMPANY-PHONE-SECRET", email: "COMPANY-MAIL-SECRET@example.invalid", street: "Testweg 1", zip: "12345", city: "Teststadt" },
+            customerSnapshot: { id: "CUSTOMER-ID-SECRET", name: "Sichtbarer Name", phone: "CUSTOMER-PHONE-SECRET", email: "CUSTOMER-MAIL-SECRET@example.invalid", street: "Sichtweg 1", zip: "12345", city: "Teststadt" }
+          });
+          const model = documentApi.createReceiptDocumentModel(source, documentOptions());
+          const serialized = JSON.stringify(publicDocumentApi.projectDocument(model));
+          ["receipt-secret-internal-id", "INTERN-NOTIZ-SECRET", "HISTORY-SECRET", "COMPANY-PHONE-SECRET", "COMPANY-MAIL-SECRET", "CUSTOMER-ID-SECRET", "CUSTOMER-PHONE-SECRET", "CUSTOMER-MAIL-SECRET", "contextSnapshot", "history", "internalNote"].forEach(secret => {
+            assert(!serialized.includes(secret), `Nicht öffentliche Information gelangte in die Payload: ${secret}`);
+          });
+        }
+      },
+      {
+        name: "Öffentlicher Gutschein enthält Einlöseort, aber keine Kunden- oder Verkaufsbelegreferenz",
+        run: async () => {
+          const voucher = voucherDraftFixture("voucher-public", { displayName: "Für Zoë", currentValue: 35 });
+          voucher.customerSnapshot = { id: "customer-secret", name: "Interner Kunde", email: "secret@example.invalid", phone: "0123" };
+          voucher.saleReceipt = { id: "receipt-secret", number: "2030-SECRET" };
+          const localModel = documentApi.createVoucherDocumentModel(voucher, documentOptions());
+          const publicModel = { ...localModel, issuer: { ...localModel.issuer, taxNumber: "TAX-SECRET", vatId: "VAT-SECRET" } };
+          const bundle = await publicDocumentApi.createPublicBundle(publicModel, { baseUrl: "https://app.example.invalid/frecka/", qrService: qrApi });
+          const decoded = await publicDocumentApi.decodePublicLink(bundle.link, { qrService: qrApi });
+          assert(bundle.link.includes("#/p/v/1/d/"), "Gutschein nutzt nicht die Public-Viewer-Route");
+          assertEqual(decoded.model.redemptionLocation.name, localModel.redemptionLocation.name, "Einlöseort fehlt");
+          assertEqual(decoded.model.customer, null, "Kundenstammdaten gelangten in den Public-Gutschein");
+          assertEqual(decoded.model.saleReceipt, null, "Interne Verkaufsbelegreferenz gelangte in den Public-Gutschein");
+          const publicProjection = JSON.stringify(publicDocumentApi.projectDocument(publicModel));
+          assert(!publicProjection.includes("secret@example.invalid"), "Kunden-E-Mail gelangte in die Gutscheinpayload");
+          assert(!publicProjection.includes("TAX-SECRET") && !publicProjection.includes("VAT-SECRET"), "Nicht dargestellte Steuerangaben gelangten in die Gutscheinpayload");
+          assertEqual(decoded.model.issuer.taxNumber, "", "Öffentlicher Gutschein rekonstruierte eine nicht dargestellte Steuernummer");
+        }
+      },
+      {
+        name: "Kleine, normale, lange und Umlaut-Belege bleiben innerhalb der harten QR-Grenzen",
+        run: async () => {
+          const cases = [
+            ["klein", 1, "Haarschnitt"],
+            ["normal", 3, "Pflege & Styling"],
+            ["umlaute", 5, "Färben ÄÖÜ ß & Pflege"],
+            ["lang", 25, "Ausführliche Leistung"]
+          ];
+          for (const [label, count, title] of cases) {
+            const items = Array.from({ length: count }, (_, index) => ({
+              id: `${label}-${index}`, title: `${title} ${index + 1}`, type: "service", quantity: 1,
+              originalUnitPrice: 10 + index, unitPrice: 10 + index, total: 10 + index,
+              netTotal: 8.4 + index, taxAmount: 1.6, taxRate: 19
+            }));
+            const total = items.reduce((sum, item) => sum + item.total, 0);
+            const model = documentApi.createReceiptDocumentModel(receiptDocumentFixture({ items, originalTotal: total, netTotal: total - 1.6 * count, taxTotal: 1.6 * count, total, taxGroups: [{ rate: 19, net: total - 1.6 * count, tax: 1.6 * count, gross: total }] }), documentOptions());
+            const bundle = await publicDocumentApi.createPublicBundle(model, { baseUrl: "https://app.example.invalid/frecka/", qrService: qrApi });
+            assert(bundle.urlLength <= publicDocumentApi.constants.maxUrlLength, `${label}: Link ist zu lang`);
+            assert(bundle.qrVersion <= publicDocumentApi.constants.maxQrVersion, `${label}: QR ist zu dicht`);
+            assertEqual(bundle.qrSize, 17 + bundle.qrVersion * 4, `${label}: Matrix passt nicht zur QR-Version`);
+          }
+        }
+      },
+      {
+        name: "Public-Link lehnt Übergröße, Beschädigung und unbekannte Version klar ab",
+        run: async () => {
+          const tooManyItems = Array.from({ length: 26 }, (_, index) => ({ title: `Position ${index + 1}`, quantity: 1, originalUnitPrice: 10, unitPrice: 10, total: 10, netTotal: 8.4, taxAmount: 1.6, taxRate: 19 }));
+          const tooLarge = documentApi.createReceiptDocumentModel(receiptDocumentFixture({ items: tooManyItems, total: 260, originalTotal: 260, netTotal: 218.4, taxTotal: 41.6, taxGroups: [{ rate: 19, net: 218.4, tax: 41.6, gross: 260 }] }), documentOptions());
+          await assertRejects(() => publicDocumentApi.createPublicBundle(tooLarge, { baseUrl: "https://app.example.invalid/frecka/", qrService: qrApi }), "PUBLIC_DOCUMENT_TOO_LARGE", "26 Positionen");
+
+          const model = documentApi.createReceiptDocumentModel(receiptDocumentFixture(), documentOptions());
+          const bundle = await publicDocumentApi.createPublicBundle(model, { baseUrl: "https://app.example.invalid/frecka/", qrService: qrApi });
+          const damaged = `${bundle.link.slice(0, -1)}${bundle.link.endsWith("A") ? "B" : "A"}`;
+          await assertRejects(() => publicDocumentApi.decodePublicLink(damaged, { qrService: qrApi }), "PUBLIC_INTEGRITY_FAILED", "Beschädigte Prüfsumme");
+          await assertRejects(() => publicDocumentApi.decodePublicLink(bundle.link.replace("#/p/r/1/", "#/p/r/2/"), { qrService: qrApi }), "PUBLIC_VERSION_UNSUPPORTED", "Unbekannte Formatversion");
+          await assertRejectsOneOf(() => publicDocumentApi.decodePublicLink("https://app.example.invalid/frecka/#/p/r/1/d/ungueltig.ungueltig", { qrService: qrApi }), ["PUBLIC_INTEGRITY_INVALID", "PUBLIC_COMPRESSION_FAILED", "PUBLIC_INTEGRITY_FAILED", "PUBLIC_PAYLOAD_INVALID"], "Ungültige Payload");
+          await assertRejects(() => publicDocumentApi.decodePublicLink(bundle.link.replace("/#/", "/?tracking=1#/"), { qrService: qrApi }), "PUBLIC_LINK_INVALID", "Nicht kanonische Query");
+          await assertRejects(() => publicDocumentApi.decodePublicLink(bundle.link.replace(/\.[A-Za-z0-9_-]{43}$/u, `.${"A".repeat(44)}`), { qrService: qrApi }), "PUBLIC_INTEGRITY_INVALID", "Falsche Digestlänge");
+          await assertRejects(() => publicDocumentApi.decodePublicLink(`https://app.example.invalid/${"a".repeat(publicDocumentApi.constants.maxUrlLength)}#/p/r/1/d/a.${"A".repeat(43)}`, { qrService: qrApi }), "PUBLIC_LINK_TOO_LARGE", "Zu langer Eingangslink");
+        }
+      },
+      {
+        name: "Public-Dokumentansicht escaped Inhalte und erzeugt ein echtes PDF ohne lokale Datenbank",
+        run: async () => {
+          const source = receiptDocumentFixture();
+          const localModel = documentApi.createReceiptDocumentModel(source, documentOptions());
+          const bundle = await publicDocumentApi.createPublicBundle(localModel, { baseUrl: "https://app.example.invalid/frecka/", qrService: qrApi });
+          const decoded = await publicDocumentApi.decodePublicLink(bundle.link, { qrService: qrApi });
+          const hostile = clone(decoded.model);
+          hostile.positions[0].title = '<img src=x onerror="alert(1)">';
+          const markup = documentViewApi.renderReceipt(hostile, { interactiveQr: false });
+          assert(!markup.includes("<img src=x"), "Public-Viewer gab nicht vertrauenswürdiges HTML aus");
+          assert(markup.includes("&lt;img"), "Public-Viewer escaped den Text nicht sichtbar");
+          const bytes = await documentApi.createPdfBytes(decoded.model);
+          assert(pdfHeader(bytes).startsWith("%PDF-"), "Public-Viewer-Modell erzeugt kein PDF");
+          assertEqual(decoded.model.serviceLocation, null, "Public-PDF eines Belegs erhielt einen Leistungsort");
+        }
+      },
+      {
+        name: "Share-Service erkennt sichere Kontexte und prüft tatsächliche PDF-Dateien",
+        run: async () => {
+          const canShareCalls = [];
+          const shareCalls = [];
+          const service = sharingApi.createShareService({
+            navigator: {
+              canShare(data) { canShareCalls.push(data); return Array.isArray(data.files); },
+              async share(data) { shareCalls.push(data); }
+            },
+            isSecureContext: true,
+            File,
+            Blob,
+            baseUrl: "https://app.example.invalid/"
+          });
+          const file = service.createFile(new Blob(["pdf"], { type: "application/pdf" }), { name: "FRECKA-Beleg-Test.pdf", type: "application/pdf", lastModified: 1 });
+          assertEqual(file.type, "application/pdf", "PDF-File besitzt falschen MIME-Type");
+          assert(service.canShareFiles([file]), "Teilbare Datei wurde abgelehnt");
+          assertDeepEqual(Object.keys(canShareCalls[0]), ["files"], "canShare erhielt mehr als die tatsächlichen Dateien");
+          const result = await service.shareFiles([file], { title: "Beleg" });
+          assertEqual(result.status, "shared", "File-Sharing wurde nicht ausgeführt");
+          assertEqual(shareCalls.length, 1, "Share-Dialog wurde mehrfach ausgelöst");
+          const insecure = sharingApi.createShareService({ navigator: { share() {}, canShare() { return true; } }, isSecureContext: false, File, Blob });
+          assert(!insecure.canShareFiles([file]) && !insecure.canShareUrl("https://app.example.invalid/"), "Unsicherer Kontext wurde als teilbar behandelt");
+        }
+      },
+      {
+        name: "Share-Abbruch bleibt Abbruch und löst keinen automatischen Fallback aus",
+        run: async () => {
+          let downloads = 0;
+          const service = sharingApi.createShareService({
+            navigator: { canShare: () => true, share: async () => { throw new DOMException("Abgebrochen", "AbortError"); } },
+            isSecureContext: true,
+            File,
+            Blob,
+            document: { createElement() { downloads += 1; }, body: { append() {} } },
+            urlApi: { createObjectURL: () => "blob:test", revokeObjectURL() {} }
+          });
+          const file = service.createFile("pdf", { name: "Beleg.pdf", type: "application/pdf" });
+          const result = await service.sharePreferred({ files: [file], url: "https://app.example.invalid/#/p/r/1/n/x.y", downloadFile: file });
+          assertEqual(result.status, "cancelled", "Share-Abbruch wurde als Erfolg oder Fallback behandelt");
+          assertEqual(downloads, 0, "Share-Abbruch löste einen Download aus");
+        }
+      },
+      {
+        name: "Share bevorzugt PDF, fällt auf Public-URL und zuletzt genau einen Download zurück",
+        run: async () => {
+          const shareCalls = [];
+          const urlService = sharingApi.createShareService({
+            navigator: {
+              canShare(data) { return Boolean(data.url); },
+              async share(data) { shareCalls.push(data); }
+            },
+            isSecureContext: true,
+            File,
+            Blob,
+            baseUrl: "https://app.example.invalid/"
+          });
+          const file = urlService.createFile("pdf", { name: "Beleg.pdf", type: "application/pdf" });
+          const publicUrl = "https://app.example.invalid/frecka/#/p/r/1/n/abc.def";
+          const urlResult = await urlService.sharePreferred({ files: [file], url: publicUrl, downloadFile: file });
+          assertEqual(urlResult.mode, "url", "Fehlendes File-Sharing fiel nicht auf URL zurück");
+          assertEqual(shareCalls[0].url, publicUrl, "URL-Fallback verwendete nicht den öffentlichen Kundenlink");
+          assert(!shareCalls[0].url.includes("#/receipt/"), "URL-Fallback verwendete internen Deep-Link");
+
+          let clicks = 0;
+          let revokes = 0;
+          const downloadService = sharingApi.createShareService({
+            navigator: {},
+            isSecureContext: true,
+            File,
+            Blob,
+            document: { createElement() { return { click() { clicks += 1; }, remove() {} }; }, body: { append() {} } },
+            urlApi: { createObjectURL: () => "blob:test", revokeObjectURL() { revokes += 1; } },
+            setTimeout(callback) { callback(); }
+          });
+          const downloadFile = downloadService.createFile("pdf", { name: "Beleg.pdf", type: "application/pdf" });
+          const downloadResult = await downloadService.sharePreferred({ files: [downloadFile], url: publicUrl, downloadFile });
+          assertEqual(downloadResult.status, "downloaded", "Fehlende Web-Share-API fiel nicht auf Download zurück");
+          assertEqual(clicks, 1, "Download wurde nicht genau einmal ausgelöst");
+          assertEqual(revokes, 1, "Objekt-URL wurde nicht widerrufen");
+        }
+      },
+      {
+        name: "Beleg-, Gutschein- und Gutscheinverkaufs-PDF werden als echte Files vorbereitet",
+        run: async () => {
+          const voucher = voucherDraftFixture("voucher-share-file", { code: "FRKA-SHAR-0001" });
+          const voucherSaleReceipt = voucherSaleReceiptFixture(voucher);
+          voucherSaleReceipt.number = "2030-000100";
+          const models = [
+            documentApi.createReceiptDocumentModel(receiptDocumentFixture(), documentOptions()),
+            documentApi.createVoucherDocumentModel(voucher, documentOptions()),
+            documentApi.createReceiptDocumentModel(voucherSaleReceipt, { ...documentOptions(), linkedVoucher: voucher })
+          ];
+          const files = [];
+          for (const model of models) {
+            const blob = await documentApi.createPdfBlob(model);
+            files.push(sharingApi.createFile(blob, { name: model.filename, type: "application/pdf" }));
+          }
+          assert(files.every(file => file instanceof File && file.type === "application/pdf" && file.size > 4000), "Dokumentausgabe erzeugte kein teilbares PDF-File");
+          assertEqual(models[2].type, "receipt", "Gutscheinverkaufsbeleg nahm einen Gutschein-Sonderweg");
+          assertEqual(models[2].kind.code, "voucher-sale", "Gutscheinverkaufsbeleg verlor seine Belegart");
+        }
+      },
+      {
+        name: "Mehrere ausgewählte Exportdateien werden nur nach exakter canShare-Prüfung gemeinsam geteilt",
+        run: async () => {
+          const shared = [];
+          const service = sharingApi.createShareService({
+            navigator: { canShare: data => data.files?.length === 3, share: async data => { shared.push(data); } },
+            isSecureContext: true,
+            File,
+            Blob
+          });
+          const files = ["Belege.csv", "Belegpositionen.csv", "Export-Info.txt"].map(name => service.createFile("Inhalt", { name, type: name.endsWith(".csv") ? "text/csv" : "text/plain" }));
+          assert(service.canShareFiles(files), "Exakte Mehrfachauswahl wurde abgelehnt");
+          await service.shareFiles(files, { title: "FRECKA-Export" });
+          assertEqual(shared.length, 1, "Mehrfachauswahl wurde in mehrere Share-Aufrufe aufgeteilt");
+          assertDeepEqual(shared[0].files.map(file => file.name), ["Belege.csv", "Belegpositionen.csv", "Export-Info.txt"], "Geteilte Dateiauswahl wurde verändert");
+          assert(!service.canShareFiles(files.slice(0, 2)), "Nicht unterstützte Dateikombination wurde als teilbar behauptet");
         }
       },
       {
