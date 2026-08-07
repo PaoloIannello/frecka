@@ -177,9 +177,11 @@ Ein Updateformat, ein Signaturverfahren und ein Updateclient sind ausdrücklich 
 └── releases/
     ├── <release-id>/
     │   ├── site/                  # exakte Laufzeitmenge aus Abschnitt 2.2
+    │   ├── RELEASE.txt            # Quellstand, Version und Prüfergebnis
     │   └── SHA256SUMS             # Prüfliste des vollständigen Artefakts
     └── <weiteres-release-id>/
         ├── site/
+        ├── RELEASE.txt
         └── SHA256SUMS
 ```
 
@@ -236,6 +238,8 @@ Vor Freigabe sind mindestens folgende Antworten der Web Station zu kontrollieren
 Eine restriktive Content Security Policy und weitere Sicherheitsheader sind sinnvoll, müssen aber gegen PDF-Blob-URLs, Downloads, Share-Verhalten und die bestehende Skriptstruktur getestet werden. Sie werden nicht ungeprüft in diesem Strukturblock erfunden.
 
 ## 6. Minimaler Build- und Releaseprozess
+
+Der vollständige operative Ablauf einschließlich Entwicklung, Versionierung, Beta, Produktion, Rollback und Archivierung steht in `docs/deployment-workflow.md`.
 
 Da FRECKA keinen Build benötigt, bedeutet „Build“ ausschließlich **prüfen, selektiv kopieren und verifizieren**.
 
