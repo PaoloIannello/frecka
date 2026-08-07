@@ -9,6 +9,7 @@
   const api = globalThis.FRECKA_PERSISTENCE;
   const backupApi = globalThis.FRECKA_BACKUP;
   const exportApi = globalThis.FRECKA_EXPORT;
+  const qrApi = globalThis.FRECKA_QR;
   const testDatabasePrefix = "frecka-persist-smoke-";
   let running = false;
 
@@ -42,6 +43,17 @@
       return;
     }
     throw new Error(`${message}: Promise wurde nicht abgelehnt`);
+  }
+
+  function assertThrows(operation, expectedCode, message) {
+    try {
+      operation();
+    } catch (error) {
+      assertEqual(error?.code, expectedCode, `${message}: falscher Fehlercode`);
+      assert(typeof error?.userMessage === "string" && error.userMessage.length > 0, `${message}: verständliche Meldung fehlt`);
+      return;
+    }
+    throw new Error(`${message}: Fehler wurde nicht ausgelöst`);
   }
 
   function runtimeFixture() {
@@ -642,6 +654,94 @@
       return encryptedFixturePromise;
     };
     return [
+      {
+        name: "Zentraler QR-Service ist vollständig und versioniert geladen",
+        run: async () => {
+          assert(qrApi && typeof qrApi.create === "function", "FRECKA_QR wurde nicht geladen");
+          assertEqual(qrApi.QR_VERSION, "QR-001", "Falsche QR-Service-Version");
+          assertEqual(typeof qrApi.buildAppLink, "function", "App-Link-Funktion fehlt");
+          assertEqual(typeof qrApi.encodeAppLink, "function", "Allgemeine QR-Kodierung fehlt");
+          assertEqual(typeof qrApi.parseAppLink, "function", "App-Link-Auflösung fehlt");
+        }
+      },
+      {
+        name: "Beleg-App-Link verwendet ausschließlich die stabile Referenz",
+        run: async () => {
+          const link = qrApi.buildAppLink("receipt", "receipt_ä/42", "https://app.example.invalid/frecka/index.html?debug=1#/home");
+          const url = new URL(link);
+          assertEqual(url.origin, "https://app.example.invalid", "App-Ursprung wurde verändert");
+          assertEqual(url.pathname, "/frecka/index.html", "App-Pfad wurde verändert");
+          assertEqual(url.search, "", "Query-Parameter gelangten in den QR-Link");
+          assertEqual(decodeURIComponent(url.hash.slice("#/receipt/".length)), "receipt_ä/42", "Belegreferenz ging verloren");
+        }
+      },
+      {
+        name: "Gutschein-App-Link und Deep-Link-Auflösung verwenden dieselbe Referenz",
+        run: async () => {
+          const link = qrApi.buildAppLink("voucher", "vch_8f4c2a91d7e6", "https://app.example.invalid/frecka/");
+          const parsed = qrApi.parseAppLink(link, "https://app.example.invalid/frecka/");
+          assertEqual(parsed.kind, "voucher", "Gutscheinart wurde nicht aufgelöst");
+          assertEqual(parsed.reference, "vch_8f4c2a91d7e6", "Gutscheinreferenz wurde verändert");
+        }
+      },
+      {
+        name: "QR-Erzeugung liefert eine echte quadratische Matrix und laufzeitbasiertes SVG",
+        run: async () => {
+          const qr = qrApi.create("receipt", "receipt_test_001", { baseUrl: "https://app.example.invalid/frecka/" });
+          assert(qr.size >= 21 && qr.size <= 177, "QR-Matrixgröße liegt außerhalb des Standards");
+          assertEqual(qr.matrix.length, qr.size, "QR-Matrix ist nicht quadratisch");
+          assert(qr.matrix.every(row => row.length === qr.size), "QR-Zeile besitzt falsche Breite");
+          assert(qr.svg.includes(`<svg`) && qr.svg.includes(`viewBox="0 0 ${qr.size + 8} ${qr.size + 8}"`), "SVG oder Vier-Modul-Ruhezone fehlt");
+          assert(qr.svg.includes("shape-rendering=\"crispEdges\""), "Modulscharfe SVG-Darstellung fehlt");
+          assert(!qr.svg.includes(qr.appLink), "App-Link wurde als Klartext in das SVG geschrieben");
+          assert(Object.isFrozen(qr) && Object.isFrozen(qr.matrix), "QR-Laufzeitergebnis ist veränderbar");
+          assert(!["png", "image", "blob", "dataUrl"].some(key => Object.prototype.hasOwnProperty.call(qr, key)), "QR-Bilddaten werden im Ergebnis gehalten");
+        }
+      },
+      {
+        name: "QR-Matrix enthält die drei normgerechten Suchmuster",
+        run: async () => {
+          const qr = qrApi.create("voucher", "voucher_test_001", { baseUrl: "https://app.example.invalid/frecka/" });
+          const assertFinder = (left, top) => {
+            for (let y = 0; y < 7; y += 1) {
+              for (let x = 0; x < 7; x += 1) {
+                const expected = x === 0 || x === 6 || y === 0 || y === 6 || (x >= 2 && x <= 4 && y >= 2 && y <= 4);
+                assertEqual(qr.matrix[top + y][left + x], expected, `Suchmuster bei ${left}/${top} ist fehlerhaft`);
+              }
+            }
+          };
+          assertFinder(0, 0);
+          assertFinder(qr.size - 7, 0);
+          assertFinder(0, qr.size - 7);
+        }
+      },
+      {
+        name: "Beliebige spätere FRECKA-App-Links nutzen dieselbe QR-Engine",
+        run: async () => {
+          const qr = qrApi.encodeAppLink("https://app.example.invalid/frecka/#/future/document_42");
+          assertEqual(qr.appLink, "https://app.example.invalid/frecka/#/future/document_42", "Allgemeiner App-Link wurde verändert");
+          assert(qr.svg.includes("frecka-qr-svg"), "Zentrale SVG-Darstellung fehlt");
+        }
+      },
+      {
+        name: "Beleg- und Gutscheinreferenzen erzeugen getrennte QR-Inhalte",
+        run: async () => {
+          const options = { baseUrl: "https://app.example.invalid/frecka/" };
+          const receipt = qrApi.create("receipt", "shared_reference", options);
+          const voucher = qrApi.create("voucher", "shared_reference", options);
+          assert(receipt.appLink !== voucher.appLink, "Beleg und Gutschein verwenden denselben App-Link");
+          assert(JSON.stringify(receipt.matrix) !== JSON.stringify(voucher.matrix), "Beleg und Gutschein erzeugen dieselbe QR-Matrix");
+        }
+      },
+      {
+        name: "Ungültige QR-Referenzen und Linktypen liefern klare Fehler",
+        run: async () => {
+          assertThrows(() => qrApi.create("receipt", ""), "QR_REFERENCE_INVALID", "Leere Referenz");
+          assertThrows(() => qrApi.create("mail", "ref-1"), "QR_KIND_INVALID", "Unbekannter QR-Typ");
+          assertThrows(() => qrApi.encodeAppLink("javascript:alert(1)"), "QR_APP_LINK_INVALID", "Unsicheres Linkprotokoll");
+          assertThrows(() => qrApi.parseAppLink("#/voucher/", "https://app.example.invalid/frecka/"), "QR_REFERENCE_INVALID", "Unvollständiger Gutscheinlink");
+        }
+      },
       {
         name: "Erststart liefert null und initialisiert Settings-, Katalog-, Kunden-, Beleg- und Gutscheinschema",
         run: async () => {

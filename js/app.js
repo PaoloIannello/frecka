@@ -4,6 +4,7 @@
   const persistence = globalThis.FRECKA_PERSISTENCE;
   const backup = globalThis.FRECKA_BACKUP;
   const exportApi = globalThis.FRECKA_EXPORT;
+  const qrService = globalThis.FRECKA_QR;
   const defaultSettingsRecord = persistence?.snapshotSettings
     ? persistence.snapshotSettings(data, "not-started")
     : null;
@@ -51,7 +52,8 @@
     creditText: "Korrektur / Kulanz",
     finishedReceipt: null,
     successNotice: "",
-    qrVisible: false,
+    qrLookupError: "",
+    qrLookupReference: "",
     voucherSearch: "",
     voucherFilter: "open",
     voucherDetailReference: null,
@@ -130,7 +132,10 @@
   const bottomSheetTitle = document.getElementById("bottomSheetTitle");
   const bottomSheetContent = document.getElementById("bottomSheetContent");
   const bottomSheetClose = document.getElementById("bottomSheetClose");
-  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "settings-company", "settings-location", "settings-taxes", "settings-payments", "settings-business-areas", "settings-catalog", "settings-help", "settings-backup", "settings-export", "setup-wizard"]);
+  const qrFullscreen = document.getElementById("qrFullscreen");
+  const qrFullscreenCode = document.getElementById("qrFullscreenCode");
+  const qrFullscreenClose = document.getElementById("qrFullscreenClose");
+  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "qr-not-found", "settings-company", "settings-location", "settings-taxes", "settings-payments", "settings-business-areas", "settings-catalog", "settings-help", "settings-backup", "settings-export", "setup-wizard"]);
   const validRoutes = new Set(["home", "receipts", "customers", "vouchers", "settings", ...flowRoutes]);
 
   const escapeHtml = value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -146,6 +151,52 @@
   const validSetupStatuses = new Set(["not-started", "started", "completed"]);
   let pendingSettingsWrites = 0;
   let currentHistoryIndex = Number.isInteger(history.state?.freckaIndex) ? history.state.freckaIndex : 0;
+  let qrFullscreenReturnFocus = null;
+
+  function voucherQrReference(voucher) {
+    return voucher?.qrReference || voucher?.id || voucher?.reference || "";
+  }
+
+  function qrAppLink(kind, reference) {
+    return qrService?.buildAppLink(kind, reference) || "";
+  }
+
+  function qrMarkup(kind, reference, { variant = "inline", caption = "", label = "QR-Code anzeigen" } = {}) {
+    try {
+      if (!qrService?.create) throw new Error("QR service unavailable");
+      const qr = qrService.create(kind, reference, { label });
+      return `<button class="frecka-qr frecka-qr-${escapeHtml(variant)}" type="button" data-qr-open-kind="${escapeHtml(qr.kind)}" data-qr-open-reference="${escapeHtml(qr.reference)}" aria-label="${escapeHtml(label)}">${qr.svg}${caption ? `<span>${escapeHtml(caption)}</span>` : ""}</button>`;
+    } catch (error) {
+      return `<div class="frecka-qr-error" role="alert">${escapeHtml(error?.userMessage || "Der QR-Code konnte nicht erzeugt werden.")}</div>`;
+    }
+  }
+
+  function openQrFullscreen(kind, reference) {
+    qrFullscreenReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    try {
+      if (!qrService?.create) throw new Error("QR service unavailable");
+      const qr = qrService.create(kind, reference, { label: "FRECKA QR-Code" });
+      qrFullscreenCode.innerHTML = qr.svg;
+    } catch (error) {
+      qrFullscreenCode.innerHTML = `<p class="qr-fullscreen-error" role="alert">${escapeHtml(error?.userMessage || "Der QR-Code konnte nicht erzeugt werden.")}</p>`;
+    }
+    qrFullscreen.hidden = false;
+    document.getElementById("app")?.setAttribute("inert", "");
+    document.getElementById("app")?.setAttribute("aria-hidden", "true");
+    document.body.classList.add("qr-fullscreen-open");
+    qrFullscreenClose.focus({ preventScroll: true });
+  }
+
+  function closeQrFullscreen() {
+    if (qrFullscreen.hidden) return;
+    qrFullscreen.hidden = true;
+    qrFullscreenCode.innerHTML = "";
+    document.getElementById("app")?.removeAttribute("inert");
+    document.getElementById("app")?.removeAttribute("aria-hidden");
+    document.body.classList.remove("qr-fullscreen-open");
+    qrFullscreenReturnFocus?.focus?.({ preventScroll: true });
+    qrFullscreenReturnFocus = null;
+  }
 
   function cloneSettingsValue(value) {
     if (typeof structuredClone === "function") return structuredClone(value);
@@ -1109,7 +1160,6 @@
     state.checkoutSubmitting = false;
     state.checkoutOpenPaymentConfirm = false;
     state.successNotice = "";
-    state.qrVisible = false;
     state.openReceiptVisible = false;
     state.cart = [];
     navigate("receipt-success");
@@ -1122,11 +1172,6 @@
       return;
     }
     const paidVoucher = receipt.voucherPayment ? voucherByReference(receipt.voucherPayment.reference) : null;
-
-    const qrCells = Array.from({ length: 81 }, (_, index) => {
-      const on = [0,1,2,3,4,9,13,18,20,22,27,28,29,30,31,36,40,44,45,49,53,54,55,56,57,58,62,64,67,71,72,73,74,75,76,77,78,79,80].includes(index) || (index * 7 + 3) % 11 < 4;
-      return `<i class="${on ? "on" : ""}"></i>`;
-    }).join("");
 
     mainContent.innerHTML = `<section class="flow-page receipt-success-page page-enter">
       <div class="success-hero">
@@ -1148,11 +1193,6 @@
 
       ${state.successNotice ? `<div class="success-notice" role="status">${escapeHtml(state.successNotice)}</div>` : ""}
 
-      ${state.qrVisible ? `<section class="demo-qr-panel">
-        <div class="demo-qr" aria-label="Simulierter QR-Code">${qrCells}</div>
-        <div><strong>QR-Code zum Beleg</strong><p>Im Produkt würde dieser Code zum digitalen Beleg führen.</p></div>
-      </section>` : ""}
-
       <section class="success-actions" aria-label="Aktionen nach dem Belegabschluss">
         ${paidVoucher ? `<button class="success-action-card" type="button" data-open-linked-voucher="${escapeHtml(paidVoucher.reference)}"><span aria-hidden="true">◇</span><strong>Gutschein öffnen</strong><small>${escapeHtml(maskVoucherCode(paidVoucher.code))}</small></button>` : ""}
         <button class="success-action-card" type="button" data-route="receipt-preview">
@@ -1161,8 +1201,8 @@
         <button class="success-action-card" type="button" data-action="simulate-email">
           <span aria-hidden="true">✉</span><strong>Per E-Mail senden</strong><small>${receipt.customerEmail ? escapeHtml(receipt.customerEmail) : "Versand simulieren"}</small>
         </button>
-        <button class="success-action-card" type="button" data-action="toggle-qr">
-          <span aria-hidden="true">▦</span><strong>QR-Code anzeigen</strong><small>Digitalen Abruf simulieren</small>
+        <button class="success-action-card" type="button" data-qr-open-kind="receipt" data-qr-open-reference="${escapeHtml(receipt.id)}">
+          <span aria-hidden="true">▦</span><strong>QR-Code anzeigen</strong><small>Digitalen Beleg öffnen</small>
         </button>
         <button class="success-action-card primary" type="button" data-action="new-after-finish">
           <span aria-hidden="true">＋</span><strong>Neuen Beleg erstellen</strong><small>Direkt weiterarbeiten</small>
@@ -1249,9 +1289,51 @@
 
         <div class="receipt-paper-total"><span>${isVoucherSale ? "Gesamtbetrag" : "Gesamt brutto"}</span><strong>${formatCurrency(receipt.total)}</strong></div>
         <footer>${receipt.receiptTextSnapshot ? escapeHtml(receipt.receiptTextSnapshot.thankYouText || "") : "Vielen Dank für Ihren Besuch."}${receipt.receiptTextSnapshot?.footerText ? `<small>${escapeHtml(receipt.receiptTextSnapshot.footerText)}</small>` : ""}</footer>
+        <div class="receipt-paper-qr">${qrMarkup("receipt", receipt.id, { variant: "receipt", caption: "Digitaler Beleg", label: "QR-Code zum digitalen Beleg im Vollbild anzeigen" })}</div>
       </article>
 
       <button class="button button-primary preview-download" type="button" data-action="receipt-print">Drucken / als PDF sichern</button>
+    </section>`;
+  }
+
+  function resolveQrDeepLink(value) {
+    let target;
+    try {
+      target = qrService?.parseAppLink?.(value) ?? null;
+    } catch (error) {
+      state.qrLookupError = error?.userMessage || "Der FRECKA-Link ist ungültig.";
+      state.qrLookupReference = "";
+      return "qr-not-found";
+    }
+    if (!target) return null;
+    state.qrLookupReference = target.reference;
+    if (target.kind === "receipt") {
+      const receipt = receiptById(target.reference);
+      if (receipt) {
+        state.receiptDetailNumber = receipt.number;
+        state.qrLookupError = "";
+        return "receipt-detail";
+      }
+      state.qrLookupError = "Der verknüpfte Beleg ist auf diesem Gerät nicht vorhanden.";
+      return "qr-not-found";
+    }
+    const voucher = voucherByQrReference(target.reference);
+    if (voucher) {
+      state.voucherDetailReference = voucher.reference;
+      state.qrLookupError = "";
+      return "voucher-detail";
+    }
+    state.qrLookupError = "Der verknüpfte Gutschein ist auf diesem Gerät nicht vorhanden.";
+    return "qr-not-found";
+  }
+
+  function renderQrNotFound() {
+    mainContent.innerHTML = `<section class="flow-page qr-not-found-page page-enter">
+      <div class="qr-not-found-symbol" aria-hidden="true">!</div>
+      <p class="eyebrow">FRECKA-Link</p>
+      <h1>Link nicht verfügbar</h1>
+      <p>${escapeHtml(state.qrLookupError || "Die QR-Referenz konnte nicht geöffnet werden.")}</p>
+      <button class="button button-primary" type="button" data-route="home">Zur Startseite</button>
     </section>`;
   }
 
@@ -1595,6 +1677,10 @@
     return data.receipts.find(receipt => receipt.number === number) || null;
   }
 
+  function receiptById(id) {
+    return data.receipts.find(receipt => receipt.id === id) || null;
+  }
+
   function receiptKindLabel(receipt) {
     if (receipt.receiptKind === "voucher-sale") return "Gutscheinverkauf";
     if (receipt.type === "credit") return "Gutschrift";
@@ -1907,6 +1993,11 @@
   }
 
   const voucherByReference = reference => data.vouchers.find(voucher => voucher.reference === reference) ?? null;
+  const voucherByQrReference = reference => data.vouchers.find(voucher => [
+    voucher.qrReference,
+    voucher.id,
+    voucher.reference
+  ].includes(reference)) ?? null;
   const linkedVoucherSaleReceipt = voucher => data.receipts.find(receipt =>
     receipt.id === voucher.saleReceipt?.id
       && receipt.number === voucher.saleReceipt?.number
@@ -2180,35 +2271,8 @@
     </section>`;
   }
 
-  // App-Links contain only an opaque reference. A future resolver must look it up
-  // in the local voucher store and show a clear not-found state when it is absent;
-  // this URL structure does not imply a central voucher database or cross-device sync.
   function voucherAppLink(reference) {
-    const url = new URL(window.location.href);
-    url.search = "";
-    url.hash = `#/voucher/${encodeURIComponent(reference)}`;
-    return url.href;
-  }
-
-  function voucherQrPlaceholder(voucher) {
-    const size = 21;
-    let seed = Array.from(voucher.reference).reduce((value, character) => ((value * 31) + character.charCodeAt(0)) >>> 0, 2166136261);
-    const inFinder = (row, column, top, left) => {
-      const localRow = row - top;
-      const localColumn = column - left;
-      if (localRow < 0 || localRow > 6 || localColumn < 0 || localColumn > 6) return null;
-      return localRow === 0 || localRow === 6 || localColumn === 0 || localColumn === 6 || (localRow >= 2 && localRow <= 4 && localColumn >= 2 && localColumn <= 4);
-    };
-    const cells = Array.from({ length: size * size }, (_, index) => {
-      const row = Math.floor(index / size);
-      const column = index % size;
-      const finder = inFinder(row, column, 0, 0) ?? inFinder(row, column, 0, size - 7) ?? inFinder(row, column, size - 7, 0);
-      seed = ((seed * 1664525) + 1013904223) >>> 0;
-      const active = finder ?? (((seed >>> 28) + row + column) % 3 === 0);
-      return `<i class="${active ? "on" : ""}"></i>`;
-    }).join("");
-    const appLink = voucherAppLink(voucher.reference);
-    return `<div class="voucher-qr" role="img" aria-label="Technisch vorbereiteter QR-Code-Platzhalter" data-voucher-app-link="${escapeHtml(appLink)}">${cells}</div>`;
+    return qrAppLink("voucher", reference);
   }
 
   function filteredVouchers() {
@@ -2572,8 +2636,8 @@
         <div class="voucher-sale-result-value"><span>Gutscheinwert</span><strong>${formatCurrency(voucher.issuedValue)}</strong></div>
         <div class="voucher-code-block"><span>Gutscheincode</span><strong>${escapeHtml(voucher.code)}</strong><small>Zum Abschreiben auf einen eigenen vorgedruckten Gutschein</small></div>
         <div class="voucher-qr-block">
-          ${voucherQrPlaceholder(voucher)}
-          <div><strong>QR-Code · Prototyp</strong><small>Code und QR-Vorschau gehören zu derselben stabilen Gutscheinidentität.</small></div>
+          ${qrMarkup("voucher", voucherQrReference(voucher), { variant: "voucher", label: "Gutschein-QR-Code im Vollbild anzeigen" })}
+          <div><strong>QR-Code</strong><small>Code und QR verweisen auf dieselbe stabile Gutscheinidentität.</small></div>
         </div>
         <div class="voucher-sale-result-meta"><span>Status</span><strong class="voucher-status is-active">Aktiv</strong></div>
         <div class="voucher-sale-result-meta"><span>Verkaufsbeleg</span><strong>${escapeHtml(saleReceipt?.number || "Demo-Bezug fehlt")}</strong></div>
@@ -2597,7 +2661,7 @@
       navigate("vouchers", false);
       return;
     }
-    const appLink = voucherAppLink(voucher.reference);
+    const appLink = voucherAppLink(voucherQrReference(voucher));
     const presentation = voucherPresentation(voucher);
     const addressesMatch = sameVoucherAddress(presentation.issuer, presentation.redemptionLocation);
     const saleReceipt = linkedVoucherSaleReceipt(voucher);
@@ -2613,8 +2677,8 @@
       <section class="voucher-identity-card">
         <div class="voucher-code-block"><span>Gutscheincode</span><strong>${escapeHtml(voucher.code)}</strong><small>Zum Übertragen auf einen vorhandenen Papiergutschein</small></div>
         <div class="voucher-qr-block">
-          ${voucherQrPlaceholder(voucher)}
-          <div><strong>QR-Code · Prototyp</strong><small>Verweist auf dieselbe Gutscheinidentität wie der sichtbare Code.</small></div>
+          ${qrMarkup("voucher", voucherQrReference(voucher), { variant: "voucher", label: "Gutschein-QR-Code im Vollbild anzeigen" })}
+          <div><strong>QR-Code</strong><small>Verweist auf dieselbe Gutscheinidentität wie der sichtbare Code.</small></div>
         </div>
         <p class="voucher-local-note">Der App-Link kann den Gutschein nur auf einem Gerät öffnen, auf dem dieser Gutschein lokal vorhanden ist. Eine geräteübergreifende Auflösung ist nicht eingerichtet.</p>
         <code class="voucher-app-link">${escapeHtml(appLink)}</code>
@@ -2693,8 +2757,7 @@
         ${voucher.displayName ? `<div class="voucher-sheet-recipient"><span>Name auf dem Gutschein</span><strong>${escapeHtml(voucher.displayName)}</strong></div>` : ""}
         <div class="voucher-sheet-value"><span>Wert</span><strong>${formatCurrency(voucher.issuedValue)}</strong></div>
         <div class="voucher-sheet-qr">
-          ${voucherQrPlaceholder(voucher)}
-          <small>QR-Code · technische Vorschau</small>
+          ${qrMarkup("voucher", voucherQrReference(voucher), { variant: "voucher-sheet", label: "Gutschein-QR-Code im Vollbild anzeigen" })}
         </div>
         <div class="voucher-sheet-status"><span>Status</span><strong class="voucher-status ${voucherStatusClass(voucher)}">${escapeHtml(voucherStatusLabel(voucher))}</strong></div>
         <div class="voucher-sheet-code"><span>Gutscheincode</span><strong>${escapeHtml(voucher.code)}</strong></div>
@@ -2705,7 +2768,7 @@
         <footer>Bitte Gutscheincode oder QR-Code bei der Einlösung vorzeigen.</footer>
       </article>
 
-      <p class="prototype-note voucher-preview-controls">Die Vorlage enthält Demo-Daten. Der QR-Bereich ist technisch vorbereitet, aber in diesem UX-Block noch kein scanbarer Produktions-QR-Code.</p>
+      <p class="prototype-note voucher-preview-controls">Der QR-Code enthält ausschließlich den stabilen FRECKA-App-Link. Die Gutscheindaten bleiben lokal auf diesem Gerät.</p>
       <button class="button button-primary voucher-print-button voucher-preview-controls" type="button" data-action="voucher-print">Drucken / als PDF sichern</button>
     </section>`;
   }
@@ -4193,6 +4256,7 @@
       "voucher-preview",
       "voucher-sale",
       "voucher-sale-success",
+      "qr-not-found",
       "settings-company",
       "settings-location",
       "settings-taxes",
@@ -4223,6 +4287,7 @@
     else if (state.route === "voucher-preview") renderVoucherPreview();
     else if (state.route === "voucher-sale") renderVoucherSale();
     else if (state.route === "voucher-sale-success") renderVoucherSaleSuccess();
+    else if (state.route === "qr-not-found") renderQrNotFound();
     else if (state.route === "settings") renderSettings();
     else if (state.route === "settings-company") renderCompanySettings();
     else if (state.route === "settings-location") renderServiceLocationSettings();
@@ -4343,6 +4408,11 @@
 
   document.addEventListener("click", async event => {
     if (!state.settingsReady) return;
+    const qrOpen = event.target.closest("[data-qr-open-kind][data-qr-open-reference]");
+    if (qrOpen) {
+      openQrFullscreen(qrOpen.dataset.qrOpenKind, qrOpen.dataset.qrOpenReference);
+      return;
+    }
     const exportDownload = event.target.closest("[data-export-download]");
     if (exportDownload) {
       const file = state.exportResult?.files?.find(entry => entry.name === exportDownload.dataset.exportDownload);
@@ -5224,11 +5294,6 @@
       state.successNotice = email ? `E-Mail-Versand an ${email} wurde simuliert.` : "E-Mail-Versand wurde simuliert.";
       renderReceiptSuccess();
     }
-    if (action === "toggle-qr") {
-      state.qrVisible = !state.qrVisible;
-      state.successNotice = "";
-      renderReceiptSuccess();
-    }
     if (action === "simulate-pdf-download") {
       state.successNotice = "PDF-Download wurde simuliert.";
       navigate("receipt-success");
@@ -6022,6 +6087,19 @@
   bottomSheetBackdrop.addEventListener("click", event => {
     if (event.target === bottomSheetBackdrop) closeBottomSheet();
   });
+  qrFullscreenClose.addEventListener("click", closeQrFullscreen);
+  document.addEventListener("keydown", event => {
+    if (qrFullscreen.hidden) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeQrFullscreen();
+      return;
+    }
+    if (event.key === "Tab") {
+      event.preventDefault();
+      qrFullscreenClose.focus({ preventScroll: true });
+    }
+  });
   window.addEventListener("popstate", event => {
     if (!state.settingsReady) return;
     const targetHistoryIndex = Number.isInteger(event.state?.freckaIndex) ? event.state.freckaIndex : null;
@@ -6035,7 +6113,8 @@
       return;
     }
     if (targetHistoryIndex !== null) currentHistoryIndex = targetHistoryIndex;
-    navigate(event.state?.route ?? (window.location.hash.replace("#/", "") || "home"), false);
+    const deepLinkRoute = event.state?.route ? null : resolveQrDeepLink(window.location.hash);
+    navigate(event.state?.route ?? deepLinkRoute ?? (window.location.hash.replace("#/", "") || "home"), false);
   });
 
   // Prototype deployments must always show the latest Netlify upload.
@@ -6139,8 +6218,11 @@
   bottomNav.hidden = false;
   initHeader();
   const requestedRoute = window.location.hash.startsWith("#/") ? window.location.hash.slice(2) : "";
-  const initialRoute = validRoutes.has(requestedRoute) ? requestedRoute : "home";
-  const initialUrl = requestedRoute && validRoutes.has(requestedRoute)
+  const deepLinkRoute = resolveQrDeepLink(window.location.hash);
+  const initialRoute = deepLinkRoute || (validRoutes.has(requestedRoute) ? requestedRoute : "home");
+  const initialUrl = deepLinkRoute
+    ? window.location.href
+    : requestedRoute && validRoutes.has(requestedRoute)
     ? `#/${requestedRoute}`
     : `${window.location.origin}${window.location.pathname}${window.location.search}`;
   history.replaceState({ route: initialRoute, freckaIndex: currentHistoryIndex }, "", initialUrl);

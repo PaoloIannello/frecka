@@ -118,7 +118,7 @@ Die Einzelbuttons vermeiden außerdem browserabhängig blockierte Mehrfachdownlo
 
 ## Prüfungen
 
-`tests/persistence-smoke.html` umfasst aktuell 79 native Browserfälle. EXPORT-001 ergänzt Prüfungen für:
+`tests/persistence-smoke.html` umfasst seit QR-001 insgesamt 87 native Browserfälle. Die Exportprojektion bleibt dabei durch folgende Fälle abgedeckt:
 
 - aktuelle, letzte und eigene Zeiträume;
 - Geschäftsbereichsfilter;

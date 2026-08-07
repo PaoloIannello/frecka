@@ -1,6 +1,6 @@
-# FRECKA – EXPORT-001
+# FRECKA – QR-001
 
-Browserbasierter FRECKA-Prototyp mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung und snapshotbasiertem CSV-Export.
+Browserbasierter FRECKA-Prototyp mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem CSV-Export und zentraler QR-Laufzeitengine.
 
 ## Start
 
@@ -10,7 +10,19 @@ Browserbasierter FRECKA-Prototyp mit lokaler IndexedDB-Persistenz, verschlüssel
 
 Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufklappen und bearbeiten → Weiter → Kunde optional und Zahlungsart simulieren → Demo abschließen.
 
-## Neu in EXPORT-001
+## Neu in QR-001
+
+- eine einzige öffentliche QR-API in `js/qr.js` für beliebige FRECKA-App-Links
+- stabile Links im Format `#/receipt/<referenz>` und `#/voucher/<referenz>`
+- echte, zur Laufzeit erzeugte QR-Codes als skalierbares SVG; keine dauerhaft gespeicherten QR-Bilder
+- große, zentrierte Beleg-QR-Codes und Gutschein-QR-Codes über dieselbe Komponente
+- fokussierte, bildschirmfüllende PWA-Ansicht ohne Navigation, Menüs oder Werkzeugleisten
+- lokale Deep-Link-Auflösung nach Reload sowie verständliche Fehlerzustände für ungültige oder auf dem Gerät nicht vorhandene Referenzen
+- 87 native Browser-Smoke-Tests ohne neues Testframework
+
+Der vollständige QR-Vertrag steht in `docs/qr.md`.
+
+## Grundlage aus EXPORT-001
 
 - eine gemeinsame, formatneutrale Exportprojektion auf Basis der vorhandenen Tenant-Snapshot-API
 - Zeitraumfilter für aktuellen Monat, letzten Monat und ein eigenes Datum
@@ -18,7 +30,7 @@ Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufkla
 - `Belege.csv`, `Belegpositionen.csv`, `Gutscheine.csv`, `Gutschein-Historie.csv` und `Export-Info.txt`
 - optionale, datensparsame `Kunden.csv` ausschließlich beim Exporttyp „Eigene Daten“
 - UTF-8-BOM, Semikolon, deutsche Dezimalwerte, sauberes Escaping und CSV-Injection-Schutz
-- 79 native Browser-Smoke-Tests ohne neue Testabhängigkeit
+- 79 native Browser-Smoke-Tests im Stand EXPORT-001
 
 Der vollständige Exportvertrag steht in `docs/export.md`.
 
@@ -43,9 +55,9 @@ Der vollständige Exportvertrag steht in `docs/export.md`.
 
 ## Nicht umgesetzt
 
-Noch keine Persistenz für Belegentwürfe. Keine Cloudablage, Synchronisation, automatische Backups, ZIP-Erzeugung, Zahlungsanbieteranbindung, PDF-Erzeugung, E-Mail, Synology-Export, produktiver QR-Scan, TSE oder Fiskalisierung.
+Noch keine Persistenz für Belegentwürfe. Keine Cloudablage, Synchronisation, automatische Backups, ZIP-Erzeugung, Zahlungsanbieteranbindung, PDF-Erzeugung, E-Mail, Synology-Export, Kamera-QR-Scan, TSE oder Fiskalisierung.
 
-Der Datenbankvertrag steht in `docs/persistence.md`; Dateiformat, Sicherheitsmodell, Restore-Ablauf und Prüfungen stehen in `docs/backup-restore.md`; Projektion, CSV-Vertrag und Datenschutz des Exports stehen in `docs/export.md`.
+Der Datenbankvertrag steht in `docs/persistence.md`; Dateiformat, Sicherheitsmodell, Restore-Ablauf und Prüfungen stehen in `docs/backup-restore.md`; Projektion, CSV-Vertrag und Datenschutz des Exports stehen in `docs/export.md`; QR-Service, App-Link-Struktur und Laufzeitdarstellung stehen in `docs/qr.md`.
 
 
 ## Ergänzung UX-004b
@@ -90,7 +102,7 @@ Für Netlify ausschließlich `UX-007-NETLIFY.zip` hochladen.
 
 ## UX-009
 
-Nach dem simulierten Abschluss erscheint eine Erfolgsseite mit PDF-Vorschau, E-Mail- und QR-Simulation sowie direktem Neustart.
+Nach dem simulierten Abschluss erscheint eine Erfolgsseite mit PDF-Vorschau, E-Mail-Simulation, zentral erzeugtem QR-Code sowie direktem Neustart.
 
 Für Netlify ausschließlich `UX-009-NETLIFY.zip` hochladen.
 
