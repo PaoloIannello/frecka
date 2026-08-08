@@ -1,6 +1,6 @@
-# FRECKA – COMM-001 / QR-002
+# FRECKA – OFFLINE-001
 
-Browserbasierter FRECKA-Prototyp 0.9.0 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem CSV-Export sowie zentraler Dokument-, QR-, Public-Viewer- und Share-Infrastruktur. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
+Browserbasierte FRECKA-PWA 0.9.1 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem CSV-Export sowie zentraler Dokument-, QR-, Public-Viewer- und Share-Infrastruktur. Ein versionsgebundener Service Worker hält die vollständige statische App-Shell für den Kaltstart nach einer erfolgreichen Online-Installation offline bereit. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
 
 ## Start
 
@@ -9,6 +9,15 @@ Browserbasierter FRECKA-Prototyp 0.9.0 mit lokaler IndexedDB-Persistenz, verschl
 ## Kernablauf
 
 Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufklappen und bearbeiten → Weiter → Kunde optional und Zahlungsart simulieren → Demo abschließen.
+
+## Neu in OFFLINE-001
+
+- produktiver, lokal registrierter Service Worker ohne externe Abhängigkeit
+- vollständiger, atomar vorab geladener App-Shell-Cache für HTML, CSS, JavaScript, Manifest, Icons und lokale Vendor-Dateien
+- Navigation-Fallback auf die gecachte `index.html`, auch bei einer Bereitstellung unter einem Release-Unterpfad
+- versionsgebundene Cachebereinigung ausschließlich für ältere FRECKA-App-Shell-Caches
+- keine Speicherung von Geschäftsdaten im Cache und keine Änderung an IndexedDB
+- kein erzwungener Service-Worker-Wechsel während einer laufenden App-Sitzung
 
 ## Neu in COMM-001 / QR-002
 
@@ -98,9 +107,6 @@ Der Datenbankvertrag steht in `docs/persistence.md`; Dateiformat, Sicherheitsmod
 - Ausgewählte Kacheln werden deutlich farblich hervorgehoben und mit einem Haken markiert.
 - Erneutes Antippen derselben Kachel entfernt die Position vollständig aus dem aktuellen Beleg.
 - Mengen über 1 werden weiterhin ausschließlich im aufgeklappten aktuellen Beleg über Plus/Minus geändert.
-
-
-Wichtig beim ersten Öffnen: Den Netlify-Link einmal mit `?v=ux004b` am Ende öffnen, damit ein alter Service-Worker-Cache sicher umgangen wird.
 
 
 ## Wichtig für Netlify

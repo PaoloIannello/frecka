@@ -156,10 +156,11 @@ Der Kandidat muss mindestens bestehen:
 - keine ungeplanten externen Laufzeitabhängigkeiten;
 - unveränderte Vendor-Prüfsummen.
 
-Sobald eine echte App-Shell existiert, kommen zwingend hinzu:
+Mit der in OFFLINE-001 eingeführten App-Shell kommen zwingend hinzu:
 
 - Erstinstallation online;
 - Kaltstart offline;
+- echter iOS-Home-Screen-Test: online starten, vollständig schließen, Flugmodus aktivieren und mit vorhandenen lokalen Daten erneut starten;
 - Update von jeder unterstützten Vorgängerversion;
 - Update bei offenem Arbeitsablauf;
 - vollständiger Download vor Aktivierung;
@@ -277,6 +278,7 @@ Das Artefakt folgt der Allowlist aus `docs/architecture/deployment-synology.md`:
 │   ├── index.html
 │   ├── styles.css
 │   ├── manifest.webmanifest
+│   ├── service-worker.js
 │   ├── icons/
 │   ├── js/
 │   └── vendor/
@@ -377,7 +379,7 @@ Auf Beta werden mindestens geprüft:
 - Upgrade mit repräsentativen Daten einer unterstützten Vorversion;
 - Backup vor Upgrade und Restore in einer getrennten Testumgebung;
 - Kernabläufe, PDF, QR, Share und Public Viewer;
-- Offline-/Updateablauf, sobald die App-Shell umgesetzt ist;
+- Offline-Kaltstart, App-Shell-Vollständigkeit und Service-Worker-Wechsel;
 - iOS/iPadOS, Android und unterstützte Desktopbrowser;
 - keine Geschäftsdatenübertragung an die Synology;
 - keine Konsolen- oder Serverfehler.

@@ -6,7 +6,7 @@
 
 **Letzte Aktualisierung:** 8. August 2026
 
-Dieses Dokument beschreibt die verbindliche Zielrichtung von FRECKA. Der aktuelle Stand ist ein browserbasierter Prototyp mit lokaler IndexedDB-Persistenz für Einstellungen, Katalog, Kunden, Belege und Gutscheine sowie manueller verschlüsselter Gesamtsicherung und atomarer Wiederherstellung. COMM-001 / QR-002 ergänzt einen zentralen, zustandslosen Share-Service und geräteübergreifende Kundenlinks mit einer datensparsamen Dokumentprojektion im URL-Fragment; eine zentrale Belegablage entsteht dadurch nicht. Aussagen zu noch offenen Teilen der Zielarchitektur kennzeichnen nicht automatisch bereits implementierte Funktionen. Abweichungen von diesen Leitlinien benötigen eine dokumentierte Architekturentscheidung (ADR) mit Begründung, Folgen und Migrationsweg.
+Dieses Dokument beschreibt die verbindliche Zielrichtung von FRECKA. Der aktuelle Stand ist ein browserbasierter Prototyp mit lokaler IndexedDB-Persistenz für Einstellungen, Katalog, Kunden, Belege und Gutscheine sowie manueller verschlüsselter Gesamtsicherung und atomarer Wiederherstellung. COMM-001 / QR-002 ergänzt einen zentralen, zustandslosen Share-Service und geräteübergreifende Kundenlinks mit einer datensparsamen Dokumentprojektion im URL-Fragment; eine zentrale Belegablage entsteht dadurch nicht. OFFLINE-001 ergänzt eine versionierte statische App-Shell mit Service Worker und Navigation-Fallback für den Offline-Kaltstart; Geschäftsdaten bleiben davon getrennt in IndexedDB. Aussagen zu noch offenen Teilen der Zielarchitektur kennzeichnen nicht automatisch bereits implementierte Funktionen. Abweichungen von diesen Leitlinien benötigen eine dokumentierte Architekturentscheidung (ADR) mit Begründung, Folgen und Migrationsweg.
 
 ## 1. Projektvision
 

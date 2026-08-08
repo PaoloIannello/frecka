@@ -1,16 +1,17 @@
 (async () => {
   "use strict";
-  // Code-Updates dürfen auch im zustandslosen Public Viewer veraltete Runtime-Caches entfernen.
-  // Geschäftsdaten und IndexedDB bleiben davon unberührt.
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.getRegistrations()
-      .then(registrations => Promise.all(registrations.map(registration => registration.unregister())))
-      .catch(() => {});
-  }
-  if ("caches" in window) {
-    caches.keys()
-      .then(keys => Promise.all(keys.map(key => caches.delete(key))))
-      .catch(() => {});
+  globalThis.FRECKA_APP_SHELL_READY = Promise.resolve(null);
+  if (
+    globalThis.FRECKA_DISABLE_SERVICE_WORKER !== true
+    && "serviceWorker" in navigator
+    && window.isSecureContext
+  ) {
+    globalThis.FRECKA_APP_SHELL_READY = navigator.serviceWorker
+      .register("./service-worker.js", { scope: "./" })
+      .catch(error => {
+        console.warn("FRECKA App-Shell konnte nicht registriert werden.", error);
+        return null;
+      });
   }
   const publicViewer = globalThis.FRECKA_PUBLIC_VIEWER;
   const publicViewerRequested = publicViewer?.isRequested?.(window.location.href)

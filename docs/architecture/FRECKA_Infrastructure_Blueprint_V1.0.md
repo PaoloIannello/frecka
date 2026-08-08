@@ -252,7 +252,7 @@ Verbindliche Grenzen:
 
 ## 14. Update-Infrastruktur und Offline-Fähigkeit
 
-Die aktuelle App besitzt noch keinen Updateclient und keinen produktiven Service Worker. Vor V1.0 benötigt die PWA einen eigenen kontrollierten Offline-/Service-Worker-Block.
+Seit OFFLINE-001 besitzt die App einen produktiven Service Worker mit versioniertem App-Shell-Cache und Navigation-Fallback für den Offline-Kaltstart. Er arbeitet relativ zum jeweiligen App-Pfad, speichert keine Geschäftsdaten und übernimmt laufende Sitzungen nicht erzwungen. Ein Updateclient, signierte Update-Metadaten und eine nutzergesteuerte Aktivierung außerhalb offener Arbeitsabläufe sind noch nicht umgesetzt.
 
 Später vorgesehen sind:
 

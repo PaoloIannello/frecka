@@ -2,7 +2,7 @@
 
 Stand: 8. August 2026
 
-Geltungsbereich: bestehender Stand `0.9.0`, Build `COMM-001 / QR-002`
+Geltungsbereich: Stand `0.9.1`, Build `OFFLINE-001`
 
 Der verbindliche Infrastrukturrahmen steht in `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`. Dieses Dokument konkretisiert ausschließlich die statische Laufzeitmenge und ihre spätere Zuordnung zu Synology Web Station.
 
@@ -10,12 +10,11 @@ Der verbindliche Infrastrukturrahmen steht in `docs/architecture/FRECKA_Infrastr
 
 Dieses Dokument leitet eine minimale spätere Bereitstellungsstruktur aus dem vorhandenen FRECKA-Projekt ab. Es verändert weder produktive Logik noch PWA-, Persistenz-, Backup-, Export-, Dokument-, QR- oder Share-Verhalten.
 
-Für diesen Architekturblock wurden bewusst nicht angelegt:
+Weiterhin bewusst nicht angelegt sind:
 
 - keine Landingpage;
 - keine Beta-Kopie;
 - keine Download- oder Update-Platzhalter;
-- kein Service Worker;
 - keine Serverkonfiguration;
 - kein Build-Framework und keine externe Abhängigkeit.
 
@@ -32,6 +31,7 @@ FRECKA/
 ├── index.html
 ├── styles.css
 ├── manifest.webmanifest
+├── service-worker.js
 ├── icons/
 ├── js/
 ├── vendor/
@@ -51,6 +51,7 @@ Für eine unveränderte statische Auslieferung werden nur folgende Dateien benö
 index.html
 styles.css
 manifest.webmanifest
+service-worker.js
 icons/
   icon-192.png
   icon-512.png
@@ -102,7 +103,7 @@ lokale Vendor-Dateien
 
 Ein Deployment darf Skripte weder automatisch umsortieren noch einzeln minifizieren, umbenennen oder bündeln. Eine solche Änderung wäre ein eigener Entwicklungsblock und kein Infrastrukturvorgang.
 
-Alle produktiven Pfade sind relativ. Der bestehende Browsertest unter einem Unterverzeichnis hat bestätigt, dass Manifest, Stylesheet und alle 14 Skripte unter einem gemeinsamen Pfad korrekt aufgelöst werden. Das Hash-Routing benötigt keine serverseitige Rewrite-Regel.
+Alle produktiven Pfade sind relativ. Manifest, Stylesheet, alle 14 Skripte und die Service-Worker-Registrierung werden daher sowohl am Origin-Root als auch unter einem gemeinsamen Release-Unterpfad korrekt aufgelöst. Das Hash-Routing benötigt keine serverseitige Rewrite-Regel.
 
 ### 2.4 PWA-Status
 
@@ -111,22 +112,25 @@ Vorhanden sind:
 - ein Web App Manifest mit relativem `start_url` und relativem `scope`;
 - Icons in 192 × 192 und 512 × 512 Pixel;
 - Standalone-Darstellung und Apple-Metadaten;
+- ein produktiver Service Worker mit versionsgebundenem App-Shell-Cache;
+- atomare Vorabablage aller zum Kaltstart benötigten statischen Dateien;
+- Navigation-Fallback auf die gecachte `index.html`;
 - lokale IndexedDB-Persistenz;
 - ausschließlich lokale statische Laufzeitabhängigkeiten.
 
 Noch nicht vorhanden beziehungsweise nicht produktionsreif sind:
 
-- kein Service Worker und keine App-Shell-Datei;
-- keine Offline-Auslieferung des Programmcodes nach einem Kaltstart;
 - keine implementierte Updateprüfung oder Updateaktivierung;
 - kein Release-/Update-Manifest;
 - keine reproduzierbare automatische Release-Pipeline;
 - kein eigener PWA-Installationsidentifikator im Manifest;
 - keine Maskable-Icons;
 - veraltete Manifesttexte wie „UX-Prototyp ohne echte Datenhaltung“;
-- ein fest codierter Asset-Abfragewert `comm001-1`, der vor jedem echten Code-Release geändert werden müsste.
+- ein pro Code-Release bewusst zu aktualisierender Asset-Abfragewert.
 
-`js/app.js` meldet vorhandene Service Worker ab und leert Cache Storage beim Start. Der aktuelle Stand ist daher eine manifestfähige statische Web-App, aber noch keine offline startfähige PWA-App-Shell im Sinne von ADR-0001. Diese Lücke darf durch Deploymentdokumentation nicht als gelöst dargestellt werden.
+`js/app.js` registriert `service-worker.js` relativ zur ausgelieferten App-Adresse mit Scope `./`. Der Service Worker lädt die statische Laufzeit-Allowlist während der Installation vollständig in einen versionsgebundenen Cache. Schlägt dies fehl, wird die neue Version nicht installiert. Bei Aktivierung werden ausschließlich ältere Caches mit dem Präfix `frecka-app-shell-` gelöscht; fremde Cache-Storage-Inhalte und IndexedDB bleiben unverändert. Navigationen innerhalb des Scopes verwenden die gecachte `index.html`, sodass die installierte App-Shell nach mindestens einem erfolgreichen Online-Start kalt offline starten kann.
+
+OFFLINE-001 erzwingt weder `skipWaiting()` noch `clients.claim()`. Eine neue Version übernimmt daher nicht ungefragt eine bereits laufende App-Sitzung. Eine nutzergesteuerte Updateanzeige, signierte Update-Metadaten und die sichere Aktivierung außerhalb offener Arbeitsabläufe bleiben ein späterer Updateblock.
 
 Die alten Netlify-/ZIP-Hinweise im hinteren Teil der `README.md` dokumentieren historische Prototypstände. Sie bilden keinen reproduzierbaren aktuellen Releaseprozess und dürfen nicht als Synology-Anweisung verwendet werden.
 
@@ -144,9 +148,9 @@ Die leere `publicViewerBaseUrl` in `js/config.js` ist mit dieser Trennung kompat
 
 ### 2.6 Release-Zustand
 
-Zu Beginn der Analyse war der Quellstand auf `main` beim Commit `aa947a9` sauber. Durch diesen Architekturblock kommt ausschließlich die neue Dokumentationsdatei hinzu. Es existieren keine Git-Tags und kein formaler Releasekatalog. Versionssignale sind derzeit verteilt:
+Der letzte unveränderte Release-Tag ist `v0.9.0`. OFFLINE-001 bereitet die Patchversion `0.9.1` vor; eine verbindliche Release-ID entsteht erst aus dem noch zu erstellenden Release-Commit. Versionssignale sind derzeit verteilt:
 
-- `js/data.js`: Produktversion `0.9.0`, Build `COMM-001 / QR-002`;
+- `js/data.js`: Produktversion `0.9.1`, Build `OFFLINE-001`;
 - `index.html`: Titel und Asset-Abfragewert;
 - `manifest.webmanifest`: Name, Beschreibung, Start-URL und Scope;
 - Git-Commit als einzig eindeutig reproduzierbare Quellrevision.
@@ -194,7 +198,7 @@ Diese Baumdarstellung ist ein Zielbild, keine Aufforderung, leere Ordner anzuleg
 - Für Produktiv und Beta werden keine doppelten Verzeichnisbäume benötigt. Beide Webportale zeigen jeweils auf das vollständige `site/` eines Release-Verzeichnisses.
 - Ein Release darf von beiden Portalen verwendet werden, ohne kopiert zu werden.
 
-Ein Release-Identifier muss eindeutig, dateisystemfreundlich und aus Produktversion, Build und Git-Revision ableitbar sein. Für den analysierten Stand wäre beispielsweise `0.9.0-comm001-qr002-aa947a9` nachvollziehbar. Dies ist eine technische Benennung des Artefakts, kein nachträglich erfundener Produkt-Release.
+Ein Release-Identifier muss eindeutig und dateisystemfreundlich sein. Verbindlich ist das Schema `<version>-<kurzer-git-commit>`, beispielsweise `0.9.1-1a2b3c4`. Die konkrete OFFLINE-001-ID darf erst nach dem Release-Commit gebildet werden.
 
 ## 5. Zuordnung zu Synology Web Station
 
@@ -233,6 +237,7 @@ Vor Freigabe sind mindestens folgende Antworten der Web Station zu kontrollieren
 
 - `index.html` wird als HTML ausgeliefert und nicht langfristig unveränderlich gecacht;
 - `manifest.webmanifest` besitzt einen unterstützten Manifest-/JSON-MIME-Type;
+- `service-worker.js` wird als JavaScript ausgeliefert, darf nicht auf einen fremden Pfad umgeleitet werden und wird nicht langfristig unveränderlich gecacht;
 - JavaScript, CSS, PNG und Lizenztexte sind erreichbar;
 - Hash-Routen bleiben nach Reload erhalten;
 - der Public Viewer erhält die Fragment-Payload ausschließlich clientseitig;
@@ -264,6 +269,7 @@ Mindestens:
 - vollständige Asset-Auflösung aus `index.html` und `manifest.webmanifest`;
 - vorhandener Browser-Smoke-Test;
 - Start am Root und in einem Unterverzeichnis;
+- Service-Worker-Registrierung, vollständiger App-Shell-Cache und Offline-Navigation-Fallback;
 - Public Viewer, PDF, QR, Share-Fallback, Backup und Export;
 - keine Konsolenfehler;
 - keine ungeplanten externen Netzwerkabhängigkeiten.
@@ -284,8 +290,9 @@ Hierfür genügen vorhandene Betriebssystemwerkzeuge. Ein Node-Paket, Bundler od
 1. statischen Webdienst auf das neue `site/` zeigen lassen;
 2. ausschließlich das Beta-Portal auf diesen Dienst umstellen;
 3. HTTPS-, Browser-, PWA-, 320-/390-px- und reale Zielgerätetests durchführen;
-4. insbesondere IndexedDB-Migration, Backup/Restore und Public-Links prüfen;
-5. Kandidaten bei einem Fehler nicht verändern, sondern einen neuen Release-Identifier bauen.
+4. auf einem echten iPhone die installierte Home-Screen-PWA mindestens einmal vollständig online starten, schließen, im Flugmodus erneut öffnen und die lokal vorhandenen Kunden, Belege und Gutscheine prüfen;
+5. insbesondere IndexedDB-Migration, Backup/Restore und Public-Links prüfen;
+6. Kandidaten bei einem Fehler nicht verändern, sondern einen neuen Release-Identifier bauen.
 
 ### Phase 5: Produktion
 
@@ -298,7 +305,7 @@ Ein Code-Rollback kann keine bereits ausgeführte IndexedDB-Migration zurückdre
 
 ## 7. Updates
 
-Für den Updatekanal beschränkt sich die Rolle der Synology auf die Auslieferung statischer Programmdateien und Update-Metadaten. Die nach ADR-0003 getrennten dynamischen Dienste sind davon unabhängig. Im aktuellen Code existiert noch kein Updateclient. Daher werden in diesem Block weder Dateinamen noch JSON-Felder eines vermeintlichen Update-Manifests festgelegt.
+Für den Updatekanal beschränkt sich die Rolle der Synology auf die Auslieferung statischer Programmdateien und Update-Metadaten. Die nach ADR-0003 getrennten dynamischen Dienste sind davon unabhängig. Im aktuellen Code existiert ein produktiver Offline-App-Shell-Service-Worker, aber noch kein Updateclient und keine nutzergesteuerte Updateoberfläche. Daher werden in diesem Block weder Dateinamen noch JSON-Felder eines vermeintlichen Update-Manifests festgelegt.
 
 Vor Befüllung von `public/updates/` müssen separat entschieden und umgesetzt werden:
 
