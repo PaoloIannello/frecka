@@ -2,7 +2,7 @@
 
 ## Status
 
-Angenommen
+Angenommen. Die physische Infrastrukturrolle der Synology wurde durch ADR-0003 erweitert; die Offline- und Datenhoheitsentscheidungen dieses ADR bleiben unverändert.
 
 ## Kontext
 
@@ -16,7 +16,7 @@ FRECKA wird als Offline-First Progressive Web App umgesetzt. Nach erfolgreicher 
 
 Geschäftsdaten werden ausschließlich lokal gespeichert. Netzwerkzugriffe sind Zusatzfunktionen und dürfen den lokalen Kernbetrieb nicht blockieren. Schreibvorgänge werden zuerst lokal abgeschlossen; eine Erfolgsbestätigung wird erst nach erfolgreicher lokaler Speicherung angezeigt.
 
-Updates dürfen offene Arbeitsabläufe nicht unterbrechen. Die Synology dient ausschließlich als Update-Server für statische Programmdateien. Kundendaten und Belege werden weder an FRECKA noch an die Synology übertragen.
+Updates dürfen offene Arbeitsabläufe nicht unterbrechen. Für die PWA dient die Synology ausschließlich der statischen Veröffentlichung und Update-Auslieferung. Nach ADR-0003 darf dieselbe physische Synology zusätzlich technisch getrennte Mailrelay- und Lizenzdienste hosten. Diese Dienste bilden keine zentrale Geschäftsdatenhaltung. Nur das Mailrelay darf ein vom Nutzer ausdrücklich ausgewähltes Dokument zweckgebunden und vorübergehend für den Versand verarbeiten; der Lizenzdienst erhält keine Beleg- oder Kundendaten.
 
 Die konkrete Wahl der lokalen Speichertechnologie, insbesondere IndexedDB, ist nicht Gegenstand dieses ADR und wird separat dokumentiert.
 

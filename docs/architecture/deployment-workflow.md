@@ -6,7 +6,7 @@ Geltungsbereich: Entwicklung im einzigen Master-Repository, manuelles Deployment
 
 ## 1. Ziel und Verbindlichkeit
 
-Dieser Workflow beschreibt den vollständigen Weg einer FRECKA-Änderung von der lokalen Entwicklung bis zur archivierten Produktivversion. Er ergänzt `docs/deployment-synology.md` und konkretisiert die Entwicklungs- und Releaseprinzipien aus `PROJECT.md`.
+Dieser Workflow beschreibt den vollständigen Weg einer FRECKA-Änderung von der lokalen Entwicklung bis zur archivierten Produktivversion. Er konkretisiert den Blueprint in `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`, die Synology-Zuordnung in `docs/architecture/deployment-synology.md` und die Entwicklungs- und Releaseprinzipien aus `PROJECT.md`.
 
 Verbindliche Systemgrenzen:
 
@@ -269,7 +269,7 @@ Es gibt keinen dauerhaft parallelen `develop`- oder `release`-Branch. Für jede 
 
 ### 7.1 Inhalt
 
-Das Artefakt folgt der Allowlist aus `docs/deployment-synology.md`:
+Das Artefakt folgt der Allowlist aus `docs/architecture/deployment-synology.md`:
 
 ```text
 <release-id>/
@@ -524,9 +524,11 @@ Der spätere Updateblock muss mindestens festlegen:
 
 Die Update-Origin nimmt keine Kunden-, Beleg-, Lizenz- oder Nutzungsdaten entgegen. Eine reine Abrufprotokollierung des Webservers muss datensparsam konfiguriert und betrieblich bewertet werden.
 
-## 13. Zukünftiger Lizenzdienst
+## 13. Lizenzdienst für V1.0
 
-Ein Lizenzdienst ist kein Bestandteil der statischen App-Auslieferung. Er wird später als eigener Dienst mit eigener Origin, eigener Laufzeit, eigener Datenhaltung und eigenem Deploymentzyklus behandelt.
+Der Lizenzdienst ist für V1.0 vorgesehen, aber keine Voraussetzung für die erste statische Bereitstellung von Landingpage, Beta und App. Er ist kein Bestandteil des statischen Release-Artefakts und wird als eigener Dienst mit eigener Origin, eigener Laufzeit, eigener zweckgebundener Datenhaltung und eigenem Deploymentzyklus behandelt.
+
+Das verbindliche Modell steht in `docs/adr/ADR-0004-lizenzmodell-v1.md`: Eine Lizenz gehört genau einem Mandanten beziehungsweise einer Filiale und erlaubt genau ein gleichzeitig aktives Gerät. Gerätewechsel erfolgt über kontrollierte Deaktivierung oder Übertragung; Mehrgerätebetrieb ist frühestens für eine spätere 2.x-Version vorgesehen.
 
 Verbindliche Grenzen:
 
@@ -536,15 +538,15 @@ Verbindliche Grenzen:
 - versionierte API;
 - TLS und getrennte Dienstzugänge;
 - Ausfall des Lizenzdienstes darf lokale Daten nicht gefährden;
-- Offlineverhalten und Kulanzzeit sind fachliche Produktentscheidungen;
+- Offline-Kulanz, Geräteidentifikation und das konkrete Aktivierungsprotokoll bleiben vor Umsetzung zu entscheiden;
 - Lizenzstatus darf nicht durch heimliche Telemetrie ersetzt werden;
 - Beta und Produktion verwenden getrennte Konfigurationen beziehungsweise Mandantenbereiche.
 
-Vor Umsetzung müssen Lizenzmodell, zulässige Identifikatoren, Datenschutz, Offline-Kulanz, Gerätewechsel, Sperrung, Wiederherstellung und Supportprozess entschieden werden. Bis dahin werden weder Ordner noch API-Platzhalter angelegt.
+Vor Umsetzung müssen zulässige Identifikatoren, Datenschutz, Offline-Kulanz, Aktivierungs-/Übertragungsprotokoll, Sperrung, Wiederherstellung und Supportprozess entschieden werden. Bis dahin werden weder Ordner noch API-Platzhalter angelegt.
 
-## 14. Zukünftiges Mailrelay
+## 14. Mailrelay für V1.0
 
-Auch das Mailrelay ist ein separater Serverdienst und kein Teil des statischen PWA-Releases.
+Das Mailrelay ist für V1.0 vorgesehen, aber keine Voraussetzung für die erste statische Bereitstellung von Landingpage, Beta und App. Es ist ein separater Serverdienst und kein Teil des statischen PWA-Releases.
 
 Verbindliche Grenzen:
 
@@ -640,25 +642,25 @@ In diesem Block werden weder Workflowdateien noch Runner, Actions, Hooks oder Zu
 - [ ] keine Serverdatei manuell repariert
 - [ ] Fix im Repository begonnen
 
-## 17. Entscheidungen, die reale Deployments blockieren
+## 17. Freigaben, die reale Deploymentstufen blockieren
 
-Die Workflowdokumentation ist vollständig. Die erste tatsächliche öffentliche Bereitstellung muss jedoch anhalten, bis entschieden sind:
+Domain `frecka.app`, statische Hosts, realer Zielpfad `/web/FRECKA/`, Synology-Rolle und Lizenzgrundmodell sind entschieden. Die jeweils betroffene Deploymentstufe muss dennoch anhalten, bis folgende Betriebsfragen geklärt sind:
 
-1. Hostnamen, DNS, Zertifikate und verantwortliche Person;
-2. Beta-Zugangsmodell;
-3. benannte Beta- und Produktivfreigabe;
-4. tatsächlicher Synology-Pfad, Deployment-Konto und Übertragungsweg;
-5. Aufbewahrungsfristen für Beta- und Produktivreleases;
-6. verbindliche unterstützte Browser und Geräte;
-7. Service-Worker-/Updateformat einschließlich Signatur und Schlüsselverwaltung;
-8. Lizenzmodell und Offline-Kulanz;
-9. Mailrelay-Provider, Datenschutz-, Queue- und Löschregeln.
+1. HTTPS-Zertifikate und Zuordnung für den jeweiligen Host;
+2. Beta-Zugangsmodell und benannte Beta-/Produktivfreigabe;
+3. Deployment-Konto, Übertragungsweg und minimale Rechte;
+4. Aufbewahrungsfristen für Beta- und Produktivreleases;
+5. verbindlich unterstützte Browser und Geräte;
+6. Service-Worker-/Updateformat einschließlich Signatur und Schlüsselverwaltung;
+7. dokumentierte DSM-Upgrade- und Kompatibilitätsprüfung vor neuen dynamischen öffentlichen Diensten;
+8. Offline-Kulanz und technische Aktivierungslogik des Lizenzdienstes;
+9. Mailrelay-Provider sowie Datenschutz-, Queue- und Löschregeln.
 
 Diese Entscheidungen werden nicht geraten. Sie blockieren keine lokale Entwicklung und keine Dokumentation, wohl aber die jeweils betroffene öffentliche Infrastruktur.
 
-## 18. In diesem Dokumentationsblock geänderte Dateien
+## 18. Verbindliche Begleitdokumente
 
-- neu: `docs/deployment-workflow.md`;
-- ergänzt: `docs/deployment-synology.md` um Release-Metadaten und den Verweis auf diesen Workflow.
-
-Keine Datei außerhalb von `docs/` und keine produktive Funktionalität wurden verändert.
+- `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`;
+- `docs/architecture/deployment-synology.md`;
+- `docs/adr/ADR-0003-synology-als-infrastrukturplattform.md`;
+- `docs/adr/ADR-0004-lizenzmodell-v1.md`.

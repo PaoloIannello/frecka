@@ -30,3 +30,10 @@ Vorgeschlagen / Angenommen / Ersetzt / Verworfen
 ```
 
 Bereits getroffene Grundsatzentscheidungen können nachträglich als eigene ADRs dokumentiert werden. Dabei ist kenntlich zu machen, dass die Entscheidung schon vor Erstellung des ADR bestand.
+
+## Verzeichnis
+
+- `ADR-0001-offline-first-architektur.md`: lokale Offline-First-PWA und Datenhoheit;
+- `ADR-0002-indexeddb-als-lokale-persistenz.md`: IndexedDB als lokale Hauptpersistenz;
+- `ADR-0003-synology-als-infrastrukturplattform.md`: getrennte statische und dynamische Synology-Rollen;
+- `ADR-0004-lizenzmodell-v1.md`: ein Mandant/eine Filiale und ein aktives Gerät pro Lizenz in V1.0.

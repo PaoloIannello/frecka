@@ -1,8 +1,10 @@
 # FRECKA – Architektur- und Entwicklungsrichtlinie
 
-**Status:** Verbindliche Leitlinie  
-**Geltungsbereich:** Alle zukünftigen Produkt-, Architektur- und Entwicklungsarbeiten an FRECKA  
-**Letzte Aktualisierung:** 7. August 2026
+**Status:** Verbindliche Leitlinie
+
+**Geltungsbereich:** Alle zukünftigen Produkt-, Architektur- und Entwicklungsarbeiten an FRECKA
+
+**Letzte Aktualisierung:** 8. August 2026
 
 Dieses Dokument beschreibt die verbindliche Zielrichtung von FRECKA. Der aktuelle Stand ist ein browserbasierter Prototyp mit lokaler IndexedDB-Persistenz für Einstellungen, Katalog, Kunden, Belege und Gutscheine sowie manueller verschlüsselter Gesamtsicherung und atomarer Wiederherstellung. COMM-001 / QR-002 ergänzt einen zentralen, zustandslosen Share-Service und geräteübergreifende Kundenlinks mit einer datensparsamen Dokumentprojektion im URL-Fragment; eine zentrale Belegablage entsteht dadurch nicht. Aussagen zu noch offenen Teilen der Zielarchitektur kennzeichnen nicht automatisch bereits implementierte Funktionen. Abweichungen von diesen Leitlinien benötigen eine dokumentierte Architekturentscheidung (ADR) mit Begründung, Folgen und Migrationsweg.
 
@@ -117,7 +119,7 @@ Verbindliche Regeln:
 
 ## 8. Update-Strategie
 
-Die Synology dient ausschließlich als Update-Server. Sie stellt statische Programmdateien und notwendige Update-Metadaten bereit; sie empfängt und speichert keine Geschäfts- oder Nutzungsdaten.
+Für die PWA dient die Synology ausschließlich als statischer Deployment- und Update-Server. Sie stellt Programmdateien und notwendige Update-Metadaten bereit; sie empfängt und speichert keine Geschäfts- oder Nutzungsdaten. Nach ADR-0003 darf dieselbe physische Synology zusätzlich technisch getrennte Mailrelay- und Lizenzdienste hosten. Auch diese Dienste dürfen keine zentrale Beleg-, Kunden- oder Katalogdatenbank bilden.
 
 - Updates ersetzen ausschließlich Programmcode und statische Assets.
 - Ein Update liest Geschäftsdaten nur lokal im Rahmen einer dokumentierten Schemamigration. Es überträgt sie nicht an den Update-Server.
@@ -130,7 +132,7 @@ Die Synology dient ausschließlich als Update-Server. Sie stellt statische Progr
 ## 9. Sicherheitsprinzipien
 
 - **Datensparsamkeit:** Es werden nur Daten erhoben und gespeichert, die für den konkreten Geschäftszweck erforderlich sind.
-- **Keine zentrale Datensammlung:** Kundendaten, Belege, Kataloge oder Nutzungsprofile werden nicht automatisch an FRECKA, die Synology oder Dritte übertragen. Nur eine ausdrückliche Nutzeraktion darf ausgewählte Dateien oder Links an ein vom Betriebssystem angebotenes Share-Ziel übergeben; FRECKA erhält keine zentrale Kopie.
+- **Keine zentrale Datensammlung:** Kundendaten, Belege, Kataloge oder Nutzungsprofile werden nicht automatisch an FRECKA, die Synology oder Dritte übertragen. Nur eine ausdrückliche Nutzeraktion darf ausgewählte Dateien oder Links an ein vom Betriebssystem angebotenes Share-Ziel oder künftig an das getrennte Mailrelay übergeben. Das Relay darf sie ausschließlich zweckgebunden und vorübergehend für den Versand verarbeiten; FRECKA erhält keine zentrale Geschäftsdatenkopie.
 - **Verschlüsselte Backups:** Backupdaten werden vor Verlassen der Anwendung mit einer etablierten, durch die Web Crypto API bereitgestellten authentifizierten Verschlüsselung geschützt. Schlüssel oder Passphrasen werden nicht gemeinsam mit dem Backup gespeichert oder an FRECKA übertragen.
 - **Sichere Voreinstellungen:** Exporte, Netzwerkzugriffe und potenziell irreversible Aktionen benötigen eine klare Nutzerhandlung.
 - **Integrität:** Backup- und Updateformate werden auf Manipulation, Vollständigkeit und unterstützte Versionen geprüft.
@@ -228,6 +230,9 @@ Die Version 1.0 liefert einen kleinen, stabilen und vollständig offline nutzbar
 - vom Kunden kontrollierte Ablage ermöglichen, ohne zentralen FRECKA-Speicher;
 - statische, integritätsgeprüfte Updates von der Synology mit sicherem Aktivierungszeitpunkt umsetzen;
 - Offline-, Update-, Migrations-, Backup- und Restore-Szenarien auf realen Zielgeräten abnehmen.
+- den für V1.0 vorgesehenen Lizenzdienst nach ADR-0004 mit genau einem aktiven Gerät pro Lizenz, kontrollierter Geräteübertragung und noch festzulegender Offline-Kulanz umsetzen;
+- das für V1.0 vorgesehene Mailrelay als getrennten, optionalen Versanddienst mit dem bestehenden Fallback „Teilen“ umsetzen;
+- weder Lizenzdienst noch Mailrelay zur Voraussetzung für die erste statische Bereitstellung von Landingpage, Beta und App machen.
 
 ### Freigabekriterien für 1.0
 
@@ -250,7 +255,7 @@ Mögliche Entwicklungsfelder:
 
 - komfortablere lokale Auswertungen und Exporte;
 - erweiterte Katalog-, Gutschein- und Kundenfunktionen;
-- optionale, Ende-zu-Ende verschlüsselte Synchronisation zwischen Kundengeräten, ausschließlich mit kundeneigenem Speicher und ohne zentralen FRECKA-Datenbestand;
+- frühestens ab Version 2.x eine optionale, Ende-zu-Ende verschlüsselte Synchronisation zwischen Kundengeräten, ausschließlich mit kundeneigenem Speicher und ohne zentralen FRECKA-Datenbestand;
 - verbesserte Wiederherstellung, Backuprotation und vom Kunden steuerbare Automatisierung;
 - zusätzliche Ausgabe-, Druck- und Integrationswege mit klarer Einwilligung und lokaler Kontrolle;
 - Mehrsprachigkeit und weitergehende Barrierefreiheit;

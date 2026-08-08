@@ -4,6 +4,8 @@ Stand: 8. August 2026
 
 Geltungsbereich: bestehender Stand `0.9.0`, Build `COMM-001 / QR-002`
 
+Der verbindliche Infrastrukturrahmen steht in `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`. Dieses Dokument konkretisiert ausschließlich die statische Laufzeitmenge und ihre spätere Zuordnung zu Synology Web Station.
+
 ## 1. Zweck und Grenzen
 
 Dieses Dokument leitet eine minimale spätere Bereitstellungsstruktur aus dem vorhandenen FRECKA-Projekt ab. Es verändert weder produktive Logik noch PWA-, Persistenz-, Backup-, Export-, Dokument-, QR- oder Share-Verhalten.
@@ -165,10 +167,10 @@ Ein Updateformat, ein Signaturverfahren und ein Updateclient sind ausdrücklich 
 
 ## 4. Empfohlene minimale Zielstruktur
 
-`<web-share>` bezeichnet den tatsächlichen gemeinsamen Web-Ordner des NAS. Bei einer Standardinstallation ist dies häufig `/volume1/web`; Volume und Pfad müssen auf dem Zielgerät geprüft und dürfen nicht hart codiert werden.
+`<web-share>` bezeichnet portabel den von Web Station verwendeten Web-Ordner. In der realen aktuellen Konfiguration entspricht die sichtbare Zielbasis `/web`; FRECKA verwendet darin bewusst die vorhandene Großschreibung `/web/FRECKA/`.
 
 ```text
-<web-share>/frecka/
+<web-share>/FRECKA/
 ├── public/
 │   ├── index.html                 # spätere Landingpage
 │   ├── docs/                      # nur veröffentlichte Nutzerdokumentation
@@ -196,20 +198,22 @@ Ein Release-Identifier muss eindeutig, dateisystemfreundlich und aus Produktvers
 
 ## 5. Zuordnung zu Synology Web Station
 
-Synology Web Station unterstützt statische Websites sowie namens- oder portbasierte Webportale mit zugeordnetem Document Root. Für Website-Ordner benötigt die Gruppe `http` mindestens Leserechte. Die verbindliche DSM-Bezeichnung muss anhand der installierten DSM-/Web-Station-Version geprüft werden; die folgende Zuordnung orientiert sich an DSM 7.2 und neuer.
+Der reale Server ist eine DS218+ mit DSM 6.2.4. Diese Version verwendet in Web Station die Virtual-Host-Terminologie. Der bereits eingerichtete Landing-Host zeigt auf `web/FRECKA/public`. Nach einem späteren DSM-Upgrade müssen Bezeichnungen, Web-Station-Profile und Zuordnungen anhand der dann installierten Version erneut geprüft werden.
+
+Für Website-Ordner benötigt die Gruppe `http` ausschließlich Leserechte. Ein DSM-Upgrade ist kein Bestandteil dieses Dokuments und darf wegen der vorhandenen Coaching- und Event-Systeme nur nach der im Blueprint festgelegten Kompatibilitätsprüfung erfolgen.
 
 ### 5.1 Dienste und Portale
 
 | Zweck | Empfohlene Origin | Web-Station-Document-Root |
 |---|---|---|
-| Landingpage | `https://<landing-host>/` | `<web-share>/frecka/public/` |
-| Produktive App | `https://<app-host>/` | `<web-share>/frecka/releases/<freigegeben>/site/` |
-| Beta-App | `https://<beta-host>/` | `<web-share>/frecka/releases/<kandidat>/site/` |
-| Dokumentation | `https://<landing-host>/docs/` | Unterordner `public/docs/` |
-| Downloads | `https://<landing-host>/downloads/` | Unterordner `public/downloads/` |
-| Updates | `https://<landing-host>/updates/` oder später eigener Host | Unterordner `public/updates/` |
+| Landingpage | `https://frecka.app/` | `/web/FRECKA/public/` |
+| Produktive App | `https://app.frecka.app/` | `/web/FRECKA/releases/<freigegeben>/site/` |
+| Beta-App | `https://beta.frecka.app/` | `/web/FRECKA/releases/<kandidat>/site/` |
+| Dokumentation | `https://frecka.app/docs/` | Unterordner `public/docs/` |
+| Downloads | `https://frecka.app/downloads/` | Unterordner `public/downloads/` |
+| Updates | `https://frecka.app/updates/` | Unterordner `public/updates/` |
 
-Landingpage, Dokumentation, Downloads und Updates teilen sich absichtlich einen statischen öffentlichen Document Root. Separate Web-Station-Dienste hierfür wären ohne unterschiedliche Sicherheits-, Header- oder Betreiberanforderungen unnötig.
+Landingpage, Dokumentation, Downloads und Updates teilen sich absichtlich einen statischen öffentlichen Document Root. Eigene Subdomains werden nur bei einem später nachgewiesenen technischen Bedarf eingeführt.
 
 Produktiv und Beta werden dagegen als zwei namensbasierte HTTPS-Portale eingerichtet, auch wenn beide zeitweise dasselbe Release-Artefakt verwenden. Das trennt ihre Browserdaten zuverlässig.
 
@@ -239,7 +243,7 @@ Eine restriktive Content Security Policy und weitere Sicherheitsheader sind sinn
 
 ## 6. Minimaler Build- und Releaseprozess
 
-Der vollständige operative Ablauf einschließlich Entwicklung, Versionierung, Beta, Produktion, Rollback und Archivierung steht in `docs/deployment-workflow.md`.
+Der vollständige operative Ablauf einschließlich Entwicklung, Versionierung, Beta, Produktion, Rollback und Archivierung steht in `docs/architecture/deployment-workflow.md`.
 
 Da FRECKA keinen Build benötigt, bedeutet „Build“ ausschließlich **prüfen, selektiv kopieren und verifizieren**.
 
@@ -268,9 +272,10 @@ Mindestens:
 
 1. neues Verzeichnis `releases/<release-id>/site/` anlegen;
 2. ausschließlich die Allowlist aus Abschnitt 2.2 hineinkopieren;
-3. für alle enthaltenen Dateien eine deterministisch sortierte `SHA256SUMS` erzeugen;
-4. Prüfsummen unmittelbar gegen die Staging-Kopie prüfen;
-5. Staging-Verzeichnis danach nicht mehr verändern.
+3. `RELEASE.txt` nach dem verbindlichen Workflow erzeugen;
+4. für `site/` und `RELEASE.txt` eine deterministisch sortierte `SHA256SUMS` erzeugen;
+5. Prüfsummen unmittelbar gegen die Staging-Kopie prüfen;
+6. vollständiges Release-Verzeichnis danach nicht mehr verändern.
 
 Hierfür genügen vorhandene Betriebssystemwerkzeuge. Ein Node-Paket, Bundler oder Container ist nicht erforderlich.
 
@@ -293,7 +298,7 @@ Ein Code-Rollback kann keine bereits ausgeführte IndexedDB-Migration zurückdre
 
 ## 7. Updates
 
-Die Synology ist laut Projektarchitektur ausschließlich Quelle statischer Programmdateien und Update-Metadaten. Im aktuellen Code existiert noch kein Updateclient. Daher werden in diesem Block weder Dateinamen noch JSON-Felder eines vermeintlichen Update-Manifests festgelegt.
+Für den Updatekanal beschränkt sich die Rolle der Synology auf die Auslieferung statischer Programmdateien und Update-Metadaten. Die nach ADR-0003 getrennten dynamischen Dienste sind davon unabhängig. Im aktuellen Code existiert noch kein Updateclient. Daher werden in diesem Block weder Dateinamen noch JSON-Felder eines vermeintlichen Update-Manifests festgelegt.
 
 Vor Befüllung von `public/updates/` müssen separat entschieden und umgesetzt werden:
 
@@ -309,34 +314,39 @@ Vor Befüllung von `public/updates/` müssen separat entschieden und umgesetzt w
 
 SHA-256-Dateiprüfungen sichern den Transport beziehungsweise die Staging-Konsistenz, ersetzen aber keine signierte Updateherkunft.
 
-## 8. Noch erforderliche fachliche und betriebliche Entscheidungen
+## 8. Noch erforderliche betriebliche Freigaben
 
-Die Dokumentation kann ohne diese Angaben abgeschlossen werden. Eine reale Synology-Einrichtung oder öffentliche Freigabe muss dagegen anhalten, bis folgende Entscheidungen getroffen wurden:
+Domain, Hostmodell, reale Pfadbasis, Lizenzmodell und grundsätzliche Synology-Rolle sind im Blueprint und in ADR-0003/ADR-0004 entschieden. Eine reale nächste Freigabestufe muss dennoch anhalten, bis die jeweils betroffenen Betriebsfragen geklärt sind:
 
-1. endgültige Hostnamen für Landingpage, Produktion und Beta sowie DNS-/Zertifikatsverantwortung;
-2. ob und wie der Beta-Zugang beschränkt wird;
-3. welche Inhalte als öffentliche Nutzerdokumentation gelten – das vorhandene Entwicklerverzeichnis `docs/` wird nicht automatisch veröffentlicht;
-4. Inhalt, Impressum, Datenschutzangaben und Verantwortlichkeit der Landingpage;
-5. Art der späteren Downloads;
-6. Updatekanäle, Updateformat und Signatur-/Schlüsselarchitektur;
-7. Freigabeverantwortung, Release-Aufbewahrung und Zeitpunkt der Bereinigung alter Releases;
-8. Verhalten öffentlicher Beta-QR-Links bei einer späteren Produktivschaltung.
+1. Zertifikatsausstellung und konkrete Zuordnung für jeden freigegebenen Host;
+2. Zugriffsschutz und Freigabekreis der Beta-Origin;
+3. Deployment-Konto, Übertragungsweg und minimale Rechte;
+4. öffentliche Inhalte, Impressum und Datenschutzangaben der Landingpage;
+5. Updateformat sowie Signatur- und Schlüsselarchitektur;
+6. Release-Aufbewahrung und verantwortliche Produktivfreigabe;
+7. DSM-Upgrade- und Kompatibilitätsplan vor Mailrelay oder Lizenzdienst;
+8. Provider-, Datenschutz-, Queue- und Löschregeln des Mailrelays;
+9. Offline-Kulanz sowie Aktivierungs- und Übertragungsprotokoll des Lizenzdienstes.
 
-Diese Punkte werden nicht geraten. Sie ändern jedoch nicht die hier empfohlene Grundstruktur aus statischem Public-Bereich, unveränderlichen Releases und getrennten App-Origins.
+Diese Punkte werden nicht geraten. Sie ändern nicht die beschlossene Grundstruktur aus statischem Public-Bereich, unveränderlichen Releases, getrennten App-Origins und getrennten dynamischen Diensten.
 
-## 9. In diesem Architekturblock geänderte Dateien
+## 9. Dokumentbeziehungen
 
-Neu angelegt wurde ausschließlich:
-
-- `docs/deployment-synology.md`
-
-Bestehende FRECKA-Dateien und produktive Funktionalität wurden nicht verändert.
+- `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`: verbindlicher Infrastrukturrahmen und datiertes Inventar;
+- `docs/architecture/deployment-workflow.md`: operativer Entwicklungs- und Releaseprozess;
+- `docs/adr/ADR-0003-synology-als-infrastrukturplattform.md`: Rolle der Synology;
+- `docs/adr/ADR-0004-lizenzmodell-v1.md`: Lizenz- und Gerätemodell.
 
 ## 10. Referenzen
 
+- Synology Knowledge Center: [Virtual Host unter DSM 6.2](https://kb.synology.com/en-global/DSM/help/WebStation/application_webserv_virtualhost?version=6)
 - Synology Knowledge Center: [Web Service – statische Website](https://kb.synology.com/en-global/DSM/help/WebStation/application_webserv_webservice?version=7)
 - Synology Knowledge Center: [Web Portal – namens- und portbasierte Portale](https://kb.synology.com/en-global/DSM/help/WebStation/application_webserv_virtualhost?version=7)
 - Synology Knowledge Center: [Berechtigungen für Website-Ordner](https://kb.synology.com/de-de/DSM/tutorial/What_should_I_set_permissions_to_folders_for_websites)
+- `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`
+- `docs/architecture/deployment-workflow.md`
+- `docs/adr/ADR-0003-synology-als-infrastrukturplattform.md`
+- `docs/adr/ADR-0004-lizenzmodell-v1.md`
 - `PROJECT.md`, insbesondere Offline-First-, Update-, Sicherheits- und Releaseprinzipien
 - `docs/adr/ADR-0001-offline-first-architektur.md`
 - `docs/persistence.md`
