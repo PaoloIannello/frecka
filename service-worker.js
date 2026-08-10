@@ -1,30 +1,30 @@
 "use strict";
 
 const APP_SHELL_CACHE_PREFIX = "frecka-app-shell-";
-const APP_SHELL_CACHE = `${APP_SHELL_CACHE_PREFIX}0.10.0-export001-2`;
+const APP_SHELL_CACHE = `${APP_SHELL_CACHE_PREFIX}0.10.1-export003-1`;
 const APP_ENTRY_URL = new URL("./index.html", self.location.href).href;
 const APP_SHELL_PATHS = Object.freeze([
   "./index.html",
-  "./styles.css?v=export001-2",
-  "./manifest.webmanifest?v=export001-2",
+  "./styles.css?v=export003-1",
+  "./manifest.webmanifest?v=export003-1",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
-  "./vendor/qrcodegen-v1.8.0-es6.js?v=export001-2",
-  "./vendor/pdf-lib-v1.17.1.min.js?v=export001-2",
-  "./vendor/jszip-v3.10.1.min.js?v=export001-2",
-  "./js/config.js?v=export001-2",
-  "./js/qr.js?v=export001-2",
-  "./js/documents.js?v=export001-2",
-  "./js/public-documents.js?v=export001-2",
-  "./js/sharing.js?v=export001-2",
-  "./js/document-view.js?v=export001-2",
-  "./js/public-viewer.js?v=export001-2",
-  "./js/data.js?v=export001-2",
-  "./js/persistence.js?v=export001-2",
-  "./js/backup.js?v=export001-2",
-  "./js/export.js?v=export001-2",
-  "./js/export-package.js?v=export001-2",
-  "./js/app.js?v=export001-2"
+  "./vendor/qrcodegen-v1.8.0-es6.js?v=export003-1",
+  "./vendor/pdf-lib-v1.17.1.min.js?v=export003-1",
+  "./vendor/jszip-v3.10.1.min.js?v=export003-1",
+  "./js/config.js?v=export003-1",
+  "./js/qr.js?v=export003-1",
+  "./js/documents.js?v=export003-1",
+  "./js/public-documents.js?v=export003-1",
+  "./js/sharing.js?v=export003-1",
+  "./js/document-view.js?v=export003-1",
+  "./js/public-viewer.js?v=export003-1",
+  "./js/data.js?v=export003-1",
+  "./js/persistence.js?v=export003-1",
+  "./js/backup.js?v=export003-1",
+  "./js/export.js?v=export003-1",
+  "./js/export-package.js?v=export003-1",
+  "./js/app.js?v=export003-1"
 ]);
 const APP_SHELL_URLS = APP_SHELL_PATHS.map(path => new URL(path, self.location.href).href);
 

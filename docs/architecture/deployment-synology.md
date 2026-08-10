@@ -2,7 +2,7 @@
 
 Stand: 10. August 2026
 
-Geltungsbereich: vorbereiteter Stand `0.10.0`, Build `EXPORT-001`; noch kein Release-Tag oder Artefakt
+Geltungsbereich: vorbereiteter Stand `0.10.1`, Build `EXPORT-003`; noch kein Release-Tag oder Artefakt
 
 Der verbindliche Infrastrukturrahmen steht in `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`. Dieses Dokument konkretisiert ausschließlich die statische Laufzeitmenge und ihre spätere Zuordnung zu Synology Web Station.
 
@@ -151,9 +151,9 @@ Die leere `publicViewerBaseUrl` in `js/config.js` ist mit dieser Trennung kompat
 
 ### 2.6 Release-Zustand und vorbereiteter Kandidat
 
-Der annotierte Release-Tag `v0.9.1` zeigt auf Commit `26dc63fbea434d9fb33a7e88a6af0419cb8cddae`. Das unveränderliche Artefakt trägt die Release-ID `0.9.1-26dc63f` und bleibt die stabile Beta-Basis.
+Der annotierte Release-Tag `v0.9.1` zeigt auf Commit `26dc63fbea434d9fb33a7e88a6af0419cb8cddae`. Das unveränderliche Artefakt trägt die Release-ID `0.9.1-26dc63f` und bleibt die dokumentierte stabile Beta-Basis. Der Tag `v0.10.0` zeigt auf Commit `dc55cf06fdb00548307beb8efc6e6eaac6369840` und bildet die direkte technische Vorgängerversion des Patchkandidaten.
 
-Im Repository ist Version `0.10.0`, Build `EXPORT-001`, als nächster Kandidat vorbereitet. Produktversion und Build in `js/data.js`, HTML-Titel, Asset-Abfragewert `export001-2`, Manifestmetadaten und App-Shell-Cache sind konsistent. `docs/releases/0.10.0.md` dokumentiert Inhalt, Upgrade, Rückweg und Prüfumfang. Der Tag `v0.10.0`, die konkrete Release-ID und das Artefakt dürfen erst nach dem ausdrücklich freigegebenen Release-Commit entstehen.
+Im Repository ist Version `0.10.1`, Build `EXPORT-003`, als nächster Kandidat vorbereitet. Produktversion und Build in `js/data.js`, HTML-Titel, Asset-Abfragewert `export003-1`, Manifestmetadaten und App-Shell-Cache sind konsistent. `docs/releases/0.10.1.md` dokumentiert Inhalt, Upgrade, Rückweg und Prüfumfang. Der Tag `v0.10.1`, die konkrete Release-ID und das Artefakt dürfen erst nach dem ausdrücklich freigegebenen Release-Commit entstehen.
 
 Ein Updateformat, ein Signaturverfahren und ein Updateclient sind ausdrücklich noch nicht implementiert.
 
@@ -204,7 +204,7 @@ Diese Baumdarstellung ist ein Zielbild, keine Aufforderung, leere Ordner anzuleg
 - Für Produktiv und Beta werden keine doppelten Verzeichnisbäume benötigt. Beide Webportale zeigen jeweils auf das vollständige `site/` eines Release-Verzeichnisses.
 - Ein Release darf von beiden Portalen verwendet werden, ohne kopiert zu werden.
 
-Ein Release-Identifier muss eindeutig und dateisystemfreundlich sein. Verbindlich ist das Schema `<version>-<kurzer-git-commit>`, beispielsweise `0.10.0-1a2b3c4`. Die konkrete ID des vorbereiteten Kandidaten darf erst nach dem Release-Commit gebildet werden.
+Ein Release-Identifier muss eindeutig und dateisystemfreundlich sein. Verbindlich ist das Schema `<version>-<kurzer-git-commit>`, beispielsweise `0.10.1-1a2b3c4`. Die konkrete ID des vorbereiteten Kandidaten darf erst nach dem Release-Commit gebildet werden.
 
 ## 5. Zuordnung zu Synology Web Station
 

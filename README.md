@@ -1,6 +1,6 @@
-# FRECKA – EXPORT-001
+# FRECKA – EXPORT-003
 
-Browserbasierte FRECKA-PWA 0.10.0 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer- und Share-Infrastruktur. Ein versionsgebundener Service Worker hält die vollständige statische App-Shell für den Kaltstart nach einer erfolgreichen Online-Installation offline bereit. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
+Browserbasierte FRECKA-PWA 0.10.1 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer- und Share-Infrastruktur. Ein versionsgebundener Service Worker hält die vollständige statische App-Shell für den Kaltstart nach einer erfolgreichen Online-Installation offline bereit. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
 
 ## Start
 
@@ -9,6 +9,14 @@ Browserbasierte FRECKA-PWA 0.10.0 mit lokaler IndexedDB-Persistenz, verschlüsse
 ## Kernablauf
 
 Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufklappen und bearbeiten → Weiter → Kunde optional und Zahlungsart simulieren → Demo abschließen.
+
+## Neu in EXPORT-003
+
+- zentrale bidirektionale Invariante zwischen Gutschein und Gutscheinverkaufsbeleg
+- eindeutige Prüfung von Receipt-ID, Belegnummer, Belegart und Gutschein-Gegenreferenz
+- vollständiger Abbruch von Laufzeitschreibvorgängen, Backup/Restore und Export bei inkonsistentem Datenstand
+- vier konsistent vervollständigte Demo-Gutscheinverkaufsbelege ohne neue Gutscheinsteuerlogik
+- End-to-End- und Negativtests für Persistenz, Reload, Snapshot, Exportpaket und PDF
 
 ## Neu in OFFLINE-001
 
@@ -45,7 +53,7 @@ Die Architekturverträge stehen in `docs/sharing.md` und `docs/public-receipt-qr
 - unveränderte Snapshot-, Cent-, Beleg- und Gutscheinwerte ohne zweite Geschäftslogik
 - sichere Dateinamen ohne Kundendaten
 - lokal vendortes `pdf-lib` 1.17.1 unter MIT-Lizenz; kein CDN und kein Server
-- 128 bestandene native Browser-Smoke-Tests sowie automatisiertes PDF-Rendering mit Text- und Sichtprüfung
+- 134 bestandene native Browser-Smoke-Tests sowie automatisiertes PDF-Rendering mit Text- und Sichtprüfung
 
 Der vollständige Dokumentvertrag steht in `docs/documents-pdf.md`.
 
@@ -58,7 +66,7 @@ Der vollständige Dokumentvertrag steht in `docs/documents-pdf.md`.
 - fokussierte, bildschirmfüllende PWA-Ansicht ohne Navigation, Menüs oder Werkzeugleisten
 - lokale Deep-Link-Auflösung nach Reload sowie verständliche Fehlerzustände für ungültige oder auf dem Gerät nicht vorhandene Referenzen
 - Public Viewer ohne Unternehmernavigation, Einstellungen oder ungefragte lokale Speicherung
-- Public-Viewer-Boot-Test ohne `IndexedDB.open`, reproduzierbare QR-Dichtemessung und Einbindung in den 128-Fälle-Gesamtlauf
+- Public-Viewer-Boot-Test ohne `IndexedDB.open`, reproduzierbare QR-Dichtemessung und Einbindung in den 134-Fälle-Gesamtlauf
 
 Der grundlegende QR-Vertrag steht in `docs/qr.md`; öffentlicher Payload, Fragmenttransport, Datenschutz und Größenlimits stehen in `docs/public-receipt-qr.md`.
 
@@ -74,7 +82,7 @@ Der grundlegende QR-Vertrag steht in `docs/qr.md`; öffentlicher Payload, Fragme
 - optionale, datensparsame `Kunden.csv` ausschließlich beim Exporttyp „Eigene Daten“
 - UTF-8-BOM, Semikolon, deutsche Dezimalwerte, sauberes Escaping und CSV-Injection-Schutz
 - lokal vendortes JSZip 3.10.1 unter MIT-Lizenzoption; kein CDN, keine npm-Runtime und kein Server
-- 128 bestandene native Browser-Smoke-Tests im aktuellen Stand
+- 134 bestandene native Browser-Smoke-Tests im aktuellen Stand
 
 Der vollständige Exportvertrag steht in `docs/export.md`.
 
