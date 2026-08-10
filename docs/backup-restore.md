@@ -1,6 +1,6 @@
 # Verschlüsselte Sicherung und Wiederherstellung
 
-**Stand:** deterministisches Workflow-Hardening nach PERSISTENCE-007 auf Basis BACKUP-001
+**Stand:** BACKUP-002-Hardening auf Basis BACKUP-001 und PERSISTENCE-007
 **Datenbankschema:** 5
 **Backupformat:** 1
 **Geltungsbereich:** Vollständiger lokaler Datenstand eines Mandanten
@@ -21,10 +21,12 @@ BACKUP-001 enthält keine Cloudanbindung, Synchronisation, Automatik, Zeitplanun
 
 Die UI besitzt keinen direkten IndexedDB-Zugriff. Das spätere Exportmodul kann `exportTenantSnapshot` wiederverwenden, ohne eine zweite Datenquelle oder Parallelarchitektur einzuführen.
 
-`js/backup.js` kapselt zusätzlich den technischen Erstellungsablauf:
+`js/backup.js` kapselt zusätzlich Vorbereitung und Ausgabe der Sicherung, ohne beide Phasen zu vermischen:
 
-- `createBackup(options)` führt Snapshot, Verschlüsselung und genau eine Ausgabe in dieser Reihenfolge aus. Schlägt ein Schritt fehl, wird kein nachfolgender Schritt ausgeführt.
-- `deliverBackup(serializedBackup, filename, options)` bereitet die bereits verschlüsselte Datei auf unterstützten Geräten für den zentralen Share-Service vor. `sharePreparedBackup(file)` öffnet den nativen Dialog erst nach einer zweiten ausdrücklichen Nutzeraktion, damit die für Web Share erforderliche Aktivierung nach der rechenintensiven Verschlüsselung zuverlässig vorhanden ist. Ist echtes File-Sharing nicht verfügbar, bleibt der bestehende lokale Download erhalten. Ein abgebrochener Share löst weder Download noch einen zweiten Share-Aufruf aus.
+- `createBackup(options)` liest und validiert den Snapshot und verschlüsselt ihn. Die Funktion erzeugt weder `Blob` noch `File` oder Objekt-URL und startet keine Ausgabe. Als Ergebnis liefert sie ausschließlich den verschlüsselten serialisierten Inhalt und den Dateinamen.
+- Die UI hält dieses vorbereitete Ergebnis nur für die aktuelle Sicherungsseite im Arbeitsspeicher. Navigation, neue Eingabe, neuer Versuch oder Fehler verwerfen es über eine Vorgangskennung; ein verspätet fertiggestelltes Promise darf danach keinen ausgabefähigen Zustand mehr setzen.
+- `deliverBackup(serializedBackup, filename, options)` wird ausschließlich durch die nachgelagerte, ausdrückliche Aktion „Sicherung speichern oder teilen“ aufgerufen. Erst dann entsteht die Datei. Unterstützt das Gerät echtes File-Sharing, öffnet `sharePreparedBackup(file)` den nativen Dialog genau einmal; andernfalls startet dieselbe ausdrückliche Aktion den lokalen Download.
+- Vor jedem Share- oder Downloadversuch wird der vorbereitete UI-Zustand verbraucht. Ein abgebrochener Share löst weder Download noch einen zweiten oder zeitversetzten Share-Aufruf aus.
 
 Beide Funktionen sammeln keine Daten selbst und lockern keine Snapshot- oder Gutschein-/Beleg-Invariante.
 
@@ -115,9 +117,11 @@ Schlägt irgendein Put-Vorgang fehl oder wird die Transaktion abgebrochen, rollt
 2. Sicherungskennwort und Bestätigung werden eingegeben.
 3. FRECKA liest und validiert den vollständigen Tenant-Snapshot.
 4. Der Browser verschlüsselt den Snapshot.
-5. Auf unterstützten Geräten meldet FRECKA die fertig vorbereitete verschlüsselte Datei und öffnet den nativen Teilen-Dialog nach dem ausdrücklichen Antippen von „Sicherung teilen“; andernfalls wird die Datei mit Zeitstempel und Endung `.frecka-backup` lokal heruntergeladen.
+5. FRECKA meldet die abgeschlossene Vorbereitung. Erst das ausdrückliche Antippen von „Sicherung speichern oder teilen“ erzeugt die Datei und öffnet je nach Browser genau einen nativen Teilen-Dialog oder startet genau einen lokalen Download.
 6. Erst nach erfolgreicher Übergabe beziehungsweise erfolgreichem Download werden die beiden Kennwortfelder geleert.
 7. Sicherungskennwort und Klartextpayload werden nicht in App-State, IndexedDB oder Logs übernommen.
+
+Die für einen ausdrücklichen lokalen Download angelegte Objekt-URL bleibt für fünf Minuten gültig, damit ein verzögert arbeitender iOS-Dateidialog die Datei noch lesen kann. Der anschließende Timeout widerruft nur die URL und kann selbst keinen Dialog öffnen.
 
 ### Sicherung wiederherstellen
 
@@ -143,12 +147,13 @@ Schlägt irgendein Put-Vorgang fehl oder wird die Transaktion abgebrochen, rollt
 - Historisch inkonsistenter Gutschein-/Belegbestand bei der Sicherung: keine Datei, keine Verschlüsselung und ein verständlicher Hinweis ohne Codes, Gutscheinreferenzen oder Belegnummern. Unabhängige neue Belege bleiben weiterhin möglich.
 - Verschlüsselungs-, Datei- oder Share-Fehler bei der Sicherung: keine Erfolgsmeldung und keine zweite Ausgabe; die Kennwortfelder bleiben für Korrektur oder Wiederholung erhalten.
 - Abbruch des nativen Teilen-Dialogs: kein automatischer Download und kein zweiter Share-Aufruf. Die Oberfläche meldet den Abbruch, ohne ihn als erfolgreiche Sicherung zu behandeln.
+- Navigation, neue Eingabe oder ein neuer Sicherungsversuch entwerten jede noch laufende beziehungsweise fertig vorbereitete Ausgabe. Deren verspäteter Abschluss darf weder einen Dialog öffnen noch einen neuen Ausgabezustand herstellen.
 
 Fehlerlogs enthalten nur Vorgang und Fehlercode. Passphrase, Schlüsselmaterial, Dateipayload und Geschäftsdaten werden nicht protokolliert.
 
 ## Tests
 
-`tests/persistence-smoke.html` prüft ohne zusätzliches Testframework die gesamte bisherige Persistenz sowie BACKUP-001, HARDEN-001, EXPORT-001/003, PERSISTENCE-007 und QR-001. Der aktuelle Lauf umfasst 144 Fälle. Die Backup-Ergänzungen decken insbesondere den deterministischen Erfolgspfad, den Stopp eines historisch inkonsistenten Bestands vor Verschlüsselung und Ausgabe, Verschlüsselungs- und Dateifehler, Share-Abbruch ohne Fallback, erhaltene Kennwortfelder und gefilterte UI-Meldungen ab. Unverändert geprüft werden Format- und Mandantenprüfung, Vollständigkeit, Referenzen einschließlich der bidirektionalen Gutscheinverkaufsbeleg-Invariante, Nummernstand, Verschlüsselungs-Roundtrip, zufällige Ciphertexte, Klartextausschluss, falsches Kennwort, Payload- und Headermanipulation, abgeschnittene und unbekannte Formate, Export mit und ohne persistierte Stores, Restore in einen leeren Mandanten, vollständiges Überschreiben, atomarer Rollback, erneute Sicherung nach Restore, reversibler Kundenstatus sowie iOS-robuster Dateiname und Downloadtyp. Die fachlichen Export- und ZIP-Fälle sind in `docs/export.md`, die QR-Fälle in `docs/qr.md` beschrieben.
+`tests/persistence-smoke.html` prüft ohne zusätzliches Testframework die gesamte bisherige Persistenz sowie BACKUP-001/002, HARDEN-001, EXPORT-001/003, PERSISTENCE-007 und QR-001. Der aktuelle Lauf umfasst 145 Fälle. Die Backup-Ergänzungen decken insbesondere die reine Vorbereitung ohne vorzeitige Ausgabe, den Stopp eines historisch inkonsistenten Bestands vor Verschlüsselung und Ausgabe, verspätete Promise-Abschlüsse nach Navigation, Verschlüsselungs- und Dateifehler ohne vorbereiteten Zustand, Share-Abbruch ohne Fallback oder zweite Ausgabe, erhaltene Kennwortfelder und gefilterte UI-Meldungen ab. Unverändert geprüft werden Format- und Mandantenprüfung, Vollständigkeit, Referenzen einschließlich der bidirektionalen Gutscheinverkaufsbeleg-Invariante, Nummernstand, Verschlüsselungs-Roundtrip, zufällige Ciphertexte, Klartextausschluss, falsches Kennwort, Payload- und Headermanipulation, abgeschnittene und unbekannte Formate, Export mit und ohne persistierte Stores, Restore in einen leeren Mandanten, vollständiges Überschreiben, atomarer Rollback, erneute Sicherung nach Restore, reversibler Kundenstatus sowie iOS-robuster Dateiname und Downloadtyp. Die fachlichen Export- und ZIP-Fälle sind in `docs/export.md`, die QR-Fälle in `docs/qr.md` beschrieben.
 
 Jeder Lauf verwendet ausschließlich eine zufällig benannte Testdatenbank mit Guard gegen `frecka` und löscht diese anschließend. Ein simulierter Restore-Abbruch ist nur für eindeutig benannte Testdatenbanken freigeschaltet.
 
@@ -163,6 +168,8 @@ Vor einer produktiven Freigabe zusätzlich auf einem realen iPhone in Safari bez
 5. App vollständig schließen, erneut öffnen und Einstellungen, Katalog, Kunden, Belege, Gutscheine, Snapshots, Historien und Nummernstand prüfen.
 6. Ablauf offline sowie bei wenig freiem Speicher testen.
 7. 320- und 390-Pixel-Ansichten, Tastatur, Fokus, langer Dateiname und lange Unternehmensbezeichnung prüfen.
+8. Mit absichtlich inkonsistentem Altbestand die Sicherung ablehnen lassen, mehrere Sekunden warten und danach die Seite wechseln; weder vor noch nach der Navigation darf ein Systemdialog erscheinen.
+9. Einen nativen Teilen-Dialog abbrechen und anschließend navigieren; es darf weder ein Download-Fallback noch ein zweiter oder verspäteter Dialog folgen.
 
 ## Offene Architekturentscheidung
 

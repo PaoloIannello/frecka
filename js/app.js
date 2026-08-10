@@ -145,7 +145,8 @@
 
   let pendingRestoreFile = null;
   let pendingRestoreSnapshot = null;
-  let pendingBackupShareFile = null;
+  let pendingBackupOutput = null;
+  let backupCreationEpoch = 0;
   const publicDocumentCache = new Map();
   const documentPdfFileCache = new Map();
   let receiptPreviewRenderToken = 0;
@@ -3926,7 +3927,8 @@
   function resetRestoreFlow(keepNotice = false) {
     pendingRestoreFile = null;
     pendingRestoreSnapshot = null;
-    pendingBackupShareFile = null;
+    discardPendingBackupOutput();
+    state.backupBusy = false;
     state.backupStage = "select";
     state.backupRestoreFilename = "";
     state.backupRestoreSummary = null;
@@ -3953,6 +3955,17 @@
     return "Die Sicherung konnte aufgrund eines technischen Fehlers nicht erstellt werden.";
   }
 
+  function discardPendingBackupOutput() {
+    pendingBackupOutput = null;
+    backupCreationEpoch += 1;
+  }
+
+  function isCurrentBackupCreation(epoch, form) {
+    return epoch === backupCreationEpoch
+      && state.route === "settings-backup"
+      && form?.isConnected === true;
+  }
+
   function setBackupCreateFormBusy(form, busy) {
     Array.from(form?.elements || []).forEach(control => { control.disabled = busy; });
     const submit = form?.querySelector('button[type="submit"]');
@@ -3976,13 +3989,13 @@
   }
 
   function showBackupShareAction(form) {
-    let button = form.querySelector('[data-action="backup-share-ready"]');
+    let button = form.querySelector('[data-action="backup-output-ready"]');
     if (button) return button;
     button = document.createElement("button");
     button.type = "button";
     button.className = "button button-secondary";
-    button.dataset.action = "backup-share-ready";
-    button.textContent = "Sicherung teilen";
+    button.dataset.action = "backup-output-ready";
+    button.textContent = "Sicherung speichern oder teilen";
     form.querySelector('button[type="submit"]')?.after(button);
     return button;
   }
@@ -3990,9 +4003,9 @@
   function attachBackupCreateBehavior() {
     const form = document.getElementById("backupCreateForm");
     form?.addEventListener("input", () => {
-      if (!pendingBackupShareFile) return;
-      pendingBackupShareFile = null;
-      form.querySelector('[data-action="backup-share-ready"]')?.remove();
+      if (!pendingBackupOutput) return;
+      discardPendingBackupOutput();
+      form.querySelector('[data-action="backup-output-ready"]')?.remove();
       showBackupCreateNotice(form, "Das Sicherungskennwort wurde geändert. Bitte erstelle die Sicherung erneut.", false);
     });
   }
@@ -4044,7 +4057,7 @@
     document.getElementById("backupRestoreFile")?.addEventListener("change", event => {
       const file = event.target.files?.[0] || null;
       if (!file) return;
-      pendingBackupShareFile = null;
+      discardPendingBackupOutput();
       pendingRestoreFile = file;
       pendingRestoreSnapshot = null;
       state.backupStage = "unlock";
@@ -4869,7 +4882,11 @@
 
   function navigate(route, pushHistory = true) {
     if (pendingSettingsWrites) return false;
-    state.route = validRoutes.has(route) ? route : "home";
+    const nextRoute = validRoutes.has(route) ? route : "home";
+    if (state.route !== nextRoute && (state.route === "settings-backup" || nextRoute === "settings-backup")) {
+      resetRestoreFlow();
+    }
+    state.route = nextRoute;
     renderRoute(pushHistory);
     return true;
   }
@@ -5673,8 +5690,6 @@
         state.catalogEditingCategoryId = null;
         state.catalogSettingsNotice = "";
       }
-      if (route.dataset.route === "settings-backup" && state.route !== "settings-backup") resetRestoreFlow();
-      if (state.route === "settings-backup" && route.dataset.route !== "settings-backup") resetRestoreFlow();
       if (route.dataset.route === "settings-export" && state.route !== "settings-export") resetExportFlow();
       if (state.route === "settings-export" && route.dataset.route !== "settings-export") resetExportFlow();
       if (["vouchers", "voucher-detail", "voucher-preview"].includes(route.dataset.route)) state.voucherNotice = "";
@@ -5682,25 +5697,32 @@
       return;
     }
     const action = event.target.closest("[data-action]")?.dataset.action;
-    if (action === "backup-share-ready") {
+    if (action === "backup-output-ready") {
       const form = document.getElementById("backupCreateForm");
-      const button = event.target.closest('[data-action="backup-share-ready"]');
-      if (!form || !button || !pendingBackupShareFile) return;
+      const button = event.target.closest('[data-action="backup-output-ready"]');
+      if (!form || !button || !pendingBackupOutput) return;
+      const prepared = pendingBackupOutput;
+      discardPendingBackupOutput();
       button.disabled = true;
+      button.remove();
       try {
-        if (!backup?.sharePreparedBackup) throw new Error("Backup share unavailable");
-        const result = await backup.sharePreparedBackup(pendingBackupShareFile);
+        if (!backup?.deliverBackup) throw new Error("Backup output unavailable");
+        const result = await backup.deliverBackup(prepared.serializedBackup, prepared.filename);
+        if (!form.isConnected || state.route !== "settings-backup") return;
         if (result.status === "cancelled") {
           showBackupCreateNotice(form, "Das Teilen wurde abgebrochen. Es wurde keine Sicherungsdatei gespeichert.", false);
           return;
         }
-        if (result.status !== "shared") throw new Error("Backup share failed");
-        pendingBackupShareFile = null;
-        state.backupNotice = "Die verschlüsselte Gesamtsicherung wurde an den Teilen-Dialog übergeben.";
+        if (!["shared", "downloaded"].includes(result.status)) throw new Error("Backup output failed");
+        state.backupNotice = result.status === "shared"
+          ? "Die verschlüsselte Gesamtsicherung wurde an den Teilen-Dialog übergeben."
+          : "Die verschlüsselte Gesamtsicherung wurde zum Speichern bereitgestellt.";
         state.backupNoticeIsError = false;
         renderSettingsBackup();
       } catch (error) {
-        showBackupCreateNotice(form, backupCreationErrorMessage(error), true);
+        if (form.isConnected && state.route === "settings-backup") {
+          showBackupCreateNotice(form, backupCreationErrorMessage(error), true);
+        }
       } finally {
         if (button.isConnected) button.disabled = false;
       }
@@ -6053,6 +6075,8 @@
     const backupCreateForm = event.target.closest("#backupCreateForm");
     if (backupCreateForm) {
       event.preventDefault();
+      discardPendingBackupOutput();
+      const creationEpoch = backupCreationEpoch;
       const formData = new FormData(backupCreateForm);
       const passphrase = String(formData.get("passphrase") || "");
       const confirmation = String(formData.get("passphraseConfirm") || "");
@@ -6062,37 +6086,30 @@
       }
       state.backupBusy = true;
       state.backupNotice = "";
-      pendingBackupShareFile = null;
-      backupCreateForm.querySelector('[data-action="backup-share-ready"]')?.remove();
+      backupCreateForm.querySelector('[data-action="backup-output-ready"]')?.remove();
       mainContent.querySelector(".backup-page > .settings-save-notice")?.remove();
       setBackupCreateFormBusy(backupCreateForm, true);
       try {
         if (!backup?.createBackup) throw new Error("Backup module unavailable");
-        const result = await backup.createBackup({
+        const prepared = await backup.createBackup({
           passphrase,
           createSnapshot: currentTenantSnapshot
         });
-        state.backupBusy = false;
-        setBackupCreateFormBusy(backupCreateForm, false);
-        if (result.delivery?.status === "cancelled") {
-          showBackupCreateNotice(backupCreateForm, "Das Teilen wurde abgebrochen. Es wurde keine Sicherungsdatei gespeichert.", false);
-          return;
-        }
-        if (result.delivery?.status === "ready" && result.delivery.file) {
-          pendingBackupShareFile = result.delivery.file;
-          showBackupCreateNotice(backupCreateForm, "Die Sicherung ist verschlüsselt vorbereitet. Tippe jetzt auf „Sicherung teilen“.", false);
-          showBackupShareAction(backupCreateForm);
-          return;
-        }
-        state.backupNotice = result.delivery?.mode === "files"
-          ? "Die verschlüsselte Gesamtsicherung wurde an den Teilen-Dialog übergeben."
-          : "Die verschlüsselte Gesamtsicherung wurde zum Download bereitgestellt.";
-        state.backupNoticeIsError = false;
-        renderSettingsBackup();
+        if (!isCurrentBackupCreation(creationEpoch, backupCreateForm)) return;
+        pendingBackupOutput = prepared;
+        showBackupCreateNotice(backupCreateForm, "Die Sicherung ist verschlüsselt vorbereitet. Tippe jetzt auf „Sicherung speichern oder teilen“.", false);
+        showBackupShareAction(backupCreateForm);
       } catch (error) {
+        if (!isCurrentBackupCreation(creationEpoch, backupCreateForm)) return;
         state.backupBusy = false;
         setBackupCreateFormBusy(backupCreateForm, false);
+        discardPendingBackupOutput();
         showBackupCreateNotice(backupCreateForm, backupCreationErrorMessage(error), true);
+      } finally {
+        if (isCurrentBackupCreation(creationEpoch, backupCreateForm)) {
+          state.backupBusy = false;
+          setBackupCreateFormBusy(backupCreateForm, false);
+        }
       }
       return;
     }

@@ -2677,10 +2677,11 @@
         }
       },
       {
-        name: "Backup-Workflow stellt einen erfolgreichen Bestand genau einmal bereit",
+        name: "Backup-Workflow bereitet einen erfolgreichen Bestand ohne vorzeitige Ausgabe vor",
         run: async () => {
           const calls = [];
-          const result = await backupApi.createBackup({
+          let prematureOutputs = 0;
+          const prepared = await backupApi.createBackup({
             passphrase: "Sicheres Testkennwort 2030",
             createSnapshot: async () => {
               calls.push("snapshot");
@@ -2691,18 +2692,29 @@
               assertEqual(passphrase, "Sicheres Testkennwort 2030", "Workflow reichte das Sicherungskennwort nicht weiter");
               return "verschlüsselte-testdatei";
             },
-            deliver: async (serialized, filename) => {
-              calls.push("deliver");
-              assertEqual(serialized, "verschlüsselte-testdatei", "Workflow veränderte die verschlüsselte Datei");
-              assert(filename.endsWith(".frecka-backup"), "Workflow erzeugte keinen Backup-Dateinamen");
-              return { status: "shared", mode: "files" };
+            deliver: async () => { prematureOutputs += 1; }
+          });
+          assertDeepEqual(calls, ["snapshot", "encrypt"], "Backup-Vorbereitung lief nicht deterministisch nacheinander");
+          assertEqual(prematureOutputs, 0, "Backup-Vorbereitung startete bereits eine Ausgabe");
+          assertEqual(prepared.serializedBackup, "verschlüsselte-testdatei", "Workflow veränderte die verschlüsselte Datei");
+          assert(prepared.filename.endsWith(".frecka-backup"), "Workflow erzeugte keinen Backup-Dateinamen");
+
+          let shares = 0;
+          const shared = await backupApi.deliverBackup(prepared.serializedBackup, prepared.filename, {
+            shareService: {
+              createFile: (_content, options) => ({ name: options.name }),
+              canShareFiles: () => true,
+              shareFiles: async () => {
+                shares += 1;
+                return { status: "shared", mode: "files" };
+              }
             }
           });
-          assertDeepEqual(calls, ["snapshot", "encrypt", "deliver"], "Backup-Schritte liefen nicht deterministisch nacheinander");
-          assertEqual(result.delivery.status, "shared", "Erfolgreiche Ausgabe wurde nicht bestätigt");
+          assertEqual(shared.status, "shared", "Explizite Ausgabe wurde nicht bestätigt");
+          assertEqual(shares, 1, "Explizite Ausgabe öffnete den Share-Dialog nicht genau einmal");
 
           let downloads = 0;
-          const fallback = await backupApi.deliverBackup("verschlüsselte-testdatei", result.filename, {
+          const fallback = await backupApi.deliverBackup(prepared.serializedBackup, prepared.filename, {
             shareService: {
               createFile: (_content, options) => ({ name: options.name }),
               canShareFiles: () => false,
@@ -2733,6 +2745,7 @@
             "VOUCHER_RECEIPT_INVARIANT_INVALID",
             "Historisch inkonsistenter Backup-Bestand"
           );
+          await new Promise(resolve => setTimeout(resolve, 50));
           assert(!encrypted && !delivered, "Gesperrter Bestand wurde verschlüsselt oder als Datei ausgegeben");
 
           const response = await fetch("../js/app.js", { cache: "no-store" });
@@ -2742,10 +2755,16 @@
           const busyHelperStart = source.indexOf("function setBackupCreateFormBusy", errorMessageStart);
           const handlerStart = source.indexOf('const backupCreateForm = event.target.closest("#backupCreateForm")');
           const handlerEnd = source.indexOf('const backupUnlockForm = event.target.closest("#backupUnlockForm")', handlerStart);
+          const outputActionStart = source.indexOf('if (action === "backup-output-ready")');
+          const outputActionEnd = source.indexOf('if (action === "backup-restore-cancel")', outputActionStart);
+          const navigateStart = source.indexOf("function navigate(route, pushHistory = true)");
+          const navigateEnd = source.indexOf("function startNewReceipt", navigateStart);
           assert(errorMessageStart >= 0 && busyHelperStart > errorMessageStart, "Eigene Backup-Fehlerabbildung fehlt");
           assert(handlerStart >= 0 && handlerEnd > handlerStart, "Backup-Submit-Handler fehlt");
           const errorMessageBlock = source.slice(errorMessageStart, busyHelperStart);
           const handlerBlock = source.slice(handlerStart, handlerEnd);
+          const outputActionBlock = source.slice(outputActionStart, outputActionEnd);
+          const navigateBlock = source.slice(navigateStart, navigateEnd);
           assert(errorMessageBlock.includes("VOUCHER_RECEIPT_INVARIANT_INVALID"), "Historische Invariante erhält keine eigene verständliche Meldung");
           assert(errorMessageBlock.includes("Neue Belege können weiterhin erstellt werden"), "Hinweis auf weiterhin mögliche Belege fehlt");
           assert(!errorMessageBlock.includes("error?.userMessage"), "Interne Invariantenmeldung wird ungefiltert ausgegeben");
@@ -2758,6 +2777,49 @@
           assert(!handlerBlock.slice(catchStart).includes("renderSettingsBackup"), "Backup-Fehlerpfad ersetzt weiterhin die Kennwortfelder");
           assert(handlerBlock.slice(catchStart).includes("showBackupCreateNotice"), "Backup-Fehler wird nicht sichtbar am Formular ausgegeben");
           assert(!handlerBlock.slice(catchStart).includes("logPersistenceError"), "Behandelter Backup-Fehler erzeugt weiterhin einen Konsolenfehler");
+          assert(handlerBlock.includes("pendingBackupOutput = prepared"), "Verschlüsselte Sicherung wird nicht ausschließlich als explizit auszugebender Zustand gehalten");
+          assert(!handlerBlock.includes("backup.deliverBackup"), "Backup-Submit startet weiterhin selbst eine Datei- oder Share-Ausgabe");
+          assert(handlerBlock.includes("isCurrentBackupCreation(creationEpoch, backupCreateForm)"), "Veraltete asynchrone Backup-Ergebnisse werden nicht verworfen");
+          assert(handlerBlock.slice(catchStart).includes("discardPendingBackupOutput()"), "Backup-Fehler verwirft den vorbereiteten Ausgabezustand nicht");
+          assert(source.includes("function discardPendingBackupOutput()"), "Zentrale Verwerfung des Backup-Ausgabezustands fehlt");
+          assert(!source.includes("pendingBackupShareFile"), "Alter File-Pending-State bleibt im App-Code erhalten");
+          assert(outputActionStart >= 0 && outputActionEnd > outputActionStart, "Explizite Backup-Ausgabeaktion fehlt");
+          assert(outputActionBlock.includes("discardPendingBackupOutput()"), "Explizite Ausgabe nimmt den Pending-State nicht vor dem Systemdialog aus dem UI-State");
+          assert(outputActionBlock.includes("backup.deliverBackup(prepared.serializedBackup, prepared.filename)"), "Datei-/Share-Ausgabe ist nicht auf die explizite Nutzeraktion begrenzt");
+          assert(outputActionBlock.indexOf("discardPendingBackupOutput()") < outputActionBlock.indexOf("backup.deliverBackup"), "Pending-State wird erst nach Öffnen des Systemdialogs verworfen");
+          assert(!outputActionBlock.includes("downloadBackup"), "Share-Abbruch besitzt weiterhin einen separaten Download-Fallback");
+          const cancelledResultStart = outputActionBlock.indexOf('if (result.status === "cancelled")');
+          const successfulResultStart = outputActionBlock.indexOf('if (!["shared", "downloaded"].includes(result.status))');
+          const successfulRenderStart = outputActionBlock.indexOf("renderSettingsBackup()", successfulResultStart);
+          const outputCatchStart = outputActionBlock.indexOf("} catch (error)", successfulRenderStart);
+          assert(cancelledResultStart >= 0 && successfulResultStart > cancelledResultStart, "Share-Abbruch wird nicht vor der Erfolgsbehandlung beendet");
+          assert(outputActionBlock.slice(cancelledResultStart, successfulResultStart).includes("return"), "Share-Abbruch kann bis zum Leeren der Kennwortfelder weiterlaufen");
+          assert(successfulRenderStart > successfulResultStart, "Kennwortfelder werden nicht ausschließlich nach bestätigter Ausgabe neu gerendert");
+          assert(outputCatchStart > successfulRenderStart && !outputActionBlock.slice(outputCatchStart).includes("renderSettingsBackup"), "Ausgabefehler leeren weiterhin die Kennwortfelder");
+          assert(navigateBlock.includes('state.route === "settings-backup" || nextRoute === "settings-backup"'), "Navigation invalidiert laufende Backup-Versuche nicht zentral");
+          assert(navigateBlock.includes("resetRestoreFlow()"), "Navigation verwirft den Backup-Ausgabezustand nicht");
+        }
+      },
+      {
+        name: "Verspätete Backup-Vorbereitung bleibt ohne explizite Nutzeraktion ausgabefrei",
+        run: async () => {
+          let finishEncryption;
+          let outputs = 0;
+          const encryptionGate = new Promise(resolve => { finishEncryption = resolve; });
+          const preparation = backupApi.createBackup({
+            passphrase: "Sicheres Testkennwort 2030",
+            createSnapshot: async () => ({ createdAt: "2030-02-01T12:34:00.000Z" }),
+            encrypt: async () => {
+              await encryptionGate;
+              return "verschlüsselte-testdatei";
+            },
+            deliver: async () => { outputs += 1; }
+          });
+          finishEncryption();
+          const prepared = await preparation;
+          await new Promise(resolve => setTimeout(resolve, 50));
+          assertEqual(prepared.serializedBackup, "verschlüsselte-testdatei", "Vorbereitung ging unerwartet verloren");
+          assertEqual(outputs, 0, "Asynchrone Vorbereitung löste ohne explizite Ausgabeaktion einen späteren Dialog aus");
         }
       },
       {
@@ -2814,7 +2876,7 @@
               return { status: "cancelled", mode: "files" };
             }
           };
-          const prepared = await backupApi.deliverBackup(
+          const result = await backupApi.deliverBackup(
             "verschlüsselte-testdatei",
             "FRECKA-Backup-Test.frecka-backup",
             {
@@ -2822,12 +2884,8 @@
               download: () => { downloads += 1; }
             }
           );
-          assertEqual(prepared.status, "ready", "Teilbare Sicherung wurde ohne explizite Nutzeraktion geteilt");
-          assertEqual(shares, 0, "Teilen wurde bereits während der Verschlüsselung ausgelöst");
-          const result = await backupApi.sharePreparedBackup(prepared.file, {
-            shareService
-          });
           assertEqual(result.status, "cancelled", "Share-Abbruch wurde als Erfolg behandelt");
+          await new Promise(resolve => setTimeout(resolve, 50));
           assertEqual(shares, 1, "Share-Abbruch löste nicht genau einen Share-Aufruf aus");
           assertEqual(downloads, 0, "Share-Abbruch löste unerwartet einen Download aus");
         }

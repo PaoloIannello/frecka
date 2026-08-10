@@ -263,7 +263,7 @@
     document.body.append(link);
     link.click();
     link.remove();
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 300000);
   }
 
   async function deliverBackup(serializedBackup, filename, options = {}) {
@@ -282,9 +282,7 @@
       } catch (error) {
         if (error?.code !== "SHARE_FILE_UNAVAILABLE") throw error;
       }
-      if (file && shareService.canShareFiles([file])) {
-        return Object.freeze({ status: "ready", mode: "files", file });
-      }
+      if (file && shareService.canShareFiles([file])) return sharePreparedBackup(file, { shareService });
     }
     download(serializedBackup, filename);
     return Object.freeze({ status: "downloaded", mode: "download" });
@@ -306,18 +304,13 @@
   async function createBackup(options = {}) {
     const createSnapshot = options.createSnapshot;
     const encrypt = typeof options.encrypt === "function" ? options.encrypt : encryptTenantSnapshot;
-    const deliver = typeof options.deliver === "function" ? options.deliver : deliverBackup;
     if (typeof createSnapshot !== "function") {
       throw new BackupError("BACKUP_CREATE_UNAVAILABLE", "Die lokalen Daten können in diesem Browser derzeit nicht gesichert werden.");
     }
     const snapshot = await createSnapshot();
     const serializedBackup = await encrypt(snapshot, options.passphrase);
     const filename = backupFilename(snapshot?.createdAt);
-    const delivery = await deliver(serializedBackup, filename);
-    if (!delivery || !["ready", "shared", "downloaded", "cancelled"].includes(delivery.status)) {
-      throw new BackupError("BACKUP_DELIVERY_FAILED", "Die Sicherungsdatei konnte nicht bereitgestellt werden.");
-    }
-    return Object.freeze({ filename, delivery });
+    return Object.freeze({ filename, serializedBackup });
   }
 
   globalThis.FRECKA_BACKUP = Object.freeze({
