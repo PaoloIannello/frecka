@@ -2670,7 +2670,166 @@
           assert(typeof persistence.validateTenantSnapshot === "function", "validateTenantSnapshot fehlt");
           assert(typeof persistence.restoreTenantSnapshot === "function", "restoreTenantSnapshot fehlt");
           assert(typeof backupApi?.encryptTenantSnapshot === "function", "Verschlüsselungs-API fehlt");
+          assert(typeof backupApi?.deliverBackup === "function", "Zentrale Backup-Ausgabe fehlt");
+          assert(typeof backupApi?.sharePreparedBackup === "function", "Explizite Backup-Share-Aktion fehlt");
+          assert(typeof backupApi?.createBackup === "function", "Deterministischer Backup-Workflow fehlt");
           assertEqual(api.constants.databaseVersion, 5, "Backup führte unerwartet eine neue Schema-Version ein");
+        }
+      },
+      {
+        name: "Backup-Workflow stellt einen erfolgreichen Bestand genau einmal bereit",
+        run: async () => {
+          const calls = [];
+          const result = await backupApi.createBackup({
+            passphrase: "Sicheres Testkennwort 2030",
+            createSnapshot: async () => {
+              calls.push("snapshot");
+              return { createdAt: "2030-02-01T12:34:00.000Z" };
+            },
+            encrypt: async (_snapshot, passphrase) => {
+              calls.push("encrypt");
+              assertEqual(passphrase, "Sicheres Testkennwort 2030", "Workflow reichte das Sicherungskennwort nicht weiter");
+              return "verschlüsselte-testdatei";
+            },
+            deliver: async (serialized, filename) => {
+              calls.push("deliver");
+              assertEqual(serialized, "verschlüsselte-testdatei", "Workflow veränderte die verschlüsselte Datei");
+              assert(filename.endsWith(".frecka-backup"), "Workflow erzeugte keinen Backup-Dateinamen");
+              return { status: "shared", mode: "files" };
+            }
+          });
+          assertDeepEqual(calls, ["snapshot", "encrypt", "deliver"], "Backup-Schritte liefen nicht deterministisch nacheinander");
+          assertEqual(result.delivery.status, "shared", "Erfolgreiche Ausgabe wurde nicht bestätigt");
+
+          let downloads = 0;
+          const fallback = await backupApi.deliverBackup("verschlüsselte-testdatei", result.filename, {
+            shareService: {
+              createFile: (_content, options) => ({ name: options.name }),
+              canShareFiles: () => false,
+              shareFiles: async () => ({ status: "shared", mode: "files" })
+            },
+            download: () => { downloads += 1; }
+          });
+          assertEqual(fallback.status, "downloaded", "Browser ohne File-Share erhielt keinen lokalen Download");
+          assertEqual(downloads, 1, "Lokaler Backup-Fallback wurde nicht genau einmal ausgelöst");
+        }
+      },
+      {
+        name: "Backup-Workflow stoppt historischen Altbestand vor Verschlüsselung und Ausgabe",
+        run: async () => {
+          let encrypted = false;
+          let delivered = false;
+          const invariantError = new api.PersistenceError(
+            "VOUCHER_RECEIPT_INVARIANT_INVALID",
+            "Interne Testreferenz darf nicht in der Oberfläche erscheinen."
+          );
+          await assertRejects(
+            () => backupApi.createBackup({
+              passphrase: "Sicheres Testkennwort 2030",
+              createSnapshot: async () => { throw invariantError; },
+              encrypt: async () => { encrypted = true; },
+              deliver: async () => { delivered = true; }
+            }),
+            "VOUCHER_RECEIPT_INVARIANT_INVALID",
+            "Historisch inkonsistenter Backup-Bestand"
+          );
+          assert(!encrypted && !delivered, "Gesperrter Bestand wurde verschlüsselt oder als Datei ausgegeben");
+
+          const response = await fetch("../js/app.js", { cache: "no-store" });
+          assert(response.ok, "App-Quelle für Backup-UX-Regression konnte nicht geladen werden");
+          const source = await response.text();
+          const errorMessageStart = source.indexOf("function backupCreationErrorMessage");
+          const busyHelperStart = source.indexOf("function setBackupCreateFormBusy", errorMessageStart);
+          const handlerStart = source.indexOf('const backupCreateForm = event.target.closest("#backupCreateForm")');
+          const handlerEnd = source.indexOf('const backupUnlockForm = event.target.closest("#backupUnlockForm")', handlerStart);
+          assert(errorMessageStart >= 0 && busyHelperStart > errorMessageStart, "Eigene Backup-Fehlerabbildung fehlt");
+          assert(handlerStart >= 0 && handlerEnd > handlerStart, "Backup-Submit-Handler fehlt");
+          const errorMessageBlock = source.slice(errorMessageStart, busyHelperStart);
+          const handlerBlock = source.slice(handlerStart, handlerEnd);
+          assert(errorMessageBlock.includes("VOUCHER_RECEIPT_INVARIANT_INVALID"), "Historische Invariante erhält keine eigene verständliche Meldung");
+          assert(errorMessageBlock.includes("Neue Belege können weiterhin erstellt werden"), "Hinweis auf weiterhin mögliche Belege fehlt");
+          assert(!errorMessageBlock.includes("error?.userMessage"), "Interne Invariantenmeldung wird ungefiltert ausgegeben");
+          const mismatchStart = handlerBlock.indexOf("if (passphrase !== confirmation)");
+          const busyStart = handlerBlock.indexOf("state.backupBusy = true", mismatchStart);
+          assert(mismatchStart >= 0 && busyStart > mismatchStart, "Kennwortvergleich fehlt");
+          assert(!handlerBlock.slice(mismatchStart, busyStart).includes("renderSettingsBackup"), "Kennwortabweichung leert die Eingaben erneut");
+          const catchStart = handlerBlock.indexOf("} catch (error)");
+          assert(catchStart >= 0, "Backup-Fehlerpfad fehlt");
+          assert(!handlerBlock.slice(catchStart).includes("renderSettingsBackup"), "Backup-Fehlerpfad ersetzt weiterhin die Kennwortfelder");
+          assert(handlerBlock.slice(catchStart).includes("showBackupCreateNotice"), "Backup-Fehler wird nicht sichtbar am Formular ausgegeben");
+          assert(!handlerBlock.slice(catchStart).includes("logPersistenceError"), "Behandelter Backup-Fehler erzeugt weiterhin einen Konsolenfehler");
+        }
+      },
+      {
+        name: "Backup-Workflow stoppt einen Verschlüsselungsfehler vor der Dateiausgabe",
+        run: async () => {
+          let delivered = false;
+          await assertRejects(
+            () => backupApi.createBackup({
+              passphrase: "Sicheres Testkennwort 2030",
+              createSnapshot: async () => ({ createdAt: "2030-02-01T12:34:00.000Z" }),
+              encrypt: async () => { throw new backupApi.BackupError("BACKUP_ENCRYPT_FAILED", "Simulierter Verschlüsselungsfehler"); },
+              deliver: async () => { delivered = true; }
+            }),
+            "BACKUP_ENCRYPT_FAILED",
+            "Simulierter Verschlüsselungsfehler"
+          );
+          assert(!delivered, "Nach Verschlüsselungsfehler wurde eine Datei ausgegeben");
+        }
+      },
+      {
+        name: "Backup-Workflow meldet einen Dateifehler ohne Download-Fallback",
+        run: async () => {
+          let downloads = 0;
+          await assertRejects(
+            () => backupApi.deliverBackup("verschlüsselte-testdatei", "FRECKA-Backup-Test.frecka-backup", {
+              shareService: {
+                createFile() {
+                  const error = new Error("Simulierter Dateifehler");
+                  error.code = "SHARE_FILE_INVALID";
+                  error.userMessage = "Simulierter Dateifehler";
+                  throw error;
+                },
+                canShareFiles: () => true,
+                shareFiles: async () => ({ status: "shared", mode: "files" })
+              },
+              download: () => { downloads += 1; }
+            }),
+            "SHARE_FILE_INVALID",
+            "Simulierter Backup-Dateifehler"
+          );
+          assertEqual(downloads, 0, "Dateifehler löste einen zweiten Ausgabeversuch aus");
+        }
+      },
+      {
+        name: "Backup-Workflow behandelt Share-Abbruch ohne Datei oder Erfolg",
+        run: async () => {
+          let shares = 0;
+          let downloads = 0;
+          const shareService = {
+            createFile: (_content, options) => ({ name: options.name }),
+            canShareFiles: () => true,
+            shareFiles: async () => {
+              shares += 1;
+              return { status: "cancelled", mode: "files" };
+            }
+          };
+          const prepared = await backupApi.deliverBackup(
+            "verschlüsselte-testdatei",
+            "FRECKA-Backup-Test.frecka-backup",
+            {
+              shareService,
+              download: () => { downloads += 1; }
+            }
+          );
+          assertEqual(prepared.status, "ready", "Teilbare Sicherung wurde ohne explizite Nutzeraktion geteilt");
+          assertEqual(shares, 0, "Teilen wurde bereits während der Verschlüsselung ausgelöst");
+          const result = await backupApi.sharePreparedBackup(prepared.file, {
+            shareService
+          });
+          assertEqual(result.status, "cancelled", "Share-Abbruch wurde als Erfolg behandelt");
+          assertEqual(shares, 1, "Share-Abbruch löste nicht genau einen Share-Aufruf aus");
+          assertEqual(downloads, 0, "Share-Abbruch löste unerwartet einen Download aus");
         }
       },
       {

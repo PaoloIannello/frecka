@@ -1,6 +1,6 @@
 # Verschlüsselte Sicherung und Wiederherstellung
 
-**Stand:** HARDEN-001 auf Basis BACKUP-001
+**Stand:** deterministisches Workflow-Hardening nach PERSISTENCE-007 auf Basis BACKUP-001
 **Datenbankschema:** 5
 **Backupformat:** 1
 **Geltungsbereich:** Vollständiger lokaler Datenstand eines Mandanten
@@ -20,6 +20,13 @@ BACKUP-001 enthält keine Cloudanbindung, Synchronisation, Automatik, Zeitplanun
 - `restoreTenantSnapshot(snapshot)` validiert erneut und ersetzt danach alle fünf Store-Datensätze in genau einer Readwrite-Transaktion.
 
 Die UI besitzt keinen direkten IndexedDB-Zugriff. Das spätere Exportmodul kann `exportTenantSnapshot` wiederverwenden, ohne eine zweite Datenquelle oder Parallelarchitektur einzuführen.
+
+`js/backup.js` kapselt zusätzlich den technischen Erstellungsablauf:
+
+- `createBackup(options)` führt Snapshot, Verschlüsselung und genau eine Ausgabe in dieser Reihenfolge aus. Schlägt ein Schritt fehl, wird kein nachfolgender Schritt ausgeführt.
+- `deliverBackup(serializedBackup, filename, options)` bereitet die bereits verschlüsselte Datei auf unterstützten Geräten für den zentralen Share-Service vor. `sharePreparedBackup(file)` öffnet den nativen Dialog erst nach einer zweiten ausdrücklichen Nutzeraktion, damit die für Web Share erforderliche Aktivierung nach der rechenintensiven Verschlüsselung zuverlässig vorhanden ist. Ist echtes File-Sharing nicht verfügbar, bleibt der bestehende lokale Download erhalten. Ein abgebrochener Share löst weder Download noch einen zweiten Share-Aufruf aus.
+
+Beide Funktionen sammeln keine Daten selbst und lockern keine Snapshot- oder Gutschein-/Beleg-Invariante.
 
 ## Inneres Snapshotformat
 
@@ -108,8 +115,9 @@ Schlägt irgendein Put-Vorgang fehl oder wird die Transaktion abgebrochen, rollt
 2. Sicherungskennwort und Bestätigung werden eingegeben.
 3. FRECKA liest und validiert den vollständigen Tenant-Snapshot.
 4. Der Browser verschlüsselt den Snapshot.
-5. Eine Datei mit Zeitstempel und Endung `.frecka-backup` wird heruntergeladen.
-6. Sicherungskennwort und Klartextpayload werden nicht in App-State, IndexedDB oder Logs übernommen.
+5. Auf unterstützten Geräten meldet FRECKA die fertig vorbereitete verschlüsselte Datei und öffnet den nativen Teilen-Dialog nach dem ausdrücklichen Antippen von „Sicherung teilen“; andernfalls wird die Datei mit Zeitstempel und Endung `.frecka-backup` lokal heruntergeladen.
+6. Erst nach erfolgreicher Übergabe beziehungsweise erfolgreichem Download werden die beiden Kennwortfelder geleert.
+7. Sicherungskennwort und Klartextpayload werden nicht in App-State, IndexedDB oder Logs übernommen.
 
 ### Sicherung wiederherstellen
 
@@ -132,12 +140,15 @@ Schlägt irgendein Put-Vorgang fehl oder wird die Transaktion abgebrochen, rollt
 - Fachlich unvollständige oder widersprüchliche Daten: Restore verweigert.
 - IndexedDB-Fehler während Restore: vollständiger Transaktionsrollback und verständlicher Hinweis.
 - Maximale Dateigröße für die Entschlüsselung: 64 MiB.
+- Historisch inkonsistenter Gutschein-/Belegbestand bei der Sicherung: keine Datei, keine Verschlüsselung und ein verständlicher Hinweis ohne Codes, Gutscheinreferenzen oder Belegnummern. Unabhängige neue Belege bleiben weiterhin möglich.
+- Verschlüsselungs-, Datei- oder Share-Fehler bei der Sicherung: keine Erfolgsmeldung und keine zweite Ausgabe; die Kennwortfelder bleiben für Korrektur oder Wiederholung erhalten.
+- Abbruch des nativen Teilen-Dialogs: kein automatischer Download und kein zweiter Share-Aufruf. Die Oberfläche meldet den Abbruch, ohne ihn als erfolgreiche Sicherung zu behandeln.
 
 Fehlerlogs enthalten nur Vorgang und Fehlercode. Passphrase, Schlüsselmaterial, Dateipayload und Geschäftsdaten werden nicht protokolliert.
 
 ## Tests
 
-`tests/persistence-smoke.html` prüft ohne zusätzliches Testframework die gesamte bisherige Persistenz sowie BACKUP-001, HARDEN-001, EXPORT-001/003, PERSISTENCE-007 und QR-001. Der aktuelle Lauf umfasst 139 Fälle. Die Backup-Ergänzungen decken insbesondere Format- und Mandantenprüfung, Vollständigkeit, Referenzen einschließlich der bidirektionalen Gutscheinverkaufsbeleg-Invariante, Nummernstand, Verschlüsselungs-Roundtrip, zufällige Ciphertexte, Klartextausschluss, falsches Kennwort, Payload- und Headermanipulation, abgeschnittene und unbekannte Formate, Export mit und ohne persistierte Stores, Restore in einen leeren Mandanten, vollständiges Überschreiben, atomaren Rollback, erneute Sicherung nach Restore, reversiblen Kundenstatus sowie iOS-robusten Dateinamen und Downloadtyp ab. Die fachlichen Export- und ZIP-Fälle sind in `docs/export.md`, die QR-Fälle in `docs/qr.md` beschrieben.
+`tests/persistence-smoke.html` prüft ohne zusätzliches Testframework die gesamte bisherige Persistenz sowie BACKUP-001, HARDEN-001, EXPORT-001/003, PERSISTENCE-007 und QR-001. Der aktuelle Lauf umfasst 144 Fälle. Die Backup-Ergänzungen decken insbesondere den deterministischen Erfolgspfad, den Stopp eines historisch inkonsistenten Bestands vor Verschlüsselung und Ausgabe, Verschlüsselungs- und Dateifehler, Share-Abbruch ohne Fallback, erhaltene Kennwortfelder und gefilterte UI-Meldungen ab. Unverändert geprüft werden Format- und Mandantenprüfung, Vollständigkeit, Referenzen einschließlich der bidirektionalen Gutscheinverkaufsbeleg-Invariante, Nummernstand, Verschlüsselungs-Roundtrip, zufällige Ciphertexte, Klartextausschluss, falsches Kennwort, Payload- und Headermanipulation, abgeschnittene und unbekannte Formate, Export mit und ohne persistierte Stores, Restore in einen leeren Mandanten, vollständiges Überschreiben, atomarer Rollback, erneute Sicherung nach Restore, reversibler Kundenstatus sowie iOS-robuster Dateiname und Downloadtyp. Die fachlichen Export- und ZIP-Fälle sind in `docs/export.md`, die QR-Fälle in `docs/qr.md` beschrieben.
 
 Jeder Lauf verwendet ausschließlich eine zufällig benannte Testdatenbank mit Guard gegen `frecka` und löscht diese anschließend. Ein simulierter Restore-Abbruch ist nur für eindeutig benannte Testdatenbanken freigeschaltet.
 

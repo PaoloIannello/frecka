@@ -17,7 +17,7 @@ Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufkla
 - neue fehlerhafte Gegenreferenzen, ID-/Nummernkollisionen und unvollständige Einlösungsverknüpfungen werden weiterhin vor Bestätigung abgewiesen
 - globale Tenant-Snapshots, Backup, Steuerberaterexport und inkonsistente Restore-Kandidaten bleiben bei verletzter Bestandsinvariante gesperrt
 - keine automatische Reparatur, Migration oder Löschung historischer Daten
-- 139 bestandene native Browser-Smoke-Tests einschließlich Altbestand, Reload, Kollisionsschutz und unveränderter globaler Sperrgrenzen
+- 144 bestandene native Browser-Smoke-Tests einschließlich Altbestand, deterministischem Backup-Fehlerpfad, Reload, Kollisionsschutz und unveränderter globaler Sperrgrenzen
 
 ## Grundlage aus SERVICEWORKER-002
 
@@ -28,7 +28,7 @@ Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufkla
 - Schutz offener Belegentwürfe und laufender lokaler Schreibvorgänge vor einem Updatewechsel
 - Offline-Start ohne falsche Updatefehlermeldung sowie unveränderte App-Shell-, Public-Viewer- und IndexedDB-Isolation
 - einmalige, ausdrücklich freigegebene Legacy-Brücke für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI: automatische Worker-Aktivierung, aber kein `clients.claim()` und kein automatischer Reload
-- eigene automatisierte Lifecycle-Tests zusätzlich zum 139-Fälle-Fach- und Persistenzlauf
+- eigene automatisierte Lifecycle-Tests zusätzlich zum 144-Fälle-Fach- und Persistenzlauf
 
 Die Legacy-Brücke aus SERVICEWORKER-002 bleibt in 0.10.3 ausnahmsweise unverändert erhalten, solange der reale Übergang bereits ausgelieferter Altclients noch nicht bestätigt ist. Sobald dieser Übergang real nachgewiesen wurde, ist ihre Entfernung ein zwingendes Gate für den unmittelbar folgenden Worker/Release. Die dauerhafte Reihenfolge bleibt: Hinweis → Nutzeraktion → `SKIP_WAITING` → genau ein Reload.
 
@@ -75,7 +75,7 @@ Die Architekturverträge stehen in `docs/sharing.md` und `docs/public-receipt-qr
 - unveränderte Snapshot-, Cent-, Beleg- und Gutscheinwerte ohne zweite Geschäftslogik
 - sichere Dateinamen ohne Kundendaten
 - lokal vendortes `pdf-lib` 1.17.1 unter MIT-Lizenz; kein CDN und kein Server
-- 139 bestandene native Browser-Smoke-Tests sowie automatisiertes PDF-Rendering mit Text- und Sichtprüfung
+- 144 bestandene native Browser-Smoke-Tests sowie automatisiertes PDF-Rendering mit Text- und Sichtprüfung
 
 Der vollständige Dokumentvertrag steht in `docs/documents-pdf.md`.
 
@@ -88,7 +88,7 @@ Der vollständige Dokumentvertrag steht in `docs/documents-pdf.md`.
 - fokussierte, bildschirmfüllende PWA-Ansicht ohne Navigation, Menüs oder Werkzeugleisten
 - lokale Deep-Link-Auflösung nach Reload sowie verständliche Fehlerzustände für ungültige oder auf dem Gerät nicht vorhandene Referenzen
 - Public Viewer ohne Unternehmernavigation, Einstellungen oder ungefragte lokale Speicherung
-- Public-Viewer-Boot-Test ohne `IndexedDB.open`, reproduzierbare QR-Dichtemessung und Einbindung in den 139-Fälle-Gesamtlauf
+- Public-Viewer-Boot-Test ohne `IndexedDB.open`, reproduzierbare QR-Dichtemessung und Einbindung in den 144-Fälle-Gesamtlauf
 
 Der grundlegende QR-Vertrag steht in `docs/qr.md`; öffentlicher Payload, Fragmenttransport, Datenschutz und Größenlimits stehen in `docs/public-receipt-qr.md`.
 
@@ -104,7 +104,7 @@ Der grundlegende QR-Vertrag steht in `docs/qr.md`; öffentlicher Payload, Fragme
 - optionale, datensparsame `Kunden.csv` ausschließlich beim Exporttyp „Eigene Daten“
 - UTF-8-BOM, Semikolon, deutsche Dezimalwerte, sauberes Escaping und CSV-Injection-Schutz
 - lokal vendortes JSZip 3.10.1 unter MIT-Lizenzoption; kein CDN, keine npm-Runtime und kein Server
-- 139 bestandene native Browser-Smoke-Tests im aktuellen Stand
+- 144 bestandene native Browser-Smoke-Tests im aktuellen Stand
 
 Der vollständige Exportvertrag steht in `docs/export.md`.
 

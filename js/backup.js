@@ -266,11 +266,68 @@
     setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
   }
 
+  async function deliverBackup(serializedBackup, filename, options = {}) {
+    if (typeof serializedBackup !== "string") throw new BackupError("BACKUP_DATA_INVALID", "Die Sicherungsdatei ist nicht verfügbar.");
+    const shareService = Object.prototype.hasOwnProperty.call(options, "shareService")
+      ? options.shareService
+      : globalThis.FRECKA_SHARING;
+    const download = typeof options.download === "function" ? options.download : downloadBackup;
+    if (shareService?.createFile && shareService?.canShareFiles && shareService?.shareFiles) {
+      let file = null;
+      try {
+        file = shareService.createFile(serializedBackup, {
+          name: filename || backupFilename(),
+          type: constants.downloadMimeType
+        });
+      } catch (error) {
+        if (error?.code !== "SHARE_FILE_UNAVAILABLE") throw error;
+      }
+      if (file && shareService.canShareFiles([file])) {
+        return Object.freeze({ status: "ready", mode: "files", file });
+      }
+    }
+    download(serializedBackup, filename);
+    return Object.freeze({ status: "downloaded", mode: "download" });
+  }
+
+  async function sharePreparedBackup(file, options = {}) {
+    const shareService = Object.prototype.hasOwnProperty.call(options, "shareService")
+      ? options.shareService
+      : globalThis.FRECKA_SHARING;
+    if (!shareService?.canShareFiles?.([file]) || !shareService?.shareFiles) {
+      throw new BackupError("BACKUP_SHARE_UNAVAILABLE", "Der Teilen-Dialog ist für diese Sicherungsdatei nicht verfügbar.");
+    }
+    return shareService.shareFiles([file], {
+      title: "FRECKA-Sicherung",
+      text: "Verschlüsselte FRECKA-Sicherung"
+    });
+  }
+
+  async function createBackup(options = {}) {
+    const createSnapshot = options.createSnapshot;
+    const encrypt = typeof options.encrypt === "function" ? options.encrypt : encryptTenantSnapshot;
+    const deliver = typeof options.deliver === "function" ? options.deliver : deliverBackup;
+    if (typeof createSnapshot !== "function") {
+      throw new BackupError("BACKUP_CREATE_UNAVAILABLE", "Die lokalen Daten können in diesem Browser derzeit nicht gesichert werden.");
+    }
+    const snapshot = await createSnapshot();
+    const serializedBackup = await encrypt(snapshot, options.passphrase);
+    const filename = backupFilename(snapshot?.createdAt);
+    const delivery = await deliver(serializedBackup, filename);
+    if (!delivery || !["ready", "shared", "downloaded", "cancelled"].includes(delivery.status)) {
+      throw new BackupError("BACKUP_DELIVERY_FAILED", "Die Sicherungsdatei konnte nicht bereitgestellt werden.");
+    }
+    return Object.freeze({ filename, delivery });
+  }
+
   globalThis.FRECKA_BACKUP = Object.freeze({
     encryptTenantSnapshot,
     decryptTenantSnapshot,
     backupFilename,
     downloadBackup,
+    deliverBackup,
+    sharePreparedBackup,
+    createBackup,
     BackupError,
     constants
   });

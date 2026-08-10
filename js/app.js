@@ -145,6 +145,7 @@
 
   let pendingRestoreFile = null;
   let pendingRestoreSnapshot = null;
+  let pendingBackupShareFile = null;
   const publicDocumentCache = new Map();
   const documentPdfFileCache = new Map();
   let receiptPreviewRenderToken = 0;
@@ -3925,6 +3926,7 @@
   function resetRestoreFlow(keepNotice = false) {
     pendingRestoreFile = null;
     pendingRestoreSnapshot = null;
+    pendingBackupShareFile = null;
     state.backupStage = "select";
     state.backupRestoreFilename = "";
     state.backupRestoreSummary = null;
@@ -3942,6 +3944,57 @@
   function backupNoticeMarkup() {
     if (!state.backupNotice) return "";
     return `<div class="settings-save-notice ${state.backupNoticeIsError ? "is-error" : ""}" role="${state.backupNoticeIsError ? "alert" : "status"}">${escapeHtml(state.backupNotice)}</div>`;
+  }
+
+  function backupCreationErrorMessage(error) {
+    if (error?.code === "VOUCHER_RECEIPT_INVARIANT_INVALID") {
+      return "Die Sicherung kann derzeit nicht erstellt werden, weil der vorhandene Datenbestand Inkonsistenzen enthält. Neue Belege können weiterhin erstellt werden. Bitte bereinige den Datenbestand, bevor eine Sicherung erstellt wird.";
+    }
+    return "Die Sicherung konnte aufgrund eines technischen Fehlers nicht erstellt werden.";
+  }
+
+  function setBackupCreateFormBusy(form, busy) {
+    Array.from(form?.elements || []).forEach(control => { control.disabled = busy; });
+    const submit = form?.querySelector('button[type="submit"]');
+    if (submit) submit.textContent = busy ? "Sicherung wird erstellt …" : "Sicherung erstellen";
+  }
+
+  function showBackupCreateNotice(form, message, isError) {
+    state.backupNotice = message;
+    state.backupNoticeIsError = isError;
+    let notice = mainContent.querySelector(".backup-page > .settings-save-notice");
+    if (!notice) {
+      notice = document.createElement("div");
+      form.before(notice);
+    } else if (notice.nextElementSibling !== form) {
+      form.before(notice);
+    }
+    notice.className = `settings-save-notice ${isError ? "is-error" : ""}`;
+    notice.setAttribute("role", isError ? "alert" : "status");
+    notice.textContent = message;
+    notice.scrollIntoView({ block: "nearest" });
+  }
+
+  function showBackupShareAction(form) {
+    let button = form.querySelector('[data-action="backup-share-ready"]');
+    if (button) return button;
+    button = document.createElement("button");
+    button.type = "button";
+    button.className = "button button-secondary";
+    button.dataset.action = "backup-share-ready";
+    button.textContent = "Sicherung teilen";
+    form.querySelector('button[type="submit"]')?.after(button);
+    return button;
+  }
+
+  function attachBackupCreateBehavior() {
+    const form = document.getElementById("backupCreateForm");
+    form?.addEventListener("input", () => {
+      if (!pendingBackupShareFile) return;
+      pendingBackupShareFile = null;
+      form.querySelector('[data-action="backup-share-ready"]')?.remove();
+      showBackupCreateNotice(form, "Das Sicherungskennwort wurde geändert. Bitte erstelle die Sicherung erneut.", false);
+    });
   }
 
   function restoreStepMarkup() {
@@ -3991,6 +4044,7 @@
     document.getElementById("backupRestoreFile")?.addEventListener("change", event => {
       const file = event.target.files?.[0] || null;
       if (!file) return;
+      pendingBackupShareFile = null;
       pendingRestoreFile = file;
       pendingRestoreSnapshot = null;
       state.backupStage = "unlock";
@@ -4012,7 +4066,7 @@
         <p class="page-copy">Alle lokalen FRECKA-Daten dieses Betriebs in einer verschlüsselten Datei sichern.</p>
       </div>
       ${backupNoticeMarkup()}
-      <section class="backup-intro"><span aria-hidden="true">⌂</span><div><strong>Deine Daten bleiben bei dir</strong><p>Die Datei wird auf diesem Gerät verschlüsselt und nur an den von dir gewählten Speicherort heruntergeladen. Es findet keine Serverübertragung statt.</p></div></section>
+      <section class="backup-intro"><span aria-hidden="true">⌂</span><div><strong>Deine Daten bleiben bei dir</strong><p>Die Datei wird auf diesem Gerät verschlüsselt und nur an den von dir gewählten Speicherort übergeben. Es findet keine Serverübertragung statt.</p></div></section>
       <form id="backupCreateForm" class="settings-form backup-card">
         ${cardTitle("Neue Sicherung erstellen", "backup")}
         <p class="backup-card-copy">Die Sicherung enthält Einstellungen, Katalog, Kunden, Belege und Gutscheine einschließlich ihrer Historien.</p>
@@ -4028,6 +4082,7 @@
       </section>
       <p class="prototype-note">Die Sicherung wird ausschließlich lokal verarbeitet. Sicherungskennwörter werden weder protokolliert noch gespeichert.</p>
     </section>`;
+    attachBackupCreateBehavior();
     attachBackupFileBehavior();
   }
 
@@ -5627,6 +5682,30 @@
       return;
     }
     const action = event.target.closest("[data-action]")?.dataset.action;
+    if (action === "backup-share-ready") {
+      const form = document.getElementById("backupCreateForm");
+      const button = event.target.closest('[data-action="backup-share-ready"]');
+      if (!form || !button || !pendingBackupShareFile) return;
+      button.disabled = true;
+      try {
+        if (!backup?.sharePreparedBackup) throw new Error("Backup share unavailable");
+        const result = await backup.sharePreparedBackup(pendingBackupShareFile);
+        if (result.status === "cancelled") {
+          showBackupCreateNotice(form, "Das Teilen wurde abgebrochen. Es wurde keine Sicherungsdatei gespeichert.", false);
+          return;
+        }
+        if (result.status !== "shared") throw new Error("Backup share failed");
+        pendingBackupShareFile = null;
+        state.backupNotice = "Die verschlüsselte Gesamtsicherung wurde an den Teilen-Dialog übergeben.";
+        state.backupNoticeIsError = false;
+        renderSettingsBackup();
+      } catch (error) {
+        showBackupCreateNotice(form, backupCreationErrorMessage(error), true);
+      } finally {
+        if (button.isConnected) button.disabled = false;
+      }
+      return;
+    }
     if (action === "backup-restore-cancel") {
       resetRestoreFlow();
       renderSettingsBackup();
@@ -5978,29 +6057,43 @@
       const passphrase = String(formData.get("passphrase") || "");
       const confirmation = String(formData.get("passphraseConfirm") || "");
       if (passphrase !== confirmation) {
-        state.backupNotice = "Die beiden Sicherungskennwörter stimmen nicht überein.";
-        state.backupNoticeIsError = true;
-        renderSettingsBackup();
+        showBackupCreateNotice(backupCreateForm, "Die beiden Sicherungskennwörter stimmen nicht überein.", true);
         return;
       }
       state.backupBusy = true;
       state.backupNotice = "";
-      renderSettingsBackup();
+      pendingBackupShareFile = null;
+      backupCreateForm.querySelector('[data-action="backup-share-ready"]')?.remove();
+      mainContent.querySelector(".backup-page > .settings-save-notice")?.remove();
+      setBackupCreateFormBusy(backupCreateForm, true);
       try {
-        if (!backup?.encryptTenantSnapshot || !backup?.downloadBackup) throw new Error("Backup module unavailable");
-        const snapshot = await currentTenantSnapshot();
-        const encrypted = await backup.encryptTenantSnapshot(snapshot, passphrase);
-        backup.downloadBackup(encrypted, backup.backupFilename(snapshot.createdAt));
-        state.backupNotice = "Die verschlüsselte Gesamtsicherung wurde zum Download bereitgestellt.";
-        state.backupNoticeIsError = false;
-      } catch (error) {
-        logPersistenceError("Sicherung erstellen fehlgeschlagen", error);
-        state.backupNotice = persistenceErrorMessage(error, "Die Sicherung konnte nicht erstellt werden.");
-        state.backupNoticeIsError = true;
-      } finally {
+        if (!backup?.createBackup) throw new Error("Backup module unavailable");
+        const result = await backup.createBackup({
+          passphrase,
+          createSnapshot: currentTenantSnapshot
+        });
         state.backupBusy = false;
+        setBackupCreateFormBusy(backupCreateForm, false);
+        if (result.delivery?.status === "cancelled") {
+          showBackupCreateNotice(backupCreateForm, "Das Teilen wurde abgebrochen. Es wurde keine Sicherungsdatei gespeichert.", false);
+          return;
+        }
+        if (result.delivery?.status === "ready" && result.delivery.file) {
+          pendingBackupShareFile = result.delivery.file;
+          showBackupCreateNotice(backupCreateForm, "Die Sicherung ist verschlüsselt vorbereitet. Tippe jetzt auf „Sicherung teilen“.", false);
+          showBackupShareAction(backupCreateForm);
+          return;
+        }
+        state.backupNotice = result.delivery?.mode === "files"
+          ? "Die verschlüsselte Gesamtsicherung wurde an den Teilen-Dialog übergeben."
+          : "Die verschlüsselte Gesamtsicherung wurde zum Download bereitgestellt.";
+        state.backupNoticeIsError = false;
+        renderSettingsBackup();
+      } catch (error) {
+        state.backupBusy = false;
+        setBackupCreateFormBusy(backupCreateForm, false);
+        showBackupCreateNotice(backupCreateForm, backupCreationErrorMessage(error), true);
       }
-      renderSettingsBackup();
       return;
     }
 
