@@ -2,7 +2,7 @@
 
 Stand: 10. August 2026
 
-Geltungsbereich: Entwicklungsstand `0.10.1`, Build `SERVICEWORKER-002`; noch keine neue Produktversion und kein neues Release-Artefakt
+Geltungsbereich: vorbereiteter Stand `0.10.2`, Build `SERVICEWORKER-002`; noch kein Release-Tag oder Artefakt
 
 Der verbindliche Infrastrukturrahmen steht in `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`. Dieses Dokument konkretisiert ausschließlich die statische Laufzeitmenge und ihre spätere Zuordnung zu Synology Web Station.
 
@@ -161,7 +161,7 @@ Die leere `publicViewerBaseUrl` in `js/config.js` ist mit dieser Trennung kompat
 
 Der annotierte Release-Tag `v0.9.1` zeigt auf Commit `26dc63fbea434d9fb33a7e88a6af0419cb8cddae`. Das unveränderliche Artefakt trägt die Release-ID `0.9.1-26dc63f` und bleibt die dokumentierte stabile Beta-Basis. Der Tag `v0.10.0` zeigt auf Commit `dc55cf06fdb00548307beb8efc6e6eaac6369840`.
 
-Der annotierte Tag `v0.10.1` zeigt auf Commit `c195a099ef57af79177496f48d217247f2144175`; das daraus erzeugte unveränderliche Artefakt trägt die Release-ID `0.10.1-c195a09`. Darauf baut der noch nicht als neue Produktversion freigegebene Entwicklungsstand `0.10.1` / `SERVICEWORKER-002` auf. HTML-Titel, Asset-Abfragewert `serviceworker002-1` und App-Shell-Cache `frecka-app-shell-0.10.1-serviceworker002-1` sind dafür bewusst eigenständig versioniert. Vor einem späteren Release bleibt eine neue Produktversionsentscheidung erforderlich.
+Der annotierte Tag `v0.10.1` zeigt auf Commit `c195a099ef57af79177496f48d217247f2144175`; das daraus erzeugte unveränderliche Artefakt trägt die Release-ID `0.10.1-c195a09`. Darauf baut der vorbereitete Patchkandidat `0.10.2` / `SERVICEWORKER-002` auf. HTML-Titel, Asset-Abfragewert `serviceworker002-2` und App-Shell-Cache `frecka-app-shell-0.10.2-serviceworker002-2` sind dafür bewusst eigenständig versioniert. Tag, Release-ID und unveränderliches Artefakt dürfen erst nach dem noch ausstehenden Release-Commit entstehen.
 
 Ein Updateformat für signierte Kanäle und ein Signaturverfahren sind ausdrücklich noch nicht implementiert. SERVICEWORKER-002 erkennt ausschließlich Änderungen des Service Workers innerhalb derselben bereits aufgerufenen Deployment-Origin.
 
@@ -212,7 +212,7 @@ Diese Baumdarstellung ist ein Zielbild, keine Aufforderung, leere Ordner anzuleg
 - Für Produktiv und Beta werden keine doppelten Verzeichnisbäume benötigt. Beide Webportale zeigen jeweils auf das vollständige `site/` eines Release-Verzeichnisses.
 - Ein Release darf von beiden Portalen verwendet werden, ohne kopiert zu werden.
 
-Ein Release-Identifier muss eindeutig und dateisystemfreundlich sein. Verbindlich ist das Schema `<version>-<kurzer-git-commit>`, beispielsweise `0.10.1-1a2b3c4`. Die konkrete ID des vorbereiteten Kandidaten darf erst nach dem Release-Commit gebildet werden.
+Ein Release-Identifier muss eindeutig und dateisystemfreundlich sein. Verbindlich ist das Schema `<version>-<kurzer-git-commit>`, beispielsweise `0.10.2-1a2b3c4`. Die konkrete ID des vorbereiteten Kandidaten darf erst nach dem Release-Commit gebildet werden.
 
 ## 5. Zuordnung zu Synology Web Station
 
