@@ -2,7 +2,7 @@
 
 Stand: 10. August 2026
 
-Geltungsbereich: vorbereiteter Stand `0.10.1`, Build `EXPORT-003`; noch kein Release-Tag oder Artefakt
+Geltungsbereich: Entwicklungsstand `0.10.1`, Build `SERVICEWORKER-002`; noch keine neue Produktversion und kein neues Release-Artefakt
 
 Der verbindliche Infrastrukturrahmen steht in `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`. Dieses Dokument konkretisiert ausschließlich die statische Laufzeitmenge und ihre spätere Zuordnung zu Synology Web Station.
 
@@ -67,6 +67,7 @@ js/
   persistence.js
   public-documents.js
   public-viewer.js
+  pwa-update.js
   qr.js
   sharing.js
 vendor/
@@ -78,7 +79,7 @@ vendor/
   jszip-v3.10.1.LICENSE.markdown
 ```
 
-Die Laufzeitmenge einschließlich Lizenztexte umfasst im aktuellen Stand rund 1,62 MB. Die drei lokal ausgelieferten Bibliotheken stimmen mit den in `vendor/README.md` dokumentierten SHA-256-Werten überein. Es gibt keine CDN-Abhängigkeit und keine vom Anwendungscode ausgelösten Server-/API-Aufrufe.
+Die Laufzeitmenge einschließlich Lizenztexte umfasst im aktuellen Stand rund 1,64 MB. Die drei lokal ausgelieferten Bibliotheken stimmen mit den in `vendor/README.md` dokumentierten SHA-256-Werten überein. Es gibt keine CDN-Abhängigkeit und keine vom Anwendungscode ausgelösten Server-/API-Aufrufe.
 
 Nicht in ein produktives App-Document-Root gehören:
 
@@ -101,12 +102,13 @@ lokale Vendor-Dateien
 → Public-Payload, Share und Public Viewer
 → zentrale Laufzeitdaten und IndexedDB-Persistenz
 → Backup, Exportprojektion und ZIP-Paketadapter
+→ PWA-Update-Erkennung
 → App-Start
 ```
 
 Ein Deployment darf Skripte weder automatisch umsortieren noch einzeln minifizieren, umbenennen oder bündeln. Eine solche Änderung wäre ein eigener Entwicklungsblock und kein Infrastrukturvorgang.
 
-Alle produktiven Pfade sind relativ. Manifest, Stylesheet, alle 16 Skriptdateien und die Service-Worker-Registrierung werden daher sowohl am Origin-Root als auch unter einem gemeinsamen Release-Unterpfad korrekt aufgelöst. Das Hash-Routing benötigt keine serverseitige Rewrite-Regel.
+Alle produktiven Pfade sind relativ. Manifest, Stylesheet, alle 17 Skriptdateien und die Service-Worker-Registrierung werden daher sowohl am Origin-Root als auch unter einem gemeinsamen Release-Unterpfad korrekt aufgelöst. Das Hash-Routing benötigt keine serverseitige Rewrite-Regel.
 
 ### 2.4 PWA-Status
 
@@ -118,12 +120,14 @@ Vorhanden sind:
 - ein produktiver Service Worker mit versionsgebundenem App-Shell-Cache;
 - atomare Vorabablage aller zum Kaltstart benötigten statischen Dateien;
 - Navigation-Fallback auf die gecachte `index.html`;
+- Erkennung eines bereits wartenden oder neu installierten Workers;
+- eine gezielte Updateprüfung bei einem Online-Start ohne Hintergrund-Polling;
+- eine nichtblockierende Updateanzeige mit bewusster Aktivierungsaktion und genau einem kontrollierten Reload;
 - lokale IndexedDB-Persistenz;
 - ausschließlich lokale statische Laufzeitabhängigkeiten.
 
 Noch nicht vorhanden beziehungsweise nicht produktionsreif sind:
 
-- keine implementierte Updateprüfung oder Updateaktivierung;
 - kein Release-/Update-Manifest;
 - keine reproduzierbare automatische Release-Pipeline;
 - kein eigener PWA-Installationsidentifikator im Manifest;
@@ -131,9 +135,13 @@ Noch nicht vorhanden beziehungsweise nicht produktionsreif sind:
 - veraltete Manifesttexte wie „UX-Prototyp ohne echte Datenhaltung“;
 - ein pro Code-Release bewusst zu aktualisierender Asset-Abfragewert.
 
-`js/app.js` registriert `service-worker.js` relativ zur ausgelieferten App-Adresse mit Scope `./`. Der Service Worker lädt die statische Laufzeit-Allowlist während der Installation vollständig in einen versionsgebundenen Cache. Schlägt dies fehl, wird die neue Version nicht installiert. Bei Aktivierung werden ausschließlich ältere Caches mit dem Präfix `frecka-app-shell-` gelöscht; fremde Cache-Storage-Inhalte und IndexedDB bleiben unverändert. Navigationen innerhalb des Scopes verwenden die gecachte `index.html`, sodass die installierte App-Shell nach mindestens einem erfolgreichen Online-Start kalt offline starten kann.
+`js/pwa-update.js` registriert im Auftrag von `js/app.js` den `service-worker.js` relativ zur ausgelieferten App-Adresse mit Scope `./`. Der Service Worker lädt die statische Laufzeit-Allowlist während der Installation vollständig in einen versionsgebundenen Cache. Schlägt dies fehl, wird die neue Version nicht installiert. Bei Aktivierung werden ausschließlich ältere Caches mit dem Präfix `frecka-app-shell-` gelöscht; fremde Cache-Storage-Inhalte und IndexedDB bleiben unverändert. Navigationen innerhalb des Scopes verwenden ausschließlich den aktuellen benannten App-Shell-Cache und dessen `index.html`, sodass die installierte App-Shell nach mindestens einem erfolgreichen Online-Start kalt offline starten kann.
 
-OFFLINE-001 erzwingt weder `skipWaiting()` noch `clients.claim()`. Eine neue Version übernimmt daher nicht ungefragt eine bereits laufende App-Sitzung. Eine nutzergesteuerte Updateanzeige, signierte Update-Metadaten und die sichere Aktivierung außerhalb offener Arbeitsabläufe bleiben ein späterer Updateblock.
+SERVICEWORKER-002 berücksichtigt `registration.waiting` beim Start, beobachtet `updatefound` und `statechange` und ruft bei bestehender Online-Verbindung einmal `registration.update()` auf. Ein wartender Worker wird angezeigt, aber erst durch „Jetzt aktualisieren“ mit `{ type: "SKIP_WAITING" }` aktiviert. Nur ein danach eintretender `controllerchange` löst genau einen Reload aus. Ohne Nutzeraktion gibt es in dieser dauerhaften Strategie weder Nachricht noch Reload; offene Belegentwürfe und laufende lokale Schreibvorgänge blockieren die Aktion.
+
+Der SERVICEWORKER-002-Worker besitzt zusätzlich eine **einmalige Legacy-Brücke**, weil bereits ausgelieferte 0.10.0-/0.10.1-Clients die neue Update-UI noch nicht enthalten und deshalb keine Aktivierungsnachricht senden können. Erst nachdem seine vollständige App-Shell erfolgreich gecacht ist, darf ausschließlich dieser Worker einmal automatisch `skipWaiting()` ausführen. Er verwendet ausdrücklich kein `clients.claim()` und löst keinen Reload aus; die laufende alte Sitzung wechselt damit nicht mitten im Betrieb auf neuen Anwendungscode. Im unmittelbar folgenden Worker müssen die Legacy-Konstante und der automatische Installationsaufruf entfernt sein. Die Nachrichtenbehandlung für bewusst ausgelöste spätere Updates bleibt bestehen.
+
+Signierte Kanalmetadaten, ein Release-/Update-Manifest und ein serverseitiger Updatekanal bleiben spätere, getrennt freizugebende Bausteine.
 
 Die alten Netlify-/ZIP-Hinweise im hinteren Teil der `README.md` dokumentieren historische Prototypstände. Sie bilden keinen reproduzierbaren aktuellen Releaseprozess und dürfen nicht als Synology-Anweisung verwendet werden.
 
@@ -151,11 +159,11 @@ Die leere `publicViewerBaseUrl` in `js/config.js` ist mit dieser Trennung kompat
 
 ### 2.6 Release-Zustand und vorbereiteter Kandidat
 
-Der annotierte Release-Tag `v0.9.1` zeigt auf Commit `26dc63fbea434d9fb33a7e88a6af0419cb8cddae`. Das unveränderliche Artefakt trägt die Release-ID `0.9.1-26dc63f` und bleibt die dokumentierte stabile Beta-Basis. Der Tag `v0.10.0` zeigt auf Commit `dc55cf06fdb00548307beb8efc6e6eaac6369840` und bildet die direkte technische Vorgängerversion des Patchkandidaten.
+Der annotierte Release-Tag `v0.9.1` zeigt auf Commit `26dc63fbea434d9fb33a7e88a6af0419cb8cddae`. Das unveränderliche Artefakt trägt die Release-ID `0.9.1-26dc63f` und bleibt die dokumentierte stabile Beta-Basis. Der Tag `v0.10.0` zeigt auf Commit `dc55cf06fdb00548307beb8efc6e6eaac6369840`.
 
-Im Repository ist Version `0.10.1`, Build `EXPORT-003`, als nächster Kandidat vorbereitet. Produktversion und Build in `js/data.js`, HTML-Titel, Asset-Abfragewert `export003-1`, Manifestmetadaten und App-Shell-Cache sind konsistent. `docs/releases/0.10.1.md` dokumentiert Inhalt, Upgrade, Rückweg und Prüfumfang. Der Tag `v0.10.1`, die konkrete Release-ID und das Artefakt dürfen erst nach dem ausdrücklich freigegebenen Release-Commit entstehen.
+Der annotierte Tag `v0.10.1` zeigt auf Commit `c195a099ef57af79177496f48d217247f2144175`; das daraus erzeugte unveränderliche Artefakt trägt die Release-ID `0.10.1-c195a09`. Darauf baut der noch nicht als neue Produktversion freigegebene Entwicklungsstand `0.10.1` / `SERVICEWORKER-002` auf. HTML-Titel, Asset-Abfragewert `serviceworker002-1` und App-Shell-Cache `frecka-app-shell-0.10.1-serviceworker002-1` sind dafür bewusst eigenständig versioniert. Vor einem späteren Release bleibt eine neue Produktversionsentscheidung erforderlich.
 
-Ein Updateformat, ein Signaturverfahren und ein Updateclient sind ausdrücklich noch nicht implementiert.
+Ein Updateformat für signierte Kanäle und ein Signaturverfahren sind ausdrücklich noch nicht implementiert. SERVICEWORKER-002 erkennt ausschließlich Änderungen des Service Workers innerhalb derselben bereits aufgerufenen Deployment-Origin.
 
 ### 2.7 Beta-Betriebsnachweis 0.9.1
 
@@ -173,7 +181,7 @@ Bewertung: `0.9.1-26dc63f` ist für den Beta-Betrieb freigegeben und gilt als st
 6. **Read-only-Auslieferung:** Die Web-Station-Gruppe `http` benötigt nur Leserechte. Die Anwendung lädt keine Dateien auf die Synology hoch.
 7. **Kein Kundendatenverzeichnis:** IndexedDB, Backups und Exporte verbleiben auf dem Endgerät beziehungsweise werden nur durch eine ausdrückliche Nutzeraktion an ein vom Nutzer gewähltes Ziel gegeben.
 8. **Rollback durch Portalwechsel:** Ein Rückweg zeigt den Web-Station-Dienst wieder auf ein vollständig vorhandenes früheres Release. Es werden keine einzelnen Dateien zurückkopiert.
-9. **Keine Updatebehauptung:** `updates/` wird erst befüllt, wenn Format, Integrität, Authentizität und Aktivierungslogik als eigener Entwicklungsblock umgesetzt sind.
+9. **Keine Kanalbehauptung:** `updates/` wird erst befüllt, wenn Format, Integrität und Authentizität eines eigenständigen Updatekanals umgesetzt sind. Die lokale Service-Worker-Erkennung allein ist kein signierter Updatekanal.
 
 ## 4. Empfohlene minimale Zielstruktur
 
@@ -326,7 +334,11 @@ Ein Code-Rollback kann keine bereits ausgeführte IndexedDB-Migration zurückdre
 
 ## 7. Updates
 
-Für den Updatekanal beschränkt sich die Rolle der Synology auf die Auslieferung statischer Programmdateien und Update-Metadaten. Die nach ADR-0003 getrennten dynamischen Dienste sind davon unabhängig. Im aktuellen Code existiert ein produktiver Offline-App-Shell-Service-Worker, aber noch kein Updateclient und keine nutzergesteuerte Updateoberfläche. Daher werden in diesem Block weder Dateinamen noch JSON-Felder eines vermeintlichen Update-Manifests festgelegt.
+Für den Updatekanal beschränkt sich die Rolle der Synology auf die Auslieferung statischer Programmdateien und späterer Update-Metadaten. Die nach ADR-0003 getrennten dynamischen Dienste sind davon unabhängig. SERVICEWORKER-002 erkennt neue Worker innerhalb derselben Deployment-Origin, zeigt einen nichtblockierenden Hinweis und aktiviert einen regulär wartenden Worker erst nach bewusster Nutzeraktion. Diese Browserfunktion benötigt weder einen Serverdienst noch eine zweite Datenhaltung und verändert keine IndexedDB-Daten.
+
+Die einmalige Legacy-Brücke im SERVICEWORKER-002-Worker dient ausschließlich dem Übergang bereits ausgelieferter Clients, die diese Updateoberfläche noch nicht kennen. Sie darf nicht als allgemeine Updatepolitik kopiert werden und ist im nächsten Worker zu entfernen. Für alle nachfolgenden Worker gilt ausschließlich: vollständig installieren → Hinweis anzeigen → Nutzeraktion → `SKIP_WAITING` → genau ein Reload. `clients.claim()` und automatische Reloads bleiben ausgeschlossen.
+
+Ein signierter kanalbasierter Updateclient ist damit noch nicht umgesetzt. Daher werden weiterhin weder Dateinamen noch JSON-Felder eines vermeintlichen Update-Manifests festgelegt.
 
 Vor Befüllung von `public/updates/` müssen separat entschieden und umgesetzt werden:
 
@@ -335,8 +347,8 @@ Vor Befüllung von `public/updates/` müssen separat entschieden und umgesetzt w
 - kanonische Update-URL und erforderliche CORS-Regeln;
 - vollständige Dateiliste und Integritätsprüfung;
 - kryptografische Authentizität beziehungsweise Vertrauenskette;
-- kontrollierter Service-Worker-Lebenszyklus;
-- Aktivierungszeitpunkt ohne Unterbrechung offener Vorgänge;
+- Herkunftsprüfung vor der Bereitstellung im bestehenden kontrollierten Service-Worker-Lebenszyklus;
+- Kompatibilitätsentscheidung vor der bereits nutzergesteuerten Aktivierung;
 - Kompatibilität zu IndexedDB-Schemata und Rückweg;
 - Aufbewahrungs- und Löschregel alter Releases.
 

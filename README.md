@@ -1,6 +1,6 @@
-# FRECKA – EXPORT-003
+# FRECKA – SERVICEWORKER-002
 
-Browserbasierte FRECKA-PWA 0.10.1 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer- und Share-Infrastruktur. Ein versionsgebundener Service Worker hält die vollständige statische App-Shell für den Kaltstart nach einer erfolgreichen Online-Installation offline bereit. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
+Browserbasierte FRECKA-PWA 0.10.1 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share- und PWA-Update-Infrastruktur. Ein versionsgebundener Service Worker hält die vollständige statische App-Shell für den Kaltstart nach einer erfolgreichen Online-Installation offline bereit. Neue App-Shells werden erkannt und nach dem einmaligen Übergang auf SERVICEWORKER-002 nur noch durch eine bewusste Nutzeraktion aktiviert. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
 
 ## Start
 
@@ -9,6 +9,19 @@ Browserbasierte FRECKA-PWA 0.10.1 mit lokaler IndexedDB-Persistenz, verschlüsse
 ## Kernablauf
 
 Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufklappen und bearbeiten → Weiter → Kunde optional und Zahlungsart simulieren → Demo abschließen.
+
+## Neu in SERVICEWORKER-002
+
+- zentrale, zustandslose Update-Komponente für `registration.waiting`, `updatefound` und genau eine gezielte Prüfung beim Online-Start
+- nichtblockierender Hinweis „Neue FRECKA-Version verfügbar.“ mit bewusster Aktion „Jetzt aktualisieren“
+- Aktivierung eines wartenden Workers ausschließlich über `{ type: "SKIP_WAITING" }` nach Nutzeraktion
+- genau ein kontrollierter Reload nach `controllerchange`; kein Reload ohne vorherige Nutzeraktion und keine Reload-Schleife
+- Schutz offener Belegentwürfe und laufender lokaler Schreibvorgänge vor einem Updatewechsel
+- Offline-Start ohne falsche Updatefehlermeldung sowie unveränderte App-Shell-, Public-Viewer- und IndexedDB-Isolation
+- einmalige, ausdrücklich freigegebene Legacy-Brücke für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI: automatische Worker-Aktivierung, aber kein `clients.claim()` und kein automatischer Reload
+- eigene automatisierte Lifecycle-Tests zusätzlich zum unveränderten 134-Fälle-Fach- und Persistenzlauf
+
+Die Legacy-Brücke gehört ausschließlich zu diesem SERVICEWORKER-002-Worker und muss im unmittelbar folgenden Worker entfernt werden. Ab SERVICEWORKER-002 ist die dauerhafte Reihenfolge verbindlich: Hinweis → Nutzeraktion → `SKIP_WAITING` → genau ein Reload.
 
 ## Neu in EXPORT-003
 

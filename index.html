@@ -8,11 +8,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="FRECKA">
-  <title>FRECKA – EXPORT-003</title>
-  <link rel="manifest" href="manifest.webmanifest?v=export003-1">
+  <title>FRECKA – SERVICEWORKER-002</title>
+  <link rel="manifest" href="manifest.webmanifest?v=serviceworker002-1">
   <link rel="icon" href="icons/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=export003-1">
+  <link rel="stylesheet" href="styles.css?v=serviceworker002-1">
 </head>
 <body>
   <div class="app-shell" id="app">
@@ -47,6 +47,14 @@
     </nav>
   </div>
 
+  <section id="appUpdateNotice" class="app-update-notice" role="status" aria-live="polite" hidden>
+    <div>
+      <strong>Neue FRECKA-Version verfügbar.</strong>
+      <p id="appUpdateMessage">Aktualisiere bewusst. Deine lokalen Daten bleiben erhalten.</p>
+    </div>
+    <button id="appUpdateAction" class="button button-primary" type="button">Jetzt aktualisieren</button>
+  </section>
+
   <div id="dialogBackdrop" class="dialog-backdrop" hidden>
     <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialogTitle" aria-describedby="dialogText">
       <div class="dialog-symbol" aria-hidden="true">!</div>
@@ -75,21 +83,22 @@
     <button id="qrFullscreenClose" class="qr-fullscreen-close" type="button">Fertig</button>
   </section>
 
-  <script src="vendor/qrcodegen-v1.8.0-es6.js?v=export003-1"></script>
-  <script src="vendor/pdf-lib-v1.17.1.min.js?v=export003-1"></script>
-  <script src="vendor/jszip-v3.10.1.min.js?v=export003-1"></script>
-  <script src="js/config.js?v=export003-1"></script>
-  <script src="js/qr.js?v=export003-1"></script>
-  <script src="js/documents.js?v=export003-1"></script>
-  <script src="js/public-documents.js?v=export003-1"></script>
-  <script src="js/sharing.js?v=export003-1"></script>
-  <script src="js/document-view.js?v=export003-1"></script>
-  <script src="js/public-viewer.js?v=export003-1"></script>
-  <script src="js/data.js?v=export003-1"></script>
-  <script src="js/persistence.js?v=export003-1"></script>
-  <script src="js/backup.js?v=export003-1"></script>
-  <script src="js/export.js?v=export003-1"></script>
-  <script src="js/export-package.js?v=export003-1"></script>
-  <script src="js/app.js?v=export003-1"></script>
+  <script src="vendor/qrcodegen-v1.8.0-es6.js?v=serviceworker002-1"></script>
+  <script src="vendor/pdf-lib-v1.17.1.min.js?v=serviceworker002-1"></script>
+  <script src="vendor/jszip-v3.10.1.min.js?v=serviceworker002-1"></script>
+  <script src="js/config.js?v=serviceworker002-1"></script>
+  <script src="js/qr.js?v=serviceworker002-1"></script>
+  <script src="js/documents.js?v=serviceworker002-1"></script>
+  <script src="js/public-documents.js?v=serviceworker002-1"></script>
+  <script src="js/sharing.js?v=serviceworker002-1"></script>
+  <script src="js/document-view.js?v=serviceworker002-1"></script>
+  <script src="js/public-viewer.js?v=serviceworker002-1"></script>
+  <script src="js/data.js?v=serviceworker002-1"></script>
+  <script src="js/persistence.js?v=serviceworker002-1"></script>
+  <script src="js/backup.js?v=serviceworker002-1"></script>
+  <script src="js/export.js?v=serviceworker002-1"></script>
+  <script src="js/export-package.js?v=serviceworker002-1"></script>
+  <script src="js/pwa-update.js?v=serviceworker002-1"></script>
+  <script src="js/app.js?v=serviceworker002-1"></script>
 </body>
 </html>

@@ -1,22 +1,16 @@
 (async () => {
   "use strict";
-  globalThis.FRECKA_APP_SHELL_READY = Promise.resolve(null);
-  if (
-    globalThis.FRECKA_DISABLE_SERVICE_WORKER !== true
-    && "serviceWorker" in navigator
-    && window.isSecureContext
-  ) {
-    globalThis.FRECKA_APP_SHELL_READY = navigator.serviceWorker
-      .register("./service-worker.js", { scope: "./" })
-      .catch(error => {
-        console.warn("FRECKA App-Shell konnte nicht registriert werden.", error);
-        return null;
-      });
-  }
   const publicViewer = globalThis.FRECKA_PUBLIC_VIEWER;
   const publicViewerRequested = publicViewer?.isRequested?.(window.location.href)
     || window.location.hash === "#/p"
     || window.location.hash.startsWith("#/p/");
+  const pwaUpdateController = globalThis.FRECKA_PWA_UPDATES?.createUpdateController?.({
+    enabled: globalThis.FRECKA_DISABLE_SERVICE_WORKER !== true
+  }) || null;
+  globalThis.FRECKA_PWA_UPDATE_CONTROLLER = pwaUpdateController;
+  globalThis.FRECKA_APP_SHELL_READY = pwaUpdateController
+    ? pwaUpdateController.start({ scriptUrl: "./service-worker.js", scope: "./" })
+    : Promise.resolve(null);
   if (publicViewerRequested) {
     if (publicViewer?.mount) {
       await publicViewer.mount(window.location.href);
@@ -174,6 +168,9 @@
   const qrFullscreen = document.getElementById("qrFullscreen");
   const qrFullscreenCode = document.getElementById("qrFullscreenCode");
   const qrFullscreenClose = document.getElementById("qrFullscreenClose");
+  const appUpdateNotice = document.getElementById("appUpdateNotice");
+  const appUpdateMessage = document.getElementById("appUpdateMessage");
+  const appUpdateAction = document.getElementById("appUpdateAction");
   const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "qr-not-found", "settings-company", "settings-location", "settings-taxes", "settings-payments", "settings-business-areas", "settings-catalog", "settings-help", "settings-backup", "settings-export", "setup-wizard"]);
   const validRoutes = new Set(["home", "receipts", "customers", "vouchers", "settings", ...flowRoutes]);
 
@@ -253,6 +250,33 @@
   let currentHistoryIndex = Number.isInteger(history.state?.freckaIndex) ? history.state.freckaIndex : 0;
   let qrFullscreenReturnFocus = null;
   let qrNativeFullscreenOwned = false;
+
+  function updateActivationPermission() {
+    if (state.cart.length || state.checkoutSubmitting) {
+      return { allowed: false, message: "Schließe oder verwirf zuerst den offenen Belegentwurf." };
+    }
+    if (state.voucherSaleSubmitting || pendingSettingsWrites) {
+      return { allowed: false, message: "Warte bitte, bis der laufende Speichervorgang abgeschlossen ist." };
+    }
+    return { allowed: true };
+  }
+
+  function renderPwaUpdateState(updateState) {
+    if (!appUpdateNotice || !appUpdateMessage || !appUpdateAction) return;
+    appUpdateNotice.hidden = !updateState.hasUpdate;
+    if (!updateState.hasUpdate) return;
+    appUpdateMessage.textContent = updateState.message || "Aktualisiere bewusst. Deine lokalen Daten bleiben erhalten.";
+    const activating = updateState.status === "activating";
+    appUpdateNotice.classList.toggle("is-activating", activating);
+    appUpdateAction.disabled = activating;
+    appUpdateAction.setAttribute("aria-busy", activating ? "true" : "false");
+    appUpdateAction.textContent = activating ? "Wird aktualisiert …" : "Jetzt aktualisieren";
+  }
+
+  pwaUpdateController?.subscribe(renderPwaUpdateState);
+  appUpdateAction?.addEventListener("click", () => {
+    pwaUpdateController?.activate(updateActivationPermission);
+  });
 
   function voucherQrReference(voucher) {
     return voucher?.qrReference || voucher?.id || voucher?.reference || "";

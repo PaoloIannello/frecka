@@ -165,7 +165,11 @@ Mit der in OFFLINE-001 eingeführten App-Shell kommen zwingend hinzu:
 - Update bei offenem Arbeitsablauf;
 - vollständiger Download vor Aktivierung;
 - Ausfall oder beschädigtes Updatepaket;
-- Service-Worker-Wechsel und Cachebereinigung.
+- Service-Worker-Wechsel und Cachebereinigung;
+- `registration.waiting` beim Start und `updatefound` während der Sitzung;
+- kein Aktivierungsaufruf und kein Reload ohne Nutzeraktion;
+- genau eine `SKIP_WAITING`-Nachricht und genau ein Reload nach `controllerchange`;
+- unveränderter IndexedDB-Snapshot vor und nach dem Codewechsel.
 
 Reale iOS-/iPadOS- und Android-Prüfungen bleiben für Installation, Backup-Dateiauswahl, Share, Download, PDF und QR-Kamera-Scan ein Produktiv-Gate. Ein Desktop-Smoke-Test ersetzt diese Freigabe nicht.
 
@@ -380,6 +384,8 @@ Das Skript ändert weder den Beta-Virtual-Host noch Produktivkonfigurationen. Di
 
 Da das neue Release vor dem Portalwechsel vollständig vorhanden ist, beschränkt sich die Downtime auf den kurzen Konfigurationswechsel. Bestehende Browser-Sitzungen behalten ihren bereits geladenen Code; neue Seitenaufrufe erhalten den neuen Stand.
 
+SERVICEWORKER-002 enthält für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI eine einmalige, ausdrücklich freigegebene Übergangsregel: Erst nach vollständig erfolgreichem App-Shell-Download aktiviert sich ausschließlich dieser Worker automatisch. Ohne `clients.claim()` und ohne Reload bleibt die laufende Sitzung auf ihrem geladenen Code. Die Übergangsregel ist im folgenden Worker zu entfernen und darf nicht Teil des normalen Releaseablaufs werden.
+
 ### 8.4 Beta-Abnahme
 
 Auf Beta werden mindestens geprüft:
@@ -512,9 +518,11 @@ Zur Reproduktion werden benötigt:
 
 Solange kein automatischer Builder existiert, können Dateizeitstempel und Dateisystemmetadaten variieren. Die ausgelieferten Dateiinhalte müssen dennoch den archivierten SHA-256-Werten entsprechen.
 
-## 12. Spätere Updates über die Synology
+## 12. Updates über die Synology
 
-Die spätere PWA-Updatefunktion verwendet dieselben unveränderlichen Releases, schafft aber einen zusätzlichen kontrollierten Auslieferungsweg:
+SERVICEWORKER-002 implementiert den lokalen Browser-Lifecycle innerhalb einer bereits aufgerufenen Deployment-Origin: eine Online-Prüfung pro Start, Erkennung eines wartenden Workers, Nutzerhinweis, bewusste `SKIP_WAITING`-Nachricht und genau einen Reload nach `controllerchange`. Offline-Start, Public Viewer und IndexedDB bleiben davon unabhängig. Dies ist noch kein signierter, kanalbasierter Updateclient.
+
+Die spätere signierte PWA-Updatefunktion verwendet dieselben unveränderlichen Releases und ergänzt diesen Browser-Lifecycle um einen kontrollierten Auslieferungsweg:
 
 ```text
 signierte Kanalmetadaten
@@ -527,7 +535,7 @@ signierte Kanalmetadaten
 
 Vorgesehene Kanäle sind technisch `beta` und `stable`. Ihre endgültige Produktsemantik, Updatefrequenz und Nutzersteuerung müssen vor Implementierung freigegeben werden.
 
-Der spätere Updateblock muss mindestens festlegen:
+Der spätere Kanal- und Authentizitätsblock muss mindestens festlegen:
 
 - kanonische Update-Origin und CORS-Regeln;
 - Format und Version der Kanalmetadaten;
