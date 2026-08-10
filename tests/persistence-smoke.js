@@ -368,6 +368,15 @@
     };
   }
 
+  function historicallyInconsistentSnapshotFixture(tenantId) {
+    const snapshot = completeTenantSnapshotFixture(tenantId);
+    const historicalVoucher = snapshot.stores.vouchers.vouchers[0];
+    snapshot.stores.receipts.receipts = snapshot.stores.receipts.receipts.filter(receipt => (
+      receipt.id !== historicalVoucher.saleReceipt.id
+    ));
+    return snapshot;
+  }
+
   function completeExportSnapshotFixture(tenantId) {
     const snapshot = completeTenantSnapshotFixture(tenantId, {
       companyName: "Frisör Änne & Söhne",
@@ -2015,6 +2024,167 @@
           assert(voucher.qrLink.includes("#/voucher/"), "QR-App-Link fehlt");
           assertEqual(voucher.history[0].type, "sold", "Verkaufshistorie fehlt");
           ["pdf", "qrImage", "mailStatus", "cameraData", "printStatus"].forEach(key => assert(!hasOwn(voucher, key), `${key} wurde unzulässig gespeichert`));
+        }
+      },
+      {
+        name: "Globale Gutschein-Bestandsprüfung bleibt Hinweis und wird nicht zum Writer-Gate",
+        run: async () => {
+          const response = await fetch("../js/app.js", { cache: "no-store" });
+          assert(response.ok, "App-Quelle für Writer-Gate-Regression konnte nicht geladen werden");
+          const source = await response.text();
+          const start = source.indexOf("if (state.receiptsReadyForWrites && state.vouchersReadyForWrites)");
+          const end = source.indexOf("refreshSettingsDerivedState();", start);
+          assert(start >= 0 && end > start, "Startprüfung der Gutschein-/Beleginvariante fehlt");
+          const invariantBlock = source.slice(start, end);
+          assert(!/receiptsReadyForWrites\s*=\s*false/.test(invariantBlock), "Globale Invariante sperrt erneut alle Receipt-Writer");
+          assert(!/vouchersReadyForWrites\s*=\s*false/.test(invariantBlock), "Globale Invariante sperrt erneut alle Voucher-Writer");
+          assert(invariantBlock.includes("settingsStorageNotice"), "Historische Abweichung bleibt nicht sichtbar");
+        }
+      },
+      {
+        name: "Historische Gutscheinabweichung blockiert keinen unabhängigen neuen Beleg und wird nicht repariert",
+        run: async () => {
+          const persistence = context.makeClient("historical-invariant-receipt-write");
+          const snapshot = historicallyInconsistentSnapshotFixture(persistence.tenantId);
+          const historicalVoucherBefore = clone(snapshot.stores.vouchers.vouchers[0]);
+          await persistence.writeSettings(snapshot.stores.settings);
+          await persistence.writeCatalog(snapshot.stores.catalog);
+          await persistence.writeCustomers(snapshot.stores.customers);
+          await persistence.writeReceipts(snapshot.stores.receipts);
+          await persistence.writeVouchers(snapshot.stores.vouchers);
+          assertThrows(
+            () => api.validateVoucherReceiptInvariant(snapshot.stores.receipts, snapshot.stores.vouchers),
+            "VOUCHER_RECEIPT_INVARIANT_INVALID",
+            "Vorbedingung des inkonsistenten Altbestands"
+          );
+
+          const committed = await persistence.commitReceipt(
+            receiptDraftFixture("receipt-after-historical-invariant"),
+            snapshot.stores.settings,
+            snapshot.stores.receipts
+          );
+          assertEqual(committed.created, true, "Unabhängiger Beleg wurde nicht angelegt");
+          assertEqual(committed.receipt.number, "2030-000077", "Neue Belegnummer ist nicht kollisionsfrei");
+          api.validateVoucherReceiptInvariant([committed.receipt], []);
+
+          const reloadedReceipts = await persistence.readReceipts();
+          const reloadedVouchers = await persistence.readVouchers();
+          assert(reloadedReceipts.receipts.some(receipt => receipt.id === committed.receipt.id), "Reload verlor den neuen Beleg");
+          assertDeepEqual(reloadedVouchers.vouchers[0], historicalVoucherBefore, "Der historische Gutschein wurde stillschweigend verändert");
+          assertThrows(
+            () => api.validateVoucherReceiptInvariant(reloadedReceipts, reloadedVouchers),
+            "VOUCHER_RECEIPT_INVARIANT_INVALID",
+            "Globale Abweichung nach neuem Beleg"
+          );
+          await assertRejects(
+            () => persistence.exportTenantSnapshot(),
+            "VOUCHER_RECEIPT_INVARIANT_INVALID",
+            "Backup des weiterhin inkonsistenten Bestands"
+          );
+
+          const exportSnapshot = clone(snapshot);
+          exportSnapshot.stores.settings = await persistence.readSettings();
+          exportSnapshot.stores.receipts = reloadedReceipts;
+          exportSnapshot.stores.vouchers = reloadedVouchers;
+          assertThrows(
+            () => exportApi.createExportFiles(exportSnapshot, {
+              exportType: "tax-advisor",
+              periodType: "custom",
+              dateFrom: "2030-01-01",
+              dateTo: "2030-01-31",
+              businessAreaId: "all"
+            }),
+            "VOUCHER_RECEIPT_INVARIANT_INVALID",
+            "Export des weiterhin inkonsistenten Bestands"
+          );
+        }
+      },
+      {
+        name: "Historische Gutscheinabweichung blockiert keinen neuen atomaren Gutscheinverkauf",
+        run: async () => {
+          const persistence = context.makeClient("historical-invariant-voucher-sale");
+          const snapshot = historicallyInconsistentSnapshotFixture(persistence.tenantId);
+          const historicalVoucherBefore = clone(snapshot.stores.vouchers.vouchers[0]);
+          await persistence.writeSettings(snapshot.stores.settings);
+          await persistence.writeReceipts(snapshot.stores.receipts);
+          await persistence.writeVouchers(snapshot.stores.vouchers);
+
+          const voucher = voucherDraftFixture("voucher-after-historical-invariant", {
+            reference: "vch_after_historical_invariant",
+            code: "FRKA-NEW0-0001"
+          });
+          const receipt = voucherSaleReceiptFixture(voucher);
+          const committed = await persistence.commitVoucherSale(
+            receipt,
+            voucher,
+            snapshot.stores.settings,
+            snapshot.stores.receipts,
+            snapshot.stores.vouchers
+          );
+          api.validateVoucherReceiptInvariant([committed.receipt], [committed.voucher]);
+
+          const reloadedReceipts = await persistence.readReceipts();
+          const reloadedVouchers = await persistence.readVouchers();
+          const reloadedReceipt = reloadedReceipts.receipts.find(entry => entry.id === committed.receipt.id);
+          const reloadedVoucher = reloadedVouchers.vouchers.find(entry => entry.reference === committed.voucher.reference);
+          api.validateVoucherReceiptInvariant([reloadedReceipt], [reloadedVoucher]);
+          assertDeepEqual(
+            reloadedVouchers.vouchers.find(entry => entry.reference === historicalVoucherBefore.reference),
+            historicalVoucherBefore,
+            "Der alte inkonsistente Gutschein wurde beim neuen Verkauf verändert"
+          );
+          assertThrows(
+            () => api.validateVoucherReceiptInvariant(reloadedReceipts, reloadedVouchers),
+            "VOUCHER_RECEIPT_INVARIANT_INVALID",
+            "Globale Abweichung nach neuem Gutscheinverkauf"
+          );
+        }
+      },
+      {
+        name: "Neue kaputte Gutschein-Gegenreferenz wird auch bei historischem Altfehler atomar abgewiesen",
+        run: async () => {
+          const persistence = context.makeClient("historical-invariant-broken-new-sale");
+          const snapshot = historicallyInconsistentSnapshotFixture(persistence.tenantId);
+          await persistence.writeSettings(snapshot.stores.settings);
+          await persistence.writeReceipts(snapshot.stores.receipts);
+          await persistence.writeVouchers(snapshot.stores.vouchers);
+          const voucher = voucherDraftFixture("voucher-broken-counter-reference", {
+            reference: "vch_broken_counter_reference",
+            code: "FRKA-BROK-0001"
+          });
+          const receipt = voucherSaleReceiptFixture(voucher);
+          receipt.voucherReference = "vch_wrong_counter_reference";
+          await assertRejects(
+            () => persistence.commitVoucherSale(receipt, voucher, snapshot.stores.settings, snapshot.stores.receipts, snapshot.stores.vouchers),
+            "VOUCHER_RECEIPT_INVARIANT_INVALID",
+            "Kaputte neue Gegenreferenz"
+          );
+          assertEqual((await persistence.readSettings()).receiptSettings.nextNumber, 77, "Abgewiesene Gegenreferenz verbrauchte eine Nummer");
+          assertEqual((await persistence.readReceipts()).receipts.length, snapshot.stores.receipts.receipts.length, "Abgewiesene Gegenreferenz hinterließ einen Beleg");
+          assertEqual((await persistence.readVouchers()).vouchers.length, snapshot.stores.vouchers.vouchers.length, "Abgewiesene Gegenreferenz hinterließ einen Gutschein");
+        }
+      },
+      {
+        name: "Receipt-ID-Kollision eines neuen Gutscheinverkaufs bleibt atomar blockiert",
+        run: async () => {
+          const persistence = context.makeClient("voucher-sale-receipt-id-collision");
+          const settings = recordFixture(persistence.tenantId, "completed");
+          const receipts = receiptsRecordFixture(persistence.tenantId);
+          const vouchers = vouchersRecordFixture(persistence.tenantId);
+          await persistence.writeSettings(settings);
+          await persistence.writeReceipts(receipts);
+          await persistence.writeVouchers(vouchers);
+          const voucher = voucherDraftFixture("voucher-receipt-id-collision", {
+            reference: "vch_receipt_id_collision",
+            code: "FRKA-COLL-0001"
+          });
+          const collidingReceipt = voucherSaleReceiptFixture(voucher, "receipt-existing");
+          await assertRejects(
+            () => persistence.commitVoucherSale(collidingReceipt, voucher, settings, receipts, vouchers),
+            "VOUCHER_ATOMIC_CONFLICT",
+            "Receipt-ID-Kollision"
+          );
+          assertEqual((await persistence.readSettings()).receiptSettings.nextNumber, 77, "ID-Kollision verbrauchte eine Nummer");
         }
       },
       {

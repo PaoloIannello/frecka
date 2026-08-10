@@ -976,6 +976,30 @@
     });
   }
 
+  function validateVoucherCommitInvariant(mode, receipt, voucher) {
+    if (mode === "sale") {
+      return validateVoucherReceiptInvariant([receipt], [voucher]);
+    }
+
+    const historyEntry = voucher.history.find(entry => (
+      nullableStringId(entry.receiptReference) === receipt.id
+      && trimmedString(entry.receiptNumber) === receipt.number
+    ));
+    const redemptionReceipt = voucher.redemptionReceipts.find(entry => (
+      nullableStringId(entry.id) === receipt.id
+      && trimmedString(entry.number) === receipt.number
+    ));
+    if (receipt.receiptKind === "voucher-sale"
+      || nullableStringId(receipt.voucherReference) !== voucher.reference
+      || nullableStringId(receipt.voucherPayment?.reference) !== voucher.reference
+      || !historyEntry
+      || !redemptionReceipt
+      || !voucher.redemptionReferences.includes(receipt.number)) {
+      throw voucherReceiptInvariantError(`Die Einlösung auf Beleg ${receipt.number} ist im Gutschein ${voucher.code} nicht eindeutig gegengezeichnet.`);
+    }
+    return Object.freeze({ redemptionReceiptId: receipt.id, voucherReference: voucher.reference });
+  }
+
   function normalizeCustomersRecord(rawRecord, defaultsInput, expectedTenantId = constants.tenantId) {
     if (!isPlainObject(defaultsInput)) {
       throw new PersistenceError("INVALID_DATA", "Die sicheren Standard-Kundendaten sind nicht verfügbar.");
@@ -2943,6 +2967,7 @@
                     if (existingReceipt && duplicate
                       && existingReceipt.voucherReference === duplicate.reference
                       && duplicate.saleReceipt?.id === existingReceipt.id) {
+                      validateVoucherCommitInvariant("sale", existingReceipt, duplicate);
                       const mergedSettings = prepareSettingsForReceiptCommit(settingsRequest.result, requestedSettings);
                       committedResult = {
                         created: false,
@@ -2988,6 +3013,7 @@
                     updatedAt: preparedReceipt.receipt.completedAt
                   }, preparedReceipt.receipt.completedAt);
                   assertVoucherValueRange(voucher);
+                  validateVoucherCommitInvariant("sale", preparedReceipt.receipt, voucher);
                   currentVouchers.vouchers.unshift(voucher);
                   currentVouchers.updatedAt = new Date().toISOString();
                   committedResult = {
@@ -3003,6 +3029,7 @@
                     if (!existingEvent || existingReceipt.voucherReference !== voucher.reference) {
                       throw new PersistenceError("VOUCHER_ATOMIC_CONFLICT", "Der Einlösungsbeleg ist bereits ohne passende Gutscheinbuchung vorhanden.");
                     }
+                    validateVoucherCommitInvariant("redemption", existingReceipt, voucher);
                     const mergedSettings = prepareSettingsForReceiptCommit(settingsRequest.result, requestedSettings);
                     committedResult = {
                       created: false,
@@ -3066,6 +3093,7 @@
                     history: [...voucher.history, historyEntry],
                     updatedAt: occurredAt
                   }, occurredAt);
+                  validateVoucherCommitInvariant("redemption", preparedReceipt.receipt, voucher);
                   const voucherIndex = currentVouchers.vouchers.findIndex(entry => entry.reference === voucher.reference);
                   currentVouchers.vouchers.splice(voucherIndex, 1, voucher);
                   currentVouchers.updatedAt = new Date().toISOString();

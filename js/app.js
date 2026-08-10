@@ -6833,12 +6833,10 @@
       logPersistenceError("Gutschein-Verkaufsbelege prüfen fehlgeschlagen", error);
       const message = persistenceErrorMessage(
         error,
-        "Die lokalen Gutschein-Verkaufsbelege sind unvollständig oder widersprüchlich. Neue Belege, Gutscheinvorgänge, Sicherungen und Exporte bleiben bis zur Klärung gesperrt."
+        "Die lokalen Gutschein-Verkaufsbelege sind unvollständig oder widersprüchlich. Neue, in sich konsistente Belege und Gutscheinvorgänge bleiben möglich. Sicherungen und Exporte dieses Bestands bleiben bis zur Klärung gesperrt; inkonsistente Wiederherstellungen werden weiterhin abgelehnt."
       );
       state.settingsStorageNotice = state.settingsStorageNotice ? `${state.settingsStorageNotice} ${message}` : message;
       state.settingsStorageNoticeIsError = true;
-      state.receiptsReadyForWrites = false;
-      state.vouchersReadyForWrites = false;
     }
   }
   refreshSettingsDerivedState();
