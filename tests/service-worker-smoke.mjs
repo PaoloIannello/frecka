@@ -73,11 +73,13 @@ listeners.get("install")({
 });
 await installPromise;
 
-assert.equal(addedUrls.length, 19, "Der vollständige App-Shell muss vorab gecacht werden.");
+assert.equal(addedUrls.length, 21, "Der vollständige App-Shell muss vorab gecacht werden.");
 assert.equal(new Set(addedUrls).size, addedUrls.length, "App-Shell-URLs dürfen nicht doppelt sein.");
 assert.ok(addedUrls.includes(`${baseUrl}index.html`));
-assert.ok(addedUrls.includes(`${baseUrl}styles.css?v=offline001-1`));
-assert.ok(addedUrls.includes(`${baseUrl}js/app.js?v=offline001-1`));
+assert.ok(addedUrls.includes(`${baseUrl}styles.css?v=export001-2`));
+assert.ok(addedUrls.includes(`${baseUrl}vendor/jszip-v3.10.1.min.js?v=export001-2`));
+assert.ok(addedUrls.includes(`${baseUrl}js/export-package.js?v=export001-2`));
+assert.ok(addedUrls.includes(`${baseUrl}js/app.js?v=export001-2`));
 assert.ok(addedUrls.every(url => url.startsWith(baseUrl)), "Alle URLs müssen relativ zum Release-Unterpfad bleiben.");
 
 const htmlRuntimeReferences = [...indexSource.matchAll(/(?:src|href)="([^"]+)"/g)]
@@ -98,7 +100,7 @@ assert.match(appSource, /serviceWorker\s*\.register\("\.\/service-worker\.js",\s
 assert.doesNotMatch(appSource, /\.unregister\s*\(/);
 assert.doesNotMatch(appSource, /caches\.keys\s*\(/);
 
-const currentCache = [...cacheNames].find(name => name === "frecka-app-shell-0.9.1-offline001-1");
+const currentCache = [...cacheNames].find(name => name === "frecka-app-shell-0.9.1-export001-2");
 assert.ok(currentCache, "Der versionsgebundene Cache wurde nicht angelegt.");
 
 let activatePromise;
@@ -131,7 +133,7 @@ listeners.get("fetch")({
 assert.equal(await navigationResponse, cachedEntry, "Offline-Navigation muss auf index.html zurückfallen.");
 assert.equal(networkRequests.length, 0, "Für den gecachten Offline-Start darf kein Netzwerkzugriff nötig sein.");
 
-const cachedAsset = { source: "cache", url: `${baseUrl}styles.css?v=offline001-1` };
+const cachedAsset = { source: "cache", url: `${baseUrl}styles.css?v=export001-2` };
 responses.set(cachedAsset.url, cachedAsset);
 let assetResponse;
 listeners.get("fetch")({

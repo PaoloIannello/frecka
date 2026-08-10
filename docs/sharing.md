@@ -122,9 +122,9 @@ Mehrfaches schnelles Antippen wird zusätzlich auf UI-Ebene gegen parallele Ausg
 
 ## Export und Steuerberatung
 
-Der Export verwendet unverändert die bereits erzeugten Dateien aus dem zentralen Exportergebnis. Der Share-Service liest dafür keine Stores und baut keinen zweiten Exportdatensatz auf.
+Der Steuerberaterexport verwendet ein bereits vollständig im Arbeitsspeicher erzeugtes ZIP-Gesamtpaket aus `FRECKA_EXPORT_PACKAGE`. Der Share-Service liest dafür keine Stores, erzeugt keine PDFs und baut keinen zweiten Exportdatensatz auf. Er prüft und teilt genau eine fertige `application/zip`-Datei. Ist File-Sharing nicht verfügbar, wird genau dieses ZIP lokal gespeichert; für Exporte gibt es weiterhin keinen öffentlichen URL-Fallback.
 
-Vor dem Teilen wählt der Nutzer die Dateien ausdrücklich aus. Die sinnvolle Vorauswahl umfasst:
+Der rückwärtskompatible Exporttyp `Eigene Daten` bleibt ein Satz einzelner Dateien. Vor seinem Teilen wählt der Nutzer die Dateien ausdrücklich aus. Die sinnvolle Vorauswahl umfasst:
 
 - `Belege.csv`
 - `Belegpositionen.csv`
@@ -142,7 +142,7 @@ navigator.canShare({ files: selectedFiles })
 
 Nur bei einem positiven Ergebnis werden alle ausgewählten Dateien in genau einem `navigator.share()`-Aufruf übergeben. FRECKA teilt eine abgelehnte Mehrfachauswahl nicht still in mehrere Share-Vorgänge auf und behauptet keinen Erfolg. Stattdessen erklärt die Oberfläche die Browsergrenze und führt zum bestehenden lokalen Bereich „Auf Gerät speichern“, in dem die Dateien einzeln gespeichert werden können.
 
-Für Exportdateien gibt es keinen öffentlichen URL-Fallback. „An Steuerberatung senden“ bedeutet keine automatische E-Mail und keine gespeicherte Versandautomatik. Das tatsächliche Ziel wählt der Nutzer ausschließlich im nativen Teilen-Dialog.
+`Kunden.csv` ist nie Bestandteil des Steuerberater-ZIPs. „An Steuerberatung senden“ bedeutet weder beim ZIP noch bei `Eigene Daten` eine automatische E-Mail oder gespeicherte Versandautomatik. Das tatsächliche Ziel wählt der Nutzer ausschließlich im nativen Teilen-Dialog.
 
 ## Plattform- und Fallbackmatrix
 
@@ -156,8 +156,9 @@ Die Matrix beschreibt keine fest zugesicherten Browserfähigkeiten. Jede Entsche
 | Desktop-Browser nur mit URL-Share | öffentlicher Kundenlink | – | Download |
 | Browser ohne Web Share API | – | – | Download |
 | Unsicherer HTTP-Kontext | – | – | Download |
-| Export mit bestätigter exakter Dateimenge | alle ausgewählten Files in einem Share | – | – |
-| Export ohne bestätigtes Multiple-File-Sharing | – | – | bestehendes einzelnes lokales Speichern |
+| Steuerberater-ZIP mit bestätigtem File-Share | genau ein ZIP in einem Share | – | lokales Speichern desselben ZIP |
+| `Eigene Daten` mit bestätigter exakter Dateimenge | alle ausgewählten Files in einem Share | – | – |
+| `Eigene Daten` ohne bestätigtes Multiple-File-Sharing | – | – | bestehendes einzelnes lokales Speichern |
 
 FRECKA kann und darf nicht feststellen, ob Mail, Nachrichten, AirDrop, Quick Share, WhatsApp oder ein anderes Ziel installiert ist. Welche Ziele angeboten werden, entscheidet ausschließlich Betriebssystem und Browser.
 
@@ -208,5 +209,5 @@ Eine COMM-001-Freigabe darf nicht allein aus einer positiven `canShare()`-Prüfu
 - Einzelne Share-Ziele können trotz positiver Browserprüfung bestimmte Dateien ablehnen.
 - Das Share-Promise liefert keine verlässliche Zustell- oder Lesebestätigung.
 - Unsichere Deployments besitzen bewusst nur den lokalen Speichern-Fallback.
-- Exportdateien werden ohne neue ZIP-Abhängigkeit nicht zu einem Archiv zusammengeführt.
+- Das Steuerberater-ZIP kann je nach Anzahl und Umfang der Belege mehr Arbeitsspeicher benötigen; eine reale Abnahme mit repräsentativen großen Zeiträumen bleibt erforderlich.
 - COMM-001 implementiert weder automatische E-Mail noch SMTP/API-Versand, Versandhistorie oder zentrale Belegablage.

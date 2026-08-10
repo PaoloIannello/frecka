@@ -21,3 +21,15 @@ Die Datei wird lokal und ohne CDN ausgeliefert. FRECKA greift nicht direkt aus d
 - SHA-256: `0f9a5cad07941f0826586c94e089d89b918c46e5c17cf2d5a3c6f666e3bc694f`
 
 Die Bibliothek wird lokal und ohne CDN ausgeliefert. Die einzige FRECKA-Integration liegt in `js/documents.js`; Fachansichten verwenden ausschließlich die zentrale Dokumenten-API.
+
+## JSZip
+
+- Datei: `jszip-v3.10.1.min.js`
+- Version: `3.10.1`
+- Upstream: `https://github.com/Stuk/jszip/tree/v3.10.1`
+- Browser-Build: `dist/jszip.min.js`
+- Lizenz: wahlweise MIT oder GPLv3; FRECKA verwendet die MIT-Lizenzoption, vollständiger Upstream-Lizenztext in `jszip-v3.10.1.LICENSE.markdown`
+- SHA-256 Browser-Build: `acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e`
+- SHA-256 Lizenzdatei: `566c953c6090b1218ca6217dd7359d45dde46581968586dc607d59a78af6a9c4`
+
+Die fest versionierte Browser-Datei stammt unverändert aus dem offiziellen Tag `v3.10.1`, wird lokal und ohne CDN, npm-Runtime oder Serverdienst ausgeliefert und benötigt keine weitere Laufzeitabhängigkeit. Ausschließlich `js/export-package.js` greift direkt auf `JSZip` zu; Projektion, CSV-Inhalte und PDF-Erzeugung bleiben in ihren bestehenden zentralen Modulen.

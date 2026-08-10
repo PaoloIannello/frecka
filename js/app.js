@@ -33,6 +33,7 @@
   const persistence = globalThis.FRECKA_PERSISTENCE;
   const backup = globalThis.FRECKA_BACKUP;
   const exportApi = globalThis.FRECKA_EXPORT;
+  const exportPackageApi = globalThis.FRECKA_EXPORT_PACKAGE;
   const qrService = globalThis.FRECKA_QR;
   const documentService = globalThis.FRECKA_DOCUMENTS;
   const publicDocumentService = globalThis.FRECKA_PUBLIC_DOCUMENTS;
@@ -3413,7 +3414,7 @@
     { id: "settings-help", icon: "?", title: "Hilfe & Lernen", note: "Erste Schritte und häufige Fragen", available: true },
     { icon: "◎", title: "Benutzer", note: "Für eine spätere Version vorbereitet" },
     { id: "settings-backup", icon: "↥", title: "Sicherung & Wiederherstellung", note: "Verschlüsselte Gesamtsicherung erstellen oder einspielen", available: true },
-    { id: "settings-export", icon: "⇥", title: "Export", note: "CSV-Dateien für Steuerberatung oder eigene Daten", available: true },
+    { id: "settings-export", icon: "⇥", title: "Export", note: "Steuerberater-ZIP und eigene Daten", available: true },
     { icon: "↻", title: "Update", note: "Für eine spätere Version vorbereitet", help: "update" },
     { icon: "T", title: "TSE-Vorbereitung", note: "Für eine spätere Version vorbereitet", help: "tse" }
   ];
@@ -4019,15 +4020,28 @@
     return `<div class="settings-save-notice ${state.exportNoticeIsError ? "is-error" : ""}" role="${state.exportNoticeIsError ? "alert" : "status"}">${escapeHtml(state.exportNotice)}</div>`;
   }
 
-  function formatExportFileSize(content) {
-    const bytes = new Blob([content]).size;
+  function exportFileContent(fileOrContent) {
+    return fileOrContent && typeof fileOrContent === "object" && "content" in fileOrContent
+      ? fileOrContent.content
+      : fileOrContent;
+  }
+
+  function formatExportFileSize(fileOrContent) {
+    const content = exportFileContent(fileOrContent);
+    const bytes = Number.isFinite(Number(fileOrContent?.size))
+      ? Number(fileOrContent.size)
+      : content instanceof Blob ? content.size : new Blob([content ?? ""]).size;
     if (bytes < 1024) return `${bytes} Byte`;
-    return `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(bytes / 1024)} KB`;
+    if (bytes < 1024 * 1024) return `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(bytes / 1024)} KB`;
+    return `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(bytes / (1024 * 1024))} MB`;
   }
 
   function downloadExportFile(file) {
-    if (!file?.name || typeof file.content !== "string") return;
-    const url = URL.createObjectURL(new Blob([file.content], { type: file.mimeType || "text/plain;charset=utf-8" }));
+    if (!file?.name) return;
+    const content = exportFileContent(file);
+    if (content == null) return;
+    const blob = content instanceof Blob ? content : new Blob([content], { type: file.mimeType || "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
     link.download = file.name;
@@ -4045,7 +4059,7 @@
     return `<form id="exportShareForm" class="export-share-form">
       <p>Wähle die Dateien. FRECKA versendet nichts automatisch; das Ziel bestimmst du anschließend im Teilen-Dialog deines Geräts.</p>
       <fieldset><legend>Dateien auswählen</legend>
-        ${files.map(file => `<label class="export-share-file"><input type="checkbox" name="exportShareFile" value="${escapeHtml(file.name)}" ${defaultExportShareFiles.has(file.name) ? "checked" : ""}><span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(formatExportFileSize(file.content))}</small></span></label>`).join("")}
+        ${files.map(file => `<label class="export-share-file"><input type="checkbox" name="exportShareFile" value="${escapeHtml(file.name)}" ${defaultExportShareFiles.has(file.name) ? "checked" : ""}><span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(formatExportFileSize(file))}</small></span></label>`).join("")}
       </fieldset>
       ${files.some(file => file.name === "Kunden.csv") ? `<p class="export-share-privacy">Kunden.csv bleibt bewusst abgewählt, bis du die Datei ausdrücklich auswählst.</p>` : ""}
       <div id="exportShareNotice" class="export-share-notice" hidden></div>
@@ -4055,10 +4069,11 @@
 
   function exportFileForSharing(file) {
     const mimeType = String(file.mimeType || (file.name.endsWith(".csv") ? "text/csv" : "text/plain")).split(";")[0];
-    return shareService.createFile(file.content, { name: file.name, type: mimeType });
+    return shareService.createFile(exportFileContent(file), { name: file.name, type: mimeType });
   }
 
   function showExportShareFallback(message) {
+    if (bottomSheetBackdrop.hidden) openBottomSheet("Export auf Gerät speichern", "");
     bottomSheetContent.innerHTML = `<div class="export-share-fallback" role="status"><span aria-hidden="true">⇩</span><strong>Gemeinsames Teilen ist hier nicht verfügbar</strong><p>${escapeHtml(message)}</p><button class="button button-primary" type="button" data-export-share-save>Auf Gerät speichern</button></div>`;
   }
 
@@ -4066,25 +4081,28 @@
     const result = state.exportResult;
     if (!result) return "";
     const projection = result.projection;
+    const isPackage = Boolean(result.packageFile);
     const exportCompany = companyIdentityValue({ name: projection.companyName, owner: projection.companyOwner });
-    const saveFiles = state.exportResultView === "save" ? `<section class="export-result-panel" aria-labelledby="exportSaveTitle">
+    const saveFiles = !isPackage && state.exportResultView === "save" ? `<section class="export-result-panel" aria-labelledby="exportSaveTitle">
       <div><h3 id="exportSaveTitle">Auf Gerät speichern</h3><p>Wähle die Dateien aus, die du lokal speichern möchtest.</p></div>
       <div class="export-file-list" aria-label="Exportdateien speichern">
-        ${result.files.map(file => `<button class="export-file" type="button" data-export-download="${escapeHtml(file.name)}"><span aria-hidden="true">⇩</span><span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(formatExportFileSize(file.content))}</small></span><em>Speichern</em></button>`).join("")}
+        ${result.files.map(file => `<button class="export-file" type="button" data-export-download="${escapeHtml(file.name)}"><span aria-hidden="true">⇩</span><span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(formatExportFileSize(file))}</small></span><em>Speichern</em></button>`).join("")}
       </div>
       <p class="export-download-note">Die Dateien werden einzeln gespeichert. So vermeidet FRECKA blockierte Mehrfachdownloads und benötigt keine zusätzliche ZIP-Bibliothek.</p>
     </section>` : "";
     const inspectFiles = state.exportResultView === "view" ? `<section class="export-result-panel" aria-labelledby="exportViewTitle">
       <div><h3 id="exportViewTitle">Dateien ansehen</h3><p>Die Vorschau bleibt lokal auf diesem Gerät.</p></div>
       <div class="export-preview-list">
-        ${result.files.map(file => `<details class="export-file-preview"><summary><span aria-hidden="true">≡</span><span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(formatExportFileSize(file.content))}</small></span><em>Ansehen</em></summary><pre tabindex="0">${escapeHtml(file.content.length > 4000 ? `${file.content.slice(0, 4000)}\n…` : file.content)}</pre></details>`).join("")}
+        ${result.files.map(file => `<details class="export-file-preview"><summary><span aria-hidden="true">≡</span><span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(formatExportFileSize(file))}</small></span><em>Ansehen</em></summary><pre tabindex="0">${escapeHtml(file.content.length > 4000 ? `${file.content.slice(0, 4000)}\n…` : file.content)}</pre></details>`).join("")}
+        ${isPackage ? `<section class="export-package-pdf-list"><h4>Belegdokumente</h4>${result.entries.filter(entry => entry.kind === "receipt-pdf").map(entry => `<div><span aria-hidden="true">PDF</span><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(formatExportFileSize(entry))}</small></div>`).join("") || `<p>Keine Belege im gewählten Zeitraum.</p>`}</section>` : ""}
       </div>
     </section>` : "";
     return `<section class="export-result" aria-labelledby="exportResultTitle">
-      <div class="export-result-head"><span aria-hidden="true">✓</span><div><h2 id="exportResultTitle">Export ist vorbereitet</h2><p>${escapeHtml([exportCompany.name, exportCompany.owner].filter(Boolean).join(" · "))} · ${escapeHtml(formatGermanDateTime({ iso: projection.generatedAt }))}</p><small>${projection.receipts.length} ${projection.receipts.length === 1 ? "Beleg" : "Belege"} · ${projection.receiptPositions.length} ${projection.receiptPositions.length === 1 ? "Position" : "Positionen"} · ${projection.vouchers.length} ${projection.vouchers.length === 1 ? "Gutschein" : "Gutscheine"} · ${projection.voucherHistory.length} ${projection.voucherHistory.length === 1 ? "Historieneintrag" : "Historieneinträge"}</small></div></div>
+      <div class="export-result-head"><span aria-hidden="true">✓</span><div><h2 id="exportResultTitle">${isPackage ? "Exportpaket ist vorbereitet" : "Export ist vorbereitet"}</h2><p>${escapeHtml([exportCompany.name, exportCompany.owner].filter(Boolean).join(" · "))} · ${escapeHtml(formatGermanDateTime({ iso: projection.generatedAt }))}</p><small>${projection.receipts.length} ${projection.receipts.length === 1 ? "Beleg" : "Belege"} · ${projection.receiptPositions.length} ${projection.receiptPositions.length === 1 ? "Position" : "Positionen"} · ${projection.vouchers.length} ${projection.vouchers.length === 1 ? "Gutschein" : "Gutscheine"} · ${projection.voucherHistory.length} ${projection.voucherHistory.length === 1 ? "Historieneintrag" : "Historieneinträge"}${isPackage ? ` · ${result.pdfCount} PDF` : ""}</small></div></div>
+      ${isPackage ? `<p class="export-package-file"><strong>${escapeHtml(result.packageFile.name)}</strong><small>${escapeHtml(formatExportFileSize(result.packageFile))} · vollständig lokal erzeugt</small></p>` : ""}
       <div class="export-result-actions" aria-label="Export verwenden">
-        <button class="export-result-action is-primary" type="button" data-export-result-action="save" aria-expanded="${state.exportResultView === "save" ? "true" : "false"}"><span aria-hidden="true">⇩</span><span><strong>Auf Gerät speichern</strong><small>Exportdateien lokal ablegen</small></span></button>
-        <button class="export-result-action" type="button" data-export-result-action="send"><span aria-hidden="true">↗</span><span><strong>An Steuerberatung senden</strong><small>Dateien auswählen und teilen</small></span></button>
+        <button class="export-result-action is-primary" type="button" data-export-result-action="save" ${isPackage ? "" : `aria-expanded="${state.exportResultView === "save" ? "true" : "false"}"`}><span aria-hidden="true">⇩</span><span><strong>Auf Gerät speichern</strong><small>${isPackage ? "Ein ZIP-Gesamtpaket speichern" : "Exportdateien lokal ablegen"}</small></span></button>
+        <button class="export-result-action" type="button" data-export-result-action="send"><span aria-hidden="true">↗</span><span><strong>An Steuerberatung senden</strong><small>${isPackage ? "ZIP-Paket über das Gerät teilen" : "Dateien auswählen und teilen"}</small></span></button>
         <button class="export-result-action" type="button" data-export-result-action="view" aria-expanded="${state.exportResultView === "view" ? "true" : "false"}"><span aria-hidden="true">≡</span><span><strong>Dateien ansehen</strong><small>Inhalt lokal prüfen</small></span></button>
       </div>
       ${saveFiles}${inspectFiles}
@@ -4123,14 +4141,14 @@
         <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
         <p class="eyebrow">Einstellungen</p>
         <h1 class="flow-title">Export</h1>
-        <p class="page-copy">Belege und Gutscheine als klar dokumentierte CSV-Dateien ausgeben.</p>
+        <p class="page-copy">Steuerberatung als vollständiges ZIP-Paket oder eigene Daten als klar dokumentierte Einzeldateien ausgeben.</p>
       </div>
       ${exportNoticeMarkup()}
       <section class="export-privacy"><span aria-hidden="true">⌂</span><div><strong>Bleibt vollständig auf diesem Gerät</strong><p>FRECKA liest einmal den zentralen, geprüften Datensnapshot. Der Export verändert keine Geschäftsdaten und wird an keinen Server übertragen.</p></div></section>
       <form id="exportForm" class="settings-form export-form">
         ${cardTitle("Export zusammenstellen", "export")}
         <fieldset class="export-choice-group"><legend>Wofür brauchst du den Export?</legend>
-          <label class="export-choice"><input type="radio" name="exportType" value="tax-advisor" ${state.exportType === "tax-advisor" ? "checked" : ""}><span><strong>Steuerberatung</strong><small>Belege, Positionen und Gutscheindaten ohne Kundenstammdaten</small></span></label>
+          <label class="export-choice"><input type="radio" name="exportType" value="tax-advisor" ${state.exportType === "tax-advisor" ? "checked" : ""}><span><strong>Steuerberatung</strong><small>Ein ZIP-Paket mit Übersicht, CSV-Daten und allen gefilterten Beleg-PDFs – ohne Kundenstammdatendatei</small></span></label>
           <label class="export-choice"><input type="radio" name="exportType" value="own-data" ${state.exportType === "own-data" ? "checked" : ""}><span><strong>Eigene Daten</strong><small>Gleicher fachlicher Export, optional mit zugeordneten Kunden</small></span></label>
         </fieldset>
         <div class="export-filter-grid">
@@ -4139,11 +4157,11 @@
           ${customDates ? `<label class="setting-field"><span>Von</span><input type="date" name="dateFrom" value="${escapeHtml(state.exportDateFrom)}" required></label><label class="setting-field"><span>Bis</span><input type="date" name="dateTo" value="${escapeHtml(state.exportDateTo)}" required></label>` : ""}
         </div>
         ${includeCustomers ? `<label class="export-customer-option"><input type="checkbox" name="includeCustomers" ${state.exportIncludeCustomers ? "checked" : ""}><span><strong>Zugeordnete Kunden einschließen</strong><small>Es werden nur Kunden exportiert, die in den gefilterten Belegen oder Gutscheinen vorkommen.</small></span></label>` : ""}
-        <div class="export-format-note"><strong>CSV-Standard in FRECKA</strong><p>UTF-8, Semikolon, deutsche Dezimaldarstellung und Schutz vor Tabellenformeln. Datum: TT.MM.JJJJ, Uhrzeit: HH:mm.</p></div>
-        <button class="button button-primary" type="submit" ${state.exportBusy ? "disabled" : ""}>${state.exportBusy ? "Export wird erstellt …" : "Export vorbereiten"}</button>
+        <div class="export-format-note"><strong>${state.exportType === "tax-advisor" ? "ZIP-Paket mit dokumentierten CSV-Dateien" : "CSV-Standard in FRECKA"}</strong><p>UTF-8, Semikolon, deutsche Dezimaldarstellung und Schutz vor Tabellenformeln. Datum: TT.MM.JJJJ, Uhrzeit: HH:mm.${state.exportType === "tax-advisor" ? " Beleg-PDFs entstehen aus der zentralen Dokumentenengine." : ""}</p></div>
+        <button class="button button-primary" type="submit" ${state.exportBusy ? "disabled" : ""}>${state.exportBusy ? "Export wird erstellt …" : state.exportType === "tax-advisor" ? "Exportpaket erstellen" : "Export vorbereiten"}</button>
       </form>
       ${exportResultMarkup()}
-      <p class="prototype-note">Keine DATEV-Importschnittstelle. PDF, Mail, QR und Synology sind nicht Bestandteil dieses Exports.</p>
+      <p class="prototype-note">Keine DATEV-Importschnittstelle. Keine automatische E-Mail, keine Serverübertragung und keine neue steuerliche Bewertung von Gutscheinen.</p>
     </section>`;
     attachExportFormBehavior();
   }
@@ -4885,6 +4903,13 @@
     }
     if (event.target.closest("[data-export-share-save]")) {
       closeBottomSheet();
+      if (state.exportResult?.packageFile) {
+        downloadExportFile(state.exportResult.packageFile);
+        state.exportNotice = "Das ZIP-Gesamtpaket wurde an den Browser zum Speichern übergeben.";
+        state.exportNoticeIsError = false;
+        renderSettingsExport();
+        return;
+      }
       state.exportResultView = "save";
       renderSettingsExport();
       return;
@@ -4937,6 +4962,49 @@
     const exportResultAction = event.target.closest("[data-export-result-action]");
     if (exportResultAction && state.exportResult) {
       const action = exportResultAction.dataset.exportResultAction;
+      if (state.exportResult.packageFile && action === "save") {
+        downloadExportFile(state.exportResult.packageFile);
+        state.exportNotice = "Das ZIP-Gesamtpaket wurde an den Browser zum Speichern übergeben.";
+        state.exportNoticeIsError = false;
+        renderSettingsExport();
+        return;
+      }
+      if (state.exportResult.packageFile && action === "send") {
+        exportResultAction.disabled = true;
+        try {
+          const file = exportFileForSharing(state.exportResult.packageFile);
+          if (!shareService.canShareFiles([file])) {
+            showExportShareFallback("Dein Browser kann das ZIP-Gesamtpaket nicht an den nativen Teilen-Dialog übergeben. Du kannst es stattdessen auf dem Gerät speichern.");
+            return;
+          }
+          const result = await shareService.shareFiles([file], {
+            title: "FRECKA-Export für die Steuerberatung",
+            text: "FRECKA-Steuerberaterpaket"
+          });
+          if (result.status === "shared") {
+            state.exportNotice = "Der Teilen-Dialog wurde mit dem ZIP-Gesamtpaket an das Betriebssystem übergeben.";
+            state.exportNoticeIsError = false;
+            renderSettingsExport();
+          } else if (result.status === "cancelled") {
+            state.exportNotice = "Teilen wurde abgebrochen. Das ZIP-Gesamtpaket bleibt vorbereitet.";
+            state.exportNoticeIsError = false;
+            renderSettingsExport();
+          } else {
+            showExportShareFallback("Dein Browser kann das ZIP-Gesamtpaket momentan nicht teilen. Du kannst es stattdessen auf dem Gerät speichern.");
+          }
+        } catch (error) {
+          if (error?.code === "SHARE_FILE_UNAVAILABLE" || !shareService?.canShareFiles) {
+            showExportShareFallback("Dein Browser stellt das ZIP-Gesamtpaket nicht als teilbare Datei bereit. Du kannst es stattdessen auf dem Gerät speichern.");
+            return;
+          }
+          state.exportNotice = error?.userMessage || "Der Teilen-Dialog konnte nicht geöffnet werden.";
+          state.exportNoticeIsError = true;
+          renderSettingsExport();
+        } finally {
+          exportResultAction.disabled = false;
+        }
+        return;
+      }
       if (action === "send") {
         openBottomSheet("An Steuerberatung senden", exportShareSelectionMarkup());
         return;
@@ -5852,15 +5920,22 @@
       try {
         if (!exportApi?.createExportFiles) throw new Error("Export module unavailable");
         const snapshot = await currentTenantSnapshot();
-        state.exportResult = exportApi.createExportFiles(snapshot, {
+        const options = {
           exportType: state.exportType,
           periodType: state.exportPeriodType,
           dateFrom: state.exportDateFrom,
           dateTo: state.exportDateTo,
           businessAreaId: state.exportBusinessAreaId,
           includeCustomers: state.exportIncludeCustomers
-        });
-        state.exportNotice = `${state.exportResult.files.length} Exportdateien wurden lokal vorbereitet.`;
+        };
+        if (state.exportType === "tax-advisor") {
+          if (!exportPackageApi?.createTaxAdvisorPackage) throw new Error("Export package module unavailable");
+          state.exportResult = await exportPackageApi.createTaxAdvisorPackage(snapshot, options);
+          state.exportNotice = `Ein ZIP-Gesamtpaket mit ${state.exportResult.pdfCount} Beleg-PDF${state.exportResult.pdfCount === 1 ? "" : "s"} wurde lokal vorbereitet.`;
+        } else {
+          state.exportResult = exportApi.createExportFiles(snapshot, options);
+          state.exportNotice = `${state.exportResult.files.length} Exportdateien wurden lokal vorbereitet.`;
+        }
         state.exportNoticeIsError = false;
       } catch (error) {
         logPersistenceError("Export erstellen fehlgeschlagen", error);

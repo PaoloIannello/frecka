@@ -75,7 +75,7 @@ Kundendokumente verwenden seit QR-002 dagegen den geräteübergreifenden Public-
 
 Im PDF wird die Matrix als Vektorrechtecke mit der zentral vorgegebenen Ruhezone gezeichnet. Überschreitet ein Dokument die festgelegte Public- beziehungsweise QR-Größengrenze, kann die Engine als ausdrücklichen Fallback ein PDF ohne QR ausgeben. Dieser Fallback behauptet keine geräteübergreifende Scanbarkeit; Dokumentinhalt, lokales Speichern und dateibasiertes Teilen bleiben verfügbar. Es wird weder ein Mehrfach-QR noch eine Serverablage eingeführt.
 
-Weder QR-Grafiken noch PDF-Dateien werden in IndexedDB, Backup oder Export gespeichert. QR-Matrix, SVG, PDF-Bytes, Blob und gegebenenfalls `File` entstehen ausschließlich zur Laufzeit.
+Weder QR-Grafiken noch PDF-Dateien werden in IndexedDB oder Backup gespeichert. QR-Matrix, SVG, PDF-Bytes, Blob und gegebenenfalls `File` entstehen ausschließlich zur Laufzeit. Der Steuerberaterexport kann dieselben flüchtigen PDF-Bytes auf ausdrückliche Nutzeraktion in sein lokales ZIP-Gesamtpaket aufnehmen; das ist keine neue Persistenz und keine zweite Dokumentenengine.
 
 ## PDF-Technik
 

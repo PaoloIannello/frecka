@@ -4889,6 +4889,18 @@ button:disabled {
   font-size: .69rem;
   line-height: 1.45;
 }
+.export-package-file {
+  min-width: 0;
+  margin: 12px 0 0;
+  padding: 11px 12px;
+  border: 1px solid #cbded5;
+  border-radius: 14px;
+  background: var(--surface-soft);
+  display: grid;
+  gap: 3px;
+}
+.export-package-file strong { overflow-wrap: anywhere; font-size: .75rem; }
+.export-package-file small { color: var(--muted); font-size: .68rem; }
 .export-preview-list {
   margin-top: 10px;
   border: 1px solid var(--border);
@@ -4896,6 +4908,22 @@ button:disabled {
   overflow: hidden;
   background: var(--surface);
 }
+.export-package-pdf-list { padding: 12px; display: grid; gap: 8px; }
+.export-package-pdf-list h4,
+.export-package-pdf-list p { margin: 0; }
+.export-package-pdf-list h4 { font-size: .75rem; }
+.export-package-pdf-list p { color: var(--muted); font-size: .7rem; }
+.export-package-pdf-list > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0,1fr) auto;
+  gap: 8px;
+  align-items: center;
+  font-size: .69rem;
+}
+.export-package-pdf-list > div > span { color: var(--primary); font-size: .62rem; font-weight: 950; }
+.export-package-pdf-list > div > strong { overflow-wrap: anywhere; }
+.export-package-pdf-list > div > small { color: var(--muted); }
 .export-file-preview { border-bottom: 1px solid var(--border); }
 .export-file-preview:last-child { border-bottom: 0; }
 .export-file-preview summary {

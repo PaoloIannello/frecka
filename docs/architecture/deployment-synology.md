@@ -16,7 +16,7 @@ Weiterhin bewusst nicht angelegt sind:
 - keine Beta-Kopie;
 - keine Download- oder Update-Platzhalter;
 - keine Serverkonfiguration;
-- kein Build-Framework und keine externe Abhängigkeit.
+- kein Build-Framework und keine extern nachgeladene Laufzeitabhängigkeit; freigegebene Vendor-Dateien werden fest versioniert lokal ausgeliefert.
 
 Solche Artefakte sollen erst entstehen, wenn sie echten Inhalt beziehungsweise eine implementierte Funktion besitzen. Der Repository-Root bleibt Quell- und Entwicklungsverzeichnis und darf später nicht als Web-Station-Document-Root veröffentlicht werden.
 
@@ -62,6 +62,7 @@ js/
   data.js
   document-view.js
   documents.js
+  export-package.js
   export.js
   persistence.js
   public-documents.js
@@ -73,9 +74,11 @@ vendor/
   qrcodegen-v1.8.0.LICENSE.txt
   pdf-lib-v1.17.1.min.js
   pdf-lib-v1.17.1.LICENSE.md
+  jszip-v3.10.1.min.js
+  jszip-v3.10.1.LICENSE.markdown
 ```
 
-Die Laufzeitmenge einschließlich Lizenztexte umfasst im aktuellen Stand rund 1,46 MB. Die beiden lokal ausgelieferten Bibliotheken stimmen mit den in `vendor/README.md` dokumentierten SHA-256-Werten überein. Es gibt keine CDN-Abhängigkeit und keine vom Anwendungscode ausgelösten Server-/API-Aufrufe.
+Die Laufzeitmenge einschließlich Lizenztexte umfasst im aktuellen Stand rund 1,62 MB. Die drei lokal ausgelieferten Bibliotheken stimmen mit den in `vendor/README.md` dokumentierten SHA-256-Werten überein. Es gibt keine CDN-Abhängigkeit und keine vom Anwendungscode ausgelösten Server-/API-Aufrufe.
 
 Nicht in ein produktives App-Document-Root gehören:
 
@@ -97,13 +100,13 @@ lokale Vendor-Dateien
 → QR- und Dokumentenservices
 → Public-Payload, Share und Public Viewer
 → zentrale Laufzeitdaten und IndexedDB-Persistenz
-→ Backup und Export
+→ Backup, Exportprojektion und ZIP-Paketadapter
 → App-Start
 ```
 
 Ein Deployment darf Skripte weder automatisch umsortieren noch einzeln minifizieren, umbenennen oder bündeln. Eine solche Änderung wäre ein eigener Entwicklungsblock und kein Infrastrukturvorgang.
 
-Alle produktiven Pfade sind relativ. Manifest, Stylesheet, alle 14 Skripte und die Service-Worker-Registrierung werden daher sowohl am Origin-Root als auch unter einem gemeinsamen Release-Unterpfad korrekt aufgelöst. Das Hash-Routing benötigt keine serverseitige Rewrite-Regel.
+Alle produktiven Pfade sind relativ. Manifest, Stylesheet, alle 16 Skriptdateien und die Service-Worker-Registrierung werden daher sowohl am Origin-Root als auch unter einem gemeinsamen Release-Unterpfad korrekt aufgelöst. Das Hash-Routing benötigt keine serverseitige Rewrite-Regel.
 
 ### 2.4 PWA-Status
 

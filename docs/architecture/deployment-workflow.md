@@ -142,7 +142,7 @@ Der Kandidat muss mindestens bestehen:
 - vollständiger vorhandener Browser-Smoke-Test;
 - Persistenz, Schema-Upgrade und Reload;
 - Backup, Restore und falsches Sicherungskennwort;
-- Export und CSV-Schutz;
+- Exportprojektion, Steuerberater-ZIP, Beleg-PDFs, CSV-Schutz und Paketfilter;
 - Belege, offene Zahlungen, Storno und Gutschrift;
 - Gutscheinverkauf, Teil-/Volleinlösung und Historie;
 - Dokumentmodelle und PDF-Erzeugung;

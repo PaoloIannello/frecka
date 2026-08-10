@@ -1,6 +1,6 @@
 # FRECKA – OFFLINE-001
 
-Browserbasierte FRECKA-PWA 0.9.1 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem CSV-Export sowie zentraler Dokument-, QR-, Public-Viewer- und Share-Infrastruktur. Ein versionsgebundener Service Worker hält die vollständige statische App-Shell für den Kaltstart nach einer erfolgreichen Online-Installation offline bereit. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
+Browserbasierte FRECKA-PWA 0.9.1 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer- und Share-Infrastruktur. Ein versionsgebundener Service Worker hält die vollständige statische App-Shell für den Kaltstart nach einer erfolgreichen Online-Installation offline bereit. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
 
 ## Start
 
@@ -26,8 +26,8 @@ Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufkla
 - Ausgabeaktionen **PDF anzeigen**, **QR-Code anzeigen** und **Teilen** für normale Belege, Gutscheine und Gutschein-Verkaufsbelege
 - Wiederverwendung der bestehenden Dokumentenengine: PDF-Anzeige und Teilen verwenden dasselbe echte, vollständig lokal erzeugte PDF
 - Fallbackfolge für Dokumente: PDF-Datei → öffentlicher Kundenlink → lokales Speichern
-- Exportauswahl vor dem Teilen; `Kunden.csv` erscheint nur, wenn sie im Export enthalten ist, und bleibt bis zur ausdrücklichen Auswahl abgewählt
-- Exportdateien werden nur dann gemeinsam geteilt, wenn der Browser exakt die gewählte Dateimenge bestätigt; andernfalls bleibt das bestehende einzelne Speichern auf dem Gerät
+- Steuerberater-ZIP als eine fertige Datei im nativen Teilen-Dialog oder als lokaler Speichern-Fallback
+- Dateiauswahl beim rückwärtskompatiblen Exporttyp `Eigene Daten`; `Kunden.csv` bleibt bis zur ausdrücklichen Auswahl abgewählt
 - ein öffentlicher Read-only-Viewer für Belege und Gutscheine, der seine datensparsame, versionierte Darstellung ausschließlich aus dem URL-Fragment liest
 - geräteübergreifender QR-Kundenbeleg ohne serverseitige Belegablage und ohne Zugriff auf lokale Unternehmerdaten des Kundengeräts
 - öffentliche Darstellung ohne interne Historien, Notizen, Kunden-Telefonnummern, Kunden-E-Mail-Adressen oder rohe FRECKA-Stores
@@ -45,7 +45,7 @@ Die Architekturverträge stehen in `docs/sharing.md` und `docs/public-receipt-qr
 - unveränderte Snapshot-, Cent-, Beleg- und Gutscheinwerte ohne zweite Geschäftslogik
 - sichere Dateinamen ohne Kundendaten
 - lokal vendortes `pdf-lib` 1.17.1 unter MIT-Lizenz; kein CDN und kein Server
-- 125 bestandene native Browser-Smoke-Tests sowie automatisiertes PDF-Rendering mit Text- und Sichtprüfung
+- 128 bestandene native Browser-Smoke-Tests sowie automatisiertes PDF-Rendering mit Text- und Sichtprüfung
 
 Der vollständige Dokumentvertrag steht in `docs/documents-pdf.md`.
 
@@ -58,7 +58,7 @@ Der vollständige Dokumentvertrag steht in `docs/documents-pdf.md`.
 - fokussierte, bildschirmfüllende PWA-Ansicht ohne Navigation, Menüs oder Werkzeugleisten
 - lokale Deep-Link-Auflösung nach Reload sowie verständliche Fehlerzustände für ungültige oder auf dem Gerät nicht vorhandene Referenzen
 - Public Viewer ohne Unternehmernavigation, Einstellungen oder ungefragte lokale Speicherung
-- Public-Viewer-Boot-Test ohne `IndexedDB.open`, reproduzierbare QR-Dichtemessung und Einbindung in den 125-Fälle-Gesamtlauf
+- Public-Viewer-Boot-Test ohne `IndexedDB.open`, reproduzierbare QR-Dichtemessung und Einbindung in den 128-Fälle-Gesamtlauf
 
 Der grundlegende QR-Vertrag steht in `docs/qr.md`; öffentlicher Payload, Fragmenttransport, Datenschutz und Größenlimits stehen in `docs/public-receipt-qr.md`.
 
@@ -67,10 +67,14 @@ Der grundlegende QR-Vertrag steht in `docs/qr.md`; öffentlicher Payload, Fragme
 - eine gemeinsame, formatneutrale Exportprojektion auf Basis der vorhandenen Tenant-Snapshot-API
 - Zeitraumfilter für aktuellen Monat, letzten Monat und ein eigenes Datum
 - Geschäftsbereichsfilter über stabile IDs und historische Snapshots
-- `Belege.csv`, `Belegpositionen.csv`, `Gutscheine.csv`, `Gutschein-Historie.csv` und `Export-Info.txt`
+- ein einziges Steuerberater-ZIP mit `Übersicht.csv`, den bestehenden CSV-/Infodateien und je einem PDF für jeden gefilterten Beleg
+- Bereichs-, Steuersatz- und Gesamtsummen ausschließlich aus gespeicherten Beleg- und Steuergruppenwerten
+- PDFs für normale Belege, offene Belege, Stornos, Gutschriften und Gutscheinverkaufsbelege über dieselbe Dokumentenengine
+- rückwärtskompatible Einzeldatei-API mit `Belege.csv`, `Belegpositionen.csv`, `Gutscheine.csv`, `Gutschein-Historie.csv` und `Export-Info.txt`
 - optionale, datensparsame `Kunden.csv` ausschließlich beim Exporttyp „Eigene Daten“
 - UTF-8-BOM, Semikolon, deutsche Dezimalwerte, sauberes Escaping und CSV-Injection-Schutz
-- 79 native Browser-Smoke-Tests im Stand EXPORT-001
+- lokal vendortes JSZip 3.10.1 unter MIT-Lizenzoption; kein CDN, keine npm-Runtime und kein Server
+- 128 bestandene native Browser-Smoke-Tests im aktuellen Stand
 
 Der vollständige Exportvertrag steht in `docs/export.md`.
 
@@ -95,7 +99,7 @@ Der vollständige Exportvertrag steht in `docs/export.md`.
 
 ## Nicht umgesetzt
 
-Noch keine Persistenz für Belegentwürfe. Keine Cloudablage, Synchronisation, automatische Backups, ZIP-Erzeugung, Zahlungsanbieteranbindung, automatische E-Mail oder Versandbestätigung, Synology-Export, Kamera-QR-Scanner, TSE, Fiskalisierung oder eigener Druckworkflow. COMM-001 führt weder eine neue PDF-Architektur noch einen Belegserver ein.
+Noch keine Persistenz für Belegentwürfe. Keine Cloudablage, Synchronisation, automatische Backups, Zahlungsanbieteranbindung, automatische E-Mail oder Versandbestätigung, Synology-Export, Kamera-QR-Scanner, TSE, Fiskalisierung oder eigener Druckworkflow. Der Steuerberaterexport erzeugt sein ZIP ausschließlich lokal und führt weder Serverübertragung noch neue Gutscheinsteuerlogik ein.
 
 Web Share bleibt vollständig feature-basiert: Ein vorhandener Button ist keine Zusage, dass ein bestimmtes Betriebssystem, ein bestimmtes Share-Ziel oder Multiple-File-Sharing verfügbar ist. Die reale Abnahme auf iPhone/iPad, Android und Desktop sowie Scanversuche mit echten Gerätekameras sind vor einer Produktfreigabe weiterhin ein offenes Release-Gate.
 

@@ -1,6 +1,6 @@
 # FRECKA-Exportkern Version 1
 
-**Stand:** EXPORT-001  
+**Stand:** EXPORT-001 Gesamtpaket
 **Datenbankschema:** unverändert Version 5  
 **Exportformat:** `FRECKA_EXPORT`, Version 1
 
@@ -8,7 +8,7 @@
 
 Der Exportkern erzeugt fachlich nachvollziehbare Dateien für Steuerberatung und die eigene Weiterverarbeitung. Er ist keine bestätigte DATEV-Importschnittstelle und ersetzt weder das verschlüsselte FRECKA-Backup noch eine steuerliche Prüfung.
 
-Nicht Bestandteil dieses Blocks sind ZIP, PDF, Mailversand, Synology-Ablage, QR-Grafiken, TSE oder Fiskalisierung. Der Export schreibt keine Geschäftsdaten und führt keine neue Persistenz ein.
+Der Steuerberaterexport wird als ein einziges lokales ZIP-Gesamtpaket mit CSV-Dateien und Beleg-PDFs erzeugt. Mailversand, Synology-Ablage, neue Gutscheinsteuerlogik, TSE und Fiskalisierung sind nicht Bestandteil dieses Blocks. Der Export schreibt keine Geschäftsdaten und führt keine neue Persistenz ein.
 
 ## Verbindliche Architektur
 
@@ -19,17 +19,19 @@ Nicht Bestandteil dieses Blocks sind ZIP, PDF, Mailversand, Synology-Ablage, QR-
 1. Es erhält den bereits geprüften Tenant-Snapshot.
 2. Es wendet Zeitraum und Geschäftsbereich auf Belege, Gutscheine und Historieneinträge an.
 3. Es erzeugt eine gemeinsame, unveränderliche Exportprojektion.
-4. CSV, Textdatei und spätere Ausgabeadapter verwenden ausschließlich diese Projektion.
+4. CSV, Übersicht, Beleg-PDFs und ZIP-Adapter verwenden ausschließlich diese Projektion.
 
 Das Modul liest weder IndexedDB noch Laufzeitlisten der Oberfläche. Es kennt keine Dialoge, Routen oder gerenderten Elemente. Eine zweite Datensammlung und parallele Fachlogik entstehen dadurch nicht.
 
 Die öffentlichen Kernfunktionen sind:
 
 - `createExportProjection(snapshot, options)` für die formatneutrale Projektion;
-- `createExportFiles(snapshotOrProjection, options)` für die Dateien der Version 1;
+- `createExportFiles(snapshotOrProjection, options)` für den bisherigen Einzeldateisatz;
+- `createSummaryFile(snapshotOrProjection, options)` für `Übersicht.csv`;
+- `FRECKA_EXPORT_PACKAGE.createTaxAdvisorPackage(snapshotOrProjection, options)` für den reinen ZIP-Ausgabeadapter;
 - `resolvePeriod(period, referenceDate)` für reproduzierbare Monatsgrenzen.
 
-PDF, Mail und eine spätere kundeneigene Ablage müssen dieselbe Projektion verwenden. Sie dürfen keine eigenen Sammelroutinen über IndexedDB oder UI-Zustände einführen.
+Der Paketadapter in `js/export-package.js` filtert nicht erneut. Er erhält von derselben Projektion die bereits ausgewählten Belegdatensätze und reicht sie nacheinander an die zentrale Dokumentenengine weiter. Mail und eine spätere kundeneigene Ablage müssen dasselbe fertige Paket verwenden; sie dürfen keine eigenen Sammelroutinen über IndexedDB oder UI-Zustände einführen.
 
 ## Filtersemantik
 
@@ -41,17 +43,48 @@ Unterstützte Zeiträume:
 
 Für Belege zählt das gespeicherte lokale Belegdatum, für Gutscheine das Ausstellungsdatum und für die Gutscheinhistorie der Zeitpunkt des einzelnen Ereignisses. Deshalb erscheint eine Einlösung im gewählten Zeitraum auch dann in `Gutschein-Historie.csv`, wenn der Gutschein früher verkauft wurde. `Gutscheine.csv` enthält dagegen die im Zeitraum ausgestellten Gutscheine.
 
-Der Geschäftsbereich wird über die stabile ID gefiltert. Ausgegeben wird vorrangig die unveränderliche Geschäftsbereichsbezeichnung des jeweiligen Snapshots. Änderungen an heutigen Einstellungen schreiben alte Exporteinträge dadurch nicht um.
+Der Geschäftsbereich wird über die stabile ID gefiltert. Standard für Steuerberatung sind alle Geschäftsbereiche gemeinsam. Wird ein einzelner Bereich gewählt, gilt dieselbe Auswahl ausnahmslos für CSV-Zeilen, Übersicht und Beleg-PDFs. Ausgegeben wird vorrangig die unveränderliche Geschäftsbereichsbezeichnung des jeweiligen Snapshots. Änderungen an heutigen Einstellungen schreiben alte Exporteinträge dadurch nicht um.
 
 ## Exporttypen und Datenschutz
 
-`Steuerberatung` erzeugt keine Kundenstammdatendatei. Namen, die bereits unveränderlicher Bestandteil eines Beleg- oder Gutscheinsnapshots sind, bleiben in den fachlichen Zeilen enthalten.
+`Steuerberatung` erzeugt keine Kundenstammdatendatei. Insbesondere enthält das ZIP niemals `Kunden.csv`. Namen und Anschriften, die bereits unveränderlicher Bestandteil eines Belegs, Gutscheins oder Beleg-PDFs sind, bleiben als fachlicher Dokumentinhalt erhalten.
 
 `Eigene Daten` bietet `Kunden.csv` als ausdrückliche, standardmäßig nicht aktivierte Option an. Enthalten sind ausschließlich Kunden, die in den gefilterten Belegen, Gutscheinen oder relevanten Gutscheinhistorien referenziert werden. Nicht zugeordnete Kunden werden nicht vorsorglich mit exportiert.
 
 Alle Dateien entstehen im Arbeitsspeicher des Endgeräts. Die Anwendung überträgt weder Snapshot noch Exportdateien an FRECKA oder einen anderen Server. Ein Download ist eine bewusste Nutzeraktion; ab diesem Zeitpunkt ist der Nutzer für den gewählten Speicherort verantwortlich.
 
+## Steuerberaterpaket
+
+Ein vollständiger Monatszeitraum erzeugt beispielsweise:
+
+```text
+FRECKA-Steuerberatung-2030-01.zip
+└── FRECKA-Steuerberatung-2030-01/
+    ├── Übersicht.csv
+    ├── Belege.csv
+    ├── Belegpositionen.csv
+    ├── Gutscheine.csv
+    ├── Gutschein-Historie.csv
+    ├── Export-Info.txt
+    └── Belege/
+        ├── 2030-000132.pdf
+        ├── GS-2030-000101.pdf
+        └── ST-2030-000101.pdf
+```
+
+Eigene oder bereichsübergreifende Zeiträume verwenden `YYYY-MM-DD_bis_YYYY-MM-DD`; ein einzelner Geschäftsbereich wird zusätzlich als sicherer Dateinamensbestandteil ausgewiesen. Jedes Beleg-PDF wird aus der unveränderten gespeicherten Belegnummer benannt. Doppelte resultierende Dateinamen führen zu einem klaren Fehler, nicht zu einem Überschreiben.
+
+Normale Belege, offene Belege, Stornos, Gutschriften und Gutscheinverkaufsbelege werden durch `FRECKA_DOCUMENTS` als echte PDFs erzeugt. Sie verwenden denselben gespeicherten Snapshot und dieselbe PDF-Engine wie die Belegansicht. PDF-Dateien werden weder in IndexedDB noch dauerhaft im Exportmodul gespeichert.
+
 ## Dateien der Version 1
+
+### `Übersicht.csv`
+
+Spalten: Zeilenart, Geschäftsbereich, Steuersatz, Anzahl Belege, Netto, Steuer und Brutto.
+
+Je Geschäftsbereich erscheinen zuerst die gespeicherten Steuersatzgruppen, danach eine Bereichssumme. Abschließend folgt die Gesamtsumme aller gefilterten Bereiche. `Anzahl Belege` zählt innerhalb einer Zeile eindeutige Belege; ein Beleg mit mehreren gespeicherten Steuersätzen kann folglich in mehreren Steuersatzzeilen vorkommen, in der Bereichs- und Gesamtsumme aber nur einmal.
+
+Bereichs- und Gesamtsummen verwenden ausschließlich die gespeicherten Netto-, Steuer- und Bruttowerte des Belegs. Steuersatzzeilen verwenden vorhandene gespeicherte Steuergruppen, ersatzweise die bereits gespeicherten Positionswerte. Fehlt eine fachlich ausweisbare Gruppe, lautet der Steuersatz `Nicht ausgewiesen`. Gutscheine erhalten dadurch keine neu erfundene Einzweck-/Mehrzweck- oder Steuerbehandlung.
 
 ### `Belege.csv`
 
@@ -102,23 +135,25 @@ Dokumentiert FRECKA-Version, Exportdatum, Exporttyp, Zeitraum, Anzahl Belege, An
 
 Die fachlichen Geldwerte stammen vorrangig aus den ganzzahligen Centfeldern der Persistenz. Dezimalfelder dienen nur als Kompatibilitätsfallback.
 
-## ZIP-Entscheidung
+## ZIP-Entscheidung und Vendor-Grenze
 
-Version 1 bietet jede Datei als einzelnen Download an. Die browsernative `CompressionStream`-Schnittstelle definiert komprimierte Streams wie Brotli, Deflate und Gzip, aber keinen ZIP-Container. FRECKA baut deshalb keinen eigenen ZIP-Writer und führt für diesen Block keine Bibliothek ein.
+Browser stellen keinen vollständigen nativen ZIP-Writer bereit. Nach ausdrücklicher Freigabe verwendet FRECKA deshalb ausschließlich den lokal vendorten Browser-Build von JSZip `3.10.1`. Er wird vor `js/export-package.js` geladen und ist weder CDN-, npm-Runtime- noch serverabhängig. Version, Lizenz und SHA-256-Prüfsummen stehen in `vendor/README.md`; der vollständige Upstream-Lizenztext wird mit dem Laufzeitartefakt ausgeliefert.
 
-Die Einzelbuttons vermeiden außerdem browserabhängig blockierte Mehrfachdownloads. Eine spätere ZIP-Ausgabe darf als reiner Ausgabeadapter über demselben Dateisatz ergänzt werden, sobald dafür eine geprüfte, wartbare Abhängigkeit ausdrücklich freigegeben ist.
+`createExportFiles()` bleibt unverändert als rückwärtskompatible Einzeldatei-API erhalten. Der Exporttyp `Eigene Daten` nutzt ihn weiterhin direkt. Nur `Steuerberatung` ergänzt `Übersicht.csv` und die Beleg-PDFs und verpackt alles in genau ein ZIP.
 
 ## Fehlerverhalten
 
 - Fehlender oder unvollständiger Snapshot: Export wird abgelehnt.
 - Ungültiger oder umgekehrter Zeitraum: Export wird abgelehnt.
 - Unbekannter Geschäftsbereich: Export wird abgelehnt.
+- Fehlende oder falsche lokale JSZip-Version: Paketexport wird abgelehnt.
+- Fehlgeschlagenes Beleg-PDF oder doppelter PDF-Dateiname: Das gesamte Paket wird abgelehnt; es gibt kein Teilpaket.
 - Es gibt keine stillen Fehler und keine teilweise veränderten Geschäftsdaten, weil der Export ausschließlich liest.
 - Auch leere Ergebnisse erzeugen die dokumentierten Dateien mit Kopfzeilen und `Export-Info.txt`.
 
 ## Prüfungen
 
-`tests/persistence-smoke.html` umfasst seit QR-001 insgesamt 87 native Browserfälle. Die Exportprojektion bleibt dabei durch folgende Fälle abgedeckt:
+`tests/persistence-smoke.html` umfasst aktuell 128 native Browserfälle. Exportprojektion und Paketadapter sind dabei durch folgende Fälle abgedeckt:
 
 - aktuelle, letzte und eigene Zeiträume;
 - Geschäftsbereichsfilter;
@@ -129,6 +164,11 @@ Die Einzelbuttons vermeiden außerdem browserabhängig blockierte Mehrfachdownlo
 - CSV-Injection-Schutz;
 - datensparsame Kundendatei;
 - Export-Info und DATEV-Abgrenzung;
-- unveränderten Eingangssnapshot und unverändertes Datenbankschema.
+- unveränderten Eingangssnapshot und unverändertes Datenbankschema;
+- Bereichs-, Steuersatz- und Gesamtsummen in `Übersicht.csv`;
+- ein lesbares ZIP mit CRC-Prüfung und exakt dokumentierter Struktur;
+- echte PDF-Signaturen für normale Belege, Stornos, Gutschriften und Gutscheinverkaufsbelege;
+- identische Zeitraum-/Geschäftsbereichsauswahl für CSV und PDFs;
+- Ausschluss von `Kunden.csv` aus dem Steuerberaterpaket.
 
 Die Produktoberfläche wurde zusätzlich bei 320 px und 390 px ohne horizontalen Überlauf sowie ohne Konsolenfehler geprüft.

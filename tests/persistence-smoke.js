@@ -9,6 +9,7 @@
   const api = globalThis.FRECKA_PERSISTENCE;
   const backupApi = globalThis.FRECKA_BACKUP;
   const exportApi = globalThis.FRECKA_EXPORT;
+  const exportPackageApi = globalThis.FRECKA_EXPORT_PACKAGE;
   const qrApi = globalThis.FRECKA_QR;
   const documentApi = globalThis.FRECKA_DOCUMENTS;
   const publicDocumentApi = globalThis.FRECKA_PUBLIC_DOCUMENTS;
@@ -390,6 +391,7 @@
       discountTotal: 4.57,
       netTotal: 54.98,
       taxTotal: 10.45,
+      taxGroups: [{ rate: 19, net: 54.98, tax: 10.45, gross: 65.43 }],
       paymentMethod: "Bar"
     });
     const open = receiptDraftFixture("receipt-export-open", {
@@ -418,7 +420,8 @@
       total: -39,
       originalTotal: -39,
       netTotal: -32.77,
-      taxTotal: -6.23
+      taxTotal: -6.23,
+      taxGroups: [{ rate: 19, net: -32.77, tax: -6.23, gross: -39 }]
     });
     const coachingCredit = receiptDraftFixture("receipt-export-credit", {
       number: "2030-000104",
@@ -437,7 +440,8 @@
       total: -10,
       originalTotal: -10,
       netTotal: -8.4,
-      taxTotal: -1.6
+      taxTotal: -1.6,
+      taxGroups: [{ rate: 19, net: -8.4, tax: -1.6, gross: -10 }]
     });
     const february = receiptDraftFixture("receipt-export-february", {
       number: "2030-000105",
@@ -2368,6 +2372,10 @@
         run: async () => {
           assert(typeof exportApi?.createExportProjection === "function", "Zentrale Exportprojektion fehlt");
           assert(typeof exportApi?.createExportFiles === "function", "Exportdatei-API fehlt");
+          assert(typeof exportApi?.createSummaryFile === "function", "Exportübersicht fehlt");
+          assert(typeof exportPackageApi?.createTaxAdvisorPackage === "function", "ZIP-Paketadapter fehlt");
+          assertEqual(exportPackageApi?.JSZIP_VERSION, "3.10.1", "ZIP-Paketadapter erwartet eine falsche JSZip-Version");
+          assertEqual(globalThis.JSZip?.version, "3.10.1", "Lokal vendorte JSZip-Version ist falsch");
           assertEqual(exportApi.constants.exportFormatVersion, 1, "Falsche Exportformatversion");
           assertEqual(api.constants.databaseVersion, 5, "Export führte unerwartet eine neue Schema-Version ein");
         }
@@ -2477,6 +2485,7 @@
           const taxFiles = exportApi.createExportFiles(snapshot, { ...options, exportType: "tax-advisor" });
           const ownFiles = exportApi.createExportFiles(snapshot, { ...options, exportType: "own-data" });
           assert(!taxFiles.files.some(file => file.name === "Kunden.csv"), "Steuerberatungsexport enthält Kundenstammdaten");
+          assertDeepEqual(taxFiles.files.map(file => file.name), ["Belege.csv", "Belegpositionen.csv", "Gutscheine.csv", "Gutschein-Historie.csv", "Export-Info.txt"], "Bestehende Steuerberater-Einzeldatei-API wurde verändert");
           assert(ownFiles.files.some(file => file.name === "Kunden.csv"), "Eigene Daten enthalten trotz Auswahl keine Kundendatei");
           assertDeepEqual(ownFiles.projection.customers.map(customer => customer.id), ["customer-anna"], "Nicht zugeordnete Kunden wurden exportiert");
         }
@@ -2537,6 +2546,128 @@
           assertDeepEqual(exported.files.map(file => file.name), ["Belege.csv", "Belegpositionen.csv", "Gutscheine.csv", "Gutschein-Historie.csv", "Kunden.csv", "Export-Info.txt"], "Dateisatz enthält fehlende oder zusätzliche Dateien");
           assert(!exported.files.some(file => /qr|pdf|mail|synology|zip/i.test(file.name)), "Nicht freigegebener Exporttyp wurde erzeugt");
           assertDeepEqual(snapshot, before, "Export hat den zentralen Snapshot verändert");
+        }
+      },
+      {
+        name: "Übersicht summiert gespeicherte Werte je Geschäftsbereich und Steuersatz",
+        run: async () => {
+          const snapshot = completeExportSnapshotFixture("test-export-summary");
+          const projection = exportApi.createExportProjection(snapshot, {
+            exportType: "tax-advisor",
+            periodType: "custom",
+            dateFrom: "2030-01-01",
+            dateTo: "2030-01-31",
+            businessAreaId: "all"
+          });
+          assertDeepEqual(projection.summary, [
+            { rowType: "Steuersatz", businessArea: "Snapshot Studio", taxRate: "19,00", receiptCount: 3, net: "54,98", tax: "10,45", gross: "65,43" },
+            { rowType: "Geschäftsbereich gesamt", businessArea: "Snapshot Studio", taxRate: "", receiptCount: 3, net: "54,98", tax: "10,45", gross: "65,43" },
+            { rowType: "Steuersatz", businessArea: "Test-Coaching", taxRate: "19,00", receiptCount: 1, net: "-8,40", tax: "-1,60", gross: "-10,00" },
+            { rowType: "Geschäftsbereich gesamt", businessArea: "Test-Coaching", taxRate: "", receiptCount: 1, net: "-8,40", tax: "-1,60", gross: "-10,00" },
+            { rowType: "Gesamtsumme", businessArea: "Alle Geschäftsbereiche", taxRate: "", receiptCount: 4, net: "46,58", tax: "8,85", gross: "55,43" }
+          ], "Übersicht enthält falsche Bereichs-, Steuersatz- oder Gesamtsummen");
+          const summaryFile = exportApi.createSummaryFile(projection);
+          assertEqual(summaryFile.name, "Übersicht.csv", "Übersichtsdatei besitzt einen falschen Namen");
+          assert(summaryFile.content.startsWith("\uFEFF\"Zeilenart\";\"Geschäftsbereich\";\"Steuersatz\""), "Übersicht verwendet nicht dieselben sicheren CSV-Regeln");
+        }
+      },
+      {
+        name: "Steuerberaterpaket enthält Daten und echte PDFs aller Belegarten in genau einem ZIP",
+        run: async () => {
+          const tenantId = "test-export-package";
+          const snapshot = completeExportSnapshotFixture(tenantId);
+          const receipts = snapshot.stores.receipts.receipts.map(receipt => clone(receipt));
+          const cancellation = receipts.find(receipt => receipt.id === "receipt-export-cancellation");
+          const credit = receipts.find(receipt => receipt.id === "receipt-export-credit");
+          cancellation.number = "ST-2030-000101";
+          cancellation.receiptNumber = "ST-2030-000101";
+          credit.number = "GS-2030-000099";
+          credit.receiptNumber = "GS-2030-000099";
+          const voucherSale = receiptDraftFixture("receipt-voucher-january", {
+            number: "2030-000106",
+            receiptKind: "voucher-sale",
+            voucherReference: "vch_export_january",
+            completedAt: "2030-01-10T09:00:00.000Z",
+            createdAt: "2030-01-10T09:00:00.000Z",
+            updatedAt: "2030-01-10T09:00:00.000Z",
+            date: "10.01.2030",
+            time: "09:00",
+            items: [{ type: "voucher-sale", title: "Gutschein", quantity: 1, unitPrice: 100, total: 100 }],
+            total: 100,
+            originalTotal: 100,
+            netTotal: 0,
+            taxTotal: 0,
+            taxGroups: [],
+            paymentMethod: "Karte"
+          });
+          snapshot.stores.receipts = api.snapshotReceipts({ receipts: [...receipts, voucherSale] }, tenantId);
+          const before = clone(snapshot);
+          const packageResult = await exportPackageApi.createTaxAdvisorPackage(snapshot, {
+            periodType: "custom",
+            dateFrom: "2030-01-01",
+            dateTo: "2030-01-31",
+            businessAreaId: "all",
+            generatedAt: "2030-02-01T12:34:00.000Z"
+          }, {
+            createReceiptPdf: receipt => {
+              const linkedVoucher = snapshot.stores.vouchers.vouchers.find(voucher => voucher.reference === receipt.voucherReference) || null;
+              const model = documentApi.createReceiptDocumentModel(receipt, { ...documentOptions(), linkedVoucher });
+              return documentApi.createPdfBytes(model);
+            }
+          });
+          assertEqual(packageResult.packageFile.name, "FRECKA-Steuerberatung-2030-01.zip", "ZIP-Dateiname ist nicht periodenbezogen");
+          assertEqual(packageResult.packageFile.mimeType, "application/zip", "ZIP besitzt einen falschen Medientyp");
+          assert(packageResult.packageFile.content instanceof Blob && packageResult.packageFile.size > 0, "ZIP wurde nicht als lokale Binärdatei erzeugt");
+          assertEqual(packageResult.pdfCount, 5, "ZIP enthält nicht zu jedem gefilterten Beleg ein PDF");
+          assertDeepEqual(packageResult.files.map(file => file.name), ["Übersicht.csv", "Belege.csv", "Belegpositionen.csv", "Gutscheine.csv", "Gutschein-Historie.csv", "Export-Info.txt"], "Datenstruktur des ZIP-Pakets ist falsch");
+          assert(!packageResult.entries.some(entry => entry.name === "Kunden.csv"), "Steuerberaterpaket enthält Kundenstammdaten");
+
+          const archive = await globalThis.JSZip.loadAsync(await packageResult.packageFile.content.arrayBuffer(), { checkCRC32: true });
+          const paths = Object.keys(archive.files).sort();
+          const root = "FRECKA-Steuerberatung-2030-01";
+          const expectedPaths = [
+            `${root}/Belege.csv`,
+            `${root}/Belegpositionen.csv`,
+            `${root}/Export-Info.txt`,
+            `${root}/Gutschein-Historie.csv`,
+            `${root}/Gutscheine.csv`,
+            `${root}/Übersicht.csv`,
+            `${root}/Belege/2030-000101.pdf`,
+            `${root}/Belege/2030-000102.pdf`,
+            `${root}/Belege/2030-000106.pdf`,
+            `${root}/Belege/GS-2030-000099.pdf`,
+            `${root}/Belege/ST-2030-000101.pdf`
+          ].sort();
+          assertDeepEqual(paths, expectedPaths, "ZIP besitzt nicht die vereinbarte Paketstruktur");
+          for (const path of paths.filter(path => path.endsWith(".pdf"))) {
+            const bytes = await archive.file(path).async("uint8array");
+            assert(pdfHeader(bytes).startsWith("%PDF-"), `ZIP-Eintrag ${path} ist kein echtes PDF`);
+          }
+          assertDeepEqual(snapshot, before, "Paketexport hat den zentralen Snapshot verändert");
+        }
+      },
+      {
+        name: "ZIP-Paket wendet Zeitraum und Geschäftsbereich identisch auf CSV und PDFs an",
+        run: async () => {
+          const snapshot = completeExportSnapshotFixture("test-export-package-filter");
+          const packageResult = await exportPackageApi.createTaxAdvisorPackage(snapshot, {
+            periodType: "custom",
+            dateFrom: "2030-01-01",
+            dateTo: "2030-01-31",
+            businessAreaId: "hair",
+            generatedAt: "2030-02-01T12:34:00.000Z"
+          }, {
+            createReceiptPdf: () => new TextEncoder().encode("%PDF-1.7\nfilter-test")
+          });
+          assertEqual(packageResult.rootDirectory, "FRECKA-Steuerberatung-2030-01-Friseur", "Gefiltertes Paket kennzeichnet den Geschäftsbereich nicht");
+          assertEqual(packageResult.pdfCount, 3, "PDF-Auswahl weicht vom Belegfilter ab");
+          assertDeepEqual(
+            packageResult.entries.filter(entry => entry.kind === "receipt-pdf").map(entry => entry.receiptNumber),
+            packageResult.projection.receipts.map(receipt => receipt.receiptNumber),
+            "PDFs und CSV-Belege verwenden nicht dieselbe zentrale Auswahl"
+          );
+          assert(packageResult.projection.summary.every(row => row.businessArea !== "Test-Coaching"), "Gefilterte Übersicht enthält einen fremden Geschäftsbereich");
+          assert(!packageResult.entries.some(entry => entry.name === "2030-000104.pdf"), "Gefiltertes Paket enthält das Coaching-PDF");
         }
       },
       {

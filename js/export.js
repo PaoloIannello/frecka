@@ -48,6 +48,18 @@
         ["Brutto", "gross"]
       ])
     }),
+    summary: Object.freeze({
+      filename: "Übersicht.csv",
+      columns: Object.freeze([
+        ["Zeilenart", "rowType"],
+        ["Geschäftsbereich", "businessArea"],
+        ["Steuersatz", "taxRate"],
+        ["Anzahl Belege", "receiptCount"],
+        ["Netto", "net"],
+        ["Steuer", "tax"],
+        ["Brutto", "gross"]
+      ])
+    }),
     vouchers: Object.freeze({
       filename: "Gutscheine.csv",
       columns: Object.freeze([
@@ -372,6 +384,149 @@
     return { selected, rows, positionRows };
   }
 
+  function storedMoneyGroup(source) {
+    const netCents = cents(source, "netCents", "net");
+    const taxCents = cents(source, "taxCents", "tax");
+    const hasGross = Number.isInteger(source?.grossCents) || Number.isFinite(Number(source?.gross));
+    return {
+      netCents,
+      taxCents,
+      grossCents: hasGross ? cents(source, "grossCents", "gross") : netCents + taxCents
+    };
+  }
+
+  function receiptStoredTotals(receipt) {
+    return {
+      netCents: cents(receipt, "netTotalCents", "netTotal"),
+      taxCents: cents(receipt, "taxTotalCents", "taxTotal"),
+      grossCents: cents(receipt, "totalCents", "total")
+    };
+  }
+
+  function storedTaxGroups(receipt) {
+    const sourceGroups = Array.isArray(receipt.taxBreakdown)
+      ? receipt.taxBreakdown
+      : Array.isArray(receipt.taxGroups) ? receipt.taxGroups : [];
+    if (sourceGroups.length) {
+      return sourceGroups.map(group => ({
+        rate: Number.isFinite(Number(group?.rate)) ? Number(group.rate) : null,
+        ...storedMoneyGroup(group)
+      }));
+    }
+
+    const positions = Array.isArray(receipt.positions) ? receipt.positions : Array.isArray(receipt.items) ? receipt.items : [];
+    const byRate = new Map();
+    positions.forEach(position => {
+      const rate = position?.taxRate === "" || position?.taxRate == null || !Number.isFinite(Number(position.taxRate))
+        ? null
+        : Number(position.taxRate);
+      const key = rate == null ? "unreported" : `rate:${rate}`;
+      const current = byRate.get(key) || { rate, netCents: 0, taxCents: 0, grossCents: 0 };
+      const stored = {
+        netCents: cents(position, "netCents", "netTotal"),
+        taxCents: cents(position, "taxCents", "taxAmount"),
+        grossCents: cents(position, "grossCents", "total")
+      };
+      current.netCents += stored.netCents;
+      current.taxCents += stored.taxCents;
+      current.grossCents += stored.grossCents;
+      byRate.set(key, current);
+    });
+    const grouped = [...byRate.values()];
+    const groupedTotals = grouped.reduce((sum, group) => ({
+      netCents: sum.netCents + group.netCents,
+      taxCents: sum.taxCents + group.taxCents,
+      grossCents: sum.grossCents + group.grossCents
+    }), { netCents: 0, taxCents: 0, grossCents: 0 });
+    const receiptTotals = receiptStoredTotals(receipt);
+    const positionsHaveStoredValues = Object.values(groupedTotals).some(value => value !== 0)
+      || Object.values(receiptTotals).every(value => value === 0);
+    return grouped.length && positionsHaveStoredValues
+      ? grouped
+      : [{ rate: null, ...receiptTotals }];
+  }
+
+  function createSummaryRows(receipts, settingsAreaById) {
+    const areaTotals = new Map();
+    const taxTotals = new Map();
+    const grand = { receiptIds: new Set(), netCents: 0, taxCents: 0, grossCents: 0 };
+
+    receipts.forEach((receipt, index) => {
+      const receiptId = text(receipt.id) || text(receipt.receiptNumber) || text(receipt.number) || `receipt-${index + 1}`;
+      const businessAreaId = areaId(receipt) || "unassigned";
+      const businessArea = areaLabel(receipt, settingsAreaById) || "Nicht zugeordnet";
+      const receiptTotals = receiptStoredTotals(receipt);
+      const area = areaTotals.get(businessAreaId) || {
+        businessAreaId,
+        businessArea,
+        receiptIds: new Set(),
+        netCents: 0,
+        taxCents: 0,
+        grossCents: 0
+      };
+      area.receiptIds.add(receiptId);
+      area.netCents += receiptTotals.netCents;
+      area.taxCents += receiptTotals.taxCents;
+      area.grossCents += receiptTotals.grossCents;
+      areaTotals.set(businessAreaId, area);
+
+      grand.receiptIds.add(receiptId);
+      grand.netCents += receiptTotals.netCents;
+      grand.taxCents += receiptTotals.taxCents;
+      grand.grossCents += receiptTotals.grossCents;
+
+      storedTaxGroups(receipt).forEach(group => {
+        const rateKey = group.rate == null ? "unreported" : `rate:${group.rate}`;
+        const key = `${businessAreaId}\u0000${rateKey}`;
+        const taxGroup = taxTotals.get(key) || {
+          businessAreaId,
+          businessArea,
+          rate: group.rate,
+          receiptIds: new Set(),
+          netCents: 0,
+          taxCents: 0,
+          grossCents: 0
+        };
+        taxGroup.receiptIds.add(receiptId);
+        taxGroup.netCents += group.netCents;
+        taxGroup.taxCents += group.taxCents;
+        taxGroup.grossCents += group.grossCents;
+        taxTotals.set(key, taxGroup);
+      });
+    });
+
+    const moneyRow = (rowType, businessArea, taxRate, totals) => Object.freeze({
+      rowType,
+      businessArea,
+      taxRate,
+      receiptCount: totals.receiptIds.size,
+      net: moneyFromCents(totals.netCents),
+      tax: moneyFromCents(totals.taxCents),
+      gross: moneyFromCents(totals.grossCents)
+    });
+    const rows = [];
+    [...areaTotals.values()]
+      .sort((left, right) => left.businessArea.localeCompare(right.businessArea, "de"))
+      .forEach(area => {
+        [...taxTotals.values()]
+          .filter(group => group.businessAreaId === area.businessAreaId)
+          .sort((left, right) => {
+            if (left.rate == null) return 1;
+            if (right.rate == null) return -1;
+            return left.rate - right.rate;
+          })
+          .forEach(group => rows.push(moneyRow(
+            "Steuersatz",
+            group.businessArea,
+            group.rate == null ? "Nicht ausgewiesen" : germanDecimal(group.rate, 2),
+            group
+          )));
+        rows.push(moneyRow("Geschäftsbereich gesamt", area.businessArea, "", area));
+      });
+    rows.push(moneyRow("Gesamtsumme", "Alle Geschäftsbereiche", "", grand));
+    return Object.freeze(rows);
+  }
+
   function projectVouchers(vouchers, range, selectedAreaId, settingsAreaById) {
     const areaVouchers = vouchers.filter(voucher => matchesArea(voucher, selectedAreaId));
     const selected = areaVouchers
@@ -487,7 +642,7 @@
       : [];
     const selectedArea = settingsAreaById.get(normalized.businessAreaId);
     const company = snapshotCompanyIdentity(settings.company);
-    return Object.freeze({
+    const projection = {
       exportFormat: constants.exportFormat,
       exportFormatVersion: constants.exportFormatVersion,
       exportType: normalized.exportType,
@@ -503,10 +658,16 @@
       includeCustomers: normalized.includeCustomers,
       receipts: Object.freeze(receipts.rows.map(row => Object.freeze(row))),
       receiptPositions: Object.freeze(receipts.positionRows.map(row => Object.freeze(row))),
+      summary: createSummaryRows(receipts.selected, settingsAreaById),
       vouchers: Object.freeze(vouchers.rows.map(row => Object.freeze(row))),
       voucherHistory: Object.freeze(vouchers.historyRows.map(row => Object.freeze(row))),
       customers: Object.freeze(customerRows.map(row => Object.freeze(row)))
+    };
+    Object.defineProperties(projection, {
+      receiptRecords: { value: Object.freeze([...receipts.selected]), enumerable: false },
+      voucherRecords: { value: Object.freeze([...vouchers.selected]), enumerable: false }
     });
+    return Object.freeze(projection);
   }
 
   function protectCsvValue(value) {
@@ -574,6 +735,17 @@
     });
   }
 
+  function createSummaryFile(snapshotOrProjection, options = {}) {
+    const projection = snapshotOrProjection?.exportFormat === constants.exportFormat
+      ? snapshotOrProjection
+      : createExportProjection(snapshotOrProjection, options);
+    return Object.freeze({
+      name: csvDefinitions.summary.filename,
+      mimeType: "text/csv;charset=utf-8",
+      content: createCsv(projection.summary, csvDefinitions.summary)
+    });
+  }
+
   globalThis.FRECKA_EXPORT = Object.freeze({
     constants,
     csvDefinitions,
@@ -581,6 +753,7 @@
     resolvePeriod,
     createExportProjection,
     createExportFiles,
+    createSummaryFile,
     protectCsvValue,
     escapeCsvValue,
     createCsv
