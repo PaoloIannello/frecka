@@ -10,6 +10,19 @@ Browserbasierte FRECKA-PWA 0.10.5 mit lokaler IndexedDB-Persistenz, verschlüsse
 
 Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufklappen und bearbeiten → Weiter → Kunde optional und Zahlungsart simulieren → Demo abschließen.
 
+## Arbeitsstand PERSISTENCE-008 (noch unveröffentlicht)
+
+- unter **Einstellungen → Sicherung & Wiederherstellung → Lokale Datenintegrität prüfen** steht eine ausdrücklich gestartete Read-only-Diagnose bereit
+- Diagnose und Backup/Export lesen denselben zentralen Tenant-Snapshot; die fachliche Entscheidung trifft weiterhin ausschließlich `validateTenantSnapshot()` einschließlich der Gutschein-/Beleg-Invariante
+- die Ausgabe ist auf technischen Prüfcode, konkrete Invariante, Voucher-ID/-Referenz/-Code, Verkaufsbelegreferenzen, Receipt-ID/-Nummer/-Art/-Gegenreferenz sowie notwendige Zeit- und Historienreferenzen begrenzt
+- Kunden-, Unternehmens-, Positions-, Betrags- und Kennwortdaten werden nicht in die Diagnose übernommen
+- die Diagnose verändert keine IndexedDB-Daten, repariert oder migriert nichts und besitzt keinen Netzwerkpfad
+- der Bericht bleibt lokal sichtbar und kann erst nach bewusster Nutzeraktion über den zentralen Share-/Speichern-Pfad als Textdatei ausgegeben werden
+- weil Belege und Gutscheine keine erzeugende App-Version speichern, behauptet die Diagnose keine unbelegbare automatische Zuordnung „vor/nach 0.10.3“, sondern zeigt die betroffenen Zeitstempel
+- 152 bestandene native Browser-Smoke-Tests einschließlich konsistentem Bestand, fehlendem/falsch referenziertem/verwaistem Gutscheinverkaufsbeleg, Duplikaten und nachweislich unveränderter IndexedDB
+
+Für den realen iPhone-Test genau einmal **Diagnose erstellen** antippen, den lokal angezeigten Bericht prüfen und anschließend **Diagnose teilen oder speichern** wählen. Es findet vorher keine Datei- oder Serverausgabe statt.
+
 ## Neu in BACKUP-002
 
 - klare Zweiphasenfolge: Snapshot und Verschlüsselung bereiten nur den verschlüsselten Inhalt vor; `File`, Share oder Download entstehen erst durch die ausdrückliche Ausgabeaktion

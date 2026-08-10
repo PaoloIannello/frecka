@@ -71,14 +71,19 @@
     appVersion: "BACKUP-001",
     storeKeys: Object.freeze(["settings", "catalog", "customers", "receipts", "vouchers"])
   });
+  const integrityDiagnosticConstants = Object.freeze({
+    format: "FRECKA_INTEGRITY_DIAGNOSTIC",
+    formatVersion: 1
+  });
 
   class PersistenceError extends Error {
-    constructor(code, userMessage, cause = null) {
+    constructor(code, userMessage, cause = null, diagnostic = null) {
       super(userMessage);
       this.name = "PersistenceError";
       this.code = code;
       this.userMessage = userMessage;
       if (cause) this.cause = cause;
+      if (diagnostic) this.diagnostic = diagnostic;
     }
   }
 
@@ -584,6 +589,7 @@
       throw new PersistenceError("INVALID_DATA", "Der gespeicherte Belegdatensatz ist ungültig.");
     }
     const repairs = new Set();
+    const diagnostics = [];
     if (rawRecord == null) repairs.add("RECEIPTS_DEFAULTED");
     const rawFormatVersion = raw.formatVersion == null ? constants.receiptsFormatVersion : raw.formatVersion;
     if (!Number.isInteger(rawFormatVersion) || rawFormatVersion < 1) {
@@ -600,20 +606,36 @@
     if (raw.formatVersion == null) repairs.add("FORMAT_VERSION_ADDED");
     const source = Array.isArray(raw.receipts) ? raw.receipts : defaults.receipts;
     if (!Array.isArray(raw.receipts)) repairs.add("RECEIPTS_DEFAULTED");
-    const seenIds = new Set();
-    const seenNumbers = new Set();
+    const seenIds = new Map();
+    const seenNumbers = new Map();
     const receipts = source.flatMap(entry => {
       const normalized = normalizeReceiptEntry(entry, raw.updatedAt || epochIso);
       if (!normalized) {
         repairs.add("RECEIPT_REMOVED");
+        diagnostics.push({
+          invariant: "RECEIPT_IDENTITY_INVALID",
+          receipts: [diagnosticReceiptView(entry)]
+        });
         return [];
       }
       if (seenIds.has(normalized.id) || seenNumbers.has(normalized.number)) {
         repairs.add("RECEIPT_DUPLICATE_REMOVED");
+        diagnostics.push({
+          invariant: "RECEIPT_ID_OR_NUMBER_DUPLICATE",
+          duplicateFields: [
+            ...(seenIds.has(normalized.id) ? ["id"] : []),
+            ...(seenNumbers.has(normalized.number) ? ["number"] : [])
+          ],
+          receipts: uniqueDiagnosticRecords([
+            seenIds.get(normalized.id),
+            seenNumbers.get(normalized.number),
+            normalized
+          ], diagnosticReceiptView)
+        });
         return [];
       }
-      seenIds.add(normalized.id);
-      seenNumbers.add(normalized.number);
+      seenIds.set(normalized.id, normalized);
+      seenNumbers.set(normalized.number, normalized);
       return [normalized];
     });
     return {
@@ -623,7 +645,8 @@
         updatedAt: stableIso(raw.updatedAt, epochIso),
         receipts
       })),
-      repairs: [...repairs]
+      repairs: [...repairs],
+      diagnostics
     };
   }
 
@@ -841,26 +864,45 @@
       );
     }
     const repairs = new Set();
+    const diagnostics = [];
     if (rawRecord == null) repairs.add("VOUCHERS_DEFAULTED");
     const source = Array.isArray(raw.vouchers) ? raw.vouchers : defaults.vouchers;
     if (!Array.isArray(raw.vouchers)) repairs.add("VOUCHERS_DEFAULTED");
-    const seenIds = new Set();
-    const seenReferences = new Set();
-    const seenCodes = new Set();
+    const seenIds = new Map();
+    const seenReferences = new Map();
+    const seenCodes = new Map();
     const vouchers = source.flatMap(entry => {
       const normalized = normalizeVoucherEntry(entry, raw.updatedAt || epochIso);
       if (!normalized) {
         repairs.add("VOUCHER_REMOVED");
+        diagnostics.push({
+          invariant: "VOUCHER_IDENTITY_INVALID",
+          vouchers: [diagnosticVoucherView(entry)]
+        });
         return [];
       }
       if (centsFrom(entry.currentValueCents, entry.currentValue) !== normalized.currentValueCents) repairs.add("VOUCHER_BALANCE_REPAIRED");
       if (seenIds.has(normalized.id) || seenReferences.has(normalized.reference) || seenCodes.has(normalized.normalizedCode)) {
         repairs.add("VOUCHER_DUPLICATE_REMOVED");
+        diagnostics.push({
+          invariant: "VOUCHER_ID_REFERENCE_OR_CODE_DUPLICATE",
+          duplicateFields: [
+            ...(seenIds.has(normalized.id) ? ["id"] : []),
+            ...(seenReferences.has(normalized.reference) ? ["reference"] : []),
+            ...(seenCodes.has(normalized.normalizedCode) ? ["code"] : [])
+          ],
+          vouchers: uniqueDiagnosticRecords([
+            seenIds.get(normalized.id),
+            seenReferences.get(normalized.reference),
+            seenCodes.get(normalized.normalizedCode),
+            normalized
+          ], diagnosticVoucherView)
+        });
         return [];
       }
-      seenIds.add(normalized.id);
-      seenReferences.add(normalized.reference);
-      seenCodes.add(normalized.normalizedCode);
+      seenIds.set(normalized.id, normalized);
+      seenReferences.set(normalized.reference, normalized);
+      seenCodes.set(normalized.normalizedCode, normalized);
       return [normalized];
     });
     return {
@@ -870,12 +912,88 @@
         updatedAt: stableIso(raw.updatedAt, epochIso),
         vouchers
       })),
-      repairs: [...repairs]
+      repairs: [...repairs],
+      diagnostics
     };
   }
 
-  function voucherReceiptInvariantError(message) {
-    return new PersistenceError("VOUCHER_RECEIPT_INVARIANT_INVALID", message);
+  function diagnosticReceiptView(receipt) {
+    return {
+      id: nullableStringId(receipt?.id),
+      number: trimmedString(receipt?.number || receipt?.receiptNumber),
+      receiptKind: trimmedString(receipt?.receiptKind),
+      voucherReference: nullableStringId(receipt?.voucherReference),
+      createdAt: trimmedString(receipt?.createdAt),
+      completedAt: trimmedString(receipt?.completedAt)
+    };
+  }
+
+  function diagnosticHistoryView(entry) {
+    return {
+      id: nullableStringId(entry?.id),
+      type: trimmedString(entry?.type),
+      receiptReference: nullableStringId(entry?.receiptReference),
+      receiptNumber: trimmedString(entry?.receiptNumber),
+      occurredAt: trimmedString(entry?.occurredAt)
+    };
+  }
+
+  function diagnosticVoucherView(voucher, includeHistory = false) {
+    const saleReceipt = isPlainObject(voucher?.saleReceipt) ? voucher.saleReceipt : {};
+    const history = Array.isArray(voucher?.history) ? voucher.history : [];
+    return {
+      id: nullableStringId(voucher?.id),
+      reference: nullableStringId(voucher?.reference),
+      code: trimmedString(voucher?.code),
+      saleReceiptReference: nullableStringId(voucher?.saleReceiptReference),
+      saleReceipt: {
+        id: nullableStringId(saleReceipt.id),
+        number: trimmedString(saleReceipt.number)
+      },
+      createdAt: trimmedString(voucher?.createdAt),
+      soldAtIso: trimmedString(voucher?.soldAtIso),
+      ...(includeHistory ? {
+        historyReferences: history.slice(0, 50).map(diagnosticHistoryView),
+        historyReferencesTruncated: Math.max(0, history.length - 50)
+      } : {})
+    };
+  }
+
+  function uniqueDiagnosticRecords(records, projector) {
+    const seen = new Set();
+    return (Array.isArray(records) ? records : []).filter(Boolean).flatMap(record => {
+      const projected = projector(record);
+      const key = JSON.stringify(projected);
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [projected];
+    });
+  }
+
+  function voucherReceiptDiagnostic(invariant, { vouchers = [], receipts = [], details = {} } = {}) {
+    return {
+      invariant,
+      vouchers: uniqueDiagnosticRecords(vouchers, voucher => diagnosticVoucherView(voucher)),
+      receipts: uniqueDiagnosticRecords(receipts, diagnosticReceiptView),
+      ...cloneSafe(details)
+    };
+  }
+
+  function voucherHistoryDiagnostic(invariant, voucher, entries = []) {
+    return {
+      invariant,
+      vouchers: [diagnosticVoucherView(voucher, true)],
+      historyEntries: uniqueDiagnosticRecords(entries, diagnosticHistoryView)
+    };
+  }
+
+  function voucherReceiptInvariantError(message, invariant = "VOUCHER_RECEIPT_INVARIANT_INVALID", context = {}) {
+    return new PersistenceError(
+      "VOUCHER_RECEIPT_INVARIANT_INVALID",
+      message,
+      null,
+      voucherReceiptDiagnostic(invariant, context)
+    );
   }
 
   function validateVoucherReceiptInvariant(receiptsInput, vouchersInput) {
@@ -886,7 +1004,10 @@
       ? vouchersInput
       : vouchersInput?.vouchers;
     if (!Array.isArray(receipts) || !Array.isArray(vouchers)) {
-      throw voucherReceiptInvariantError("Die Gutschein-Verkaufsbelege konnten nicht vollständig geprüft werden.");
+      throw voucherReceiptInvariantError(
+        "Die Gutschein-Verkaufsbelege konnten nicht vollständig geprüft werden.",
+        "VOUCHER_RECEIPT_INPUT_INCOMPLETE"
+      );
     }
 
     const receiptById = new Map();
@@ -895,10 +1016,26 @@
       const id = nullableStringId(receipt?.id);
       const number = trimmedString(receipt?.number);
       if (!id || !number) {
-        throw voucherReceiptInvariantError("Ein Beleg besitzt keine eindeutige ID oder Belegnummer.");
+        throw voucherReceiptInvariantError(
+          "Ein Beleg besitzt keine eindeutige ID oder Belegnummer.",
+          "RECEIPT_IDENTITY_MISSING",
+          { receipts: [receipt] }
+        );
       }
       if (receiptById.has(id) || receiptByNumber.has(number)) {
-        throw voucherReceiptInvariantError(`Die Beleg-ID oder Belegnummer ${number} ist mehrfach vorhanden.`);
+        throw voucherReceiptInvariantError(
+          `Die Beleg-ID oder Belegnummer ${number} ist mehrfach vorhanden.`,
+          "RECEIPT_ID_OR_NUMBER_DUPLICATE",
+          {
+            receipts: [receiptById.get(id), receiptByNumber.get(number), receipt],
+            details: {
+              duplicateFields: [
+                ...(receiptById.has(id) ? ["id"] : []),
+                ...(receiptByNumber.has(number) ? ["number"] : [])
+              ]
+            }
+          }
+        );
       }
       receiptById.set(id, receipt);
       receiptByNumber.set(number, receipt);
@@ -908,10 +1045,18 @@
     vouchers.forEach(voucher => {
       const reference = nullableStringId(voucher?.reference);
       if (!reference) {
-        throw voucherReceiptInvariantError("Ein Gutschein besitzt keine eindeutige Referenz.");
+        throw voucherReceiptInvariantError(
+          "Ein Gutschein besitzt keine eindeutige Referenz.",
+          "VOUCHER_REFERENCE_MISSING",
+          { vouchers: [voucher] }
+        );
       }
       if (voucherByReference.has(reference)) {
-        throw voucherReceiptInvariantError(`Die Gutscheinreferenz ${reference} ist mehrfach vorhanden.`);
+        throw voucherReceiptInvariantError(
+          `Die Gutscheinreferenz ${reference} ist mehrfach vorhanden.`,
+          "VOUCHER_REFERENCE_DUPLICATE",
+          { vouchers: [voucherByReference.get(reference), voucher] }
+        );
       }
       voucherByReference.set(reference, voucher);
     });
@@ -928,28 +1073,67 @@
       const hasSaleReceiptReference = Boolean(canonicalReference || saleReceiptId || saleReceiptNumber);
       if (!hasSaleReceiptReference) return;
       if (!saleReceiptId || !saleReceiptNumber) {
-        throw voucherReceiptInvariantError(`Der Gutschein ${code} besitzt keine vollständige Verkaufsbeleg-ID und Belegnummer.`);
+        throw voucherReceiptInvariantError(
+          `Der Gutschein ${code} besitzt keine vollständige Verkaufsbeleg-ID und Belegnummer.`,
+          "VOUCHER_SALE_RECEIPT_IDENTITY_INCOMPLETE",
+          { vouchers: [voucher] }
+        );
       }
       if (canonicalReference !== saleReceiptId) {
-        throw voucherReceiptInvariantError(`Der Gutschein ${code} enthält eine widersprüchliche Verkaufsbelegreferenz.`);
+        throw voucherReceiptInvariantError(
+          `Der Gutschein ${code} enthält eine widersprüchliche Verkaufsbelegreferenz.`,
+          "VOUCHER_SALE_RECEIPT_REFERENCE_MISMATCH",
+          { vouchers: [voucher] }
+        );
       }
 
       const receiptByCanonicalId = receiptById.get(saleReceiptId);
       const receiptByCanonicalNumber = receiptByNumber.get(saleReceiptNumber);
       if (!receiptByCanonicalId || !receiptByCanonicalNumber) {
-        throw voucherReceiptInvariantError(`Der Gutschein ${code} verweist auf den nicht vollständig gespeicherten Verkaufsbeleg ${saleReceiptNumber || saleReceiptId}.`);
+        throw voucherReceiptInvariantError(
+          `Der Gutschein ${code} verweist auf den nicht vollständig gespeicherten Verkaufsbeleg ${saleReceiptNumber || saleReceiptId}.`,
+          "VOUCHER_SALE_RECEIPT_NOT_FOUND",
+          {
+            vouchers: [voucher],
+            receipts: [receiptByCanonicalId, receiptByCanonicalNumber],
+            details: {
+              missingById: !receiptByCanonicalId,
+              missingByNumber: !receiptByCanonicalNumber
+            }
+          }
+        );
       }
       if (receiptByCanonicalId !== receiptByCanonicalNumber) {
-        throw voucherReceiptInvariantError(`Beim Gutschein ${code} bezeichnen Verkaufsbeleg-ID und Belegnummer unterschiedliche Belege.`);
+        throw voucherReceiptInvariantError(
+          `Beim Gutschein ${code} bezeichnen Verkaufsbeleg-ID und Belegnummer unterschiedliche Belege.`,
+          "VOUCHER_SALE_RECEIPT_ID_NUMBER_MISMATCH",
+          { vouchers: [voucher], receipts: [receiptByCanonicalId, receiptByCanonicalNumber] }
+        );
       }
       if (receiptByCanonicalId.receiptKind !== "voucher-sale") {
-        throw voucherReceiptInvariantError(`Der Verkaufsbeleg ${saleReceiptNumber} des Gutscheins ${code} besitzt nicht die Belegart Gutscheinverkauf.`);
+        throw voucherReceiptInvariantError(
+          `Der Verkaufsbeleg ${saleReceiptNumber} des Gutscheins ${code} besitzt nicht die Belegart Gutscheinverkauf.`,
+          "VOUCHER_SALE_RECEIPT_KIND_INVALID",
+          { vouchers: [voucher], receipts: [receiptByCanonicalId] }
+        );
       }
       if (nullableStringId(receiptByCanonicalId.voucherReference) !== reference) {
-        throw voucherReceiptInvariantError(`Der Verkaufsbeleg ${saleReceiptNumber} enthält nicht die passende Gegenreferenz zum Gutschein ${code}.`);
+        throw voucherReceiptInvariantError(
+          `Der Verkaufsbeleg ${saleReceiptNumber} enthält nicht die passende Gegenreferenz zum Gutschein ${code}.`,
+          "VOUCHER_SALE_RECEIPT_COUNTER_REFERENCE_MISMATCH",
+          { vouchers: [voucher], receipts: [receiptByCanonicalId] }
+        );
       }
       if (receiptOwnerById.has(saleReceiptId) || receiptOwnerByNumber.has(saleReceiptNumber)) {
-        throw voucherReceiptInvariantError(`Der Verkaufsbeleg ${saleReceiptNumber} ist mehr als einem Gutschein zugeordnet.`);
+        const previousReference = receiptOwnerById.get(saleReceiptId) || receiptOwnerByNumber.get(saleReceiptNumber);
+        throw voucherReceiptInvariantError(
+          `Der Verkaufsbeleg ${saleReceiptNumber} ist mehr als einem Gutschein zugeordnet.`,
+          "VOUCHER_SALE_RECEIPT_MULTIPLE_OWNERS",
+          {
+            vouchers: [voucherByReference.get(previousReference), voucher],
+            receipts: [receiptByCanonicalId]
+          }
+        );
       }
       receiptOwnerById.set(saleReceiptId, reference);
       receiptOwnerByNumber.set(saleReceiptNumber, reference);
@@ -960,13 +1144,21 @@
       const number = trimmedString(receipt.number);
       const voucher = reference ? voucherByReference.get(reference) : null;
       if (!voucher) {
-        throw voucherReceiptInvariantError(`Der Gutscheinverkaufsbeleg ${number} verweist auf keinen vorhandenen Gutschein.`);
+        throw voucherReceiptInvariantError(
+          `Der Gutscheinverkaufsbeleg ${number} verweist auf keinen vorhandenen Gutschein.`,
+          "VOUCHER_SALE_RECEIPT_ORPHANED",
+          { receipts: [receipt] }
+        );
       }
       const saleReceipt = isPlainObject(voucher.saleReceipt) ? voucher.saleReceipt : {};
       if (nullableStringId(voucher.saleReceiptReference) !== nullableStringId(receipt.id)
         || nullableStringId(saleReceipt.id) !== nullableStringId(receipt.id)
         || trimmedString(saleReceipt.number) !== number) {
-        throw voucherReceiptInvariantError(`Der Gutscheinverkaufsbeleg ${number} ist im zugehörigen Gutschein nicht eindeutig gegengezeichnet.`);
+        throw voucherReceiptInvariantError(
+          `Der Gutscheinverkaufsbeleg ${number} ist im zugehörigen Gutschein nicht eindeutig gegengezeichnet.`,
+          "VOUCHER_SALE_RECEIPT_NOT_COUNTERSIGNED",
+          { vouchers: [voucher], receipts: [receipt] }
+        );
       }
     });
 
@@ -1578,7 +1770,15 @@
       || !sameSerializableValue(rawRecord, sanitizedRaw)) {
       throw new PersistenceError(
         "BACKUP_VALIDATION_FAILED",
-        `${label} sind unvollständig oder widersprüchlich. Die Sicherung wurde nicht eingespielt.`
+        `${label} sind unvollständig oder widersprüchlich. Die Sicherung wurde nicht eingespielt.`,
+        null,
+        {
+          invariant: "SNAPSHOT_RECORD_NORMALIZATION_REQUIRED",
+          store: label,
+          repairs: [...result.repairs],
+          findings: (cloneSafe(result.diagnostics) || []).slice(0, 20),
+          findingsTruncated: Math.max(0, (Array.isArray(result.diagnostics) ? result.diagnostics.length : 0) - 20)
+        }
       );
     }
     return sanitizer(mergePreservingUnknown(rawRecord, result.record));
@@ -1658,44 +1858,88 @@
     const receiptByNumber = new Map(receipts.receipts.map(receipt => [receipt.number, receipt]));
     const receiptById = new Map(receipts.receipts.map(receipt => [receipt.id, receipt]));
     const customerIds = new Set(customers.customers.map(customer => customer.id));
-    const requireReceipt = (reference, message) => {
+    const requireReceipt = (reference, message, receipt, invariant) => {
       if (reference && !receiptByNumber.has(reference) && !receiptById.has(reference)) {
-        throw new PersistenceError("BACKUP_REFERENCE_INVALID", message);
+        throw new PersistenceError("BACKUP_REFERENCE_INVALID", message, null, {
+          invariant,
+          receipts: [diagnosticReceiptView(receipt)],
+          missingReference: reference
+        });
       }
     };
 
     receipts.receipts.forEach(receipt => {
-      requireReceipt(receipt.reference, `Der Beleg ${receipt.number} verweist auf einen nicht enthaltenen Ursprungsbeleg.`);
+      requireReceipt(
+        receipt.reference,
+        `Der Beleg ${receipt.number} verweist auf einen nicht enthaltenen Ursprungsbeleg.`,
+        receipt,
+        "RECEIPT_SOURCE_REFERENCE_ORPHANED"
+      );
       (receipt.references?.correctionNumbers || []).forEach(reference => {
-        requireReceipt(reference, `Der Beleg ${receipt.number} enthält eine ungültige Korrekturreferenz.`);
+        requireReceipt(
+          reference,
+          `Der Beleg ${receipt.number} enthält eine ungültige Korrekturreferenz.`,
+          receipt,
+          "RECEIPT_CORRECTION_REFERENCE_ORPHANED"
+        );
       });
       if (receipt.customerId && !customerIds.has(receipt.customerId) && !receipt.customerSnapshot) {
-        throw new PersistenceError("BACKUP_REFERENCE_INVALID", `Der Beleg ${receipt.number} enthält keine nachvollziehbaren Kundendaten.`);
+        throw new PersistenceError(
+          "BACKUP_REFERENCE_INVALID",
+          `Der Beleg ${receipt.number} enthält keine nachvollziehbaren Kundendaten.`,
+          null,
+          { invariant: "RECEIPT_CUSTOMER_REFERENCE_UNRESOLVED", receipts: [diagnosticReceiptView(receipt)] }
+        );
       }
     });
 
     vouchers.vouchers.forEach(voucher => {
       if (voucher.customerId && !customerIds.has(voucher.customerId) && !voucher.customerSnapshot) {
-        throw new PersistenceError("BACKUP_REFERENCE_INVALID", `Der Gutschein ${voucher.code} enthält keine nachvollziehbaren Kundendaten.`);
+        throw new PersistenceError(
+          "BACKUP_REFERENCE_INVALID",
+          `Der Gutschein ${voucher.code} enthält keine nachvollziehbaren Kundendaten.`,
+          null,
+          { invariant: "VOUCHER_CUSTOMER_REFERENCE_UNRESOLVED", vouchers: [diagnosticVoucherView(voucher)] }
+        );
       }
       if (!voucher.history.length || voucher.history[0].type !== "sold") {
-        throw new PersistenceError("BACKUP_VOUCHER_HISTORY_INVALID", `Die Historie des Gutscheins ${voucher.code} beginnt nicht mit dem Verkauf.`);
+        throw new PersistenceError(
+          "BACKUP_VOUCHER_HISTORY_INVALID",
+          `Die Historie des Gutscheins ${voucher.code} beginnt nicht mit dem Verkauf.`,
+          null,
+          voucherHistoryDiagnostic("VOUCHER_HISTORY_SALE_ENTRY_MISSING", voucher, voucher.history.slice(0, 1))
+        );
       }
       const historyIds = new Set();
       let expectedBalanceCents = voucher.issuedValueCents;
       voucher.history.forEach((entry, index) => {
         if (historyIds.has(entry.id)) {
-          throw new PersistenceError("BACKUP_VOUCHER_HISTORY_INVALID", `Die Historie des Gutscheins ${voucher.code} enthält einen doppelten Eintrag.`);
+          throw new PersistenceError(
+            "BACKUP_VOUCHER_HISTORY_INVALID",
+            `Die Historie des Gutscheins ${voucher.code} enthält einen doppelten Eintrag.`,
+            null,
+            voucherHistoryDiagnostic("VOUCHER_HISTORY_ENTRY_DUPLICATE", voucher, [entry])
+          );
         }
         historyIds.add(entry.id);
         if (index === 0) {
           if (entry.amountCents !== voucher.issuedValueCents || entry.balanceAfterCents !== voucher.issuedValueCents) {
-            throw new PersistenceError("BACKUP_VOUCHER_HISTORY_INVALID", `Der Verkaufseintrag des Gutscheins ${voucher.code} besitzt widersprüchliche Werte.`);
+            throw new PersistenceError(
+              "BACKUP_VOUCHER_HISTORY_INVALID",
+              `Der Verkaufseintrag des Gutscheins ${voucher.code} besitzt widersprüchliche Werte.`,
+              null,
+              voucherHistoryDiagnostic("VOUCHER_HISTORY_SALE_VALUES_INVALID", voucher, [entry])
+            );
           }
           return;
         }
         if (entry.type === "sold") {
-          throw new PersistenceError("BACKUP_VOUCHER_HISTORY_INVALID", `Die Historie des Gutscheins ${voucher.code} enthält mehr als einen Verkauf.`);
+          throw new PersistenceError(
+            "BACKUP_VOUCHER_HISTORY_INVALID",
+            `Die Historie des Gutscheins ${voucher.code} enthält mehr als einen Verkauf.`,
+            null,
+            voucherHistoryDiagnostic("VOUCHER_HISTORY_MULTIPLE_SALE_ENTRIES", voucher, [entry])
+          );
         }
         if (["partial_redemption", "full_redemption", "cancelled"].includes(entry.type)) {
           expectedBalanceCents -= entry.amountCents;
@@ -1709,11 +1953,21 @@
           || entry.balanceAfterCents !== expectedBalanceCents
           || (entry.type === "partial_redemption" && expectedBalanceCents === 0)
           || (["full_redemption", "cancelled"].includes(entry.type) && expectedBalanceCents !== 0)) {
-          throw new PersistenceError("BACKUP_VOUCHER_HISTORY_INVALID", `Die Historie des Gutscheins ${voucher.code} enthält einen widersprüchlichen Restwert.`);
+          throw new PersistenceError(
+            "BACKUP_VOUCHER_HISTORY_INVALID",
+            `Die Historie des Gutscheins ${voucher.code} enthält einen widersprüchlichen Restwert.`,
+            null,
+            voucherHistoryDiagnostic("VOUCHER_HISTORY_BALANCE_INVALID", voucher, [entry])
+          );
         }
       });
       if (voucher.currentValueCents !== voucher.history.at(-1).balanceAfterCents) {
-        throw new PersistenceError("BACKUP_VOUCHER_HISTORY_INVALID", `Der Restwert des Gutscheins ${voucher.code} stimmt nicht mit seiner Historie überein.`);
+        throw new PersistenceError(
+          "BACKUP_VOUCHER_HISTORY_INVALID",
+          `Der Restwert des Gutscheins ${voucher.code} stimmt nicht mit seiner Historie überein.`,
+          null,
+          voucherHistoryDiagnostic("VOUCHER_CURRENT_BALANCE_HISTORY_MISMATCH", voucher, voucher.history.slice(-1))
+        );
       }
     });
 
@@ -1723,7 +1977,17 @@
       return match ? Math.max(highest, Number(match[1])) : highest;
     }, 0);
     if (settings.receiptSettings.nextNumber <= highestSequence) {
-      throw new PersistenceError("BACKUP_NUMBER_SEQUENCE_INVALID", "Der Belegnummernstand der Sicherung würde eine Nummernkollision verursachen.");
+      throw new PersistenceError(
+        "BACKUP_NUMBER_SEQUENCE_INVALID",
+        "Der Belegnummernstand der Sicherung würde eine Nummernkollision verursachen.",
+        null,
+        {
+          invariant: "RECEIPT_NUMBER_SEQUENCE_COLLISION",
+          yearPrefix: prefix,
+          nextNumber: settings.receiptSettings.nextNumber,
+          highestStoredSequence: highestSequence
+        }
+      );
     }
 
     const normalizedSnapshot = {
@@ -1754,6 +2018,72 @@
         vouchers: vouchers.vouchers.length
       }
     };
+  }
+
+  function diagnoseTenantSnapshot(snapshotInput, expectedTenantId = constants.tenantId, options = {}) {
+    const diagnosticCreatedAt = stableIso(options.createdAt, new Date().toISOString());
+    const candidate = isPlainObject(snapshotInput) ? snapshotInput : {};
+    const rawReceipts = Array.isArray(candidate.stores?.receipts?.receipts)
+      ? candidate.stores.receipts.receipts
+      : [];
+    const rawVouchers = Array.isArray(candidate.stores?.vouchers?.vouchers)
+      ? candidate.stores.vouchers.vouchers
+      : [];
+    const base = {
+      diagnosticFormat: integrityDiagnosticConstants.format,
+      diagnosticFormatVersion: integrityDiagnosticConstants.formatVersion,
+      createdAt: diagnosticCreatedAt,
+      app: {
+        version: trimmedString(options.appVersion, trimmedString(candidate.app?.version)).slice(0, 80),
+        build: trimmedString(options.appBuild, trimmedString(candidate.app?.build)).slice(0, 80)
+      },
+      appDataSchemaVersion: Number.isInteger(candidate.appDataSchemaVersion)
+        ? candidate.appDataSchemaVersion
+        : constants.databaseVersion,
+      recordCounts: {
+        receipts: rawReceipts.length,
+        voucherSaleReceipts: rawReceipts.filter(receipt => receipt?.receiptKind === "voucher-sale").length,
+        vouchers: rawVouchers.length
+      },
+      privacy: {
+        dataAccess: "read-only",
+        automaticRepair: false,
+        serverTransfer: false,
+        includedFields: "Nur technische IDs, Referenzen, Belegnummern, Belegarten und relevante Zeit-/Historienreferenzen."
+      },
+      recordVersionAssessment: {
+        status: "not-determinable",
+        reason: "Belege und Gutscheine speichern keine erzeugende FRECKA-Version. Eine automatische Zuordnung zu vor oder nach 0.10.3 wäre daher nicht belastbar; die betroffenen Erstellungszeitpunkte werden stattdessen ausgegeben."
+      }
+    };
+
+    try {
+      validateTenantSnapshot(snapshotInput, expectedTenantId);
+      return Object.freeze(cloneSafe({
+        ...base,
+        status: "consistent",
+        validation: {
+          code: "OK",
+          invariant: "TENANT_SNAPSHOT_VALID",
+          message: "Die zentrale FRECKA-Snapshotprüfung hat keine Integritätsverletzung festgestellt."
+        },
+        details: null
+      }));
+    } catch (error) {
+      if (!(error instanceof PersistenceError)) throw error;
+      const diagnostic = cloneSafe(error.diagnostic) || {};
+      const primaryFinding = Array.isArray(diagnostic.findings) ? diagnostic.findings[0] : null;
+      return Object.freeze(cloneSafe({
+        ...base,
+        status: "inconsistent",
+        validation: {
+          code: trimmedString(error.code, "PERSISTENCE_VALIDATION_FAILED"),
+          invariant: trimmedString(primaryFinding?.invariant, trimmedString(diagnostic.invariant, trimmedString(error.code, "PERSISTENCE_VALIDATION_FAILED"))),
+          message: trimmedString(error.userMessage, "Die zentrale Snapshotprüfung hat eine Integritätsverletzung festgestellt.")
+        },
+        details: Object.keys(diagnostic).length ? diagnostic : null
+      }));
+    }
   }
 
   function stripExcludedData(record) {
@@ -3402,60 +3732,75 @@
       databasePromise = null;
     }
 
-    function exportTenantSnapshot(options = {}) {
+    async function readTenantSnapshotCandidate(options = {}) {
       const fallbackRecords = isPlainObject(options.fallbackRecords) ? options.fallbackRecords : {};
-      return queued(async () => {
-        const database = await openDatabase();
-        const storeNames = [storeName, catalogStoreName, customersStoreName, receiptsStoreName, vouchersStoreName];
-        const recordKeys = tenantSnapshotConstants.storeKeys;
-        const records = {};
-        await new Promise((resolve, reject) => {
-          let settled = false;
-          let failure = null;
-          let transaction;
-          try {
-            transaction = database.transaction(storeNames, "readonly");
-            storeNames.forEach((currentStoreName, index) => {
-              const request = transaction.objectStore(currentStoreName).get(tenantId);
-              request.onsuccess = () => {
-                records[recordKeys[index]] = request.result || cloneSafe(fallbackRecords[recordKeys[index]]) || null;
-              };
-              request.onerror = () => {
-                failure = new PersistenceError("BACKUP_READ_FAILED", "Die lokalen Daten konnten nicht vollständig für die Sicherung gelesen werden.", request.error);
-              };
-            });
-          } catch (cause) {
-            reject(new PersistenceError("BACKUP_READ_FAILED", "Die lokalen Daten konnten nicht für die Sicherung gelesen werden.", cause));
-            return;
-          }
-          transaction.oncomplete = () => {
-            if (settled) return;
-            settled = true;
-            if (failure) reject(failure);
-            else resolve();
-          };
-          transaction.onabort = () => {
-            if (settled) return;
-            settled = true;
-            reject(failure || new PersistenceError("TRANSACTION_ABORTED", "Das Erstellen der Sicherung wurde abgebrochen.", transaction.error));
-          };
-          transaction.onerror = () => {
-            if (!failure) failure = new PersistenceError("BACKUP_READ_FAILED", "Die lokalen Daten konnten nicht vollständig für die Sicherung gelesen werden.", transaction.error);
-          };
-        });
-        const candidate = {
-          backupFormat: tenantSnapshotConstants.backupFormat,
-          backupFormatVersion: tenantSnapshotConstants.backupFormatVersion,
-          appDataSchemaVersion: constants.databaseVersion,
-          tenantId,
-          createdAt: new Date().toISOString(),
-          app: {
-            version: trimmedString(options.appVersion, tenantSnapshotConstants.appVersion),
-            build: trimmedString(options.appBuild)
-          },
-          stores: records
+      const database = await openDatabase();
+      const storeNames = [storeName, catalogStoreName, customersStoreName, receiptsStoreName, vouchersStoreName];
+      const recordKeys = tenantSnapshotConstants.storeKeys;
+      const records = {};
+      await new Promise((resolve, reject) => {
+        let settled = false;
+        let failure = null;
+        let transaction;
+        try {
+          transaction = database.transaction(storeNames, "readonly");
+          storeNames.forEach((currentStoreName, index) => {
+            const request = transaction.objectStore(currentStoreName).get(tenantId);
+            request.onsuccess = () => {
+              records[recordKeys[index]] = request.result || cloneSafe(fallbackRecords[recordKeys[index]]) || null;
+            };
+            request.onerror = () => {
+              failure = new PersistenceError("BACKUP_READ_FAILED", "Die lokalen Daten konnten nicht vollständig für die Sicherung gelesen werden.", request.error);
+            };
+          });
+        } catch (cause) {
+          reject(new PersistenceError("BACKUP_READ_FAILED", "Die lokalen Daten konnten nicht für die Sicherung gelesen werden.", cause));
+          return;
+        }
+        transaction.oncomplete = () => {
+          if (settled) return;
+          settled = true;
+          if (failure) reject(failure);
+          else resolve();
         };
+        transaction.onabort = () => {
+          if (settled) return;
+          settled = true;
+          reject(failure || new PersistenceError("TRANSACTION_ABORTED", "Das Erstellen der Sicherung wurde abgebrochen.", transaction.error));
+        };
+        transaction.onerror = () => {
+          if (!failure) failure = new PersistenceError("BACKUP_READ_FAILED", "Die lokalen Daten konnten nicht vollständig für die Sicherung gelesen werden.", transaction.error);
+        };
+      });
+      return {
+        backupFormat: tenantSnapshotConstants.backupFormat,
+        backupFormatVersion: tenantSnapshotConstants.backupFormatVersion,
+        appDataSchemaVersion: constants.databaseVersion,
+        tenantId,
+        createdAt: new Date().toISOString(),
+        app: {
+          version: trimmedString(options.appVersion, tenantSnapshotConstants.appVersion),
+          build: trimmedString(options.appBuild)
+        },
+        stores: records
+      };
+    }
+
+    function exportTenantSnapshot(options = {}) {
+      return queued(async () => {
+        const candidate = await readTenantSnapshotCandidate(options);
         return validateTenantSnapshot(candidate, tenantId).snapshot;
+      });
+    }
+
+    function diagnoseTenantIntegrity(options = {}) {
+      return queued(async () => {
+        const candidate = await readTenantSnapshotCandidate(options);
+        return diagnoseTenantSnapshot(candidate, tenantId, {
+          createdAt: candidate.createdAt,
+          appVersion: options.appVersion,
+          appBuild: options.appBuild
+        });
       });
     }
 
@@ -3540,7 +3885,9 @@
       saveReceiptNote,
       commitReceiptCorrection,
       exportTenantSnapshot,
+      diagnoseTenantIntegrity,
       validateTenantSnapshot: snapshot => validateTenantSnapshot(snapshot, tenantId),
+      diagnoseTenantSnapshot: snapshot => diagnoseTenantSnapshot(snapshot, tenantId),
       validateVoucherReceiptInvariant,
       restoreTenantSnapshot,
       closeDatabase,
@@ -3565,7 +3912,9 @@
     normalizeVouchersRecord,
     validateVoucherReceiptInvariant,
     validateTenantSnapshot,
+    diagnoseTenantSnapshot,
     tenantSnapshotConstants,
+    integrityDiagnosticConstants,
     customerMatchesSearch,
     PersistenceError,
     constants

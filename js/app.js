@@ -130,6 +130,10 @@
     backupRestoreFilename: "",
     backupRestoreSummary: null,
     backupSafetyCreated: false,
+    integrityDiagnostic: null,
+    integrityDiagnosticBusy: false,
+    integrityDiagnosticNotice: "",
+    integrityDiagnosticNoticeIsError: false,
     exportType: "tax-advisor",
     exportPeriodType: "current-month",
     exportDateFrom: "",
@@ -3933,6 +3937,10 @@
     state.backupRestoreFilename = "";
     state.backupRestoreSummary = null;
     state.backupSafetyCreated = false;
+    state.integrityDiagnostic = null;
+    state.integrityDiagnosticBusy = false;
+    state.integrityDiagnosticNotice = "";
+    state.integrityDiagnosticNoticeIsError = false;
     if (!keepNotice) {
       state.backupNotice = "";
       state.backupNoticeIsError = false;
@@ -4070,6 +4078,71 @@
     });
   }
 
+  function integrityDiagnosticText(report) {
+    if (!report) return "";
+    const status = report.status === "consistent" ? "KONSISTENT" : "INKONSISTENT";
+    const details = report.details ? JSON.stringify(report.details, null, 2) : "Keine betroffenen technischen Datensätze.";
+    return [
+      "FRECKA – Lokale Datenintegritätsdiagnose",
+      `Format: ${report.diagnosticFormat || "–"} v${report.diagnosticFormatVersion || "–"}`,
+      `Erstellt: ${report.createdAt || "–"}`,
+      `App: ${report.app?.version || "–"} / ${report.app?.build || "–"}`,
+      `Datenbankschema: ${report.appDataSchemaVersion ?? "–"}`,
+      "",
+      `Ergebnis: ${status}`,
+      `Prüfcode: ${report.validation?.code || "–"}`,
+      `Invariante: ${report.validation?.invariant || "–"}`,
+      `Beschreibung: ${report.validation?.message || "–"}`,
+      "",
+      `Belege gesamt: ${report.recordCounts?.receipts ?? 0}`,
+      `Gutscheinverkaufsbelege: ${report.recordCounts?.voucherSaleReceipts ?? 0}`,
+      `Gutscheine gesamt: ${report.recordCounts?.vouchers ?? 0}`,
+      "",
+      "Betroffene technische Datensätze:",
+      details,
+      "",
+      `Versionszuordnung: ${report.recordVersionAssessment?.status || "–"}`,
+      report.recordVersionAssessment?.reason || "",
+      "",
+      "Datenschutzgrenze:",
+      "Nur lokale Read-only-Prüfung. Keine Reparatur. Keine Serverübertragung.",
+      report.privacy?.includedFields || ""
+    ].filter((line, index, lines) => line !== "" || lines[index - 1] !== "").join("\n");
+  }
+
+  function integrityDiagnosticFilename(report) {
+    const parsed = new Date(report?.createdAt || Date.now());
+    const stamp = Number.isFinite(parsed.getTime())
+      ? parsed.toISOString().slice(0, 16).replace("T", "-").replace(":", "")
+      : "unbekannt";
+    return `FRECKA-Diagnose-${stamp}.txt`;
+  }
+
+  function integrityDiagnosticMarkup() {
+    const report = state.integrityDiagnostic;
+    const notice = state.integrityDiagnosticNotice
+      ? `<div class="settings-save-notice ${state.integrityDiagnosticNoticeIsError ? "is-error" : ""}" role="${state.integrityDiagnosticNoticeIsError ? "alert" : "status"}">${escapeHtml(state.integrityDiagnosticNotice)}</div>`
+      : "";
+    const result = report ? `<div class="integrity-diagnostic-result ${report.status === "consistent" ? "is-consistent" : "is-inconsistent"}">
+      <strong>${report.status === "consistent" ? "Keine Integritätsverletzung gefunden" : "Integritätsverletzung gefunden"}</strong>
+      <span>${escapeHtml(report.validation?.invariant || report.validation?.code || "Unbekannte Prüfung")}</span>
+      <pre>${escapeHtml(integrityDiagnosticText(report))}</pre>
+      <button class="button button-secondary" type="button" data-action="integrity-diagnostic-share">Diagnose teilen oder speichern</button>
+    </div>` : "";
+    return `<section id="integrityDiagnosticPanel" class="backup-card integrity-diagnostic-card">
+      <h2>Lokale Datenintegrität prüfen</h2>
+      <p class="backup-card-copy">Diese technische Diagnose liest den aktuellen Datenbestand ausschließlich lokal. Sie verändert und repariert keine Daten und überträgt nichts an einen Server.</p>
+      ${notice}
+      <button class="button button-secondary" type="button" data-action="integrity-diagnostic-run" ${state.integrityDiagnosticBusy ? "disabled" : ""}>${state.integrityDiagnosticBusy ? "Daten werden geprüft …" : "Diagnose erstellen"}</button>
+      ${result}
+    </section>`;
+  }
+
+  function updateIntegrityDiagnosticPanel() {
+    const panel = document.getElementById("integrityDiagnosticPanel");
+    if (panel) panel.outerHTML = integrityDiagnosticMarkup();
+  }
+
   function renderSettingsBackup() {
     mainContent.innerHTML = `<section class="flow-page settings-form-page backup-page page-enter">
       <div class="flow-head compact-flow-head">
@@ -4093,6 +4166,7 @@
         <p class="backup-card-copy">FRECKA entschlüsselt und prüft die gesamte Datei, bevor lokale Daten verändert werden.</p>
         ${restoreStepMarkup()}
       </section>
+      ${integrityDiagnosticMarkup()}
       <p class="prototype-note">Die Sicherung wird ausschließlich lokal verarbeitet. Sicherungskennwörter werden weder protokolliert noch gespeichert.</p>
     </section>`;
     attachBackupCreateBehavior();
@@ -5697,6 +5771,68 @@
       return;
     }
     const action = event.target.closest("[data-action]")?.dataset.action;
+    if (action === "integrity-diagnostic-run") {
+      if (state.integrityDiagnosticBusy) return;
+      state.integrityDiagnosticBusy = true;
+      state.integrityDiagnosticNotice = "";
+      state.integrityDiagnosticNoticeIsError = false;
+      updateIntegrityDiagnosticPanel();
+      try {
+        if (!persistence?.diagnoseTenantIntegrity) throw new Error("Integrity diagnosis unavailable");
+        state.integrityDiagnostic = await persistence.diagnoseTenantIntegrity({
+          fallbackRecords: backupFallbackRecords(),
+          appVersion: data.version || "",
+          appBuild: data.build || ""
+        });
+        state.integrityDiagnosticNotice = state.integrityDiagnostic.status === "consistent"
+          ? "Die zentrale Prüfung hat keine Integritätsverletzung festgestellt."
+          : "Die Ursache wurde lokal eingegrenzt. Die technischen Details können jetzt angesehen oder geteilt werden.";
+      } catch (error) {
+        state.integrityDiagnostic = null;
+        state.integrityDiagnosticNotice = "Die lokale Diagnose konnte aufgrund eines technischen Fehlers nicht erstellt werden.";
+        state.integrityDiagnosticNoticeIsError = true;
+      } finally {
+        state.integrityDiagnosticBusy = false;
+        updateIntegrityDiagnosticPanel();
+      }
+      return;
+    }
+    if (action === "integrity-diagnostic-share") {
+      const report = state.integrityDiagnostic;
+      if (!report) return;
+      const button = event.target.closest('[data-action="integrity-diagnostic-share"]');
+      if (button) button.disabled = true;
+      try {
+        if (!shareService?.createFile || !shareService?.sharePreferred) throw new Error("Share service unavailable");
+        const file = shareService.createFile(integrityDiagnosticText(report), {
+          name: integrityDiagnosticFilename(report),
+          type: "text/plain"
+        });
+        const result = await shareService.sharePreferred({
+          files: [file],
+          downloadFile: file,
+          metadata: {
+            title: "FRECKA Datenintegritätsdiagnose",
+            text: "Lokal erzeugte technische Diagnose ohne automatische Serverübertragung."
+          }
+        });
+        state.integrityDiagnosticNotice = result.status === "cancelled"
+          ? "Das Teilen wurde abgebrochen. Die Diagnose bleibt auf dieser Seite sichtbar."
+          : result.status === "shared"
+          ? "Die Diagnose wurde an den Teilen-Dialog des Geräts übergeben."
+          : result.status === "downloaded"
+          ? "Die Diagnose wurde zum lokalen Speichern bereitgestellt."
+          : "Dieses Gerät kann die Diagnose derzeit weder teilen noch speichern.";
+        state.integrityDiagnosticNoticeIsError = result.status === "unsupported";
+      } catch (error) {
+        state.integrityDiagnosticNotice = "Die Diagnose konnte aufgrund eines technischen Fehlers nicht geteilt oder gespeichert werden.";
+        state.integrityDiagnosticNoticeIsError = true;
+      } finally {
+        if (button?.isConnected) button.disabled = false;
+        updateIntegrityDiagnosticPanel();
+      }
+      return;
+    }
     if (action === "backup-output-ready") {
       const form = document.getElementById("backupCreateForm");
       const button = event.target.closest('[data-action="backup-output-ready"]');

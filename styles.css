@@ -1922,6 +1922,49 @@ body.work-mode:not(.catalog-mode) .flow-page {
 .backup-card > .button,
 .backup-inline-form > .button,
 .backup-restore-confirm > .button { width: 100%; }
+.integrity-diagnostic-card > * { grid-column: 1 / -1; }
+.integrity-diagnostic-card > h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+.integrity-diagnostic-result {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  display: grid;
+  gap: 8px;
+}
+.integrity-diagnostic-result.is-consistent {
+  border-color: #bad5c9;
+  background: #f3f9f6;
+}
+.integrity-diagnostic-result.is-inconsistent {
+  border-color: #e2c27d;
+  background: #fff9ec;
+}
+.integrity-diagnostic-result > span {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  font-size: .7rem;
+  font-weight: 800;
+}
+.integrity-diagnostic-result pre {
+  width: 100%;
+  min-width: 0;
+  max-height: 360px;
+  margin: 0;
+  padding: 11px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font: 600 .66rem/1.48 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.integrity-diagnostic-result .button { width: 100%; }
 .backup-file-picker {
   min-width: 0;
   min-height: 128px;

@@ -2337,6 +2337,148 @@
         }
       },
       {
+        name: "Read-only-Diagnose meldet einen konsistenten Bestand ohne falschen Fehler",
+        run: async () => {
+          assert(typeof api.diagnoseTenantSnapshot === "function", "Zentrale Snapshot-Diagnose fehlt");
+          assertEqual(api.integrityDiagnosticConstants?.format, "FRECKA_INTEGRITY_DIAGNOSTIC", "Diagnoseformat fehlt");
+          const snapshot = completeTenantSnapshotFixture("test-diagnostic-consistent");
+          const before = clone(snapshot);
+          const report = api.diagnoseTenantSnapshot(snapshot, snapshot.tenantId, {
+            createdAt: "2030-02-02T10:00:00.000Z",
+            appVersion: "0.10.5",
+            appBuild: "PERSISTENCE-008"
+          });
+          assertEqual(report.status, "consistent", "Konsistenter Bestand wurde als fehlerhaft gemeldet");
+          assertEqual(report.validation.invariant, "TENANT_SNAPSHOT_VALID", "Erfolgreiche zentrale Invariante fehlt");
+          assertEqual(report.details, null, "Konsistenter Bestand enthält falsche Fehlerdetails");
+          assertDeepEqual(snapshot, before, "Diagnose hat den Eingabe-Snapshot verändert");
+          const serialized = JSON.stringify(report);
+          ["Testperson", "Anna Muster", "Testweg 10", "test@example.invalid", "Sicheres Testkennwort"].forEach(value => {
+            assert(!serialized.includes(value), `Diagnose enthält unzulässige Geschäftsdaten: ${value}`);
+          });
+          assertEqual(report.recordVersionAssessment.status, "not-determinable", "Nicht belegbare Versionszuordnung wurde behauptet");
+        }
+      },
+      {
+        name: "Read-only-Diagnose benennt einen fehlenden Gutscheinverkaufsbeleg exakt",
+        run: async () => {
+          const snapshot = completeTenantSnapshotFixture("test-diagnostic-missing-sale");
+          const voucher = snapshot.stores.vouchers.vouchers[0];
+          snapshot.stores.receipts.receipts = snapshot.stores.receipts.receipts.filter(receipt => receipt.id !== voucher.saleReceipt.id);
+          const report = api.diagnoseTenantSnapshot(snapshot, snapshot.tenantId);
+          assertEqual(report.status, "inconsistent", "Fehlender Verkaufsbeleg wurde nicht erkannt");
+          assertEqual(report.validation.code, "VOUCHER_RECEIPT_INVARIANT_INVALID", "Falscher zentraler Fehlercode");
+          assertEqual(report.validation.invariant, "VOUCHER_SALE_RECEIPT_NOT_FOUND", "Fehlende Verkaufsbeleg-Invariante wurde nicht benannt");
+          assertEqual(report.details.vouchers[0].id, voucher.id, "Betroffene Voucher-ID fehlt");
+          assertEqual(report.details.vouchers[0].code, voucher.code, "Betroffener Gutscheincode fehlt");
+          assertEqual(report.details.vouchers[0].saleReceiptReference, voucher.saleReceiptReference, "saleReceiptReference fehlt");
+          assertEqual(report.details.vouchers[0].saleReceipt.id, voucher.saleReceipt.id, "saleReceipt.id fehlt");
+          assertEqual(report.details.vouchers[0].saleReceipt.number, voucher.saleReceipt.number, "saleReceipt.number fehlt");
+          assert(report.details.missingById && report.details.missingByNumber, "Fehlende ID-/Nummernauflösung ist nicht eindeutig");
+        }
+      },
+      {
+        name: "Read-only-Diagnose unterscheidet falsche Belegnummer und ID-/Nummernpaarung",
+        run: async () => {
+          const snapshot = completeTenantSnapshotFixture("test-diagnostic-wrong-number");
+          const voucher = snapshot.stores.vouchers.vouchers[0];
+          voucher.saleReceipt.number = "2030-999999";
+          const report = api.diagnoseTenantSnapshot(snapshot, snapshot.tenantId);
+          assertEqual(report.validation.invariant, "VOUCHER_SALE_RECEIPT_NOT_FOUND", "Falsche Verkaufsbelegnummer wurde nicht eingegrenzt");
+          assertEqual(report.details.vouchers[0].saleReceipt.number, "2030-999999", "Abweichende Belegnummer fehlt");
+          assertEqual(report.details.missingById, false, "Vorhandene Beleg-ID wurde fälschlich als fehlend markiert");
+          assertEqual(report.details.missingByNumber, true, "Fehlende Belegnummer wurde nicht markiert");
+          assertEqual(report.details.receipts[0].id, voucher.saleReceipt.id, "Korrespondierender Beleg nach ID fehlt");
+        }
+      },
+      {
+        name: "Read-only-Diagnose benennt eine falsche Gutschein-Gegenreferenz",
+        run: async () => {
+          const snapshot = completeTenantSnapshotFixture("test-diagnostic-counter-reference");
+          const receipt = snapshot.stores.receipts.receipts.find(entry => entry.receiptKind === "voucher-sale");
+          receipt.voucherReference = "vch_unknown";
+          const report = api.diagnoseTenantSnapshot(snapshot, snapshot.tenantId);
+          assertEqual(report.validation.invariant, "VOUCHER_SALE_RECEIPT_COUNTER_REFERENCE_MISMATCH", "Falsche Gegenreferenz wurde nicht benannt");
+          assertEqual(report.details.receipts[0].id, receipt.id, "Betroffene Receipt-ID fehlt");
+          assertEqual(report.details.receipts[0].number, receipt.number, "Betroffene Receipt-Nummer fehlt");
+          assertEqual(report.details.receipts[0].receiptKind, "voucher-sale", "receiptKind fehlt");
+          assertEqual(report.details.receipts[0].voucherReference, "vch_unknown", "Falsche Gegenreferenz fehlt");
+        }
+      },
+      {
+        name: "Read-only-Diagnose benennt einen verwaisten Gutscheinverkaufsbeleg",
+        run: async () => {
+          const snapshot = completeTenantSnapshotFixture("test-diagnostic-orphan-sale");
+          const receipt = snapshot.stores.receipts.receipts.find(entry => entry.receiptKind === "voucher-sale");
+          snapshot.stores.vouchers.vouchers = [];
+          const report = api.diagnoseTenantSnapshot(snapshot, snapshot.tenantId);
+          assertEqual(report.validation.invariant, "VOUCHER_SALE_RECEIPT_ORPHANED", "Verwaister Gutscheinverkaufsbeleg wurde nicht benannt");
+          assertEqual(report.details.vouchers.length, 0, "Diagnose erfindet einen Gutschein");
+          assertEqual(report.details.receipts[0].id, receipt.id, "Verwaiste Receipt-ID fehlt");
+          assertEqual(report.details.receipts[0].voucherReference, receipt.voucherReference, "Verwaiste Voucher-Referenz fehlt");
+        }
+      },
+      {
+        name: "Read-only-Diagnose begrenzt doppelte Beleg-ID oder Belegnummer auf technische Felder",
+        run: async () => {
+          const snapshot = completeTenantSnapshotFixture("test-diagnostic-duplicate-receipt");
+          for (let index = 0; index < 25; index += 1) {
+            const duplicate = clone(snapshot.stores.receipts.receipts[0]);
+            duplicate.number = `2030-${String(200 + index).padStart(6, "0")}`;
+            duplicate.receiptNumber = duplicate.number;
+            snapshot.stores.receipts.receipts.push(duplicate);
+          }
+          const report = api.diagnoseTenantSnapshot(snapshot, snapshot.tenantId);
+          assertEqual(report.validation.code, "BACKUP_VALIDATION_FAILED", "Doppelte Belegdaten umgehen die zentrale Snapshotprüfung");
+          assertEqual(report.validation.invariant, "RECEIPT_ID_OR_NUMBER_DUPLICATE", "Doppelte Receipt-ID wurde nicht konkret benannt");
+          assert(report.details.findings[0].duplicateFields.includes("id"), "Doppeltes ID-Feld fehlt");
+          assertEqual(report.details.findings[0].receipts.length, 2, "Betroffene technische Belegansichten fehlen");
+          assertEqual(report.details.findings.length, 20, "Diagnose-Fundliste ist nicht auf 20 Einträge begrenzt");
+          assertEqual(report.details.findingsTruncated, 5, "Ausgeblendete Diagnosefunde werden nicht ausgewiesen");
+          assert(!JSON.stringify(report).includes("Testperson"), "Duplikatdiagnose enthält Unternehmens- oder Kundendaten");
+        }
+      },
+      {
+        name: "Gerätediagnose liest IndexedDB ohne Änderung, Webspeicher oder Serverübertragung",
+        run: async () => {
+          const persistence = context.makeClient("diagnostic-read-only");
+          assert(typeof persistence.diagnoseTenantIntegrity === "function", "Gerätebezogene Diagnose-API fehlt");
+          const snapshot = completeTenantSnapshotFixture(persistence.tenantId);
+          await persistence.writeSettings(snapshot.stores.settings);
+          await persistence.writeCatalog(snapshot.stores.catalog);
+          await persistence.writeCustomers(snapshot.stores.customers);
+          await persistence.writeReceipts(snapshot.stores.receipts);
+          await persistence.writeVouchers(snapshot.stores.vouchers);
+          const before = {
+            settings: await persistence.readSettings(),
+            catalog: await persistence.readCatalog(),
+            customers: await persistence.readCustomers(),
+            receipts: await persistence.readReceipts(),
+            vouchers: await persistence.readVouchers()
+          };
+          const report = await persistence.diagnoseTenantIntegrity({
+            appVersion: "0.10.5",
+            appBuild: "PERSISTENCE-008"
+          });
+          const after = {
+            settings: await persistence.readSettings(),
+            catalog: await persistence.readCatalog(),
+            customers: await persistence.readCustomers(),
+            receipts: await persistence.readReceipts(),
+            vouchers: await persistence.readVouchers()
+          };
+          assertEqual(report.status, "consistent", "Gerätediagnose meldet Testbestand fälschlich inkonsistent");
+          assertDeepEqual(after, before, "Gerätediagnose hat IndexedDB verändert");
+          const diagnosticSources = `${api.diagnoseTenantSnapshot.toString()} ${persistence.diagnoseTenantIntegrity.toString()}`;
+          ["localStorage", "sessionStorage", "fetch(", "XMLHttpRequest", "sendBeacon", "WebSocket"].forEach(token => {
+            assert(!diagnosticSources.includes(token), `Diagnose verwendet unzulässigen Pfad: ${token}`);
+          });
+          assertEqual(report.privacy.dataAccess, "read-only", "Read-only-Grenze fehlt im Bericht");
+          assertEqual(report.privacy.automaticRepair, false, "Diagnose behauptet oder startet eine Reparatur");
+          assertEqual(report.privacy.serverTransfer, false, "Diagnose behauptet eine Serverübertragung");
+        }
+      },
+      {
         name: "Gutschein-Snapshots bleiben nach Änderungen an Unternehmen, Kunde und Leistungsort unverändert",
         run: async () => {
           const persistence = context.makeClient("voucher-snapshot");
