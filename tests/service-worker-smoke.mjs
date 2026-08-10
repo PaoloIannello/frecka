@@ -6,7 +6,7 @@ const source = await readFile(new URL("../service-worker.js", import.meta.url), 
 const appSource = await readFile(new URL("../js/app.js", import.meta.url), "utf8");
 const indexSource = await readFile(new URL("../index.html", import.meta.url), "utf8");
 const manifest = JSON.parse(await readFile(new URL("../manifest.webmanifest", import.meta.url), "utf8"));
-const baseUrl = "https://beta.frecka.app/releases/0.9.1-test/site/";
+const baseUrl = "https://beta.frecka.app/releases/0.10.0-test/site/";
 const listeners = new Map();
 const addedUrls = [];
 const deletedCaches = [];
@@ -94,13 +94,13 @@ for (const icon of manifest.icons) {
 
 assert.equal(manifest.start_url, "./index.html#/home");
 assert.equal(manifest.scope, "./");
-assert.equal(new URL(manifest.start_url, baseUrl).pathname, "/releases/0.9.1-test/site/index.html");
-assert.equal(new URL(manifest.scope, baseUrl).pathname, "/releases/0.9.1-test/site/");
+assert.equal(new URL(manifest.start_url, baseUrl).pathname, "/releases/0.10.0-test/site/index.html");
+assert.equal(new URL(manifest.scope, baseUrl).pathname, "/releases/0.10.0-test/site/");
 assert.match(appSource, /serviceWorker\s*\.register\("\.\/service-worker\.js",\s*\{\s*scope:\s*"\.\/"\s*\}\)/);
 assert.doesNotMatch(appSource, /\.unregister\s*\(/);
 assert.doesNotMatch(appSource, /caches\.keys\s*\(/);
 
-const currentCache = [...cacheNames].find(name => name === "frecka-app-shell-0.9.1-export001-2");
+const currentCache = [...cacheNames].find(name => name === "frecka-app-shell-0.10.0-export001-2");
 assert.ok(currentCache, "Der versionsgebundene Cache wurde nicht angelegt.");
 
 let activatePromise;

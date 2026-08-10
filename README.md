@@ -1,6 +1,6 @@
-# FRECKA – OFFLINE-001
+# FRECKA – EXPORT-001
 
-Browserbasierte FRECKA-PWA 0.9.1 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer- und Share-Infrastruktur. Ein versionsgebundener Service Worker hält die vollständige statische App-Shell für den Kaltstart nach einer erfolgreichen Online-Installation offline bereit. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
+Browserbasierte FRECKA-PWA 0.10.0 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer- und Share-Infrastruktur. Ein versionsgebundener Service Worker hält die vollständige statische App-Shell für den Kaltstart nach einer erfolgreichen Online-Installation offline bereit. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
 
 ## Start
 

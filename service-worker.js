@@ -1,7 +1,7 @@
 "use strict";
 
 const APP_SHELL_CACHE_PREFIX = "frecka-app-shell-";
-const APP_SHELL_CACHE = `${APP_SHELL_CACHE_PREFIX}0.9.1-export001-2`;
+const APP_SHELL_CACHE = `${APP_SHELL_CACHE_PREFIX}0.10.0-export001-2`;
 const APP_ENTRY_URL = new URL("./index.html", self.location.href).href;
 const APP_SHELL_PATHS = Object.freeze([
   "./index.html",
