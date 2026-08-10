@@ -1,6 +1,6 @@
-# FRECKA – BACKUP-002
+# FRECKA – PERSISTENCE-008
 
-Browserbasierte FRECKA-PWA 0.10.5 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share- und PWA-Update-Infrastruktur. BACKUP-002 verhindert nach einer fehlgeschlagenen oder verlassenen Sicherung jede spätere Systemausgabe, ohne Snapshot-, Backup-, Restore- oder Exportregeln zu lockern. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
+Browserbasierte FRECKA-PWA 0.10.6 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share- und PWA-Update-Infrastruktur. PERSISTENCE-008 ergänzt eine ausschließlich lokale, begrenzte Read-only-Diagnose für Snapshot-Inkonsistenzen, ohne Validierung, Daten, Backup-, Restore- oder Exportregeln zu lockern. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
 
 ## Start
 
@@ -10,7 +10,7 @@ Browserbasierte FRECKA-PWA 0.10.5 mit lokaler IndexedDB-Persistenz, verschlüsse
 
 Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufklappen und bearbeiten → Weiter → Kunde optional und Zahlungsart simulieren → Demo abschließen.
 
-## Arbeitsstand PERSISTENCE-008 (noch unveröffentlicht)
+## Neu in PERSISTENCE-008
 
 - unter **Einstellungen → Sicherung & Wiederherstellung → Lokale Datenintegrität prüfen** steht eine ausdrücklich gestartete Read-only-Diagnose bereit
 - Diagnose und Backup/Export lesen denselben zentralen Tenant-Snapshot; die fachliche Entscheidung trifft weiterhin ausschließlich `validateTenantSnapshot()` einschließlich der Gutschein-/Beleg-Invariante
@@ -53,7 +53,7 @@ Für den realen iPhone-Test genau einmal **Diagnose erstellen** antippen, den lo
 - einmalige, ausdrücklich freigegebene Legacy-Brücke für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI: automatische Worker-Aktivierung, aber kein `clients.claim()` und kein automatischer Reload
 - eigene automatisierte Lifecycle-Tests zusätzlich zum 145-Fälle-Fach- und Persistenzlauf
 
-Die Legacy-Brücke aus SERVICEWORKER-002 bleibt in 0.10.5 ausnahmsweise unverändert erhalten, solange der reale Übergang bereits ausgelieferter Altclients noch nicht bestätigt ist. Sobald dieser Übergang real nachgewiesen wurde, ist ihre Entfernung ein zwingendes Gate für den unmittelbar folgenden Worker/Release. Die dauerhafte Reihenfolge bleibt: Hinweis → Nutzeraktion → `SKIP_WAITING` → genau ein Reload.
+Die Legacy-Brücke aus SERVICEWORKER-002 bleibt in 0.10.6 ausnahmsweise unverändert erhalten, solange der reale Übergang bereits ausgelieferter Altclients noch nicht bestätigt ist. Sobald dieser Übergang real nachgewiesen wurde, ist ihre Entfernung ein zwingendes Gate für den unmittelbar folgenden Worker/Release. Die dauerhafte Reihenfolge bleibt: Hinweis → Nutzeraktion → `SKIP_WAITING` → genau ein Reload.
 
 ## Neu in EXPORT-003
 

@@ -2345,7 +2345,7 @@
           const before = clone(snapshot);
           const report = api.diagnoseTenantSnapshot(snapshot, snapshot.tenantId, {
             createdAt: "2030-02-02T10:00:00.000Z",
-            appVersion: "0.10.5",
+            appVersion: "0.10.6",
             appBuild: "PERSISTENCE-008"
           });
           assertEqual(report.status, "consistent", "Konsistenter Bestand wurde als fehlerhaft gemeldet");
@@ -2457,7 +2457,7 @@
             vouchers: await persistence.readVouchers()
           };
           const report = await persistence.diagnoseTenantIntegrity({
-            appVersion: "0.10.5",
+            appVersion: "0.10.6",
             appBuild: "PERSISTENCE-008"
           });
           const after = {
