@@ -6798,6 +6798,25 @@
     state.settingsStorageNoticeIsError = true;
     state.vouchersReadyForWrites = false;
   }
+  if (state.receiptsReadyForWrites && state.vouchersReadyForWrites) {
+    try {
+      if (!persistence?.validateVoucherReceiptInvariant) throw new Error("Die Prüfung der Gutschein-Verkaufsbelege wurde nicht geladen.");
+      persistence.validateVoucherReceiptInvariant(
+        persistence.snapshotReceipts(data, persistence.tenantId),
+        persistence.snapshotVouchers(data, persistence.tenantId)
+      );
+    } catch (error) {
+      logPersistenceError("Gutschein-Verkaufsbelege prüfen fehlgeschlagen", error);
+      const message = persistenceErrorMessage(
+        error,
+        "Die lokalen Gutschein-Verkaufsbelege sind unvollständig oder widersprüchlich. Neue Belege, Gutscheinvorgänge, Sicherungen und Exporte bleiben bis zur Klärung gesperrt."
+      );
+      state.settingsStorageNotice = state.settingsStorageNotice ? `${state.settingsStorageNotice} ${message}` : message;
+      state.settingsStorageNoticeIsError = true;
+      state.receiptsReadyForWrites = false;
+      state.vouchersReadyForWrites = false;
+    }
+  }
   refreshSettingsDerivedState();
   state.settingsReady = true;
   mainContent.removeAttribute("aria-busy");

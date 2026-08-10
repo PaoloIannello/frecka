@@ -874,6 +874,108 @@
     };
   }
 
+  function voucherReceiptInvariantError(message) {
+    return new PersistenceError("VOUCHER_RECEIPT_INVARIANT_INVALID", message);
+  }
+
+  function validateVoucherReceiptInvariant(receiptsInput, vouchersInput) {
+    const receipts = Array.isArray(receiptsInput)
+      ? receiptsInput
+      : receiptsInput?.receipts;
+    const vouchers = Array.isArray(vouchersInput)
+      ? vouchersInput
+      : vouchersInput?.vouchers;
+    if (!Array.isArray(receipts) || !Array.isArray(vouchers)) {
+      throw voucherReceiptInvariantError("Die Gutschein-Verkaufsbelege konnten nicht vollständig geprüft werden.");
+    }
+
+    const receiptById = new Map();
+    const receiptByNumber = new Map();
+    receipts.forEach(receipt => {
+      const id = nullableStringId(receipt?.id);
+      const number = trimmedString(receipt?.number);
+      if (!id || !number) {
+        throw voucherReceiptInvariantError("Ein Beleg besitzt keine eindeutige ID oder Belegnummer.");
+      }
+      if (receiptById.has(id) || receiptByNumber.has(number)) {
+        throw voucherReceiptInvariantError(`Die Beleg-ID oder Belegnummer ${number} ist mehrfach vorhanden.`);
+      }
+      receiptById.set(id, receipt);
+      receiptByNumber.set(number, receipt);
+    });
+
+    const voucherByReference = new Map();
+    vouchers.forEach(voucher => {
+      const reference = nullableStringId(voucher?.reference);
+      if (!reference) {
+        throw voucherReceiptInvariantError("Ein Gutschein besitzt keine eindeutige Referenz.");
+      }
+      if (voucherByReference.has(reference)) {
+        throw voucherReceiptInvariantError(`Die Gutscheinreferenz ${reference} ist mehrfach vorhanden.`);
+      }
+      voucherByReference.set(reference, voucher);
+    });
+
+    const receiptOwnerById = new Map();
+    const receiptOwnerByNumber = new Map();
+    vouchers.forEach(voucher => {
+      const reference = nullableStringId(voucher.reference);
+      const code = trimmedString(voucher.code, reference);
+      const saleReceipt = isPlainObject(voucher.saleReceipt) ? voucher.saleReceipt : {};
+      const saleReceiptId = nullableStringId(saleReceipt.id);
+      const saleReceiptNumber = trimmedString(saleReceipt.number);
+      const canonicalReference = nullableStringId(voucher.saleReceiptReference);
+      const hasSaleReceiptReference = Boolean(canonicalReference || saleReceiptId || saleReceiptNumber);
+      if (!hasSaleReceiptReference) return;
+      if (!saleReceiptId || !saleReceiptNumber) {
+        throw voucherReceiptInvariantError(`Der Gutschein ${code} besitzt keine vollständige Verkaufsbeleg-ID und Belegnummer.`);
+      }
+      if (canonicalReference !== saleReceiptId) {
+        throw voucherReceiptInvariantError(`Der Gutschein ${code} enthält eine widersprüchliche Verkaufsbelegreferenz.`);
+      }
+
+      const receiptByCanonicalId = receiptById.get(saleReceiptId);
+      const receiptByCanonicalNumber = receiptByNumber.get(saleReceiptNumber);
+      if (!receiptByCanonicalId || !receiptByCanonicalNumber) {
+        throw voucherReceiptInvariantError(`Der Gutschein ${code} verweist auf den nicht vollständig gespeicherten Verkaufsbeleg ${saleReceiptNumber || saleReceiptId}.`);
+      }
+      if (receiptByCanonicalId !== receiptByCanonicalNumber) {
+        throw voucherReceiptInvariantError(`Beim Gutschein ${code} bezeichnen Verkaufsbeleg-ID und Belegnummer unterschiedliche Belege.`);
+      }
+      if (receiptByCanonicalId.receiptKind !== "voucher-sale") {
+        throw voucherReceiptInvariantError(`Der Verkaufsbeleg ${saleReceiptNumber} des Gutscheins ${code} besitzt nicht die Belegart Gutscheinverkauf.`);
+      }
+      if (nullableStringId(receiptByCanonicalId.voucherReference) !== reference) {
+        throw voucherReceiptInvariantError(`Der Verkaufsbeleg ${saleReceiptNumber} enthält nicht die passende Gegenreferenz zum Gutschein ${code}.`);
+      }
+      if (receiptOwnerById.has(saleReceiptId) || receiptOwnerByNumber.has(saleReceiptNumber)) {
+        throw voucherReceiptInvariantError(`Der Verkaufsbeleg ${saleReceiptNumber} ist mehr als einem Gutschein zugeordnet.`);
+      }
+      receiptOwnerById.set(saleReceiptId, reference);
+      receiptOwnerByNumber.set(saleReceiptNumber, reference);
+    });
+
+    receipts.filter(receipt => receipt.receiptKind === "voucher-sale").forEach(receipt => {
+      const reference = nullableStringId(receipt.voucherReference);
+      const number = trimmedString(receipt.number);
+      const voucher = reference ? voucherByReference.get(reference) : null;
+      if (!voucher) {
+        throw voucherReceiptInvariantError(`Der Gutscheinverkaufsbeleg ${number} verweist auf keinen vorhandenen Gutschein.`);
+      }
+      const saleReceipt = isPlainObject(voucher.saleReceipt) ? voucher.saleReceipt : {};
+      if (nullableStringId(voucher.saleReceiptReference) !== nullableStringId(receipt.id)
+        || nullableStringId(saleReceipt.id) !== nullableStringId(receipt.id)
+        || trimmedString(saleReceipt.number) !== number) {
+        throw voucherReceiptInvariantError(`Der Gutscheinverkaufsbeleg ${number} ist im zugehörigen Gutschein nicht eindeutig gegengezeichnet.`);
+      }
+    });
+
+    return Object.freeze({
+      vouchersWithSaleReceipt: receiptOwnerById.size,
+      voucherSaleReceipts: receipts.filter(receipt => receipt.receiptKind === "voucher-sale").length
+    });
+  }
+
   function normalizeCustomersRecord(rawRecord, defaultsInput, expectedTenantId = constants.tenantId) {
     if (!isPlainObject(defaultsInput)) {
       throw new PersistenceError("INVALID_DATA", "Die sicheren Standard-Kundendaten sind nicht verfügbar.");
@@ -1528,6 +1630,7 @@
     );
 
     assertUniqueVoucherSources(vouchers.vouchers);
+    validateVoucherReceiptInvariant(receipts, vouchers);
     const receiptByNumber = new Map(receipts.receipts.map(receipt => [receipt.number, receipt]));
     const receiptById = new Map(receipts.receipts.map(receipt => [receipt.id, receipt]));
     const customerIds = new Set(customers.customers.map(customer => customer.id));
@@ -1548,10 +1651,6 @@
     });
 
     vouchers.vouchers.forEach(voucher => {
-      const saleReceipt = receiptByNumber.get(voucher.saleReceiptReference) || receiptById.get(voucher.saleReceiptReference);
-      if (saleReceipt?.voucherReference && saleReceipt.voucherReference !== voucher.reference) {
-        throw new PersistenceError("BACKUP_REFERENCE_INVALID", `Der Verkaufsbeleg des Gutscheins ${voucher.code} enthält eine widersprüchliche Gutscheinreferenz.`);
-      }
       if (voucher.customerId && !customerIds.has(voucher.customerId) && !voucher.customerSnapshot) {
         throw new PersistenceError("BACKUP_REFERENCE_INVALID", `Der Gutschein ${voucher.code} enthält keine nachvollziehbaren Kundendaten.`);
       }
@@ -3414,6 +3513,7 @@
       commitReceiptCorrection,
       exportTenantSnapshot,
       validateTenantSnapshot: snapshot => validateTenantSnapshot(snapshot, tenantId),
+      validateVoucherReceiptInvariant,
       restoreTenantSnapshot,
       closeDatabase,
       tenantId
@@ -3435,6 +3535,7 @@
     normalizeReceiptsRecord,
     snapshotVouchers,
     normalizeVouchersRecord,
+    validateVoucherReceiptInvariant,
     validateTenantSnapshot,
     tenantSnapshotConstants,
     customerMatchesSearch,

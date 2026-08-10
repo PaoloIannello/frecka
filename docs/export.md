@@ -1,6 +1,6 @@
 # FRECKA-Exportkern Version 1
 
-**Stand:** EXPORT-001 Gesamtpaket
+**Stand:** EXPORT-003 Gutscheinverkaufsbeleg-Invariante
 **Datenbankschema:** unverändert Version 5  
 **Exportformat:** `FRECKA_EXPORT`, Version 1
 
@@ -22,6 +22,8 @@ Der Steuerberaterexport wird als ein einziges lokales ZIP-Gesamtpaket mit CSV-Da
 4. CSV, Übersicht, Beleg-PDFs und ZIP-Adapter verwenden ausschließlich diese Projektion.
 
 Das Modul liest weder IndexedDB noch Laufzeitlisten der Oberfläche. Es kennt keine Dialoge, Routen oder gerenderten Elemente. Eine zweite Datensammlung und parallele Fachlogik entstehen dadurch nicht.
+
+Vor jeder Projektion wird die zentrale Persistenz-Invariante für Gutschein und Verkaufsbeleg erneut auf dem tatsächlich übergebenen Snapshot ausgeführt. Der Export akzeptiert einen Gutscheinverkauf nur, wenn stabile Receipt-ID, Belegnummer, Belegart `voucher-sale` und `voucherReference` in beiden Richtungen exakt zusammenpassen. Fehlende oder widersprüchliche Gegenobjekte stoppen den gesamten Export mit einer verständlichen Meldung. Der Export ergänzt, errät oder rekonstruiert keinen Verkaufsbeleg.
 
 Die öffentlichen Kernfunktionen sind:
 
@@ -144,6 +146,7 @@ Browser stellen keinen vollständigen nativen ZIP-Writer bereit. Nach ausdrückl
 ## Fehlerverhalten
 
 - Fehlender oder unvollständiger Snapshot: Export wird abgelehnt.
+- Fehlender, verwaister oder widersprüchlich referenzierter Gutscheinverkaufsbeleg: Export wird vor CSV-, PDF- und ZIP-Erzeugung vollständig abgelehnt.
 - Ungültiger oder umgekehrter Zeitraum: Export wird abgelehnt.
 - Unbekannter Geschäftsbereich: Export wird abgelehnt.
 - Fehlende oder falsche lokale JSZip-Version: Paketexport wird abgelehnt.
@@ -153,7 +156,7 @@ Browser stellen keinen vollständigen nativen ZIP-Writer bereit. Nach ausdrückl
 
 ## Prüfungen
 
-`tests/persistence-smoke.html` umfasst aktuell 128 native Browserfälle. Exportprojektion und Paketadapter sind dabei durch folgende Fälle abgedeckt:
+`tests/persistence-smoke.html` prüft Exportprojektion und Paketadapter unter anderem durch folgende Fälle:
 
 - aktuelle, letzte und eigene Zeiträume;
 - Geschäftsbereichsfilter;
@@ -169,6 +172,8 @@ Browser stellen keinen vollständigen nativen ZIP-Writer bereit. Nach ausdrückl
 - ein lesbares ZIP mit CRC-Prüfung und exakt dokumentierter Struktur;
 - echte PDF-Signaturen für normale Belege, Stornos, Gutschriften und Gutscheinverkaufsbelege;
 - identische Zeitraum-/Geschäftsbereichsauswahl für CSV und PDFs;
-- Ausschluss von `Kunden.csv` aus dem Steuerberaterpaket.
+- Ausschluss von `Kunden.csv` aus dem Steuerberaterpaket;
+- harter Export-Stopp bei fehlendem Gutscheinverkaufsbeleg ohne Snapshot-Mutation oder Export-Rekonstruktion;
+- atomarer Gutscheinverkauf über Reload, validierten Tenant-Snapshot, Exportpaket und echtes PDF.
 
 Die Produktoberfläche wurde zusätzlich bei 320 px und 390 px ohne horizontalen Überlauf sowie ohne Konsolenfehler geprüft.

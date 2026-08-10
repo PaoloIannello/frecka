@@ -451,8 +451,6 @@
       date: "02.02.2030",
       time: "08:00"
     });
-    snapshot.stores.receipts = api.snapshotReceipts({ receipts: [paid, open, cancellation, coachingCredit, february] }, tenantId);
-
     const decemberVoucher = voucherDraftFixture("voucher-export-december", {
       reference: "vch_export_december",
       code: "FRKA-DEC0-0001",
@@ -499,6 +497,18 @@
       history: [{ type: "sold", occurredAt: "2030-01-18T09:00:00.000Z", amount: 100, balanceAfter: 100, receiptNumber: "2030-000109" }]
     });
     snapshot.stores.vouchers = api.snapshotVouchers({ vouchers: [decemberVoucher, januaryVoucher, coachingVoucher] }, tenantId);
+    snapshot.stores.receipts = api.snapshotReceipts({
+      receipts: [
+        paid,
+        open,
+        cancellation,
+        coachingCredit,
+        february,
+        exportVoucherSaleReceiptFixture(decemberVoucher),
+        exportVoucherSaleReceiptFixture(januaryVoucher),
+        exportVoucherSaleReceiptFixture(coachingVoucher)
+      ]
+    }, tenantId);
     return snapshot;
   }
 
@@ -516,6 +526,31 @@
       createdAt: voucher.createdAt,
       updatedAt: voucher.createdAt
     });
+  }
+
+  function exportVoucherSaleReceiptFixture(voucher) {
+    const receipt = voucherSaleReceiptFixture(voucher, voucher.saleReceipt.id);
+    receipt.number = voucher.saleReceipt.number;
+    receipt.date = voucher.soldAt;
+    receipt.time = voucher.soldTime;
+    receipt.sortKey = voucher.saleReceipt.soldAt;
+    receipt.payment = voucher.saleReceipt.payment;
+    receipt.paymentMethod = voucher.saleReceipt.payment;
+    receipt.paymentRecordedAt = voucher.saleReceipt.soldAt;
+    receipt.paymentEvents = [{
+      type: "payment_recorded",
+      recordedAt: voucher.saleReceipt.soldAt,
+      paymentMethod: voucher.saleReceipt.payment,
+      amount: voucher.issuedValue
+    }];
+    receipt.contextSnapshot = clone(voucher.contextSnapshot);
+    receipt.companySnapshot = clone(voucher.contextSnapshot.company);
+    receipt.brandingSnapshot = clone(voucher.contextSnapshot.branding);
+    receipt.businessAreaId = voucher.contextSnapshot.businessArea.id;
+    receipt.businessAreaSnapshot = clone(voucher.contextSnapshot.businessArea);
+    receipt.serviceLocationId = voucher.contextSnapshot.serviceLocation.id;
+    receipt.serviceLocationSnapshot = clone(voucher.contextSnapshot.serviceLocation);
+    return receipt;
   }
 
   const documentOptions = () => ({
@@ -1986,10 +2021,15 @@
         name: "Gutscheinverkauf speichert Beleg, Gutschein, Historie und Nummer atomar und reload-stabil",
         run: async () => {
           const persistence = context.makeClient("voucher-sale");
-          const settings = recordFixture(persistence.tenantId, "completed");
-          const receipts = receiptsRecordFixture(persistence.tenantId);
-          const vouchers = vouchersRecordFixture(persistence.tenantId);
+          const initialSnapshot = completeTenantSnapshotFixture(persistence.tenantId);
+          const settings = initialSnapshot.stores.settings;
+          const catalog = initialSnapshot.stores.catalog;
+          const customers = initialSnapshot.stores.customers;
+          const receipts = initialSnapshot.stores.receipts;
+          const vouchers = initialSnapshot.stores.vouchers;
           await persistence.writeSettings(settings);
+          await persistence.writeCatalog(catalog);
+          await persistence.writeCustomers(customers);
           await persistence.writeReceipts(receipts);
           await persistence.writeVouchers(vouchers);
           const voucher = voucherDraftFixture("voucher-sale-new", { reference: "vch_sale_new", code: "FRKA-SALE-0001" });
@@ -2003,6 +2043,24 @@
           const reloadedReceipt = (await persistence.readReceipts()).receipts.find(entry => entry.id === receipt.id);
           assertEqual(reloadedVoucher.saleReceipt.number, reloadedReceipt.number, "Reload verlor die Belegverknüpfung");
           assertEqual(reloadedVoucher.qrLink, voucher.qrLink, "Reload verlor den QR-Link");
+          const tenantSnapshot = await persistence.exportTenantSnapshot();
+          const validated = api.validateTenantSnapshot(tenantSnapshot, persistence.tenantId);
+          assertEqual(validated.snapshot.stores.vouchers.vouchers.length, 2, "Validierter Snapshot verlor den neuen Gutschein");
+          const packageResult = await exportPackageApi.createTaxAdvisorPackage(tenantSnapshot, {
+            periodType: "custom",
+            dateFrom: "2030-01-01",
+            dateTo: "2030-01-31",
+            businessAreaId: "all",
+            generatedAt: "2030-02-01T12:34:00.000Z"
+          }, {
+            createReceiptPdf: currentReceipt => {
+              const linkedVoucher = tenantSnapshot.stores.vouchers.vouchers.find(entry => entry.reference === currentReceipt.voucherReference) || null;
+              const model = documentApi.createReceiptDocumentModel(currentReceipt, { ...documentOptions(), linkedVoucher });
+              return documentApi.createPdfBytes(model);
+            }
+          });
+          const newSalePdf = packageResult.entries.find(entry => entry.kind === "receipt-pdf" && entry.receiptNumber === committed.receipt.number);
+          assert(newSalePdf, "End-to-End-Export enthält den neuen Gutscheinverkaufsbeleg nicht als PDF");
           const repeated = await persistence.commitVoucherSale(receipt, voucher, settings, receipts, vouchers);
           assertEqual(repeated.created, false, "Wiederholter Verkauf wurde nicht idempotent erkannt");
           assertEqual(repeated.settingsRecord.receiptSettings.nextNumber, 78, "Idempotente Wiederholung setzte den Nummernstand zurück");
@@ -2028,6 +2086,84 @@
           assertEqual((await persistence.readSettings()).receiptSettings.nextNumber, 77, "Fehlgeschlagener Verkauf verbrauchte eine Nummer");
           assertEqual((await persistence.readReceipts()).receipts.length, 1, "Fehlgeschlagener Verkauf legte einen Beleg an");
           assertEqual((await persistence.readVouchers()).vouchers.length, 1, "Fehlgeschlagener Verkauf legte einen Gutschein an");
+        }
+      },
+      {
+        name: "Demo-Gutscheinverkäufe besitzen vier eindeutige kanonische Verkaufsbelege",
+        run: async () => {
+          const seed = clone(globalThis.PROTOTYPE_DATA);
+          const receipts = api.snapshotReceipts(seed, "test-demo-invariant");
+          const vouchers = api.snapshotVouchers(seed, "test-demo-invariant");
+          const result = api.validateVoucherReceiptInvariant(receipts, vouchers);
+          assertEqual(result.vouchersWithSaleReceipt, 4, "Nicht alle Demo-Gutscheine besitzen einen Verkaufsbeleg");
+          assertEqual(result.voucherSaleReceipts, 4, "Demo-Daten enthalten verwaiste oder zusätzliche Gutscheinverkaufsbelege");
+          const expected = [
+            ["2026-000118", "hair", 2500, "Bar", "c-anna"],
+            ["2026-000121", "podiatry", 4000, "Karte", null],
+            ["2026-000124", "hair", 5000, "Bar", "c-sabine"],
+            ["2026-000131", "podiatry", 10000, "Karte", null]
+          ];
+          expected.forEach(([number, areaId, totalCents, paymentMethod, customerId]) => {
+            const receipt = receipts.receipts.find(entry => entry.number === number);
+            assert(receipt, `Demo-Gutscheinverkaufsbeleg ${number} fehlt`);
+            assertEqual(receipt.receiptKind, "voucher-sale", `${number} besitzt die falsche Belegart`);
+            assertEqual(receipt.businessAreaId, areaId, `${number} besitzt den falschen Geschäftsbereich`);
+            assertEqual(receipt.totalCents, totalCents, `${number} besitzt den falschen Betrag`);
+            assertEqual(receipt.paymentMethod, paymentMethod, `${number} besitzt die falsche Zahlungsart`);
+            assertEqual(receipt.customerId, customerId, `${number} besitzt den falschen Kundenbezug`);
+          });
+          const sabine = seed.customers.find(customer => customer.id === "c-sabine");
+          assert(!sabine.history.some(entry => entry.number === "2026-000124" && entry.total === 59), "Widersprüchlicher Strähnen-Historieneintrag wurde nicht entfernt");
+        }
+      },
+      {
+        name: "Zentrale Invariante lehnt fehlenden Gutscheinverkaufsbeleg ab",
+        run: async () => {
+          const snapshot = completeTenantSnapshotFixture("test-invariant-missing");
+          snapshot.stores.receipts.receipts = snapshot.stores.receipts.receipts.filter(receipt => receipt.receiptKind !== "voucher-sale");
+          assertThrows(
+            () => api.validateVoucherReceiptInvariant(snapshot.stores.receipts, snapshot.stores.vouchers),
+            "VOUCHER_RECEIPT_INVARIANT_INVALID",
+            "Fehlender Gutscheinverkaufsbeleg"
+          );
+        }
+      },
+      {
+        name: "Zentrale Invariante lehnt falsche ID-/Nummernpaarung und Belegart ab",
+        run: async () => {
+          const wrongNumber = completeTenantSnapshotFixture("test-invariant-number");
+          wrongNumber.stores.vouchers.vouchers[0].saleReceipt.number = "2030-999999";
+          assertThrows(
+            () => api.validateVoucherReceiptInvariant(wrongNumber.stores.receipts, wrongNumber.stores.vouchers),
+            "VOUCHER_RECEIPT_INVARIANT_INVALID",
+            "Falsche Verkaufsbelegnummer"
+          );
+          const wrongKind = completeTenantSnapshotFixture("test-invariant-kind");
+          wrongKind.stores.receipts.receipts.find(receipt => receipt.receiptKind === "voucher-sale").receiptKind = "standard";
+          assertThrows(
+            () => api.validateVoucherReceiptInvariant(wrongKind.stores.receipts, wrongKind.stores.vouchers),
+            "VOUCHER_RECEIPT_INVARIANT_INVALID",
+            "Falsche Verkaufsbelegart"
+          );
+        }
+      },
+      {
+        name: "Zentrale Invariante lehnt falsche Gegenreferenz und verwaisten Verkaufsbeleg ab",
+        run: async () => {
+          const wrongCounterReference = completeTenantSnapshotFixture("test-invariant-counter");
+          wrongCounterReference.stores.receipts.receipts.find(receipt => receipt.receiptKind === "voucher-sale").voucherReference = "vch_unknown";
+          assertThrows(
+            () => api.validateVoucherReceiptInvariant(wrongCounterReference.stores.receipts, wrongCounterReference.stores.vouchers),
+            "VOUCHER_RECEIPT_INVARIANT_INVALID",
+            "Falsche Gutschein-Gegenreferenz"
+          );
+          const orphan = completeTenantSnapshotFixture("test-invariant-orphan");
+          orphan.stores.vouchers.vouchers = [];
+          assertThrows(
+            () => api.validateVoucherReceiptInvariant(orphan.stores.receipts, orphan.stores.vouchers),
+            "VOUCHER_RECEIPT_INVARIANT_INVALID",
+            "Verwaister Gutscheinverkaufsbeleg"
+          );
         }
       },
       {
@@ -2397,6 +2533,26 @@
         }
       },
       {
+        name: "Steuerberaterexport stoppt bei inkonsistenter Gutschein-Verkaufsbelegreferenz ohne Rekonstruktion",
+        run: async () => {
+          const snapshot = completeExportSnapshotFixture("test-export-invariant-stop");
+          snapshot.stores.receipts.receipts = snapshot.stores.receipts.receipts.filter(receipt => receipt.id !== "receipt-voucher-january");
+          const before = clone(snapshot);
+          assertThrows(
+            () => exportApi.createExportFiles(snapshot, {
+              exportType: "tax-advisor",
+              periodType: "custom",
+              dateFrom: "2030-01-01",
+              dateTo: "2030-01-31",
+              businessAreaId: "all"
+            }),
+            "VOUCHER_RECEIPT_INVARIANT_INVALID",
+            "Inkonsistenter Steuerberaterexport"
+          );
+          assertDeepEqual(snapshot, before, "Fehlgeschlagener Export hat den Snapshot verändert oder einen Beleg rekonstruiert");
+        }
+      },
+      {
         name: "Zeitraum und Geschäftsbereich filtern Belege, Gutscheine und Historie konsistent",
         run: async () => {
           const snapshot = completeExportSnapshotFixture("test-export-filter");
@@ -2408,7 +2564,7 @@
             businessAreaId: "hair",
             generatedAt: "2030-02-01T12:00:00.000Z"
           });
-          assertDeepEqual(projection.receipts.map(row => row.receiptNumber), ["2030-000101", "2030-000102", "2030-000103"], "Belegfilter ist falsch");
+          assertDeepEqual(projection.receipts.map(row => row.receiptNumber), ["2030-000101", "2030-000106", "2030-000102", "2030-000103"], "Belegfilter ist falsch");
           assertDeepEqual(projection.vouchers.map(row => row.code), ["FRKA-JAN0-0001"], "Gutscheinfilter ist falsch");
           assertEqual(projection.voucherHistory.length, 4, "Historienfilter ließ Ereignisse eines früher ausgestellten Gutscheins aus");
           assert(projection.voucherHistory.some(row => row.code === "FRKA-DEC0-0001"), "Einlösung eines älteren Gutscheins fehlt im Zeitraum");
@@ -2507,7 +2663,7 @@
           assert(info.includes("Unternehmer/in: Testperson"), "Unternehmer fehlt");
           assert(info.includes("Exportdatum: 01.02.2030 • 12:34"), "Exportdatum ist nicht deutsch formatiert");
           assert(info.includes("Zeitraum: 01.01.2030 bis 31.01.2030"), "Dokumentierter Zeitraum ist falsch");
-          assert(info.includes("Anzahl Belege: 3"), "Belegzählung ist falsch");
+          assert(info.includes("Anzahl Belege: 4"), "Belegzählung ist falsch");
           assert(info.includes("Anzahl Gutscheine: 1"), "Gutscheinzählung ist falsch");
           assert(info.includes("Dies ist ein FRECKA-Export.\r\nKeine bestätigte DATEV-Importschnittstelle."), "DATEV-Hinweis fehlt oder behauptet zu viel");
         }
@@ -2560,11 +2716,13 @@
             businessAreaId: "all"
           });
           assertDeepEqual(projection.summary, [
+            { rowType: "Steuersatz", businessArea: "Snapshot Studio", taxRate: "0,00", receiptCount: 1, net: "100,00", tax: "0,00", gross: "100,00" },
             { rowType: "Steuersatz", businessArea: "Snapshot Studio", taxRate: "19,00", receiptCount: 3, net: "54,98", tax: "10,45", gross: "65,43" },
-            { rowType: "Geschäftsbereich gesamt", businessArea: "Snapshot Studio", taxRate: "", receiptCount: 3, net: "54,98", tax: "10,45", gross: "65,43" },
+            { rowType: "Geschäftsbereich gesamt", businessArea: "Snapshot Studio", taxRate: "", receiptCount: 4, net: "54,98", tax: "10,45", gross: "165,43" },
+            { rowType: "Steuersatz", businessArea: "Test-Coaching", taxRate: "0,00", receiptCount: 1, net: "100,00", tax: "0,00", gross: "100,00" },
             { rowType: "Steuersatz", businessArea: "Test-Coaching", taxRate: "19,00", receiptCount: 1, net: "-8,40", tax: "-1,60", gross: "-10,00" },
-            { rowType: "Geschäftsbereich gesamt", businessArea: "Test-Coaching", taxRate: "", receiptCount: 1, net: "-8,40", tax: "-1,60", gross: "-10,00" },
-            { rowType: "Gesamtsumme", businessArea: "Alle Geschäftsbereiche", taxRate: "", receiptCount: 4, net: "46,58", tax: "8,85", gross: "55,43" }
+            { rowType: "Geschäftsbereich gesamt", businessArea: "Test-Coaching", taxRate: "", receiptCount: 2, net: "-8,40", tax: "-1,60", gross: "90,00" },
+            { rowType: "Gesamtsumme", businessArea: "Alle Geschäftsbereiche", taxRate: "", receiptCount: 6, net: "46,58", tax: "8,85", gross: "255,43" }
           ], "Übersicht enthält falsche Bereichs-, Steuersatz- oder Gesamtsummen");
           const summaryFile = exportApi.createSummaryFile(projection);
           assertEqual(summaryFile.name, "Übersicht.csv", "Übersichtsdatei besitzt einen falschen Namen");
@@ -2583,24 +2741,7 @@
           cancellation.receiptNumber = "ST-2030-000101";
           credit.number = "GS-2030-000099";
           credit.receiptNumber = "GS-2030-000099";
-          const voucherSale = receiptDraftFixture("receipt-voucher-january", {
-            number: "2030-000106",
-            receiptKind: "voucher-sale",
-            voucherReference: "vch_export_january",
-            completedAt: "2030-01-10T09:00:00.000Z",
-            createdAt: "2030-01-10T09:00:00.000Z",
-            updatedAt: "2030-01-10T09:00:00.000Z",
-            date: "10.01.2030",
-            time: "09:00",
-            items: [{ type: "voucher-sale", title: "Gutschein", quantity: 1, unitPrice: 100, total: 100 }],
-            total: 100,
-            originalTotal: 100,
-            netTotal: 0,
-            taxTotal: 0,
-            taxGroups: [],
-            paymentMethod: "Karte"
-          });
-          snapshot.stores.receipts = api.snapshotReceipts({ receipts: [...receipts, voucherSale] }, tenantId);
+          snapshot.stores.receipts = api.snapshotReceipts({ receipts }, tenantId);
           const before = clone(snapshot);
           const packageResult = await exportPackageApi.createTaxAdvisorPackage(snapshot, {
             periodType: "custom",
@@ -2618,7 +2759,7 @@
           assertEqual(packageResult.packageFile.name, "FRECKA-Steuerberatung-2030-01.zip", "ZIP-Dateiname ist nicht periodenbezogen");
           assertEqual(packageResult.packageFile.mimeType, "application/zip", "ZIP besitzt einen falschen Medientyp");
           assert(packageResult.packageFile.content instanceof Blob && packageResult.packageFile.size > 0, "ZIP wurde nicht als lokale Binärdatei erzeugt");
-          assertEqual(packageResult.pdfCount, 5, "ZIP enthält nicht zu jedem gefilterten Beleg ein PDF");
+          assertEqual(packageResult.pdfCount, 6, "ZIP enthält nicht zu jedem gefilterten Beleg ein PDF");
           assertDeepEqual(packageResult.files.map(file => file.name), ["Übersicht.csv", "Belege.csv", "Belegpositionen.csv", "Gutscheine.csv", "Gutschein-Historie.csv", "Export-Info.txt"], "Datenstruktur des ZIP-Pakets ist falsch");
           assert(!packageResult.entries.some(entry => entry.name === "Kunden.csv"), "Steuerberaterpaket enthält Kundenstammdaten");
 
@@ -2635,6 +2776,7 @@
             `${root}/Belege/2030-000101.pdf`,
             `${root}/Belege/2030-000102.pdf`,
             `${root}/Belege/2030-000106.pdf`,
+            `${root}/Belege/2030-000109.pdf`,
             `${root}/Belege/GS-2030-000099.pdf`,
             `${root}/Belege/ST-2030-000101.pdf`
           ].sort();
@@ -2660,7 +2802,7 @@
             createReceiptPdf: () => new TextEncoder().encode("%PDF-1.7\nfilter-test")
           });
           assertEqual(packageResult.rootDirectory, "FRECKA-Steuerberatung-2030-01-Friseur", "Gefiltertes Paket kennzeichnet den Geschäftsbereich nicht");
-          assertEqual(packageResult.pdfCount, 3, "PDF-Auswahl weicht vom Belegfilter ab");
+          assertEqual(packageResult.pdfCount, 4, "PDF-Auswahl weicht vom Belegfilter ab");
           assertDeepEqual(
             packageResult.entries.filter(entry => entry.kind === "receipt-pdf").map(entry => entry.receiptNumber),
             packageResult.projection.receipts.map(receipt => receipt.receiptNumber),
@@ -2707,6 +2849,20 @@
             "BACKUP_INCOMPLETE",
             "Fehlender Kundenstore"
           );
+        }
+      },
+      {
+        name: "Restore lehnt inkonsistente Gutschein-Verkaufsbelege vor jeder Schreibtransaktion ab",
+        run: async () => {
+          const persistence = context.makeClient("restore-invariant-stop");
+          const snapshot = completeTenantSnapshotFixture(persistence.tenantId);
+          snapshot.stores.receipts.receipts.find(receipt => receipt.receiptKind === "voucher-sale").voucherReference = "vch_wrong";
+          await assertRejects(
+            () => persistence.restoreTenantSnapshot(snapshot),
+            "VOUCHER_RECEIPT_INVARIANT_INVALID",
+            "Inkonsistente Gutschein-Verkaufsbelege im Restore"
+          );
+          assertEqual(await persistence.readSettings(), null, "Abgelehnter Restore hat trotz Vorprüfung Daten geschrieben");
         }
       },
       {

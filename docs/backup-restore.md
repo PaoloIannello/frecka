@@ -86,10 +86,11 @@ Vor jeder Schreibtransaktion werden mindestens geprüft:
 - gültige Katalog-, Geschäftsbereichs- und Leistungsortzuordnungen;
 - Gutscheinwerte ohne negative Restwerte und ohne Restwerte über dem Ursprungswert;
 - unverfälschte, chronologische Gutscheinhistorien;
-- gültige Referenztypen und widerspruchsfreie Gegenreferenzen, wenn beide Seiten im Datenpaket vorhanden sind;
+- gültige Referenztypen und widerspruchsfreie Gegenreferenzen;
+- für jeden referenzierten Gutscheinverkauf einen vorhandenen Beleg mit exakt passender ID, Nummer, Belegart `voucher-sale` und Gegenreferenz sowie keine verwaisten Gutscheinverkaufsbelege;
 - ein Belegnummernstand oberhalb der höchsten vorhandenen Nummer des aktuellen Präfixes.
 
-Die fünf Stores besitzen absichtlich getrennte Entwickler-Resets. Daher darf eine alte Beleg- oder Gutscheinreferenz auf einen durch einen solchen Store-Reset nicht mehr vorhandenen Gegenstand zeigen. Sie bleibt als historische Referenz erhalten. Ist das referenzierte Gegenobjekt vorhanden, muss die Zuordnung widerspruchsfrei sein.
+Historische Referenzen auf Einlösungs- oder Korrekturbelege dürfen nach einem getrennten Entwickler-Reset weiterhin ohne Gegenobjekt erhalten bleiben. Für den ursprünglichen Gutscheinverkaufsbeleg gilt diese Ausnahme ausdrücklich nicht: Gutschein und Verkaufsbeleg bilden eine bidirektional vollständig prüfbare Einheit. Ein durch Entwickler-Reset inkonsistent gewordener Datenstand ist kein gültiger Restore-Snapshot.
 
 Unvollständige, beschädigte, manipulierte, mandantenfremde oder inkompatible Daten werden vollständig abgelehnt. Die Validierung führt keine stillen Reparaturen durch und schreibt nichts in IndexedDB.
 
@@ -136,7 +137,7 @@ Fehlerlogs enthalten nur Vorgang und Fehlercode. Passphrase, Schlüsselmaterial,
 
 ## Tests
 
-`tests/persistence-smoke.html` prüft ohne zusätzliches Testframework die gesamte bisherige Persistenz sowie BACKUP-001, HARDEN-001, EXPORT-001 und QR-001. Der aktuelle Lauf umfasst 128 Fälle. Die Backup-Ergänzungen decken insbesondere Format- und Mandantenprüfung, Vollständigkeit, Referenzen, Nummernstand, Verschlüsselungs-Roundtrip, zufällige Ciphertexte, Klartextausschluss, falsches Kennwort, Payload- und Headermanipulation, abgeschnittene und unbekannte Formate, Export mit und ohne persistierte Stores, Restore in einen leeren Mandanten, vollständiges Überschreiben, atomaren Rollback, erneute Sicherung nach Restore, reversiblen Kundenstatus sowie iOS-robusten Dateinamen und Downloadtyp ab. Die fachlichen Export- und ZIP-Fälle sind in `docs/export.md`, die QR-Fälle in `docs/qr.md` beschrieben.
+`tests/persistence-smoke.html` prüft ohne zusätzliches Testframework die gesamte bisherige Persistenz sowie BACKUP-001, HARDEN-001, EXPORT-001/003 und QR-001. Der aktuelle Lauf umfasst 134 Fälle. Die Backup-Ergänzungen decken insbesondere Format- und Mandantenprüfung, Vollständigkeit, Referenzen einschließlich der bidirektionalen Gutscheinverkaufsbeleg-Invariante, Nummernstand, Verschlüsselungs-Roundtrip, zufällige Ciphertexte, Klartextausschluss, falsches Kennwort, Payload- und Headermanipulation, abgeschnittene und unbekannte Formate, Export mit und ohne persistierte Stores, Restore in einen leeren Mandanten, vollständiges Überschreiben, atomaren Rollback, erneute Sicherung nach Restore, reversiblen Kundenstatus sowie iOS-robusten Dateinamen und Downloadtyp ab. Die fachlichen Export- und ZIP-Fälle sind in `docs/export.md`, die QR-Fälle in `docs/qr.md` beschrieben.
 
 Jeder Lauf verwendet ausschließlich eine zufällig benannte Testdatenbank mit Guard gegen `frecka` und löscht diese anschließend. Ein simulierter Restore-Abbruch ist nur für eindeutig benannte Testdatenbanken freigeschaltet.
 

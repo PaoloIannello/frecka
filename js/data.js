@@ -206,6 +206,27 @@ window.PROTOTYPE_DATA = Object.freeze({
 
   receipts: [
     {
+      id: "receipt_demo_2026_000131", number: "2026-000131", type: "receipt", receiptKind: "voucher-sale", status: "completed",
+      date: "01.08.2026", time: "09:30", sortKey: "2026-08-01T09:30:00", createdAt: "2026-08-01T09:30:00",
+      completedAt: "2026-08-01T09:30:00", updatedAt: "2026-08-01T09:30:00", payment: "Karte", paymentStatus: "paid",
+      paymentMethod: "Karte", paymentRecordedAt: "2026-08-01T09:30:00",
+      paymentEvents: [{ type: "payment_recorded", recordedAt: "2026-08-01T09:30:00", date: "01.08.2026", time: "09:30", paymentMethod: "Karte", amount: 100 }],
+      customer: null,
+      contextSnapshot: {
+        company: { name: "Studio Beispiel", owner: "Angel Luzolo", street: "Musterstraße 12", zip: "12345", city: "Musterstadt", country: "Deutschland", phone: "0941 123456", email: "studio@example.de", taxNumber: "123/456/78901", vatId: "" },
+        businessArea: { id: "podiatry", label: "Podologie", visibleName: "Podologie im Studio Beispiel", logoMode: "company", logo: null },
+        serviceLocation: { id: "location-podiatry", name: "Studio Beispiel · Podologie", addressMode: "own", street: "Prüfeninger Straße 20", streetName: "Prüfeninger Straße", houseNumber: "20", zip: "93049", city: "Regensburg", phone: "0941 123456", voucherNote: "Einlösbar nach Terminvereinbarung" }
+      },
+      presentationSnapshot: {
+        issuer: { name: "Studio Beispiel", owner: "Angel Luzolo", street: "Musterstraße 12", city: "12345 Musterstadt" },
+        redemptionLocation: { name: "Studio Beispiel · Podologie", street: "Prüfeninger Straße 20", city: "93049 Regensburg" }
+      },
+      voucherReference: "vch_1b7e93a4c5d8",
+      items: [{ title: "Gutschein", type: "voucher-sale", quantity: 1, unitPrice: 100, total: 100 }],
+      total: 100, taxTreatment: "undetermined-prototype",
+      activity: [{ label: "Gutschein verkauft", date: "01.08.2026 · 09:30", occurredAt: "2026-08-01T09:30:00" }]
+    },
+    {
       number: "2026-000130", type: "receipt", status: "completed", date: "01.08.2026", time: "23:00",
       sortKey: "2026-08-01T23:00", payment: "Bar", total: 85.05,
       customer: null,
@@ -258,6 +279,27 @@ window.PROTOTYPE_DATA = Object.freeze({
       ]
     },
     {
+      id: "receipt_demo_2026_000124", number: "2026-000124", type: "receipt", receiptKind: "voucher-sale", status: "completed",
+      date: "28.07.2026", time: "10:15", sortKey: "2026-07-28T10:15:00", createdAt: "2026-07-28T10:15:00",
+      completedAt: "2026-07-28T10:15:00", updatedAt: "2026-07-28T10:15:00", payment: "Bar", paymentStatus: "paid",
+      paymentMethod: "Bar", paymentRecordedAt: "2026-07-28T10:15:00",
+      paymentEvents: [{ type: "payment_recorded", recordedAt: "2026-07-28T10:15:00", date: "28.07.2026", time: "10:15", paymentMethod: "Bar", amount: 50 }],
+      customer: { id: "c-sabine", firstName: "Sabine", lastName: "Keller", name: "Sabine Keller", phone: "0151 98765432", email: "sabine.keller@example.de", street: "Bahnhofstraße 21", zip: "93047", city: "Regensburg" },
+      contextSnapshot: {
+        company: { name: "Studio Beispiel", owner: "Angel Luzolo", street: "Musterstraße 12", zip: "12345", city: "Musterstadt", country: "Deutschland", phone: "0941 123456", email: "studio@example.de", taxNumber: "123/456/78901", vatId: "" },
+        businessArea: { id: "hair", label: "Friseur", visibleName: "", logoMode: "company", logo: null },
+        serviceLocation: { id: "location-default", name: "Studio Beispiel", addressMode: "company", street: "Musterstraße 12", streetName: "Musterstraße 12", houseNumber: "", zip: "12345", city: "Musterstadt", phone: "0941 123456", voucherNote: "Einlösbar nach Terminvereinbarung" }
+      },
+      presentationSnapshot: {
+        issuer: { name: "Studio Beispiel", owner: "Angel Luzolo", street: "Musterstraße 12", city: "12345 Musterstadt" },
+        redemptionLocation: { name: "Studio Beispiel", street: "Musterstraße 12", city: "12345 Musterstadt" }
+      },
+      voucherReference: "vch_8f4c2a91d7e6",
+      items: [{ title: "Gutschein", type: "voucher-sale", quantity: 1, unitPrice: 50, total: 50 }],
+      total: 50, taxTreatment: "undetermined-prototype",
+      activity: [{ label: "Gutschein verkauft", date: "28.07.2026 · 10:15", occurredAt: "2026-07-28T10:15:00" }]
+    },
+    {
       number: "2026-000127", type: "receipt", status: "completed", date: "24.07.2026", time: "11:20",
       sortKey: "2026-07-24T11:20", payment: "Bar", total: 92.50,
       customer: { id: "c-anna", name: "Anna Müller", email: "anna.mueller@example.de", street: "Gartenstraße 8", zip: "93047", city: "Regensburg" },
@@ -275,7 +317,49 @@ window.PROTOTYPE_DATA = Object.freeze({
       items: [{ title: "Farbe", quantity: 1, unitPrice: 48.00, total: 48.00 }],
       activity: [{ label: "Beleg erstellt", date: "22.07.2026 · 16:45" }]
     },
+    {
+      id: "receipt_demo_2026_000121", number: "2026-000121", type: "receipt", receiptKind: "voucher-sale", status: "completed",
+      date: "22.07.2026", time: "14:05", sortKey: "2026-07-22T14:05:00", createdAt: "2026-07-22T14:05:00",
+      completedAt: "2026-07-22T14:05:00", updatedAt: "2026-07-22T14:05:00", payment: "Karte", paymentStatus: "paid",
+      paymentMethod: "Karte", paymentRecordedAt: "2026-07-22T14:05:00",
+      paymentEvents: [{ type: "payment_recorded", recordedAt: "2026-07-22T14:05:00", date: "22.07.2026", time: "14:05", paymentMethod: "Karte", amount: 40 }],
+      customer: null,
+      contextSnapshot: {
+        company: { name: "Studio Beispiel", owner: "Angel Luzolo", street: "Musterstraße 12", zip: "12345", city: "Musterstadt", country: "Deutschland", phone: "0941 123456", email: "studio@example.de", taxNumber: "123/456/78901", vatId: "" },
+        businessArea: { id: "podiatry", label: "Podologie", visibleName: "Podologie im Studio Beispiel", logoMode: "company", logo: null },
+        serviceLocation: { id: "location-podiatry", name: "Studio Beispiel · Podologie", addressMode: "own", street: "Prüfeninger Straße 20", streetName: "Prüfeninger Straße", houseNumber: "20", zip: "93049", city: "Regensburg", phone: "0941 123456", voucherNote: "Einlösbar nach Terminvereinbarung" }
+      },
+      presentationSnapshot: {
+        issuer: { name: "Studio Beispiel", owner: "Angel Luzolo", street: "Musterstraße 12", city: "12345 Musterstadt" },
+        redemptionLocation: { name: "Studio Beispiel · Podologie", street: "Prüfeninger Straße 20", city: "93049 Regensburg" }
+      },
+      voucherReference: "vch_3c9f7a2e5b84",
+      items: [{ title: "Gutschein", type: "voucher-sale", quantity: 1, unitPrice: 40, total: 40 }],
+      total: 40, taxTreatment: "undetermined-prototype",
+      activity: [{ label: "Gutschein verkauft", date: "22.07.2026 · 14:05", occurredAt: "2026-07-22T14:05:00" }]
+    },
 
+    {
+      id: "receipt_demo_2026_000118", number: "2026-000118", type: "receipt", receiptKind: "voucher-sale", status: "completed",
+      date: "14.07.2026", time: "16:40", sortKey: "2026-07-14T16:40:00", createdAt: "2026-07-14T16:40:00",
+      completedAt: "2026-07-14T16:40:00", updatedAt: "2026-07-14T16:40:00", payment: "Bar", paymentStatus: "paid",
+      paymentMethod: "Bar", paymentRecordedAt: "2026-07-14T16:40:00",
+      paymentEvents: [{ type: "payment_recorded", recordedAt: "2026-07-14T16:40:00", date: "14.07.2026", time: "16:40", paymentMethod: "Bar", amount: 25 }],
+      customer: { id: "c-anna", firstName: "Anna", lastName: "Müller", name: "Anna Müller", phone: "0176 23456789", email: "anna.mueller@example.de", street: "Gartenstraße 8", zip: "93047", city: "Regensburg" },
+      contextSnapshot: {
+        company: { name: "Studio Beispiel", owner: "Angel Luzolo", street: "Musterstraße 12", zip: "12345", city: "Musterstadt", country: "Deutschland", phone: "0941 123456", email: "studio@example.de", taxNumber: "123/456/78901", vatId: "" },
+        businessArea: { id: "hair", label: "Friseur", visibleName: "", logoMode: "company", logo: null },
+        serviceLocation: { id: "location-default", name: "Studio Beispiel", addressMode: "company", street: "Musterstraße 12", streetName: "Musterstraße 12", houseNumber: "", zip: "12345", city: "Musterstadt", phone: "0941 123456", voucherNote: "Einlösbar nach Terminvereinbarung" }
+      },
+      presentationSnapshot: {
+        issuer: { name: "Studio Beispiel", owner: "Angel Luzolo", street: "Musterstraße 12", city: "12345 Musterstadt" },
+        redemptionLocation: { name: "Studio Beispiel", street: "Musterstraße 12", city: "12345 Musterstadt" }
+      },
+      voucherReference: "vch_6d2a84f9b3c1",
+      items: [{ title: "Gutschein", type: "voucher-sale", quantity: 1, unitPrice: 25, total: 25 }],
+      total: 25, taxTreatment: "undetermined-prototype",
+      activity: [{ label: "Gutschein verkauft", date: "14.07.2026 · 16:40", occurredAt: "2026-07-14T16:40:00" }]
+    },
     {
       number: "2026-000116", type: "receipt", status: "completed", date: "18.06.2026", time: "10:10",
       sortKey: "2026-06-18T10:10", payment: "Karte", total: 73.40,
@@ -309,7 +393,6 @@ window.PROTOTYPE_DATA = Object.freeze({
       street: "Bahnhofstraße 21", zip: "93047", city: "Regensburg", lastVisit: "18.07.2026", receiptCount: 8,
       totalTurnover: 438.20, note: "",
       history: [
-        { number: "2026-000124", date: "18.07.2026", total: 59.00, items: ["Strähnen"] },
         { number: "2026-000109", date: "07.06.2026", total: 45.90, items: ["Herrenschnitt", "Silbershampoo"] },
         { number: "2026-000092", date: "01.05.2026", total: 65.00, items: ["Komplettfarbe"] }
       ]

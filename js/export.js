@@ -144,6 +144,18 @@
       || !Array.isArray(snapshot.stores.vouchers.vouchers)) {
       throw new ExportError("INVALID_SNAPSHOT", "Der zentrale FRECKA-Datensnapshot ist unvollständig.");
     }
+    const validateInvariant = globalThis.FRECKA_PERSISTENCE?.validateVoucherReceiptInvariant;
+    if (typeof validateInvariant !== "function") {
+      throw new ExportError("INVALID_SNAPSHOT", "Die Prüfung der Gutschein-Verkaufsbelege ist nicht verfügbar.");
+    }
+    try {
+      validateInvariant(snapshot.stores.receipts, snapshot.stores.vouchers);
+    } catch (error) {
+      throw new ExportError(
+        "VOUCHER_RECEIPT_INVARIANT_INVALID",
+        error?.userMessage || "Die Gutschein-Verkaufsbelege sind unvollständig oder widersprüchlich. Der Export wurde nicht erstellt."
+      );
+    }
   }
 
   function dateKey(value) {
