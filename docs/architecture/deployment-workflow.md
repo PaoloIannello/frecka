@@ -356,7 +356,18 @@ Die Übertragung startet immer aus dem lokalen Release-Staging, nie aus einem be
 - Prüfsummenvergleich nach der Übertragung;
 - Deployment-Konto getrennt von der Web-Station-Laufzeitgruppe `http`.
 
-SSH/`rsync` kann diese Anforderungen erfüllen, wird aber erst verwendet, wenn SSH-Freigabe, Konto, Schlüssel, Zielpfad und Rechte betrieblich festgelegt sind. Zugangsdaten stehen niemals in Repository oder Release-Artefakt.
+DEPLOY-002 konkretisiert den manuellen Beta-Transport über SSH/`rsync`. Er erfolgt ausschließlich über LAN oder VPN an `192.168.178.46`; ein öffentlicher SSH-Port ist weder erforderlich noch zulässig. Das lokale Skript `scripts/deploy-beta.sh` verwendet das eingerichtete Deployment-Konto und die feste DSM-Zielbasis `/volume1/web/FRECKA/releases/`. Zugangsdaten, Passwörter und private Schlüssel stehen niemals in Repository oder Release-Artefakt.
+
+Verbindlicher Ablauf für ein bereits erzeugtes Release:
+
+```sh
+./scripts/deploy-beta.sh --dry-run 0.9.1-26dc63f
+./scripts/deploy-beta.sh 0.9.1-26dc63f
+```
+
+Der erste Aufruf prüft das lokale Artefakt, den SSH-Zugang, die serverseitigen Voraussetzungen und den geplanten `rsync`-Lauf, verändert aber keine Datei auf der Synology. Erst der zweite, ausdrücklich gestartete Aufruf reserviert den noch nicht vorhandenen Zielordner atomar, überträgt genau dieses Release ohne `--delete` und verifiziert anschließend `SHA256SUMS` serverseitig. Ein vorhandener Zielordner führt immer zum Abbruch. Ein unvollständiger Upload wird nicht automatisch gelöscht oder überschrieben und darf nicht in Web Station aktiviert werden.
+
+Das Skript ändert weder den Beta-Virtual-Host noch Produktivkonfigurationen. Die Aktivierung bleibt ein getrennter manueller Infrastrukturschritt nach erfolgreicher Übertragung und Prüfung.
 
 ### 8.3 Aktivierung
 
@@ -654,7 +665,7 @@ Domain `frecka.app`, statische Hosts, realer Zielpfad `/web/FRECKA/`, Synology-R
 
 1. HTTPS-Zertifikate und Zuordnung für den jeweiligen Host;
 2. Beta-Zugangsmodell und benannte Beta-/Produktivfreigabe;
-3. Deployment-Konto, Übertragungsweg und minimale Rechte;
+3. minimale DSM-/ACL-Rechte des eingerichteten Deployment-Kontos regelmäßig prüfen und einen späteren Wechsel von Passwort- auf Schlüsselanmeldung getrennt planen;
 4. Aufbewahrungsfristen für Beta- und Produktivreleases;
 5. verbindlich unterstützte Browser und Geräte;
 6. Service-Worker-/Updateformat einschließlich Signatur und Schlüsselverwaltung;

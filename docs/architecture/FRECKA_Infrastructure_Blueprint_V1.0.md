@@ -132,11 +132,13 @@ Mail- und Lizenzdienst dürfen nicht unter der Origin oder dem Service-Worker-Sc
 
 ## 7. Synology-Verzeichnisstruktur
 
-Die portable Variable `<web-share>` bezeichnet den von Web Station verwendeten Web-Ordner. Der reale, in der aktuellen Synology-Konfiguration verwendete Zielpfad lautet:
+Die portable Variable `<web-share>` bezeichnet den von Web Station verwendeten Web-Ordner. Der in Web Station sichtbare Zielpfad lautet:
 
 ```text
 /web/FRECKA/
 ```
+
+Über SSH ist derselbe freigegebene Ordner im DSM-Dateisystem unter `/volume1/web/FRECKA/` erreichbar. Unveränderliche Release-Artefakte werden daher technisch nach `/volume1/web/FRECKA/releases/<release-id>/` übertragen; diese Pfadangabe ändert nicht die Web-Station-Zuordnung.
 
 Zielstruktur:
 

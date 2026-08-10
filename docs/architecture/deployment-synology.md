@@ -177,7 +177,7 @@ Bewertung: `0.9.1-26dc63f` ist für den Beta-Betrieb freigegeben und gilt als st
 
 ## 4. Empfohlene minimale Zielstruktur
 
-`<web-share>` bezeichnet portabel den von Web Station verwendeten Web-Ordner. In der realen aktuellen Konfiguration entspricht die sichtbare Zielbasis `/web`; FRECKA verwendet darin bewusst die vorhandene Großschreibung `/web/FRECKA/`.
+`<web-share>` bezeichnet portabel den von Web Station verwendeten Web-Ordner. In Web Station entspricht die sichtbare Zielbasis `/web`; FRECKA verwendet darin bewusst die vorhandene Großschreibung `/web/FRECKA/`. Derselbe Ordner ist bei einem SSH-Deployment im DSM-Dateisystem unter `/volume1/web/FRECKA/` erreichbar. DEPLOY-002 schreibt deshalb ausschließlich nach `/volume1/web/FRECKA/releases/<release-id>/`.
 
 ```text
 <web-share>/FRECKA/
@@ -235,7 +235,20 @@ Produktiv und Beta werden dagegen als zwei namensbasierte HTTPS-Portale eingeric
 - Repository, Backups, Exporte, private Dokumentation und Schlüsselmaterial liegen nie in einem Web-Document-Root.
 - Bereits freigegebene Release-Verzeichnisse werden nach dem Erzeugen schreibgeschützt behandelt.
 
-### 5.3 HTTPS und Browseranforderungen
+### 5.3 Manueller Beta-Upload über LAN/VPN
+
+Der vorbereitete Transport verwendet keinen öffentlichen SSH-Port. Der Mac muss sich im lokalen Netz oder im VPN befinden und `192.168.178.46` erreichen können. Das Skript verwaltet weder Passwörter noch private Schlüssel; die Anmeldung übernimmt der lokale SSH-Client mit seiner normalen Host-Key-Prüfung.
+
+```sh
+./scripts/deploy-beta.sh --dry-run <release-id>
+./scripts/deploy-beta.sh <release-id>
+```
+
+Der Dry-Run prüft lokal `RELEASE.txt`, `SHA256SUMS`, `site/`, Release-ID, Dateivollständigkeit und alle SHA-256-Werte. Auf der Synology prüft er Zielbasis, Schreibrecht, `rsync`, `sha256sum` und eine noch unvergebene Ziel-ID. Der echte Lauf legt ausschließlich `/volume1/web/FRECKA/releases/<release-id>/` neu an, verwendet kein `--delete`, fasst keine anderen Releases an und kontrolliert nach der Übertragung die ausgelieferten Dateien gegen `SHA256SUMS`.
+
+Ein fehlgeschlagener Upload bleibt als nicht aktivierbares, möglicherweise unvollständiges Release sichtbar. Das Skript löscht ihn nicht automatisch und überschreibt ihn bei einem weiteren Lauf nicht. Bereinigung und Ursachenprüfung sind ein eigener bewusster Betriebsschritt. Web-Station-Portalwechsel und Produktiv-Promotion sind nicht Bestandteil des Skripts.
+
+### 5.4 HTTPS und Browseranforderungen
 
 Alle App-Portale benötigen gültiges HTTPS. Web Share, PWA-Installation und verschiedene Web-Crypto-/Browserfunktionen dürfen nicht auf unverschlüsseltes öffentliches HTTP angewiesen sein. HTTP wird auf HTTPS umgeleitet. HSTS wird erst aktiviert, nachdem Hostnamen, Zertifikate und HTTPS-Zugriff vollständig geprüft wurden.
 
