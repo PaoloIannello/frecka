@@ -2,7 +2,7 @@
 
 Stand: 10. August 2026
 
-Geltungsbereich: vorbereiteter Stand `0.10.3`, Build `PERSISTENCE-007`; noch kein Release-Tag oder Artefakt
+Geltungsbereich: vorbereiteter Stand `0.10.4`, Build `BACKUP-001`; noch kein Release-Tag oder Artefakt für 0.10.4
 
 Der verbindliche Infrastrukturrahmen steht in `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`. Dieses Dokument konkretisiert ausschließlich die statische Laufzeitmenge und ihre spätere Zuordnung zu Synology Web Station.
 
@@ -139,7 +139,7 @@ Noch nicht vorhanden beziehungsweise nicht produktionsreif sind:
 
 SERVICEWORKER-002 berücksichtigt `registration.waiting` beim Start, beobachtet `updatefound` und `statechange` und ruft bei bestehender Online-Verbindung einmal `registration.update()` auf. Ein wartender Worker wird angezeigt, aber erst durch „Jetzt aktualisieren“ mit `{ type: "SKIP_WAITING" }` aktiviert. Nur ein danach eintretender `controllerchange` löst genau einen Reload aus. Ohne Nutzeraktion gibt es in dieser dauerhaften Strategie weder Nachricht noch Reload; offene Belegentwürfe und laufende lokale Schreibvorgänge blockieren die Aktion.
 
-Der SERVICEWORKER-002-Worker besitzt zusätzlich eine **einmalige Legacy-Brücke**, weil bereits ausgelieferte 0.10.0-/0.10.1-Clients die neue Update-UI noch nicht enthalten und deshalb keine Aktivierungsnachricht senden können. Erst nachdem seine vollständige App-Shell erfolgreich gecacht ist, darf diese Brücke automatisch `skipWaiting()` ausführen. Sie verwendet ausdrücklich kein `clients.claim()` und löst keinen Reload aus; die laufende alte Sitzung wechselt damit nicht mitten im Betrieb auf neuen Anwendungscode. Da der reale Übergang der bereits ausgelieferten Altclients noch nicht dokumentiert bestätigt ist, bleibt die unveränderte Brücke im 0.10.3-Worker einmalig erhalten. Sobald dieser Übergang real bestätigt wurde, müssen Legacy-Konstante und automatischer Installationsaufruf im unmittelbar folgenden Worker/Release entfernt werden. Die Nachrichtenbehandlung für bewusst ausgelöste spätere Updates bleibt bestehen.
+Der SERVICEWORKER-002-Worker besitzt zusätzlich eine **einmalige Legacy-Brücke**, weil bereits ausgelieferte 0.10.0-/0.10.1-Clients die neue Update-UI noch nicht enthalten und deshalb keine Aktivierungsnachricht senden können. Erst nachdem seine vollständige App-Shell erfolgreich gecacht ist, darf diese Brücke automatisch `skipWaiting()` ausführen. Sie verwendet ausdrücklich kein `clients.claim()` und löst keinen Reload aus; die laufende alte Sitzung wechselt damit nicht mitten im Betrieb auf neuen Anwendungscode. Da der reale Übergang der bereits ausgelieferten Altclients noch nicht dokumentiert bestätigt ist, bleibt die unveränderte Brücke im 0.10.4-Worker einmalig erhalten. Sobald dieser Übergang real bestätigt wurde, müssen Legacy-Konstante und automatischer Installationsaufruf im unmittelbar folgenden Worker/Release entfernt werden. Die Nachrichtenbehandlung für bewusst ausgelöste spätere Updates bleibt bestehen.
 
 Signierte Kanalmetadaten, ein Release-/Update-Manifest und ein serverseitiger Updatekanal bleiben spätere, getrennt freizugebende Bausteine.
 
@@ -161,7 +161,7 @@ Die leere `publicViewerBaseUrl` in `js/config.js` ist mit dieser Trennung kompat
 
 Der annotierte Release-Tag `v0.9.1` zeigt auf Commit `26dc63fbea434d9fb33a7e88a6af0419cb8cddae`. Das unveränderliche Artefakt trägt die Release-ID `0.9.1-26dc63f` und bleibt die dokumentierte stabile Beta-Basis. Der Tag `v0.10.0` zeigt auf Commit `dc55cf06fdb00548307beb8efc6e6eaac6369840`.
 
-Der annotierte Tag `v0.10.1` zeigt auf Commit `c195a099ef57af79177496f48d217247f2144175`; das daraus erzeugte unveränderliche Artefakt trägt die Release-ID `0.10.1-c195a09`. Der annotierte Tag `v0.10.2` zeigt auf Commit `18f41b5a47b93fee0efc086674e8d7e7007d14d8`; das daraus erzeugte und auf Beta bereitgestellte Artefakt trägt die Release-ID `0.10.2-18f41b5`. Darauf baut PERSISTENCE-007 mit Commit `1867fad` und der vorbereitete Patchkandidat `0.10.3` auf. HTML-Titel `PERSISTENCE-007`, Asset-Abfragewert `persistence007-1` und App-Shell-Cache `frecka-app-shell-0.10.3-persistence007-1` sind dafür bewusst eigenständig versioniert. Tag, Release-ID und unveränderliches Artefakt dürfen erst nach dem noch ausstehenden Release-Commit entstehen.
+Der annotierte Tag `v0.10.1` zeigt auf Commit `c195a099ef57af79177496f48d217247f2144175`; das daraus erzeugte unveränderliche Artefakt trägt die Release-ID `0.10.1-c195a09`. Der annotierte Tag `v0.10.2` zeigt auf Commit `18f41b5a47b93fee0efc086674e8d7e7007d14d8`; das daraus erzeugte und auf Beta bereitgestellte Artefakt trägt die Release-ID `0.10.2-18f41b5`. Der annotierte Tag `v0.10.3` zeigt auf Commit `3591b0b9f16534ce489b2a246d1c26c105c49477`; das daraus erzeugte und auf Beta bereitgestellte Artefakt trägt die Release-ID `0.10.3-3591b0b`. Darauf baut BACKUP-001 mit Commit `57112fa` und der vorbereitete Patchkandidat `0.10.4` auf. HTML-Titel `BACKUP-001`, Asset-Abfragewert `backup001-1` und App-Shell-Cache `frecka-app-shell-0.10.4-backup001-1` sind dafür bewusst eigenständig versioniert. Tag, Release-ID und unveränderliches Artefakt für 0.10.4 dürfen erst nach dem noch ausstehenden Release-Commit entstehen.
 
 Ein Updateformat für signierte Kanäle und ein Signaturverfahren sind ausdrücklich noch nicht implementiert. SERVICEWORKER-002 erkennt ausschließlich Änderungen des Service Workers innerhalb derselben bereits aufgerufenen Deployment-Origin.
 
@@ -212,7 +212,7 @@ Diese Baumdarstellung ist ein Zielbild, keine Aufforderung, leere Ordner anzuleg
 - Für Produktiv und Beta werden keine doppelten Verzeichnisbäume benötigt. Beide Webportale zeigen jeweils auf das vollständige `site/` eines Release-Verzeichnisses.
 - Ein Release darf von beiden Portalen verwendet werden, ohne kopiert zu werden.
 
-Ein Release-Identifier muss eindeutig und dateisystemfreundlich sein. Verbindlich ist das Schema `<version>-<kurzer-git-commit>`, beispielsweise `0.10.3-1a2b3c4`. Die konkrete ID des vorbereiteten Kandidaten darf erst nach dem Release-Commit gebildet werden.
+Ein Release-Identifier muss eindeutig und dateisystemfreundlich sein. Verbindlich ist das Schema `<version>-<kurzer-git-commit>`, beispielsweise `0.10.4-1a2b3c4`. Die konkrete ID des vorbereiteten Kandidaten darf erst nach dem Release-Commit gebildet werden.
 
 ## 5. Zuordnung zu Synology Web Station
 
@@ -336,7 +336,7 @@ Ein Code-Rollback kann keine bereits ausgeführte IndexedDB-Migration zurückdre
 
 Für den Updatekanal beschränkt sich die Rolle der Synology auf die Auslieferung statischer Programmdateien und späterer Update-Metadaten. Die nach ADR-0003 getrennten dynamischen Dienste sind davon unabhängig. SERVICEWORKER-002 erkennt neue Worker innerhalb derselben Deployment-Origin, zeigt einen nichtblockierenden Hinweis und aktiviert einen regulär wartenden Worker erst nach bewusster Nutzeraktion. Diese Browserfunktion benötigt weder einen Serverdienst noch eine zweite Datenhaltung und verändert keine IndexedDB-Daten.
 
-Die einmalige Legacy-Brücke im SERVICEWORKER-002-Worker dient ausschließlich dem Übergang bereits ausgelieferter Clients, die diese Updateoberfläche noch nicht kennen. Sie darf nicht als allgemeine Updatepolitik kopiert werden. 0.10.3 behält sie nur deshalb unverändert bei, weil der reale Altclient-Übergang noch nicht bestätigt ist. Nach dieser Bestätigung ist ihre Entfernung im unmittelbar folgenden Worker/Release ein zwingendes Release-Gate. Danach gilt ausschließlich: vollständig installieren → Hinweis anzeigen → Nutzeraktion → `SKIP_WAITING` → genau ein Reload. `clients.claim()` und automatische Reloads bleiben ausgeschlossen.
+Die einmalige Legacy-Brücke im SERVICEWORKER-002-Worker dient ausschließlich dem Übergang bereits ausgelieferter Clients, die diese Updateoberfläche noch nicht kennen. Sie darf nicht als allgemeine Updatepolitik kopiert werden. 0.10.4 behält sie nur deshalb unverändert bei, weil der reale Altclient-Übergang noch nicht bestätigt ist. Nach dieser Bestätigung ist ihre Entfernung im unmittelbar folgenden Worker/Release ein zwingendes Release-Gate. Danach gilt ausschließlich: vollständig installieren → Hinweis anzeigen → Nutzeraktion → `SKIP_WAITING` → genau ein Reload. `clients.claim()` und automatische Reloads bleiben ausgeschlossen.
 
 Ein signierter kanalbasierter Updateclient ist damit noch nicht umgesetzt. Daher werden weiterhin weder Dateinamen noch JSON-Felder eines vermeintlichen Update-Manifests festgelegt.
 

@@ -1,6 +1,6 @@
-# FRECKA – PERSISTENCE-007
+# FRECKA – BACKUP-001
 
-Browserbasierte FRECKA-PWA 0.10.3 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share- und PWA-Update-Infrastruktur. PERSISTENCE-007 erlaubt neue, lokal konsistente Beleg- und Gutscheintransaktionen auch dann, wenn eine unabhängige historische Gutschein-/Belegabweichung im Altbestand sichtbar bleibt. Backup, Export und inkonsistente Restore-Kandidaten bleiben in diesem Fall weiterhin gesperrt. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
+Browserbasierte FRECKA-PWA 0.10.4 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share- und PWA-Update-Infrastruktur. BACKUP-001 macht den bestehenden Sicherungsablauf bei einem historisch inkonsistenten Datenbestand deterministisch und verständlich, ohne Snapshot-, Backup-, Restore- oder Exportregeln zu lockern. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
 
 ## Start
 
@@ -10,7 +10,16 @@ Browserbasierte FRECKA-PWA 0.10.3 mit lokaler IndexedDB-Persistenz, verschlüsse
 
 Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufklappen und bearbeiten → Weiter → Kunde optional und Zahlungsart simulieren → Demo abschließen.
 
-## Neu in PERSISTENCE-007
+## Neu in BACKUP-001
+
+- deterministische Reihenfolge Snapshot → Verschlüsselung → genau eine Ausgabe
+- verständliche Sperrmeldung bei historisch inkonsistentem Gesamtbestand ohne interne Referenzen
+- Sicherungskennwörter bleiben bei Fehlern und Share-Abbruch für einen erneuten Versuch erhalten
+- explizite iOS-taugliche Share-Aktion nach erfolgreicher lokaler Verschlüsselung
+- Verschlüsselungs-, Datei- und Share-Fehler werden eindeutig behandelt; ein Abbruch löst keinen Download-Fallback aus
+- 144 bestandene native Browser-Smoke-Tests einschließlich Erfolgs-, Invarianten-, Verschlüsselungs-, Datei- und Share-Abbruchpfad
+
+## Grundlage aus PERSISTENCE-007
 
 - globale historische Gutschein-/Belegabweichungen bleiben sichtbar, setzen aber sicher geladene Receipt- und Voucher-Stores nicht mehr pauschal auf schreibgesperrt
 - unabhängige neue Belege sowie lokal vollständig gegengeprüfte Gutscheintransaktionen bleiben atomar speicherbar
@@ -30,7 +39,7 @@ Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufkla
 - einmalige, ausdrücklich freigegebene Legacy-Brücke für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI: automatische Worker-Aktivierung, aber kein `clients.claim()` und kein automatischer Reload
 - eigene automatisierte Lifecycle-Tests zusätzlich zum 144-Fälle-Fach- und Persistenzlauf
 
-Die Legacy-Brücke aus SERVICEWORKER-002 bleibt in 0.10.3 ausnahmsweise unverändert erhalten, solange der reale Übergang bereits ausgelieferter Altclients noch nicht bestätigt ist. Sobald dieser Übergang real nachgewiesen wurde, ist ihre Entfernung ein zwingendes Gate für den unmittelbar folgenden Worker/Release. Die dauerhafte Reihenfolge bleibt: Hinweis → Nutzeraktion → `SKIP_WAITING` → genau ein Reload.
+Die Legacy-Brücke aus SERVICEWORKER-002 bleibt in 0.10.4 ausnahmsweise unverändert erhalten, solange der reale Übergang bereits ausgelieferter Altclients noch nicht bestätigt ist. Sobald dieser Übergang real nachgewiesen wurde, ist ihre Entfernung ein zwingendes Gate für den unmittelbar folgenden Worker/Release. Die dauerhafte Reihenfolge bleibt: Hinweis → Nutzeraktion → `SKIP_WAITING` → genau ein Reload.
 
 ## Neu in EXPORT-003
 
