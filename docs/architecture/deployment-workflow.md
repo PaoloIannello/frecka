@@ -356,16 +356,16 @@ Die Übertragung startet immer aus dem lokalen Release-Staging, nie aus einem be
 - Prüfsummenvergleich nach der Übertragung;
 - Deployment-Konto getrennt von der Web-Station-Laufzeitgruppe `http`.
 
-DEPLOY-002 konkretisiert den manuellen Beta-Transport über SSH/`rsync`. Er erfolgt ausschließlich über LAN oder VPN an `192.168.178.46`; ein öffentlicher SSH-Port ist weder erforderlich noch zulässig. Das lokale Skript `scripts/deploy-beta.sh` verwendet das eingerichtete Deployment-Konto und die feste DSM-Zielbasis `/volume1/web/FRECKA/releases/`. Zugangsdaten, Passwörter und private Schlüssel stehen niemals in Repository oder Release-Artefakt.
+DEPLOY-005 konkretisiert den manuellen Beta-Transport über SSH/SCP; DEPLOY-006 legt den Rechte-Lifecycle für Staging und finales Release verbindlich fest. Der Transport erfolgt ausschließlich über LAN oder VPN mit dem lokalen SSH-Alias `frecka-synology`; ein öffentlicher SSH-Port ist weder erforderlich noch zulässig. Hostname, Deployment-Benutzer und IdentityFile bleiben in `~/.ssh/config`. Das lokale Skript `scripts/deploy-beta.sh` verwendet die feste DSM-Zielbasis `/volume1/web/FRECKA/releases/`; Zugangsdaten, Passwörter und private Schlüssel stehen niemals in Repository oder Release-Artefakt.
 
 Verbindlicher Ablauf für ein bereits erzeugtes Release:
 
 ```sh
-./scripts/deploy-beta.sh --dry-run 0.9.1-26dc63f
-./scripts/deploy-beta.sh 0.9.1-26dc63f
+./scripts/deploy-beta.sh --dry-run 0.10.0-dc55cf0
+./scripts/deploy-beta.sh 0.10.0-dc55cf0
 ```
 
-Der erste Aufruf prüft das lokale Artefakt, den SSH-Zugang, die serverseitigen Voraussetzungen und den geplanten `rsync`-Lauf, verändert aber keine Datei auf der Synology. Erst der zweite, ausdrücklich gestartete Aufruf reserviert den noch nicht vorhandenen Zielordner atomar, überträgt genau dieses Release ohne `--delete` und verifiziert anschließend `SHA256SUMS` serverseitig. Ein vorhandener Zielordner führt immer zum Abbruch. Ein unvollständiger Upload wird nicht automatisch gelöscht oder überschrieben und darf nicht in Web Station aktiviert werden.
+Der erste Aufruf prüft das lokale Artefakt, den SSH-Zugang, die serverseitigen Voraussetzungen, einen No-Clobber-Namenswechsel und freie Staging-, Sperr- und Zielpfade, verändert aber keine Datei auf der Synology. Erst der zweite, ausdrücklich gestartete Aufruf reserviert `.upload-<release-id>` mit Modus `0700`, überträgt `RELEASE.txt`, `SHA256SUMS` und `site/` per SCP und verifiziert Dateibestand sowie `SHA256SUMS` serverseitig. Danach werden Dateien auf `0444` und Verzeichnisse auf `0555` gehärtet. Nur der vollständig geprüfte und bereits schreibgeschützte Stand wird ohne Überschreiben unter dem finalen Release-Namen veröffentlicht. Das Skript verändert weder den Modus des Elternverzeichnisses noch ACLs und verwendet weder `sudo` noch pauschale `0777`-Rechte. Vorhandene Ziel- oder Staging-Pfade führen zum Abbruch; unvollständige Uploads werden weder automatisch gelöscht noch überschrieben.
 
 Das Skript ändert weder den Beta-Virtual-Host noch Produktivkonfigurationen. Die Aktivierung bleibt ein getrennter manueller Infrastrukturschritt nach erfolgreicher Übertragung und Prüfung.
 

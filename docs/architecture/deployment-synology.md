@@ -233,20 +233,22 @@ Produktiv und Beta werden dagegen als zwei namensbasierte HTTPS-Portale eingeric
 - Die Web-Station-Gruppe `http` erhält rekursiv nur Leserechte auf veröffentlichte Document Roots.
 - Schreibrechte für `http` sind für FRECKA nicht erforderlich.
 - Repository, Backups, Exporte, private Dokumentation und Schlüsselmaterial liegen nie in einem Web-Document-Root.
-- Bereits freigegebene Release-Verzeichnisse werden nach dem Erzeugen schreibgeschützt behandelt.
+- Das versteckte Upload-Staging gehört dem Deployment-Konto und besitzt während der Übertragung Modus `0700`.
+- Nach bestandener serverseitiger Dateibestands- und SHA-256-Prüfung werden Release-Dateien auf `0444` und Release-Verzeichnisse auf `0555` gesetzt. Erst dieser bereits schreibgeschützte Stand erhält atomar seinen finalen Release-Namen.
+- Das Deployment-Skript ändert weder Rechte des Elternverzeichnisses `/volume1/web/FRECKA/releases/` noch ACLs.
 
 ### 5.3 Manueller Beta-Upload über LAN/VPN
 
-Der vorbereitete Transport verwendet keinen öffentlichen SSH-Port. Der Mac muss sich im lokalen Netz oder im VPN befinden und `192.168.178.46` erreichen können. Das Skript verwaltet weder Passwörter noch private Schlüssel; die Anmeldung übernimmt der lokale SSH-Client mit seiner normalen Host-Key-Prüfung.
+Der vorbereitete Transport verwendet keinen öffentlichen SSH-Port. Der Mac muss sich im lokalen Netz oder im VPN befinden. Das Skript verwendet ausschließlich den lokalen SSH-Alias `frecka-synology`; Hostname, Benutzer und IdentityFile bleiben in `~/.ssh/config`. Das Skript verwaltet weder Passwörter noch private Schlüssel und behält die normale Host-Key-Prüfung bei.
 
 ```sh
 ./scripts/deploy-beta.sh --dry-run <release-id>
 ./scripts/deploy-beta.sh <release-id>
 ```
 
-Der Dry-Run prüft lokal `RELEASE.txt`, `SHA256SUMS`, `site/`, Release-ID, Dateivollständigkeit und alle SHA-256-Werte. Auf der Synology prüft er Zielbasis, Schreibrecht, `rsync`, `sha256sum` und eine noch unvergebene Ziel-ID. Der echte Lauf legt ausschließlich `/volume1/web/FRECKA/releases/<release-id>/` neu an, verwendet kein `--delete`, fasst keine anderen Releases an und kontrolliert nach der Übertragung die ausgelieferten Dateien gegen `SHA256SUMS`.
+Der Dry-Run prüft lokal `RELEASE.txt`, `SHA256SUMS`, `site/`, Release-ID, Dateivollständigkeit, alle SHA-256-Werte und den SCP-Client. Auf der Synology prüft er Zielbasis, Schreibrecht, SCP- und Prüfkommandos, die No-Clobber-Fähigkeit des finalen Namenswechsels sowie freie Staging-, Sperr- und Zielpfade, ohne etwas anzulegen. Der echte Lauf legt `/volume1/web/FRECKA/releases/.upload-<release-id>` exklusiv mit Modus `0700` an und überträgt `RELEASE.txt`, `SHA256SUMS` und `site/` als drei explizite SCP-Quellen. SCP übernimmt dabei nicht den schreibgeschützten Modus des lokalen Artefakt-Wurzelverzeichnisses. Nach bestandener Prüfung von Dateibestand und `SHA256SUMS` werden alle Dateien auf `0444` und alle Verzeichnisse auf `0555` gehärtet. Nur wenn kein Pfad mehr schreibbar ist, wird das bereits schreibgeschützte Staging ohne Überschreiben in `<release-id>` umbenannt. Andere Releases werden weder verändert noch gelöscht.
 
-Ein fehlgeschlagener Upload bleibt als nicht aktivierbares, möglicherweise unvollständiges Release sichtbar. Das Skript löscht ihn nicht automatisch und überschreibt ihn bei einem weiteren Lauf nicht. Bereinigung und Ursachenprüfung sind ein eigener bewusster Betriebsschritt. Web-Station-Portalwechsel und Produktiv-Promotion sind nicht Bestandteil des Skripts.
+Ein fehlgeschlagener Upload bleibt ausschließlich unter seinem versteckten Staging-Namen und wird nie als finales Release ausgegeben. Je nach Fehlerzeitpunkt kann er unvollständig mit Modus `0700` oder bereits auf `0444`/`0555` gehärtet sein. Das Skript löscht ihn nicht automatisch und überschreibt ihn bei einem weiteren Lauf nicht. Bereinigung und Ursachenprüfung sind ein eigener bewusster Betriebsschritt. Web-Station-Portalwechsel und Produktiv-Promotion sind nicht Bestandteil des Skripts.
 
 ### 5.4 HTTPS und Browseranforderungen
 
