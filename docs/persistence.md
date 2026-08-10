@@ -1,6 +1,6 @@
 # Lokale Settings-, Katalog-, Kunden-, Beleg- und Gutscheinpersistenz
 
-**Stand:** QR-001 auf Basis PERSIST-005, BACKUP-001 und EXPORT-001
+**Stand:** OFFLINE-001 auf Basis PERSIST-005, BACKUP-001 und EXPORT-001
 **Geltungsbereich:** Vollständige FRECKA-Einstellungen, Katalog, Kundenstammdaten, abgeschlossene Belege, offene Zahlungen, Stornos, Gutschriften, Gutscheine und Gutschein-Historien
 **Nicht enthalten:** Entwürfe, QR-Grafiken, E-Mail-, Kamera- und Druckstatus, PDF-Dateien sowie eine dauerhafte Ablage von Backup-Dateien
 
@@ -250,4 +250,4 @@ Der Test erfolgt über ein HTTPS-Testdeployment oder einen lokalen HTTP-Server, 
 17. Grundadresse ohne Hash öffnen und „Start“ prüfen; anschließend eine konkrete gültige Hash-Route neu laden und den Routenerhalt prüfen.
 18. Optional im privaten Modus prüfen, ob Speicherung funktioniert oder der Fallbackhinweis verständlich erscheint.
 
-Ein kalter Offline-Neustart der App-Shell ist nicht Gegenstand dieser Persistenzblöcke, weil der bestehende Prototyp ältere Service Worker und Caches weiterhin entfernt und ein Service-Worker-Großumbau ausdrücklich ausgeschlossen ist.
+Der kalte Offline-Neustart der App-Shell wurde anschließend getrennt mit OFFLINE-001 umgesetzt. Der reale iPhone-Beta-Smoke-Test des Releases `0.9.1-26dc63f` bestätigt, dass die installierte Home-Screen-PWA im Flugmodus startet, bestehende IndexedDB-Daten verfügbar bleiben und ein vollständig offline erzeugter Beleg nach erneutem Online-Start weiterhin vorhanden ist. PDF-, QR- und Belegansicht waren erfolgreich; Backup und Wiederherstellung waren bereits im vorherigen realen Smoke-Test erfolgreich.

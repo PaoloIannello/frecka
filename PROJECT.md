@@ -4,9 +4,9 @@
 
 **Geltungsbereich:** Alle zukünftigen Produkt-, Architektur- und Entwicklungsarbeiten an FRECKA
 
-**Letzte Aktualisierung:** 8. August 2026
+**Letzte Aktualisierung:** 10. August 2026
 
-Dieses Dokument beschreibt die verbindliche Zielrichtung von FRECKA. Der aktuelle Stand ist ein browserbasierter Prototyp mit lokaler IndexedDB-Persistenz für Einstellungen, Katalog, Kunden, Belege und Gutscheine sowie manueller verschlüsselter Gesamtsicherung und atomarer Wiederherstellung. COMM-001 / QR-002 ergänzt einen zentralen, zustandslosen Share-Service und geräteübergreifende Kundenlinks mit einer datensparsamen Dokumentprojektion im URL-Fragment; eine zentrale Belegablage entsteht dadurch nicht. OFFLINE-001 ergänzt eine versionierte statische App-Shell mit Service Worker und Navigation-Fallback für den Offline-Kaltstart; Geschäftsdaten bleiben davon getrennt in IndexedDB. Aussagen zu noch offenen Teilen der Zielarchitektur kennzeichnen nicht automatisch bereits implementierte Funktionen. Abweichungen von diesen Leitlinien benötigen eine dokumentierte Architekturentscheidung (ADR) mit Begründung, Folgen und Migrationsweg.
+Dieses Dokument beschreibt die verbindliche Zielrichtung von FRECKA. Der aktuelle Stand ist ein browserbasierter Prototyp mit lokaler IndexedDB-Persistenz für Einstellungen, Katalog, Kunden, Belege und Gutscheine sowie manueller verschlüsselter Gesamtsicherung und atomarer Wiederherstellung. COMM-001 / QR-002 ergänzt einen zentralen, zustandslosen Share-Service und geräteübergreifende Kundenlinks mit einer datensparsamen Dokumentprojektion im URL-Fragment; eine zentrale Belegablage entsteht dadurch nicht. OFFLINE-001 ergänzt eine versionierte statische App-Shell mit Service Worker und Navigation-Fallback für den Offline-Kaltstart; Geschäftsdaten bleiben davon getrennt in IndexedDB. Der reale iPhone-Beta-Smoke-Test des Releases `0.9.1-26dc63f` hat Online-Start, Offline-Kaltstart, lokale Datennutzung und einen vollständig offline erzeugten, nach Rückkehr ins Netz weiterhin vorhandenen Beleg bestätigt. Das Release gilt damit als stabile Beta-Basis, besitzt aber noch keine Produktivfreigabe für `app.frecka.app`. Aussagen zu noch offenen Teilen der Zielarchitektur kennzeichnen nicht automatisch bereits implementierte Funktionen. Abweichungen von diesen Leitlinien benötigen eine dokumentierte Architekturentscheidung (ADR) mit Begründung, Folgen und Migrationsweg.
 
 ## 1. Projektvision
 
@@ -233,6 +233,20 @@ Die Version 1.0 liefert einen kleinen, stabilen und vollständig offline nutzbar
 - den für V1.0 vorgesehenen Lizenzdienst nach ADR-0004 mit genau einem aktiven Gerät pro Lizenz, kontrollierter Geräteübertragung und noch festzulegender Offline-Kulanz umsetzen;
 - das für V1.0 vorgesehene Mailrelay als getrennten, optionalen Versanddienst mit dem bestehenden Fallback „Teilen“ umsetzen;
 - weder Lizenzdienst noch Mailrelay zur Voraussetzung für die erste statische Bereitstellung von Landingpage, Beta und App machen.
+
+### Konsolidierte offene Produkt-/UX-Punkte aus dem Beta-Smoke-Test 0.9.1
+
+Das Beta-GO bestätigt Stabilität und Offline-Fähigkeit des geprüften Releases. Es schließt die folgenden Produkt- und UX-Punkte ausdrücklich nicht. Sie sind Beobachtungen für eigene, fachlich abgegrenzte Entwicklungsblöcke und keine stillschweigende Erweiterung von `0.9.1`:
+
+- Den Steuerberater-Export als verständliches Gesamtpaket statt als Folge einzelner Dateidownloads anbieten; dabei dieselbe zentrale Exportprojektion weiterverwenden und keine zweite Datensammlung einführen.
+- Beleg-PDFs beziehungsweise geeignete Belegbilder optional in dieses Steuerberater-Paket aufnehmen; Erzeugung, Zeitraum, Geschäftsbereich, Datenschutz und Paketgröße müssen vorab eindeutig festgelegt sein.
+- Den Geschäftsbereich im Exportpaket und in allen enthaltenen Darstellungen eindeutig ausweisen. Maßgeblich bleibt der unveränderliche Geschäftsbereichssnapshot des jeweiligen Vorgangs.
+- Einzweck- und Mehrzweckgutscheine fachlich korrekt, für Kleinstunternehmen verständlich und ohne ungeprüfte Steuerautomatik erklären und abbilden. Die steuerliche Einordnung benötigt vor Umsetzung eine gesonderte fachliche Entscheidung.
+- Einen direkten E-Mail-Versand für Belege und Gutscheine über die vorhandene Dokumentenprojektion und das getrennte Mailrelay vorsehen. Der lokale Teilen-/Speichern-Fallback bleibt erhalten; eine zentrale dauerhafte Belegablage entsteht nicht.
+- Installation und Ersteinrichtung als Home-Screen-App verständlich führen: Online-Erststart, vollständig geladene App-Shell, Hinzufügen zum Home-Bildschirm, Wiederaufnahme der Einrichtung und erkennbare Offline-Bereitschaft gehören in einen zusammenhängenden Ablauf.
+- Bereits dokumentierte offene UX- und Releasepunkte bleiben erhalten: Persistenz von Belegentwürfen, produktreife Manifest-/Installationsmetadaten einschließlich App-Identität und Icons, nutzergesteuerte Updateaktivierung sowie reale Zielgerätetests für Kamera-QR und native Share-Wege.
+
+Diese Liste wird bei neuen Erkenntnissen erweitert, ohne erledigte und offene Punkte miteinander zu vermischen. Eine Priorisierung oder Zuordnung zu einer konkreten Version erfolgt erst in einem ausdrücklich freigegebenen Produktblock.
 
 ### Freigabekriterien für 1.0
 

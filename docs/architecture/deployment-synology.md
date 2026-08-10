@@ -1,6 +1,6 @@
 # FRECKA: Deployment- und Infrastrukturkonzept für Synology Web Station
 
-Stand: 8. August 2026
+Stand: 10. August 2026
 
 Geltungsbereich: Stand `0.9.1`, Build `OFFLINE-001`
 
@@ -148,7 +148,7 @@ Die leere `publicViewerBaseUrl` in `js/config.js` ist mit dieser Trennung kompat
 
 ### 2.6 Release-Zustand
 
-Der letzte unveränderte Release-Tag ist `v0.9.0`. OFFLINE-001 bereitet die Patchversion `0.9.1` vor; eine verbindliche Release-ID entsteht erst aus dem noch zu erstellenden Release-Commit. Versionssignale sind derzeit verteilt:
+Der annotierte Release-Tag `v0.9.1` zeigt auf Commit `26dc63fbea434d9fb33a7e88a6af0419cb8cddae`. Das unveränderliche Artefakt trägt die Release-ID `0.9.1-26dc63f`. Versionssignale sind verteilt:
 
 - `js/data.js`: Produktversion `0.9.1`, Build `OFFLINE-001`;
 - `index.html`: Titel und Asset-Abfragewert;
@@ -156,6 +156,12 @@ Der letzte unveränderte Release-Tag ist `v0.9.0`. OFFLINE-001 bereitet die Patc
 - Git-Commit als einzig eindeutig reproduzierbare Quellrevision.
 
 Ein Updateformat, ein Signaturverfahren und ein Updateclient sind ausdrücklich noch nicht implementiert.
+
+### 2.7 Beta-Betriebsnachweis 0.9.1
+
+Der reale Beta-Smoke-Test auf einem iPhone als installierte Home-Screen-PWA ist bestanden. Online-Start, Offline-Kaltstart im Flugmodus, Zugriff auf bestehende lokale Daten, Erstellung eines neuen Offline-Belegs und dessen Fortbestand nach vollständigem Beenden, erneuter Netzaktivierung und Neustart wurden bestätigt. PDF-, QR- und Belegansicht funktionierten; Backup und Wiederherstellung waren bereits im vorherigen realen Smoke-Test erfolgreich.
+
+Bewertung: `0.9.1-26dc63f` ist für den Beta-Betrieb freigegeben und gilt als stabile Beta-Basis. Daraus folgt noch keine Produktivfreigabe für `https://app.frecka.app/`. Der vollständige Nachweis steht in `docs/releases/0.9.1.md`; die daraus konsolidierten offenen Produkt-/UX-Punkte stehen zentral in `PROJECT.md`.
 
 ## 3. Abgeleitete Deployment-Prinzipien
 

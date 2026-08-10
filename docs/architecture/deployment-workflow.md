@@ -1,6 +1,6 @@
 # FRECKA: Vollständiger Deployment- und Release-Workflow
 
-Stand: 8. August 2026
+Stand: 10. August 2026
 
 Geltungsbereich: Entwicklung im einzigen Master-Repository, manuelles Deployment auf Synology Web Station und Vorbereitung einer späteren Automatisierung
 
@@ -385,6 +385,10 @@ Auf Beta werden mindestens geprüft:
 - keine Konsolen- oder Serverfehler.
 
 Das Ergebnis wird ausdrücklich als freigegeben oder abgelehnt festgehalten. Bei Ablehnung bleibt das Artefakt unverändert archiviert; ein korrigierter Stand erhält eine neue Version.
+
+### 8.5 Aktueller Beta-Abnahmenachweis
+
+Für `0.9.1-26dc63f` ist die reale iPhone-Abnahme einschließlich Online-Start, Offline-Kaltstart, lokaler Datennutzung, Offline-Belegerstellung, Neustart mit wieder aktiviertem Netz sowie PDF-/QR-/Belegansicht bestanden. Der releasebezogene Nachweis und die klare Abgrenzung zur noch ausstehenden Produktivfreigabe stehen in `docs/releases/0.9.1.md`. Offene Produkt-/UX-Beobachtungen werden zentral in `PROJECT.md` geführt und verändern das bereits geprüfte Artefakt nicht.
 
 ## 9. Produktiv-Deployment
 
