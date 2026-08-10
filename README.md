@@ -1,6 +1,6 @@
-# FRECKA – SERVICEWORKER-002
+# FRECKA – PERSISTENCE-007
 
-Browserbasierte FRECKA-PWA 0.10.2 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share- und PWA-Update-Infrastruktur. Ein versionsgebundener Service Worker hält die vollständige statische App-Shell für den Kaltstart nach einer erfolgreichen Online-Installation offline bereit. Neue App-Shells werden erkannt und nach dem einmaligen Übergang auf SERVICEWORKER-002 nur noch durch eine bewusste Nutzeraktion aktiviert. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
+Browserbasierte FRECKA-PWA 0.10.3 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share- und PWA-Update-Infrastruktur. PERSISTENCE-007 erlaubt neue, lokal konsistente Beleg- und Gutscheintransaktionen auch dann, wenn eine unabhängige historische Gutschein-/Belegabweichung im Altbestand sichtbar bleibt. Backup, Export und inkonsistente Restore-Kandidaten bleiben in diesem Fall weiterhin gesperrt. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
 
 ## Start
 
@@ -10,7 +10,16 @@ Browserbasierte FRECKA-PWA 0.10.2 mit lokaler IndexedDB-Persistenz, verschlüsse
 
 Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufklappen und bearbeiten → Weiter → Kunde optional und Zahlungsart simulieren → Demo abschließen.
 
-## Neu in SERVICEWORKER-002
+## Neu in PERSISTENCE-007
+
+- globale historische Gutschein-/Belegabweichungen bleiben sichtbar, setzen aber sicher geladene Receipt- und Voucher-Stores nicht mehr pauschal auf schreibgesperrt
+- unabhängige neue Belege sowie lokal vollständig gegengeprüfte Gutscheintransaktionen bleiben atomar speicherbar
+- neue fehlerhafte Gegenreferenzen, ID-/Nummernkollisionen und unvollständige Einlösungsverknüpfungen werden weiterhin vor Bestätigung abgewiesen
+- globale Tenant-Snapshots, Backup, Steuerberaterexport und inkonsistente Restore-Kandidaten bleiben bei verletzter Bestandsinvariante gesperrt
+- keine automatische Reparatur, Migration oder Löschung historischer Daten
+- 139 bestandene native Browser-Smoke-Tests einschließlich Altbestand, Reload, Kollisionsschutz und unveränderter globaler Sperrgrenzen
+
+## Grundlage aus SERVICEWORKER-002
 
 - zentrale, zustandslose Update-Komponente für `registration.waiting`, `updatefound` und genau eine gezielte Prüfung beim Online-Start
 - nichtblockierender Hinweis „Neue FRECKA-Version verfügbar.“ mit bewusster Aktion „Jetzt aktualisieren“
@@ -19,9 +28,9 @@ Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufkla
 - Schutz offener Belegentwürfe und laufender lokaler Schreibvorgänge vor einem Updatewechsel
 - Offline-Start ohne falsche Updatefehlermeldung sowie unveränderte App-Shell-, Public-Viewer- und IndexedDB-Isolation
 - einmalige, ausdrücklich freigegebene Legacy-Brücke für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI: automatische Worker-Aktivierung, aber kein `clients.claim()` und kein automatischer Reload
-- eigene automatisierte Lifecycle-Tests zusätzlich zum unveränderten 134-Fälle-Fach- und Persistenzlauf
+- eigene automatisierte Lifecycle-Tests zusätzlich zum 139-Fälle-Fach- und Persistenzlauf
 
-Die Legacy-Brücke gehört ausschließlich zu diesem SERVICEWORKER-002-Worker und muss im unmittelbar folgenden Worker entfernt werden. Ab SERVICEWORKER-002 ist die dauerhafte Reihenfolge verbindlich: Hinweis → Nutzeraktion → `SKIP_WAITING` → genau ein Reload.
+Die Legacy-Brücke aus SERVICEWORKER-002 bleibt in 0.10.3 ausnahmsweise unverändert erhalten, solange der reale Übergang bereits ausgelieferter Altclients noch nicht bestätigt ist. Sobald dieser Übergang real nachgewiesen wurde, ist ihre Entfernung ein zwingendes Gate für den unmittelbar folgenden Worker/Release. Die dauerhafte Reihenfolge bleibt: Hinweis → Nutzeraktion → `SKIP_WAITING` → genau ein Reload.
 
 ## Neu in EXPORT-003
 
@@ -66,7 +75,7 @@ Die Architekturverträge stehen in `docs/sharing.md` und `docs/public-receipt-qr
 - unveränderte Snapshot-, Cent-, Beleg- und Gutscheinwerte ohne zweite Geschäftslogik
 - sichere Dateinamen ohne Kundendaten
 - lokal vendortes `pdf-lib` 1.17.1 unter MIT-Lizenz; kein CDN und kein Server
-- 134 bestandene native Browser-Smoke-Tests sowie automatisiertes PDF-Rendering mit Text- und Sichtprüfung
+- 139 bestandene native Browser-Smoke-Tests sowie automatisiertes PDF-Rendering mit Text- und Sichtprüfung
 
 Der vollständige Dokumentvertrag steht in `docs/documents-pdf.md`.
 
@@ -79,7 +88,7 @@ Der vollständige Dokumentvertrag steht in `docs/documents-pdf.md`.
 - fokussierte, bildschirmfüllende PWA-Ansicht ohne Navigation, Menüs oder Werkzeugleisten
 - lokale Deep-Link-Auflösung nach Reload sowie verständliche Fehlerzustände für ungültige oder auf dem Gerät nicht vorhandene Referenzen
 - Public Viewer ohne Unternehmernavigation, Einstellungen oder ungefragte lokale Speicherung
-- Public-Viewer-Boot-Test ohne `IndexedDB.open`, reproduzierbare QR-Dichtemessung und Einbindung in den 134-Fälle-Gesamtlauf
+- Public-Viewer-Boot-Test ohne `IndexedDB.open`, reproduzierbare QR-Dichtemessung und Einbindung in den 139-Fälle-Gesamtlauf
 
 Der grundlegende QR-Vertrag steht in `docs/qr.md`; öffentlicher Payload, Fragmenttransport, Datenschutz und Größenlimits stehen in `docs/public-receipt-qr.md`.
 
@@ -95,7 +104,7 @@ Der grundlegende QR-Vertrag steht in `docs/qr.md`; öffentlicher Payload, Fragme
 - optionale, datensparsame `Kunden.csv` ausschließlich beim Exporttyp „Eigene Daten“
 - UTF-8-BOM, Semikolon, deutsche Dezimalwerte, sauberes Escaping und CSV-Injection-Schutz
 - lokal vendortes JSZip 3.10.1 unter MIT-Lizenzoption; kein CDN, keine npm-Runtime und kein Server
-- 134 bestandene native Browser-Smoke-Tests im aktuellen Stand
+- 139 bestandene native Browser-Smoke-Tests im aktuellen Stand
 
 Der vollständige Exportvertrag steht in `docs/export.md`.
 

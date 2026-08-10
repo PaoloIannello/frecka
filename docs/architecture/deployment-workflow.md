@@ -384,7 +384,7 @@ Das Skript ändert weder den Beta-Virtual-Host noch Produktivkonfigurationen. Di
 
 Da das neue Release vor dem Portalwechsel vollständig vorhanden ist, beschränkt sich die Downtime auf den kurzen Konfigurationswechsel. Bestehende Browser-Sitzungen behalten ihren bereits geladenen Code; neue Seitenaufrufe erhalten den neuen Stand.
 
-SERVICEWORKER-002 enthält für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI eine einmalige, ausdrücklich freigegebene Übergangsregel: Erst nach vollständig erfolgreichem App-Shell-Download aktiviert sich ausschließlich dieser Worker automatisch. Ohne `clients.claim()` und ohne Reload bleibt die laufende Sitzung auf ihrem geladenen Code. Die Übergangsregel ist im folgenden Worker zu entfernen und darf nicht Teil des normalen Releaseablaufs werden.
+SERVICEWORKER-002 enthält für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI eine einmalige, ausdrücklich freigegebene Übergangsregel: Erst nach vollständig erfolgreichem App-Shell-Download aktiviert sich der neue Worker automatisch. Ohne `clients.claim()` und ohne Reload bleibt die laufende Sitzung auf ihrem geladenen Code. Solange der reale Altclient-Übergang noch nicht bestätigt ist, darf 0.10.3 dieselbe Brücke einmalig unverändert mitführen. Nach der dokumentierten Bestätigung ist ihre Entfernung im unmittelbar folgenden Worker/Release ein zwingendes Gate; die Regel darf nicht Teil des normalen Releaseablaufs werden.
 
 ### 8.4 Beta-Abnahme
 
