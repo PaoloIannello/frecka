@@ -132,6 +132,7 @@
     backupSafetyCreated: false,
     integrityDiagnostic: null,
     integrityDiagnosticBusy: false,
+    integrityRepairBusy: false,
     integrityDiagnosticNotice: "",
     integrityDiagnosticNoticeIsError: false,
     exportType: "tax-advisor",
@@ -3914,6 +3915,28 @@
     };
   }
 
+  function historicalDemoRepairCanonicalRecords() {
+    if (!defaultReceiptsRecord || !defaultVouchersRecord) {
+      throw Object.assign(new Error("Die kanonischen historischen Testdaten wurden nicht geladen."), {
+        code: "HISTORICAL_DEMO_REPAIR_CANONICAL_INPUT_INCOMPLETE",
+        userMessage: "Die historischen Testdaten können derzeit nicht eindeutig geprüft werden. Es wurden keine Daten verändert."
+      });
+    }
+    return {
+      receipts: defaultReceiptsRecord,
+      vouchers: defaultVouchersRecord
+    };
+  }
+
+  function integrityOperationOptions() {
+    return {
+      fallbackRecords: backupFallbackRecords(),
+      canonicalRecords: historicalDemoRepairCanonicalRecords(),
+      appVersion: data.version || "",
+      appBuild: data.build || ""
+    };
+  }
+
   async function currentTenantSnapshot() {
     if (!persistence?.exportTenantSnapshot) {
       throw Object.assign(new Error("Die Sicherungsfunktionen wurden nicht geladen."), {
@@ -3939,6 +3962,7 @@
     state.backupSafetyCreated = false;
     state.integrityDiagnostic = null;
     state.integrityDiagnosticBusy = false;
+    state.integrityRepairBusy = false;
     state.integrityDiagnosticNotice = "";
     state.integrityDiagnosticNoticeIsError = false;
     if (!keepNotice) {
@@ -4082,6 +4106,8 @@
     if (!report) return "";
     const status = report.status === "consistent" ? "KONSISTENT" : "INKONSISTENT";
     const details = report.details ? JSON.stringify(report.details, null, 2) : "Keine betroffenen technischen Datensätze.";
+    const repair = report.historicalDemoRepair;
+    const repairDetails = repair ? JSON.stringify(repair, null, 2) : "Keine historische Testdatenprüfung verfügbar.";
     return [
       "FRECKA – Lokale Datenintegritätsdiagnose",
       `Format: ${report.diagnosticFormat || "–"} v${report.diagnosticFormatVersion || "–"}`,
@@ -4100,6 +4126,9 @@
       "",
       "Betroffene technische Datensätze:",
       details,
+      "",
+      "Historische Demo-Gutscheinverkaufsbelege:",
+      repairDetails,
       "",
       `Versionszuordnung: ${report.recordVersionAssessment?.status || "–"}`,
       report.recordVersionAssessment?.reason || "",
@@ -4123,11 +4152,22 @@
     const notice = state.integrityDiagnosticNotice
       ? `<div class="settings-save-notice ${state.integrityDiagnosticNoticeIsError ? "is-error" : ""}" role="${state.integrityDiagnosticNoticeIsError ? "alert" : "status"}">${escapeHtml(state.integrityDiagnosticNotice)}</div>`
       : "";
+    const repair = report?.historicalDemoRepair;
+    const repairAction = repair?.status === "repairable"
+      ? `<div class="integrity-repair-action">
+          <strong>Alte FRECKA-Testdaten können sicher ergänzt werden</strong>
+          <p>Betroffen sind ausschließlich bekannte historische Demo-Gutscheinverkaufsbelege. Neue Belege und echte Geschäftsdaten werden nicht verändert. Die Reparatur erfolgt lokal und ohne Serverübertragung.</p>
+          <button class="button button-primary" type="button" data-action="integrity-demo-repair" ${state.integrityRepairBusy ? "disabled" : ""}>${state.integrityRepairBusy ? "Testdaten werden geprüft …" : "Historische Testdaten reparieren"}</button>
+        </div>`
+      : repair?.status === "blocked"
+      ? `<div class="integrity-repair-action is-blocked"><strong>Keine automatische Reparatur möglich</strong><p>Dieser Datenbestand erfüllt die eng begrenzten Sicherheitsbedingungen nicht. Es wurden keine Daten verändert. Die technischen Gründe stehen im Diagnosebericht.</p></div>`
+      : "";
     const result = report ? `<div class="integrity-diagnostic-result ${report.status === "consistent" ? "is-consistent" : "is-inconsistent"}">
       <strong>${report.status === "consistent" ? "Keine Integritätsverletzung gefunden" : "Integritätsverletzung gefunden"}</strong>
       <span>${escapeHtml(report.validation?.invariant || report.validation?.code || "Unbekannte Prüfung")}</span>
       <pre>${escapeHtml(integrityDiagnosticText(report))}</pre>
       <button class="button button-secondary" type="button" data-action="integrity-diagnostic-share">Diagnose teilen oder speichern</button>
+      ${repairAction}
     </div>` : "";
     return `<section id="integrityDiagnosticPanel" class="backup-card integrity-diagnostic-card">
       <h2>Lokale Datenintegrität prüfen</h2>
@@ -5771,6 +5811,17 @@
       return;
     }
     const action = event.target.closest("[data-action]")?.dataset.action;
+    if (action === "integrity-demo-repair") {
+      if (state.integrityRepairBusy || state.integrityDiagnostic?.historicalDemoRepair?.status !== "repairable") return;
+      openConfirmDialog({
+        title: "Historische Testdaten reparieren?",
+        text: "FRECKA ergänzt ausschließlich eindeutig bekannte alte Demo-Gutscheinverkaufsbelege. Neue Belege, echte Geschäftsdaten und die nächste Belegnummer bleiben unverändert. Die Reparatur erfolgt nur lokal und ohne Serverübertragung.",
+        confirmLabel: "Testdaten reparieren",
+        action: "repair-historical-demo-voucher-receipts",
+        danger: false
+      });
+      return;
+    }
     if (action === "integrity-diagnostic-run") {
       if (state.integrityDiagnosticBusy) return;
       state.integrityDiagnosticBusy = true;
@@ -5779,11 +5830,7 @@
       updateIntegrityDiagnosticPanel();
       try {
         if (!persistence?.diagnoseTenantIntegrity) throw new Error("Integrity diagnosis unavailable");
-        state.integrityDiagnostic = await persistence.diagnoseTenantIntegrity({
-          fallbackRecords: backupFallbackRecords(),
-          appVersion: data.version || "",
-          appBuild: data.build || ""
-        });
+        state.integrityDiagnostic = await persistence.diagnoseTenantIntegrity(integrityOperationOptions());
         state.integrityDiagnosticNotice = state.integrityDiagnostic.status === "consistent"
           ? "Die zentrale Prüfung hat keine Integritätsverletzung festgestellt."
           : "Die Ursache wurde lokal eingegrenzt. Die technischen Details können jetzt angesehen oder geteilt werden.";
@@ -6663,6 +6710,58 @@
   cancelDiscard.addEventListener("click", closeDiscardDialog);
   confirmDiscard.addEventListener("click", async () => {
     const pendingAction = state.pendingDialogAction;
+
+    if (pendingAction === "repair-historical-demo-voucher-receipts") {
+      closeDiscardDialog();
+      state.integrityRepairBusy = true;
+      state.integrityDiagnosticNotice = "";
+      state.integrityDiagnosticNoticeIsError = false;
+      pendingSettingsWrites += 1;
+      setSettingsWritePending(true);
+      updateIntegrityDiagnosticPanel();
+      try {
+        if (!persistence?.repairHistoricalDemoVoucherReceipts || !persistence?.diagnoseTenantIntegrity) {
+          throw Object.assign(new Error("Die lokale Reparaturfunktion wurde nicht geladen."), {
+            code: "HISTORICAL_DEMO_REPAIR_UNAVAILABLE",
+            userMessage: "Die historischen Testdaten können derzeit nicht sicher repariert werden. Es wurden keine Daten verändert."
+          });
+        }
+        const result = await persistence.repairHistoricalDemoVoucherReceipts(integrityOperationOptions());
+        if (result.records?.receipts) applyReceiptsRecord(result.records.receipts);
+        const diagnostic = await persistence.diagnoseTenantIntegrity(integrityOperationOptions());
+        if (diagnostic.status !== "consistent") {
+          throw Object.assign(new Error("Die Integritätsprüfung nach der Reparatur ist fehlgeschlagen."), {
+            code: "HISTORICAL_DEMO_REPAIR_POST_VALIDATION_FAILED",
+            userMessage: "Die lokale Reparatur konnte nicht als vollständig konsistent bestätigt werden."
+          });
+        }
+        state.integrityDiagnostic = diagnostic;
+        state.integrityDiagnosticNotice = result.changed
+          ? `${result.report.additions.length} historische ${result.report.additions.length === 1 ? "Demo-Gutscheinverkaufsbeleg wurde" : "Demo-Gutscheinverkaufsbelege wurden"} lokal ergänzt. Die vollständige Integritätsprüfung ist jetzt erfolgreich.`
+          : "Die historischen Demo-Gutscheinverkaufsbelege waren bereits vollständig. Es wurden keine Daten verändert.";
+        state.integrityDiagnosticNoticeIsError = false;
+      } catch (error) {
+        logPersistenceError("Historische Testdaten reparieren fehlgeschlagen", error);
+        const repairReport = error?.diagnostic?.repair;
+        if (repairReport && state.integrityDiagnostic) {
+          state.integrityDiagnostic = {
+            ...state.integrityDiagnostic,
+            historicalDemoRepair: repairReport
+          };
+        }
+        state.integrityDiagnosticNotice = persistenceErrorMessage(
+          error,
+          "Die historischen Testdaten konnten nicht sicher repariert werden. Es wurden keine Teiländerungen übernommen."
+        );
+        state.integrityDiagnosticNoticeIsError = true;
+      } finally {
+        state.integrityRepairBusy = false;
+        pendingSettingsWrites = Math.max(0, pendingSettingsWrites - 1);
+        if (!pendingSettingsWrites) setSettingsWritePending(false);
+        updateIntegrityDiagnosticPanel();
+      }
+      return;
+    }
 
     if (pendingAction === "reset-saved-vouchers") {
       pendingSettingsWrites += 1;

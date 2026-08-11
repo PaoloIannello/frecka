@@ -377,6 +377,51 @@
     return snapshot;
   }
 
+  function historicalDemoRepairCanonicalRecords(tenantId) {
+    const seed = clone(globalThis.PROTOTYPE_DATA);
+    return {
+      receipts: api.snapshotReceipts(seed, tenantId),
+      vouchers: api.snapshotVouchers(seed, tenantId)
+    };
+  }
+
+  function historicalDemoRepairSnapshotFixture(tenantId, missingNumbers = []) {
+    const seed = clone(globalThis.PROTOTYPE_DATA);
+    const settings = api.snapshotSettings(seed, "completed", tenantId);
+    const catalog = api.snapshotCatalog(seed, tenantId);
+    const customers = api.snapshotCustomers(seed, tenantId);
+    const receipts = api.snapshotReceipts(seed, tenantId);
+    const vouchers = api.snapshotVouchers(seed, tenantId);
+    const missing = new Set(missingNumbers);
+    receipts.receipts = receipts.receipts.filter(receipt => !missing.has(receipt.number));
+    return {
+      backupFormat: api.tenantSnapshotConstants.backupFormat,
+      backupFormatVersion: api.tenantSnapshotConstants.backupFormatVersion,
+      appDataSchemaVersion: api.constants.databaseVersion,
+      tenantId,
+      createdAt: "2030-02-01T12:00:00.000Z",
+      app: { version: "0.10.6", build: "PERSISTENCE-010-TEST" },
+      stores: { settings, catalog, customers, receipts, vouchers }
+    };
+  }
+
+  async function writeHistoricalDemoRepairSnapshot(persistence, snapshot) {
+    await persistence.writeSettings(snapshot.stores.settings);
+    await persistence.writeCatalog(snapshot.stores.catalog);
+    await persistence.writeCustomers(snapshot.stores.customers);
+    await persistence.writeReceipts(snapshot.stores.receipts);
+    await persistence.writeVouchers(snapshot.stores.vouchers);
+  }
+
+  function historicalDemoRepairOptions(snapshot) {
+    return {
+      fallbackRecords: snapshot.stores,
+      canonicalRecords: historicalDemoRepairCanonicalRecords(snapshot.tenantId),
+      appVersion: "0.10.6",
+      appBuild: "PERSISTENCE-010-TEST"
+    };
+  }
+
   function completeExportSnapshotFixture(tenantId) {
     const snapshot = completeTenantSnapshotFixture(tenantId, {
       companyName: "Frisör Änne & Söhne",
@@ -2284,6 +2329,211 @@
           });
           const sabine = seed.customers.find(customer => customer.id === "c-sabine");
           assert(!sabine.history.some(entry => entry.number === "2026-000124" && entry.total === 59), "Widersprüchlicher Strähnen-Historieneintrag wurde nicht entfernt");
+        }
+      },
+      {
+        name: "Historische Demo-Reparaturplanung erkennt einen, mehrere und alle vier fehlenden Verkaufsbelege vollständig",
+        run: async () => {
+          assertEqual(api.historicalDemoVoucherReceiptRepairConstants?.cases?.length, 4, "Reparatur-Allowlist ist nicht exakt auf vier Fälle begrenzt");
+          const variants = [
+            ["2026-000124"],
+            ["2026-000118", "2026-000131"],
+            ["2026-000118", "2026-000121", "2026-000124", "2026-000131"]
+          ];
+          variants.forEach((missingNumbers, index) => {
+            const snapshot = historicalDemoRepairSnapshotFixture(`test-demo-repair-plan-${index}`, missingNumbers);
+            const before = clone(snapshot);
+            const plan = api.planHistoricalDemoVoucherReceiptRepair(
+              snapshot,
+              historicalDemoRepairCanonicalRecords(snapshot.tenantId),
+              snapshot.tenantId
+            );
+            assertEqual(plan.status, "repairable", `Reparierbarer Teilbestand ${index + 1} wurde blockiert`);
+            assertEqual(plan.additions.length, missingNumbers.length, `Teilbestand ${index + 1} enthält falsche Ergänzungsanzahl`);
+            assertEqual(plan.invariantFindings.length, missingNumbers.length, `Vorprüfung ${index + 1} brach vor dem letzten fehlenden Beleg ab`);
+            assertDeepEqual(snapshot, before, `Read-only-Reparaturplanung ${index + 1} veränderte den Snapshot`);
+          });
+        }
+      },
+      {
+        name: "Historische Demo-Reparatur erkennt vollständigen Bestand als NO-OP und lässt den Nummernstand unverändert",
+        run: async () => {
+          const snapshot = historicalDemoRepairSnapshotFixture("test-demo-repair-noop");
+          const plan = api.planHistoricalDemoVoucherReceiptRepair(
+            snapshot,
+            historicalDemoRepairCanonicalRecords(snapshot.tenantId),
+            snapshot.tenantId
+          );
+          assertEqual(plan.status, "no-op", "Konsistenter Demo-Bestand wurde nicht als NO-OP erkannt");
+          assertEqual(plan.additions.length, 0, "NO-OP plant dennoch Ergänzungen");
+          assertEqual(plan.receiptSequence.changed, false, "NO-OP verändert die Belegnummernfolge");
+          assertEqual(plan.customerHistory.persisted, false, "Nicht persistierte Kundenhistorie wurde als IndexedDB-Datum behandelt");
+          assertEqual(plan.customerHistory.action, "none", "Sabine-Keller-Historie würde unzulässig verändert");
+        }
+      },
+      {
+        name: "Historische Demo-Reparatur stoppt bei ID-, Nummern- und Geschäftsdatenkollision",
+        run: async () => {
+          const idCollision = historicalDemoRepairSnapshotFixture("test-demo-repair-id-collision", ["2026-000124"]);
+          idCollision.stores.receipts.receipts.push(receiptDraftFixture("receipt_demo_2026_000124", { number: "2026-009999" }));
+          const idPlan = api.planHistoricalDemoVoucherReceiptRepair(idCollision, historicalDemoRepairCanonicalRecords(idCollision.tenantId), idCollision.tenantId);
+          assertEqual(idPlan.status, "blocked", "ID-Kollision wurde nicht hart blockiert");
+
+          const numberCollision = historicalDemoRepairSnapshotFixture("test-demo-repair-number-collision", ["2026-000124"]);
+          numberCollision.stores.receipts.receipts.push(receiptDraftFixture("receipt-collision-number", { number: "2026-000124" }));
+          const numberPlan = api.planHistoricalDemoVoucherReceiptRepair(numberCollision, historicalDemoRepairCanonicalRecords(numberCollision.tenantId), numberCollision.tenantId);
+          assertEqual(numberPlan.status, "blocked", "Nummernkollision wurde nicht hart blockiert");
+
+          const businessMismatch = historicalDemoRepairSnapshotFixture("test-demo-repair-business-mismatch");
+          businessMismatch.stores.receipts.receipts.find(receipt => receipt.number === "2026-000124").totalCents += 1;
+          const businessPlan = api.planHistoricalDemoVoucherReceiptRepair(businessMismatch, historicalDemoRepairCanonicalRecords(businessMismatch.tenantId), businessMismatch.tenantId);
+          assertEqual(businessPlan.status, "blocked", "Widersprüchlicher vorhandener Receipt wurde nicht blockiert");
+          assert(businessPlan.findings.some(finding => finding.invariant === "RECEIPT_CANONICAL_DATA_MISMATCH"), "Geschäftsdatenabweichung wurde nicht benannt");
+        }
+      },
+      {
+        name: "Historische Demo-Reparatur stoppt bei falscher Voucher-Referenz und doppeltem Voucher-Anspruch",
+        run: async () => {
+          const wrongReference = historicalDemoRepairSnapshotFixture("test-demo-repair-wrong-reference", ["2026-000124"]);
+          const voucher = wrongReference.stores.vouchers.vouchers.find(entry => entry.code === "FRKA-7Q2M-9K4X");
+          voucher.saleReceipt.id = "receipt_demo_2026_009999";
+          voucher.saleReceiptReference = "receipt_demo_2026_009999";
+          const wrongPlan = api.planHistoricalDemoVoucherReceiptRepair(wrongReference, historicalDemoRepairCanonicalRecords(wrongReference.tenantId), wrongReference.tenantId);
+          assertEqual(wrongPlan.status, "blocked", "Falsche Voucher-Referenz wurde nicht hart blockiert");
+
+          const duplicateClaim = historicalDemoRepairSnapshotFixture("test-demo-repair-duplicate-claim", ["2026-000124"]);
+          const secondVoucher = duplicateClaim.stores.vouchers.vouchers.find(entry => entry.code === "FRKA-3N8R-6W5P");
+          secondVoucher.saleReceipt.id = "receipt_demo_2026_000124";
+          secondVoucher.saleReceipt.number = "2026-000124";
+          secondVoucher.saleReceiptReference = "receipt_demo_2026_000124";
+          const duplicatePlan = api.planHistoricalDemoVoucherReceiptRepair(duplicateClaim, historicalDemoRepairCanonicalRecords(duplicateClaim.tenantId), duplicateClaim.tenantId);
+          assertEqual(duplicatePlan.status, "blocked", "Doppelter Voucher-Anspruch wurde nicht hart blockiert");
+          assert(duplicatePlan.findings.some(finding => finding.invariant === "VOUCHER_RECEIPT_MULTIPLE_CLAIMS"), "Doppelter Voucher-Anspruch wurde nicht benannt");
+        }
+      },
+      {
+        name: "Historische Demo-Reparatur ergänzt alle fehlenden Receipts atomar und erhält alle anderen Stores",
+        run: async () => {
+          const persistence = context.makeClient("demo-repair-success");
+          const missing = ["2026-000118", "2026-000121", "2026-000124", "2026-000131"];
+          const snapshot = historicalDemoRepairSnapshotFixture(persistence.tenantId, missing);
+          await writeHistoricalDemoRepairSnapshot(persistence, snapshot);
+          const before = {
+            settings: clone(await persistence.readSettings()),
+            catalog: clone(await persistence.readCatalog()),
+            customers: clone(await persistence.readCustomers()),
+            receipts: clone(await persistence.readReceipts()),
+            vouchers: clone(await persistence.readVouchers())
+          };
+          const result = await persistence.repairHistoricalDemoVoucherReceipts(historicalDemoRepairOptions(snapshot));
+          assertEqual(result.changed, true, "Reparatur meldet keine Änderung");
+          assertEqual(result.report.status, "repaired", "Reparatur wurde nicht als erfolgreich bestätigt");
+          assertEqual(result.report.postValidation, "consistent", "Vollständige Nachvalidierung fehlt");
+          assertEqual(result.report.additions.length, 4, "Nicht alle fehlenden Demo-Belege wurden ergänzt");
+          const afterReceipts = await persistence.readReceipts();
+          missing.forEach(number => assert(afterReceipts.receipts.some(receipt => receipt.number === number), `${number} fehlt nach Reparatur`));
+          assertDeepEqual(await persistence.readSettings(), before.settings, "Reparatur veränderte Einstellungen oder Belegnummernfolge");
+          assertDeepEqual(await persistence.readCatalog(), before.catalog, "Reparatur veränderte den Katalog");
+          assertDeepEqual(await persistence.readCustomers(), before.customers, "Reparatur veränderte Kunden");
+          assertDeepEqual(await persistence.readVouchers(), before.vouchers, "Reparatur veränderte Gutscheine");
+          const regularBefore = before.receipts.receipts.filter(receipt => !missing.includes(receipt.number));
+          const regularAfter = afterReceipts.receipts.filter(receipt => !missing.includes(receipt.number));
+          assertDeepEqual(regularAfter, regularBefore, "Reparatur veränderte reguläre Belege");
+
+          const tenantSnapshot = await persistence.exportTenantSnapshot();
+          persistence.validateTenantSnapshot(tenantSnapshot);
+          await backupApi.encryptTenantSnapshot(tenantSnapshot, cryptoPassphrase);
+          const exportResult = exportApi.createExportFiles(tenantSnapshot, {
+            exportType: "tax-advisor",
+            periodType: "custom",
+            dateFrom: "2026-01-01",
+            dateTo: "2026-12-31",
+            businessAreaId: "all",
+            generatedAt: "2030-02-01T12:00:00.000Z"
+          });
+          assert(exportResult.files.some(file => file.name === "Belege.csv"), "Steuerberaterexport bleibt nach Reparatur blockiert");
+        }
+      },
+      {
+        name: "Historische Demo-Reparatur ist nach Reload idempotent",
+        run: async () => {
+          const persistence = context.makeClient("demo-repair-idempotent");
+          const snapshot = historicalDemoRepairSnapshotFixture(persistence.tenantId, ["2026-000124"]);
+          await writeHistoricalDemoRepairSnapshot(persistence, snapshot);
+          const options = historicalDemoRepairOptions(snapshot);
+          const first = await persistence.repairHistoricalDemoVoucherReceipts(options);
+          assertEqual(first.changed, true, "Erster Reparaturlauf war kein Schreibvorgang");
+          persistence.closeDatabase();
+          const reloaded = api.createSettingsPersistence({ databaseName: context.databaseName, tenantId: persistence.tenantId });
+          const second = await reloaded.repairHistoricalDemoVoucherReceipts(options);
+          assertEqual(second.changed, false, "Zweiter Reparaturlauf war nicht idempotent");
+          assertEqual(second.report.status, "no-op", "Zweiter Reparaturlauf wurde nicht als NO-OP erkannt");
+          assertEqual((await reloaded.readReceipts()).receipts.filter(receipt => receipt.number === "2026-000124").length, 1, "Idempotenz erzeugte ein Duplikat");
+          reloaded.closeDatabase();
+        }
+      },
+      {
+        name: "Historische Demo-Reparatur rollt einen künstlichen Schreibfehler ohne Teiländerung zurück",
+        run: async () => {
+          const persistence = context.makeClient("demo-repair-rollback");
+          const snapshot = historicalDemoRepairSnapshotFixture(persistence.tenantId, ["2026-000118", "2026-000124"]);
+          await writeHistoricalDemoRepairSnapshot(persistence, snapshot);
+          const beforeReceipts = clone(await persistence.readReceipts());
+          await assertRejects(
+            () => persistence.repairHistoricalDemoVoucherReceipts({
+              ...historicalDemoRepairOptions(snapshot),
+              simulateFailureAfterWrite: true
+            }),
+            "HISTORICAL_DEMO_REPAIR_TEST_ABORT",
+            "Simulierter Reparaturabbruch"
+          );
+          assertDeepEqual(await persistence.readReceipts(), beforeReceipts, "Fehlgeschlagene Reparatur hinterließ Teiländerungen");
+        }
+      },
+      {
+        name: "Historische Demo-Reparatur ändert bei harter Stop-Bedingung keinen Store",
+        run: async () => {
+          const persistence = context.makeClient("demo-repair-hard-stop");
+          const snapshot = historicalDemoRepairSnapshotFixture(persistence.tenantId, ["2026-000124"]);
+          snapshot.stores.receipts.receipts.push(receiptDraftFixture("receipt-id-collision", { number: "2026-000124" }));
+          await writeHistoricalDemoRepairSnapshot(persistence, snapshot);
+          const before = {
+            settings: clone(await persistence.readSettings()),
+            catalog: clone(await persistence.readCatalog()),
+            customers: clone(await persistence.readCustomers()),
+            receipts: clone(await persistence.readReceipts()),
+            vouchers: clone(await persistence.readVouchers())
+          };
+          await assertRejects(
+            () => persistence.repairHistoricalDemoVoucherReceipts(historicalDemoRepairOptions(snapshot)),
+            "HISTORICAL_DEMO_REPAIR_BLOCKED",
+            "Harte Reparatur-Stop-Bedingung"
+          );
+          assertDeepEqual(await persistence.readSettings(), before.settings, "Stop-Bedingung veränderte Einstellungen");
+          assertDeepEqual(await persistence.readCatalog(), before.catalog, "Stop-Bedingung veränderte Katalog");
+          assertDeepEqual(await persistence.readCustomers(), before.customers, "Stop-Bedingung veränderte Kunden");
+          assertDeepEqual(await persistence.readReceipts(), before.receipts, "Stop-Bedingung veränderte Belege");
+          assertDeepEqual(await persistence.readVouchers(), before.vouchers, "Stop-Bedingung veränderte Gutscheine");
+        }
+      },
+      {
+        name: "Historische Demo-Reparatur bleibt bewusst ausgelöst und in die Diagnose-UI integriert",
+        run: async () => {
+          const snapshot = historicalDemoRepairSnapshotFixture("test-demo-repair-diagnostic", ["2026-000124"]);
+          const report = api.diagnoseTenantSnapshot(snapshot, snapshot.tenantId, {
+            canonicalRecords: historicalDemoRepairCanonicalRecords(snapshot.tenantId)
+          });
+          assertEqual(report.status, "inconsistent", "Historischer Altbestand wurde nicht diagnostiziert");
+          assertEqual(report.historicalDemoRepair.status, "repairable", "Diagnose bietet den eindeutigen Reparaturfall nicht an");
+          const response = await fetch("../js/app.js", { cache: "no-store" });
+          assert(response.ok, "App-Quelle für Reparatur-UI-Test konnte nicht geladen werden");
+          const source = await response.text();
+          assert(source.includes("Historische Testdaten reparieren"), "Bewusste Reparaturaktion fehlt in der Diagnose-UI");
+          assert(source.includes("repair-historical-demo-voucher-receipts"), "Bestätigter Reparaturablauf fehlt");
+          const startupStart = source.indexOf("if (state.receiptsReadyForWrites && state.vouchersReadyForWrites)");
+          const startupEnd = source.indexOf("refreshSettingsDerivedState();", startupStart);
+          assert(startupStart >= 0 && startupEnd > startupStart, "Startprüfung konnte nicht abgegrenzt werden");
+          assert(!source.slice(startupStart, startupEnd).includes("repairHistoricalDemoVoucherReceipts"), "Reparatur läuft unzulässig automatisch beim App-Start");
         }
       },
       {

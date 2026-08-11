@@ -1965,6 +1965,24 @@ body.work-mode:not(.catalog-mode) .flow-page {
   font: 600 .66rem/1.48 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 .integrity-diagnostic-result .button { width: 100%; }
+.integrity-repair-action {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #bad5c9;
+  border-radius: 13px;
+  background: #f3f9f6;
+  display: grid;
+  gap: 8px;
+}
+.integrity-repair-action.is-blocked {
+  border-color: #e2c27d;
+  background: #fff9ec;
+}
+.integrity-repair-action p {
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
 .backup-file-picker {
   min-width: 0;
   min-height: 128px;

@@ -2,6 +2,17 @@
 
 Browserbasierte FRECKA-PWA 0.10.6 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share- und PWA-Update-Infrastruktur. PERSISTENCE-008 ergänzt eine ausschließlich lokale, begrenzte Read-only-Diagnose für Snapshot-Inkonsistenzen, ohne Validierung, Daten, Backup-, Restore- oder Exportregeln zu lockern. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
 
+## Arbeitsstand PERSISTENCE-010
+
+- ausschließlich nach bewusster Nutzeraktion verfügbare lokale Reparatur für exakt vier bekannte historische Demo-Gutscheinverkaufsbelege;
+- feste Allowlist aus Receipt-ID, Belegnummer, Gutscheinreferenz und Gutscheincode; keine allgemeine Migration und keine Rekonstruktion realer Geschäftsdaten;
+- vollständige Read-only-Vorprüfung aller Gutschein-/Verkaufsbelegreferenzen sowie harter Stopp bei jeder Kollision, Abweichung, Mehrdeutigkeit oder weiteren Snapshotverletzung;
+- ein einziger atomarer Receipt-Store-Schreibvorgang nach erfolgreicher Vollvalidierung; Einstellungen, Nummernstand, Katalog, Kunden, Gutscheine und bestehende Belege bleiben unverändert;
+- erneute vollständige Snapshotprüfung nach dem Schreiben und idempotenter No-op beim zweiten Aufruf;
+- 161 bestandene native Browser-Smoke-Tests, 320 px und 390 px ohne horizontalen Überlauf sowie keine Browser-Konsolenfehler.
+
+Dieser Arbeitsstand ist noch nicht committed, getaggt, als Release erzeugt oder auf das reale iPhone beziehungsweise die Synology übertragen.
+
 ## Start
 
 Über `localhost` oder ein HTTPS-Testdeployment öffnen. Der native Teilen-Dialog steht nur bereit, wenn der Browser den Kontext als sicher einstuft; auf einem unsicheren HTTP-Deployment bleibt der lokale Speichern-Fallback. Ein direkter `file://`-Start ist für verlässliche IndexedDB-Tests nicht vorgesehen.
