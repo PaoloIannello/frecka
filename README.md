@@ -1,15 +1,17 @@
-# FRECKA – UPDATE-001
+# FRECKA – UPDATE-001b
 
-Browserbasierte FRECKA-PWA 0.10.8 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share- und PWA-Update-Infrastruktur. UPDATE-001 stabilisiert ausschließlich den bewussten PWA-Updateabschluss, Wiederholung und „Später erinnern“. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
+Browserbasierte FRECKA-PWA 0.10.9 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share- und PWA-Update-Infrastruktur. UPDATE-001b schließt ausschließlich den bewussten PWA-Updatewechsel zuverlässig ab, auch wenn der Browser das erwartete Lifecycle-Ereignis bereits vor der Nutzeraktion ausgelöst hat oder nicht erneut liefert. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
 
-## Neu in UPDATE-001
+## Neu in UPDATE-001b
 
-- der zentrale Updatezustand berücksichtigt neben `waiting` und `controllerchange` auch einen bereits `activated` Worker; damit bleibt die Updatekarte im einmaligen SERVICEWORKER-002-Legacy-Rennfall nicht mehr dauerhaft bei „Wird aktualisiert …“ stehen
-- genau eine bewusste Nutzeraktion führt weiterhin zu höchstens einer Aktivierungsnachricht und genau einem Reload; Worker-Zustand und `controllerchange` sind durch dieselbe Reload-Sperre abgesichert
+- die bewusste Updateaktion erkennt eine bereits erfolgte Worker-Übernahme über `registration.active`, den Controllerstand seit Anzeige der Updatekarte und den Workerzustand, statt ausschließlich auf ein noch kommendes `controllerchange` zu warten
+- während des ausdrücklich gestarteten Updateversuchs wird der Übernahmestand kurzzeitig und begrenzt nachgeprüft; ein verlorenes Lifecycle-Ereignis blockiert den Reload dadurch nicht
+- genau eine bewusste Nutzeraktion führt weiterhin zu höchstens einer Aktivierungsnachricht und genau einem Reload; Mehrfachtippen, Zustandswechsel, Nachprüfung und `controllerchange` teilen dieselbe Reload-Sperre
 - ein ausbleibender Aktivierungs- oder Navigationsabschluss wird zeitlich begrenzt und als verständlicher Fehler mit „Erneut versuchen“ und „Später“ aufgelöst
 - „Später erinnern“ verschiebt den Hinweis nur in der laufenden Sitzung und bietet ihn nach 15 Minuten erneut an; beim nächsten App-Start wird ein noch vorhandenes Update ebenfalls wieder erkannt
-- kurze allgemeine Versionshinweise nennen nur Verbesserungen für Stabilität und Bedienung, da noch kein signiertes Release-/Update-Manifest mit versionsspezifischen Texten existiert
 - offene Belegentwürfe und laufende Schreibvorgänge blockieren die bewusste Aktivierung weiterhin; Offline-App-Shell, IndexedDB und sämtliche Geschäftsdaten bleiben unberührt
+
+Der reale iPhone/Home-Screen-PWA-Test von `0.10.8-6056e64` am 11. August 2026 bestätigte Updateerkennung und Offline-Kaltstart, blieb nach „Jetzt aktualisieren“ jedoch bei „Wird aktualisiert …“ ohne sichtbaren Reload stehen. Erst vollständiges Beenden und erneutes Öffnen startete 0.10.8. Dieser Beta-Stand ist deshalb real getestet, aber nicht freigegeben; die erneute Geräteabnahme von UPDATE-001b bleibt das abschließende Gate für 0.10.9.
 
 ## Grundlage aus PERSISTENCE-010
 
@@ -71,7 +73,7 @@ Für den realen iPhone-Test genau einmal **Diagnose erstellen** antippen, den lo
 - einmalige, ausdrücklich freigegebene Legacy-Brücke für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI: automatische Worker-Aktivierung, aber kein `clients.claim()` und kein automatischer Reload
 - eigene automatisierte Lifecycle-Tests zusätzlich zum 145-Fälle-Fach- und Persistenzlauf
 
-Die Legacy-Brücke aus SERVICEWORKER-002 bleibt in 0.10.8 ausnahmsweise unverändert erhalten, solange der reale Übergang bereits ausgelieferter Altclients noch nicht bestätigt ist. Sobald dieser Übergang real nachgewiesen wurde, ist ihre Entfernung ein zwingendes Gate für den unmittelbar folgenden Worker/Release. Die dauerhafte Reihenfolge bleibt: Hinweis → Nutzeraktion → `SKIP_WAITING` → genau ein Reload.
+Die Legacy-Brücke aus SERVICEWORKER-002 bleibt in 0.10.9 ausnahmsweise unverändert erhalten, solange der reale Übergang bereits ausgelieferter Altclients noch nicht bestätigt ist. UPDATE-001b ändert ausschließlich die clientseitige Erkennung nach der bewussten Nutzeraktion. Sobald der Altclient-Übergang real nachgewiesen wurde, ist die Entfernung der Brücke ein zwingendes Gate für den unmittelbar folgenden Worker/Release. Die dauerhafte Reihenfolge bleibt: Hinweis → Nutzeraktion → `SKIP_WAITING` → genau ein Reload.
 
 ## Neu in EXPORT-003
 

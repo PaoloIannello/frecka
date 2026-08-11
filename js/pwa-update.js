@@ -6,6 +6,7 @@
   const DEFAULT_BLOCKED_MESSAGE = "Schließe oder verwirf zuerst den offenen Belegentwurf.";
   const DEFAULT_FAILURE_MESSAGE = "Die Aktualisierung konnte momentan nicht abgeschlossen werden.";
   const DEFAULT_ACTIVATION_TIMEOUT_MS = 15000;
+  const DEFAULT_ACTIVATION_VERIFICATION_MS = 250;
   const DEFAULT_RELOAD_TIMEOUT_MS = 8000;
   const DEFAULT_REMINDER_DELAY_MS = 15 * 60 * 1000;
 
@@ -19,6 +20,7 @@
     const schedule = environment.schedule || ((callback, delay) => root.setTimeout(callback, delay));
     const cancelScheduled = environment.cancelScheduled || (timer => root.clearTimeout(timer));
     const activationTimeoutMs = environment.activationTimeoutMs ?? DEFAULT_ACTIVATION_TIMEOUT_MS;
+    const activationVerificationMs = environment.activationVerificationMs ?? DEFAULT_ACTIVATION_VERIFICATION_MS;
     const reloadTimeoutMs = environment.reloadTimeoutMs ?? DEFAULT_RELOAD_TIMEOUT_MS;
     const reminderDelayMs = environment.reminderDelayMs ?? DEFAULT_REMINDER_DELAY_MS;
     const enabled = environment.enabled !== false;
@@ -31,8 +33,11 @@
     let activationRequested = false;
     let reloadTriggered = false;
     let activationTimer = null;
+    let activationVerificationTimer = null;
     let reloadTimer = null;
     let reminderTimer = null;
+    let controllerAtAnnouncement = null;
+    let activeWorkerAtAnnouncement = null;
     let state = Object.freeze({
       status: "idle",
       hasUpdate: false,
@@ -50,17 +55,21 @@
     function clearTimer(timerName) {
       const timer = timerName === "activation"
         ? activationTimer
-        : timerName === "reload"
-          ? reloadTimer
-          : reminderTimer;
+        : timerName === "activation-verification"
+          ? activationVerificationTimer
+          : timerName === "reload"
+            ? reloadTimer
+            : reminderTimer;
       if (timer !== null) cancelScheduled(timer);
       if (timerName === "activation") activationTimer = null;
+      else if (timerName === "activation-verification") activationVerificationTimer = null;
       else if (timerName === "reload") reloadTimer = null;
       else reminderTimer = null;
     }
 
     function publishFailure(error = null) {
       clearTimer("activation");
+      clearTimer("activation-verification");
       clearTimer("reload");
       activationRequested = false;
       reloadTriggered = false;
@@ -77,6 +86,7 @@
     function triggerReload() {
       if (!activationRequested || reloadTriggered) return false;
       clearTimer("activation");
+      clearTimer("activation-verification");
       reloadTriggered = true;
       publish({
         status: "activating",
@@ -100,6 +110,8 @@
         && ["available", "activating", "deferred", "error"].includes(state.status);
       if (sameWorkerAlreadyKnown) return;
       waitingWorker = worker;
+      controllerAtAnnouncement = serviceWorker.controller;
+      activeWorkerAtAnnouncement = registration?.active || null;
       publish({
         status: "available",
         hasUpdate: true,
@@ -155,6 +167,26 @@
     }
 
     serviceWorker?.addEventListener?.("controllerchange", handleControllerChange);
+
+    function replacementWasTakenOver(worker) {
+      if (!worker) return false;
+      if (worker.state === "activated" || registration?.active === worker) return true;
+      if (controllerAtAnnouncement && serviceWorker?.controller !== controllerAtAnnouncement) return true;
+      return Boolean(registration?.active && registration.active !== activeWorkerAtAnnouncement);
+    }
+
+    function verifyActivation(worker) {
+      activationVerificationTimer = null;
+      if (!activationRequested || reloadTriggered) return;
+      if (replacementWasTakenOver(worker)) {
+        triggerReload();
+        return;
+      }
+      activationVerificationTimer = schedule(
+        () => verifyActivation(worker),
+        activationVerificationMs
+      );
+    }
 
     function start({ scriptUrl = "./service-worker.js", scope = "./" } = {}) {
       if (startPromise) return startPromise;
@@ -221,7 +253,7 @@
         reloadTriggered: false
       });
 
-      if (worker.state === "activated") {
+      if (replacementWasTakenOver(worker)) {
         triggerReload();
         return { status: "requested" };
       }
@@ -229,6 +261,8 @@
       try {
         activationTimer = schedule(() => publishFailure(), activationTimeoutMs);
         worker.postMessage({ type: "SKIP_WAITING" });
+        if (replacementWasTakenOver(worker)) triggerReload();
+        else verifyActivation(worker);
         return { status: "requested" };
       } catch (error) {
         publishFailure(error);

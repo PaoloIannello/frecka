@@ -170,6 +170,7 @@ Mit der in OFFLINE-001 eingeführten App-Shell kommen zwingend hinzu:
 - kein Aktivierungsaufruf und kein Reload ohne Nutzeraktion;
 - genau eine `SKIP_WAITING`-Nachricht und genau ein Reload nach `controllerchange`;
 - bereits aktivierter Ersatzworker aus der einmaligen Legacy-Brücke, auch wenn dessen `controllerchange` vor der Nutzeraktion lag;
+- bereits erfolgte oder kurz nach der Nutzeraktion sichtbare Worker-Übernahme bei veraltetem Workerzustand, auch wenn kein weiteres `statechange` oder `controllerchange` eintritt;
 - „Später erinnern“, erneutes Angebot in derselben Sitzung, Aktivierungszeitüberschreitung und erneuter Versuch;
 - verständlicher Fehlerzustand statt dauerhaftem „Wird aktualisiert …“ bei ausbleibender Aktivierung oder Navigation;
 - unveränderter IndexedDB-Snapshot vor und nach dem Codewechsel.
@@ -332,7 +333,7 @@ Es wird nicht minifiziert, kompiliert oder gebündelt. „Build“ bedeutet bei 
 
 `RELEASE.txt` wird ausschließlich aus dem Tag, dem getaggten Quellstand und der darin versionierten Freigabenotiz abgeleitet. Aktuelle Uhrzeit, lokaler Benutzername oder Rechnername dürfen seinen Inhalt nicht bei jedem erneuten Lauf verändern. So bleiben die Dateiinhalte eines aus demselben Tag erneut erzeugten Artefakts reproduzierbar.
 
-Der bereits veröffentlichte annotierte Tag `v0.10.8` ist ein dokumentierter Ausnahmezustand: Er zeigt auf den UPDATE-001-Fach-Commit `ba9fc32`, der dem 0.10.8-Versionsvorbereitungscommit vorausgeht. Der Tag enthält deshalb weder die 0.10.8-Versionssignale noch den Freigabenachweis `docs/releases/0.10.8.md` und erfüllt die Voraussetzungen dieses Abschnitts nicht. Er darf in seinem aktuellen Stand nicht zur Artefakterzeugung oder zum Deployment verwendet werden. Dieser Vorbereitungsschritt verändert oder löscht den Tag nicht; seine weitere Behandlung benötigt eine eigene Freigabe.
+Der aktuelle annotierte Tag `v0.10.8` zeigt auf den vollständigen Versionsstand `6056e64`; das daraus erzeugte unveränderliche Artefakt trägt die Release-ID `0.10.8-6056e64`. Sein realer iPhone-Befund ist abgelehnt, weil der bewusste Updateabschluss ohne sichtbaren Reload blockierte. Korrekturen daran werden nicht in dieses Artefakt zurückgeschrieben, sondern ausschließlich als neuer Patchstand 0.10.9 vorbereitet.
 
 ### 7.4 Unveränderlichkeit
 
@@ -389,7 +390,7 @@ Das Skript ändert weder den Beta-Virtual-Host noch Produktivkonfigurationen. Di
 
 Da das neue Release vor dem Portalwechsel vollständig vorhanden ist, beschränkt sich die Downtime auf den kurzen Konfigurationswechsel. Bestehende Browser-Sitzungen behalten ihren bereits geladenen Code; neue Seitenaufrufe erhalten den neuen Stand.
 
-SERVICEWORKER-002 enthält für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI eine einmalige, ausdrücklich freigegebene Übergangsregel: Erst nach vollständig erfolgreichem App-Shell-Download aktiviert sich der neue Worker automatisch. Ohne `clients.claim()` und ohne Reload bleibt die laufende Sitzung auf ihrem geladenen Code. Solange der reale Altclient-Übergang noch nicht bestätigt ist, darf 0.10.8 dieselbe Brücke fachlich unverändert mitführen. Nach der dokumentierten Bestätigung ist ihre Entfernung im unmittelbar folgenden Worker/Release ein zwingendes Gate; die Regel darf nicht Teil des normalen Releaseablaufs werden.
+SERVICEWORKER-002 enthält für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI eine einmalige, ausdrücklich freigegebene Übergangsregel: Erst nach vollständig erfolgreichem App-Shell-Download aktiviert sich der neue Worker automatisch. Ohne `clients.claim()` und ohne Reload bleibt die laufende Sitzung auf ihrem geladenen Code. Solange der reale Altclient-Übergang noch nicht bestätigt ist, darf 0.10.9 dieselbe Brücke fachlich unverändert mitführen. UPDATE-001b ändert ausschließlich die clientseitige Abschlusserkennung nach bewusster Nutzeraktion. Nach der dokumentierten Bestätigung ist die Entfernung der Brücke im unmittelbar folgenden Worker/Release ein zwingendes Gate; die Regel darf nicht Teil des normalen Releaseablaufs werden.
 
 ### 8.4 Beta-Abnahme
 
@@ -525,7 +526,7 @@ Solange kein automatischer Builder existiert, können Dateizeitstempel und Datei
 
 ## 12. Updates über die Synology
 
-SERVICEWORKER-002 implementiert den lokalen Browser-Lifecycle innerhalb einer bereits aufgerufenen Deployment-Origin: eine Online-Prüfung pro Start, Erkennung eines wartenden Workers, Nutzerhinweis, bewusste `SKIP_WAITING`-Nachricht und genau einen Reload nach `controllerchange`. UPDATE-001 ergänzt denselben zentralen Lifecycle um den bereits aktivierten Legacy-Rennfall, eine begrenzte Abschlusswartezeit, Wiederholung nach einem Fehler und eine sitzungsbezogene Erinnerung nach „Später erinnern“. Worker-Zustand und `controllerchange` verwenden dieselbe Reload-Sperre, sodass auch bei mehreren Ereignissen oder Mehrfachtippen höchstens ein Reload ausgelöst wird. Offline-Start, Public Viewer und IndexedDB bleiben davon unabhängig. Dies ist noch kein signierter, kanalbasierter Updateclient; deshalb bleibt der sichtbare Versionshinweis bis zu einem freigegebenen Metadatenformat bewusst allgemein.
+SERVICEWORKER-002 implementiert den lokalen Browser-Lifecycle innerhalb einer bereits aufgerufenen Deployment-Origin: eine Online-Prüfung pro Start, Erkennung eines wartenden Workers, Nutzerhinweis, bewusste `SKIP_WAITING`-Nachricht und genau einen Reload nach erfolgreicher Übernahme. UPDATE-001 ergänzt den bereits aktivierten Legacy-Rennfall, begrenzte Fehlerzustände und „Später erinnern“. UPDATE-001b verifiziert ausschließlich während des laufenden, ausdrücklich gestarteten Updateversuchs zusätzlich Worker-, Registration- und Controllerstand. Damit hängt der Abschluss nicht mehr davon ab, dass nach dem Klick zwingend noch ein `statechange` oder `controllerchange` eintritt. Alle Erfolgssignale und Mehrfachtippen teilen weiterhin dieselbe Einmal-Reload-Sperre. Offline-Start, Public Viewer und IndexedDB bleiben davon unabhängig. Dies ist noch kein signierter, kanalbasierter Updateclient; deshalb bleibt der sichtbare Versionshinweis bis zu einem freigegebenen Metadatenformat bewusst allgemein.
 
 Die spätere signierte PWA-Updatefunktion verwendet dieselben unveränderlichen Releases und ergänzt diesen Browser-Lifecycle um einen kontrollierten Auslieferungsweg:
 

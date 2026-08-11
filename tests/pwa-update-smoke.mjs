@@ -72,6 +72,7 @@ function createHarness({
   reloadError = null,
   currentController = null,
   activationTimeoutMs = 1000,
+  activationVerificationMs = 100,
   reloadTimeoutMs = 500,
   reminderDelayMs = 900
 } = {}) {
@@ -109,6 +110,7 @@ function createHarness({
     schedule: scheduler.schedule,
     cancelScheduled: scheduler.cancel,
     activationTimeoutMs,
+    activationVerificationMs,
     reloadTimeoutMs,
     reminderDelayMs
   });
@@ -226,6 +228,43 @@ function createHarness({
 }
 
 {
+  const alreadyTakenOverWorker = createWorker("installed");
+  const harness = createHarness({ waiting: alreadyTakenOverWorker });
+  await harness.controller.start();
+  assert.equal(harness.controller.getState().status, "available");
+
+  harness.registration.waiting = null;
+  harness.registration.active = alreadyTakenOverWorker;
+  harness.container.controller = alreadyTakenOverWorker;
+  harness.container.dispatch("controllerchange");
+  assert.equal(harness.reloads(), 0, "Ein früher Controllerwechsel darf ohne Nutzeraktion nicht neu laden.");
+
+  assert.equal(harness.controller.activate(() => true).status, "requested");
+  assert.equal(alreadyTakenOverWorker.messages.length, 0, "Ein bereits übernommener Worker darf kein verspätetes SKIP_WAITING erhalten.");
+  assert.equal(harness.reloads(), 1, "Die Nutzeraktion muss eine bereits erfolgte Übernahme trotz veraltetem Worker-Zustand erkennen.");
+  harness.container.dispatch("controllerchange");
+  harness.scheduler.runDelay(100);
+  assert.equal(harness.reloads(), 1, "Frühere oder spätere Lifecycle-Signale dürfen keinen zweiten Reload auslösen.");
+}
+
+{
+  const workerWithoutLifecycleEvent = createWorker("installed");
+  const harness = createHarness({ waiting: workerWithoutLifecycleEvent });
+  await harness.controller.start();
+  harness.controller.activate(() => true);
+  assert.equal(workerWithoutLifecycleEvent.messages.length, 1);
+
+  harness.registration.waiting = null;
+  harness.registration.active = workerWithoutLifecycleEvent;
+  harness.container.controller = workerWithoutLifecycleEvent;
+  workerWithoutLifecycleEvent.state = "activating";
+  harness.scheduler.runDelay(100);
+  assert.equal(harness.reloads(), 1, "Eine sichtbare Übernahme muss auch ohne weiteres statechange/controllerchange erkannt werden.");
+  harness.scheduler.runDelay(100);
+  assert.equal(harness.reloads(), 1, "Die begrenzte Verifikation darf höchstens einen Reload auslösen.");
+}
+
+{
   const activeReplacement = createWorker("activated");
   const harness = createHarness({ active: activeReplacement });
   await harness.controller.start();
@@ -326,6 +365,7 @@ assert.doesNotMatch(source, /setInterval/, "Die Update-Erkennung darf kein Polli
 assert.doesNotMatch(source, /indexedDB|localStorage|sessionStorage|caches\./, "Die Update-Komponente darf keine Geschäfts- oder Cache-Daten verwalten.");
 assert.doesNotMatch(source, /userAgent|navigator\.vendor|iPhone|Android/, "Der Updatepfad darf keine Browserweichen verwenden.");
 assert.match(source, /DEFAULT_ACTIVATION_TIMEOUT_MS/);
+assert.match(source, /DEFAULT_ACTIVATION_VERIFICATION_MS/);
 assert.match(source, /DEFAULT_REMINDER_DELAY_MS/);
 assert.match(appSource, /pwaUpdateController\?\.subscribe\(renderPwaUpdateState\)/);
 assert.match(appSource, /pwaUpdateController\?\.defer\(\)/);
@@ -335,14 +375,14 @@ assert.match(indexSource, />Jetzt aktualisieren</);
 assert.match(indexSource, />Später erinnern</);
 assert.match(indexSource, /Verbesserungen für Stabilität und Bedienung/);
 assert.doesNotMatch(indexSource, /Commit|Buildnummer|Service Worker/);
-assert.match(indexSource, /<title>FRECKA – UPDATE-001<\/title>/);
+assert.match(indexSource, /<title>FRECKA – UPDATE-001b<\/title>/);
 assert.match(appSource, /Aktualisierung nicht abgeschlossen/);
 assert.match(appSource, /Erneut versuchen/);
-assert.match(indexSource, /js\/pwa-update\.js\?v=update001-1/);
+assert.match(indexSource, /js\/pwa-update\.js\?v=update001b-1/);
 assert.match(stylesSource, /\.app-update-notice\[hidden\],\.app-update-notice \[hidden\]\{display:none\}/);
 assert.match(stylesSource, /@media\(max-width:340px\)/);
-assert.match(dataSource, /version:\s*"0\.10\.8"/);
-assert.match(dataSource, /build:\s*"UPDATE-001"/);
+assert.match(dataSource, /version:\s*"0\.10\.9"/);
+assert.match(dataSource, /build:\s*"UPDATE-001b"/);
 
 const businessSnapshot = Object.freeze({ receipts: 7, customers: 4, vouchers: 3, settingsVersion: 5 });
 const snapshotBefore = JSON.stringify(businessSnapshot);
@@ -352,4 +392,4 @@ snapshotHarness.controller.activate(() => true);
 snapshotHarness.container.dispatch("controllerchange");
 assert.equal(JSON.stringify(businessSnapshot), snapshotBefore, "Der Update-Lifecycle darf Geschäftsdaten nicht verändern.");
 
-console.log("PWA-Update-Smoke-Test: PASS (waiting, Legacy-Rennfall, Verschieben, Erinnerung, Fehler, Wiederholung, genau ein Reload, Offline, Datenisolation)");
+console.log("PWA-Update-Smoke-Test: PASS (waiting, früher/fehlender Lifecycle-Event, Legacy-Rennfall, Verschieben, Fehler, genau ein Reload, Offline, Datenisolation)");
