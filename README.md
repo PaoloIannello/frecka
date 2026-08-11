@@ -1,8 +1,8 @@
-# FRECKA – PERSISTENCE-008
+# FRECKA – PERSISTENCE-010
 
-Browserbasierte FRECKA-PWA 0.10.6 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share- und PWA-Update-Infrastruktur. PERSISTENCE-008 ergänzt eine ausschließlich lokale, begrenzte Read-only-Diagnose für Snapshot-Inkonsistenzen, ohne Validierung, Daten, Backup-, Restore- oder Exportregeln zu lockern. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
+Browserbasierte FRECKA-PWA 0.10.7 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share- und PWA-Update-Infrastruktur. PERSISTENCE-010 ergänzt ausschließlich eine bewusst ausgelöste, eng begrenzte Reparatur für vier bekannte historische Demo-Gutscheinverkaufsbelege. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
 
-## Arbeitsstand PERSISTENCE-010
+## Neu in PERSISTENCE-010
 
 - ausschließlich nach bewusster Nutzeraktion verfügbare lokale Reparatur für exakt vier bekannte historische Demo-Gutscheinverkaufsbelege;
 - feste Allowlist aus Receipt-ID, Belegnummer, Gutscheinreferenz und Gutscheincode; keine allgemeine Migration und keine Rekonstruktion realer Geschäftsdaten;
@@ -10,8 +10,6 @@ Browserbasierte FRECKA-PWA 0.10.6 mit lokaler IndexedDB-Persistenz, verschlüsse
 - ein einziger atomarer Receipt-Store-Schreibvorgang nach erfolgreicher Vollvalidierung; Einstellungen, Nummernstand, Katalog, Kunden, Gutscheine und bestehende Belege bleiben unverändert;
 - erneute vollständige Snapshotprüfung nach dem Schreiben und idempotenter No-op beim zweiten Aufruf;
 - 161 bestandene native Browser-Smoke-Tests, 320 px und 390 px ohne horizontalen Überlauf sowie keine Browser-Konsolenfehler.
-
-Dieser Arbeitsstand ist noch nicht committed, getaggt, als Release erzeugt oder auf das reale iPhone beziehungsweise die Synology übertragen.
 
 ## Start
 
@@ -64,7 +62,7 @@ Für den realen iPhone-Test genau einmal **Diagnose erstellen** antippen, den lo
 - einmalige, ausdrücklich freigegebene Legacy-Brücke für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI: automatische Worker-Aktivierung, aber kein `clients.claim()` und kein automatischer Reload
 - eigene automatisierte Lifecycle-Tests zusätzlich zum 145-Fälle-Fach- und Persistenzlauf
 
-Die Legacy-Brücke aus SERVICEWORKER-002 bleibt in 0.10.6 ausnahmsweise unverändert erhalten, solange der reale Übergang bereits ausgelieferter Altclients noch nicht bestätigt ist. Sobald dieser Übergang real nachgewiesen wurde, ist ihre Entfernung ein zwingendes Gate für den unmittelbar folgenden Worker/Release. Die dauerhafte Reihenfolge bleibt: Hinweis → Nutzeraktion → `SKIP_WAITING` → genau ein Reload.
+Die Legacy-Brücke aus SERVICEWORKER-002 bleibt in 0.10.7 ausnahmsweise unverändert erhalten, solange der reale Übergang bereits ausgelieferter Altclients noch nicht bestätigt ist. Sobald dieser Übergang real nachgewiesen wurde, ist ihre Entfernung ein zwingendes Gate für den unmittelbar folgenden Worker/Release. Die dauerhafte Reihenfolge bleibt: Hinweis → Nutzeraktion → `SKIP_WAITING` → genau ein Reload.
 
 ## Neu in EXPORT-003
 

@@ -400,7 +400,7 @@
       appDataSchemaVersion: api.constants.databaseVersion,
       tenantId,
       createdAt: "2030-02-01T12:00:00.000Z",
-      app: { version: "0.10.6", build: "PERSISTENCE-010-TEST" },
+      app: { version: "0.10.7", build: "PERSISTENCE-010-TEST" },
       stores: { settings, catalog, customers, receipts, vouchers }
     };
   }
@@ -417,7 +417,7 @@
     return {
       fallbackRecords: snapshot.stores,
       canonicalRecords: historicalDemoRepairCanonicalRecords(snapshot.tenantId),
-      appVersion: "0.10.6",
+      appVersion: "0.10.7",
       appBuild: "PERSISTENCE-010-TEST"
     };
   }
@@ -2595,8 +2595,8 @@
           const before = clone(snapshot);
           const report = api.diagnoseTenantSnapshot(snapshot, snapshot.tenantId, {
             createdAt: "2030-02-02T10:00:00.000Z",
-            appVersion: "0.10.6",
-            appBuild: "PERSISTENCE-008"
+            appVersion: "0.10.7",
+            appBuild: "PERSISTENCE-010"
           });
           assertEqual(report.status, "consistent", "Konsistenter Bestand wurde als fehlerhaft gemeldet");
           assertEqual(report.validation.invariant, "TENANT_SNAPSHOT_VALID", "Erfolgreiche zentrale Invariante fehlt");
@@ -2707,8 +2707,8 @@
             vouchers: await persistence.readVouchers()
           };
           const report = await persistence.diagnoseTenantIntegrity({
-            appVersion: "0.10.6",
-            appBuild: "PERSISTENCE-008"
+            appVersion: "0.10.7",
+            appBuild: "PERSISTENCE-010"
           });
           const after = {
             settings: await persistence.readSettings(),

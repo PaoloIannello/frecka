@@ -166,10 +166,10 @@ assert.match(appSource, /pwaUpdateController\?\.subscribe\(renderPwaUpdateState\
 assert.match(appSource, /state\.cart\.length\s*\|\|\s*state\.checkoutSubmitting/);
 assert.match(indexSource, /Neue FRECKA-Version verfügbar\./);
 assert.match(indexSource, />Jetzt aktualisieren</);
-assert.match(indexSource, /js\/pwa-update\.js\?v=persistence008-1/);
+assert.match(indexSource, /js\/pwa-update\.js\?v=persistence010-1/);
 assert.match(stylesSource, /\.app-update-notice\[hidden\]\{display:none\}/);
-assert.match(dataSource, /version:\s*"0\.10\.6"/);
-assert.match(dataSource, /build:\s*"PERSISTENCE-008"/);
+assert.match(dataSource, /version:\s*"0\.10\.7"/);
+assert.match(dataSource, /build:\s*"PERSISTENCE-010"/);
 
 const businessSnapshot = Object.freeze({ receipts: 7, customers: 4, vouchers: 3, settingsVersion: 5 });
 const snapshotBefore = JSON.stringify(businessSnapshot);

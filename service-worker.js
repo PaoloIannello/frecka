@@ -1,35 +1,35 @@
 "use strict";
 
 const APP_SHELL_CACHE_PREFIX = "frecka-app-shell-";
-const APP_SHELL_CACHE = `${APP_SHELL_CACHE_PREFIX}0.10.6-persistence008-1`;
+const APP_SHELL_CACHE = `${APP_SHELL_CACHE_PREFIX}0.10.7-persistence010-1`;
 // Einmalige Brücke für bereits ausgelieferte 0.10.0/0.10.1-Clients ohne Update-UI.
-// Sie bleibt in 0.10.6 nur bis zur real bestätigten Übergangsabnahme erhalten und
+// Sie bleibt in 0.10.7 nur bis zur real bestätigten Übergangsabnahme erhalten und
 // muss im unmittelbar folgenden Worker/Release danach entfernt werden.
 const LEGACY_AUTO_ACTIVATION_FOR_SERVICEWORKER_002 = true;
 const APP_ENTRY_URL = new URL("./index.html", self.location.href).href;
 const APP_SHELL_PATHS = Object.freeze([
   "./index.html",
-  "./styles.css?v=persistence008-1",
-  "./manifest.webmanifest?v=persistence008-1",
+  "./styles.css?v=persistence010-1",
+  "./manifest.webmanifest?v=persistence010-1",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
-  "./vendor/qrcodegen-v1.8.0-es6.js?v=persistence008-1",
-  "./vendor/pdf-lib-v1.17.1.min.js?v=persistence008-1",
-  "./vendor/jszip-v3.10.1.min.js?v=persistence008-1",
-  "./js/config.js?v=persistence008-1",
-  "./js/qr.js?v=persistence008-1",
-  "./js/documents.js?v=persistence008-1",
-  "./js/public-documents.js?v=persistence008-1",
-  "./js/sharing.js?v=persistence008-1",
-  "./js/document-view.js?v=persistence008-1",
-  "./js/public-viewer.js?v=persistence008-1",
-  "./js/data.js?v=persistence008-1",
-  "./js/persistence.js?v=persistence008-1",
-  "./js/backup.js?v=persistence008-1",
-  "./js/export.js?v=persistence008-1",
-  "./js/export-package.js?v=persistence008-1",
-  "./js/pwa-update.js?v=persistence008-1",
-  "./js/app.js?v=persistence008-1"
+  "./vendor/qrcodegen-v1.8.0-es6.js?v=persistence010-1",
+  "./vendor/pdf-lib-v1.17.1.min.js?v=persistence010-1",
+  "./vendor/jszip-v3.10.1.min.js?v=persistence010-1",
+  "./js/config.js?v=persistence010-1",
+  "./js/qr.js?v=persistence010-1",
+  "./js/documents.js?v=persistence010-1",
+  "./js/public-documents.js?v=persistence010-1",
+  "./js/sharing.js?v=persistence010-1",
+  "./js/document-view.js?v=persistence010-1",
+  "./js/public-viewer.js?v=persistence010-1",
+  "./js/data.js?v=persistence010-1",
+  "./js/persistence.js?v=persistence010-1",
+  "./js/backup.js?v=persistence010-1",
+  "./js/export.js?v=persistence010-1",
+  "./js/export-package.js?v=persistence010-1",
+  "./js/pwa-update.js?v=persistence010-1",
+  "./js/app.js?v=persistence010-1"
 ]);
 const APP_SHELL_URLS = APP_SHELL_PATHS.map(path => new URL(path, self.location.href).href);
 
