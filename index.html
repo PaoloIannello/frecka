@@ -48,11 +48,15 @@
   </div>
 
   <section id="appUpdateNotice" class="app-update-notice" role="status" aria-live="polite" hidden>
-    <div>
-      <strong>Neue FRECKA-Version verfügbar.</strong>
-      <p id="appUpdateMessage">Aktualisiere bewusst. Deine lokalen Daten bleiben erhalten.</p>
+    <div class="app-update-copy">
+      <strong id="appUpdateTitle">Neue FRECKA-Version verfügbar.</strong>
+      <p id="appUpdateNotes" class="app-update-notes">Enthält Verbesserungen für Stabilität und Bedienung.</p>
+      <p id="appUpdateMessage">Deine lokalen Daten bleiben erhalten.</p>
     </div>
-    <button id="appUpdateAction" class="button button-primary" type="button">Jetzt aktualisieren</button>
+    <div class="app-update-actions">
+      <button id="appUpdateLater" class="button button-secondary" type="button">Später erinnern</button>
+      <button id="appUpdateAction" class="button button-primary" type="button">Jetzt aktualisieren</button>
+    </div>
   </section>
 
   <div id="dialogBackdrop" class="dialog-backdrop" hidden>

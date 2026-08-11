@@ -27,18 +27,58 @@ class FakeTarget {
   }
 }
 
-function createWorker(state = "installing") {
+function createWorker(state = "installing", { postMessageError = null } = {}) {
   const worker = new FakeTarget();
   worker.state = state;
   worker.messages = [];
-  worker.postMessage = message => worker.messages.push(message);
+  worker.postMessage = message => {
+    if (postMessageError) throw postMessageError;
+    worker.messages.push(message);
+  };
   return worker;
 }
 
-function createHarness({ online = true, waiting = null, updateError = null, registerError = null } = {}) {
+function createScheduler() {
+  let nextId = 1;
+  const entries = new Map();
+  return {
+    schedule(callback, delay) {
+      const id = nextId++;
+      entries.set(id, { callback, delay });
+      return id;
+    },
+    cancel(id) {
+      entries.delete(id);
+    },
+    runDelay(delay) {
+      const due = [...entries.entries()].filter(([, entry]) => entry.delay === delay);
+      for (const [id, entry] of due) {
+        entries.delete(id);
+        entry.callback();
+      }
+    },
+    count() {
+      return entries.size;
+    }
+  };
+}
+
+function createHarness({
+  online = true,
+  waiting = null,
+  active = null,
+  updateError = null,
+  registerError = null,
+  reloadError = null,
+  currentController = null,
+  activationTimeoutMs = 1000,
+  reloadTimeoutMs = 500,
+  reminderDelayMs = 900
+} = {}) {
   const registration = new FakeTarget();
   registration.installing = null;
   registration.waiting = waiting;
+  registration.active = active;
   registration.updateCalls = 0;
   registration.update = async () => {
     registration.updateCalls += 1;
@@ -46,7 +86,7 @@ function createHarness({ online = true, waiting = null, updateError = null, regi
   };
 
   const container = new FakeTarget();
-  container.controller = { scriptURL: "old-service-worker.js" };
+  container.controller = currentController || { scriptURL: "old-service-worker.js" };
   container.registerCalls = [];
   container.register = async (scriptUrl, options) => {
     container.registerCalls.push({ scriptUrl, options });
@@ -54,16 +94,25 @@ function createHarness({ online = true, waiting = null, updateError = null, regi
     return registration;
   };
 
+  const scheduler = createScheduler();
   const warnings = [];
   let reloads = 0;
   const controller = createUpdateController({
     serviceWorkerContainer: container,
     isSecureContext: true,
     isOnline: () => online,
-    reload: () => { reloads += 1; },
-    warn: (...args) => warnings.push(args)
+    reload: () => {
+      if (reloadError) throw reloadError;
+      reloads += 1;
+    },
+    warn: (...args) => warnings.push(args),
+    schedule: scheduler.schedule,
+    cancelScheduled: scheduler.cancel,
+    activationTimeoutMs,
+    reloadTimeoutMs,
+    reminderDelayMs
   });
-  return { controller, container, registration, warnings, reloads: () => reloads };
+  return { controller, container, registration, scheduler, warnings, reloads: () => reloads };
 }
 
 {
@@ -122,6 +171,111 @@ function createHarness({ online = true, waiting = null, updateError = null, regi
 }
 
 {
+  const waiting = createWorker("installed");
+  const harness = createHarness({ waiting });
+  await harness.controller.start();
+  assert.equal(harness.controller.defer().status, "deferred");
+  assert.equal(harness.controller.getState().hasUpdate, false, "Später erinnern muss die Karte vorübergehend schließen.");
+  assert.equal(waiting.messages.length, 0, "Verschieben darf den Worker nicht aktivieren.");
+  harness.scheduler.runDelay(900);
+  assert.equal(harness.controller.getState().status, "available", "Das Update muss in derselben Sitzung erneut angeboten werden.");
+  assert.equal(harness.controller.getState().hasUpdate, true);
+}
+
+{
+  const waiting = createWorker("installed");
+  const harness = createHarness({ waiting });
+  await harness.controller.start();
+  harness.controller.activate(() => true);
+  harness.scheduler.runDelay(1000);
+  assert.equal(harness.controller.getState().status, "error", "Ein ausbleibender Abschluss darf nicht endlos aktiv bleiben.");
+  assert.equal(harness.controller.getState().message, "Die Aktualisierung konnte momentan nicht abgeschlossen werden.");
+  assert.equal(harness.reloads(), 0);
+  assert.equal(harness.controller.activate(() => true).status, "requested", "Der Fehlerzustand muss einen erneuten Versuch erlauben.");
+  assert.equal(waiting.messages.length, 2);
+  harness.container.dispatch("controllerchange");
+  assert.equal(harness.reloads(), 1);
+}
+
+{
+  const waiting = createWorker("installed");
+  const harness = createHarness({ waiting });
+  await harness.controller.start();
+  harness.controller.activate(() => true);
+  waiting.state = "activated";
+  waiting.dispatch("statechange");
+  harness.container.dispatch("controllerchange");
+  assert.equal(harness.reloads(), 1, "activated und controllerchange dürfen gemeinsam nur einen Reload auslösen.");
+}
+
+{
+  const legacyWorker = createWorker("installed");
+  const harness = createHarness({ waiting: legacyWorker });
+  await harness.controller.start();
+  harness.registration.waiting = null;
+  harness.registration.active = legacyWorker;
+  legacyWorker.state = "activated";
+  legacyWorker.dispatch("statechange");
+  harness.container.dispatch("controllerchange");
+  assert.equal(harness.reloads(), 0, "Die Legacy-Brücke darf ohne Nutzeraktion keinen Reload auslösen.");
+  assert.equal(harness.controller.activate(() => true).status, "requested");
+  assert.equal(legacyWorker.messages.length, 0, "Ein bereits aktivierter Legacy-Worker benötigt keine zweite Aktivierungsnachricht.");
+  assert.equal(harness.reloads(), 1, "Die bewusste Nutzeraktion muss den bereits aktivierten Legacy-Worker per Reload übernehmen.");
+  harness.container.dispatch("controllerchange");
+  assert.equal(harness.reloads(), 1);
+}
+
+{
+  const activeReplacement = createWorker("activated");
+  const harness = createHarness({ active: activeReplacement });
+  await harness.controller.start();
+  assert.equal(harness.controller.getState().status, "available", "Ein bereits aktiver Ersatzworker muss gegenüber dem alten Controller erkannt werden.");
+  harness.controller.activate(() => true);
+  assert.equal(harness.reloads(), 1);
+}
+
+{
+  const currentWorker = createWorker("activated");
+  const harness = createHarness({ active: currentWorker, currentController: currentWorker });
+  await harness.controller.start();
+  assert.equal(harness.controller.getState().status, "idle", "Nach dem Reload darf die bereits aktive Version keine Updatekarte mehr zeigen.");
+  assert.equal(harness.controller.getState().hasUpdate, false);
+  assert.equal(harness.reloads(), 0, "Die neue Seite darf keine Reload-Schleife beginnen.");
+}
+
+{
+  const failedWorker = createWorker("installed", { postMessageError: new Error("postMessage failed") });
+  const harness = createHarness({ waiting: failedWorker });
+  await harness.controller.start();
+  const result = harness.controller.activate(() => true);
+  assert.equal(result.status, "failed");
+  assert.equal(harness.controller.getState().status, "error");
+  assert.equal(harness.scheduler.count(), 0, "Der fehlgeschlagene Aktivierungsversuch darf keinen Timer zurücklassen.");
+  assert.equal(harness.controller.defer().status, "deferred", "Auch nach einem technischen Fehler muss Später möglich sein.");
+}
+
+{
+  const waiting = createWorker("installed");
+  const harness = createHarness({ waiting, reloadError: new Error("reload failed") });
+  await harness.controller.start();
+  harness.controller.activate(() => true);
+  harness.container.dispatch("controllerchange");
+  assert.equal(harness.controller.getState().status, "error", "Ein synchron fehlgeschlagener Reload muss verständlich aufgelöst werden.");
+  assert.equal(harness.controller.getState().reloadTriggered, false);
+}
+
+{
+  const waiting = createWorker("installed");
+  const harness = createHarness({ waiting });
+  await harness.controller.start();
+  harness.controller.activate(() => true);
+  harness.container.dispatch("controllerchange");
+  assert.equal(harness.reloads(), 1);
+  harness.scheduler.runDelay(500);
+  assert.equal(harness.controller.getState().status, "error", "Bleibt die Navigation trotz Reload-Aufruf aus, darf die UI nicht hängen bleiben.");
+}
+
+{
   const harness = createHarness({ online: false });
   await harness.controller.start();
   assert.equal(harness.registration.updateCalls, 0, "Offline darf keine gezielte Netzwerkprüfung gestartet werden.");
@@ -153,6 +307,14 @@ function createHarness({ online = true, waiting = null, updateError = null, regi
   assert.equal(harness.controller.getState().hasUpdate, false, "Ein redundanter Worker darf nicht als Update erscheinen.");
 }
 
+for (const platform of ["Safari Home-Screen-PWA", "Chrome installierte PWA"]) {
+  const harness = createHarness({ waiting: createWorker("installed") });
+  await harness.controller.start();
+  harness.controller.activate(() => true);
+  harness.container.dispatch("controllerchange");
+  assert.equal(harness.reloads(), 1, `${platform}: Standard-Lifecycle muss ohne Browserweiche funktionieren.`);
+}
+
 {
   const harness = createHarness({ waiting: createWorker("installed") });
   await harness.controller.start();
@@ -160,14 +322,24 @@ function createHarness({ online = true, waiting = null, updateError = null, regi
   assert.equal(harness.reloads(), 0, "Ein Controllerwechsel ohne Nutzeraktion darf keinen Reload auslösen.");
 }
 
-assert.doesNotMatch(source, /setInterval|setTimeout/, "Die Update-Erkennung darf kein Polling verwenden.");
+assert.doesNotMatch(source, /setInterval/, "Die Update-Erkennung darf kein Polling verwenden.");
 assert.doesNotMatch(source, /indexedDB|localStorage|sessionStorage|caches\./, "Die Update-Komponente darf keine Geschäfts- oder Cache-Daten verwalten.");
+assert.doesNotMatch(source, /userAgent|navigator\.vendor|iPhone|Android/, "Der Updatepfad darf keine Browserweichen verwenden.");
+assert.match(source, /DEFAULT_ACTIVATION_TIMEOUT_MS/);
+assert.match(source, /DEFAULT_REMINDER_DELAY_MS/);
 assert.match(appSource, /pwaUpdateController\?\.subscribe\(renderPwaUpdateState\)/);
+assert.match(appSource, /pwaUpdateController\?\.defer\(\)/);
 assert.match(appSource, /state\.cart\.length\s*\|\|\s*state\.checkoutSubmitting/);
 assert.match(indexSource, /Neue FRECKA-Version verfügbar\./);
 assert.match(indexSource, />Jetzt aktualisieren</);
+assert.match(indexSource, />Später erinnern</);
+assert.match(indexSource, /Verbesserungen für Stabilität und Bedienung/);
+assert.doesNotMatch(indexSource, /Commit|Buildnummer|Service Worker/);
+assert.match(appSource, /Aktualisierung nicht abgeschlossen/);
+assert.match(appSource, /Erneut versuchen/);
 assert.match(indexSource, /js\/pwa-update\.js\?v=persistence010-1/);
-assert.match(stylesSource, /\.app-update-notice\[hidden\]\{display:none\}/);
+assert.match(stylesSource, /\.app-update-notice\[hidden\],\.app-update-notice \[hidden\]\{display:none\}/);
+assert.match(stylesSource, /@media\(max-width:340px\)/);
 assert.match(dataSource, /version:\s*"0\.10\.7"/);
 assert.match(dataSource, /build:\s*"PERSISTENCE-010"/);
 
@@ -179,4 +351,4 @@ snapshotHarness.controller.activate(() => true);
 snapshotHarness.container.dispatch("controllerchange");
 assert.equal(JSON.stringify(businessSnapshot), snapshotBefore, "Der Update-Lifecycle darf Geschäftsdaten nicht verändern.");
 
-console.log("PWA-Update-Smoke-Test: PASS (waiting, updatefound, Nutzeraktion, Offline, Fehler, genau ein Reload, Datenisolation)");
+console.log("PWA-Update-Smoke-Test: PASS (waiting, Legacy-Rennfall, Verschieben, Erinnerung, Fehler, Wiederholung, genau ein Reload, Offline, Datenisolation)");

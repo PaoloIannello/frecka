@@ -176,7 +176,10 @@
   const qrFullscreenCode = document.getElementById("qrFullscreenCode");
   const qrFullscreenClose = document.getElementById("qrFullscreenClose");
   const appUpdateNotice = document.getElementById("appUpdateNotice");
+  const appUpdateTitle = document.getElementById("appUpdateTitle");
+  const appUpdateNotes = document.getElementById("appUpdateNotes");
   const appUpdateMessage = document.getElementById("appUpdateMessage");
+  const appUpdateLater = document.getElementById("appUpdateLater");
   const appUpdateAction = document.getElementById("appUpdateAction");
   const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "qr-not-found", "settings-company", "settings-location", "settings-taxes", "settings-payments", "settings-business-areas", "settings-catalog", "settings-help", "settings-backup", "settings-export", "setup-wizard"]);
   const validRoutes = new Set(["home", "receipts", "customers", "vouchers", "settings", ...flowRoutes]);
@@ -269,20 +272,36 @@
   }
 
   function renderPwaUpdateState(updateState) {
-    if (!appUpdateNotice || !appUpdateMessage || !appUpdateAction) return;
+    if (!appUpdateNotice || !appUpdateTitle || !appUpdateNotes || !appUpdateMessage || !appUpdateLater || !appUpdateAction) return;
     appUpdateNotice.hidden = !updateState.hasUpdate;
     if (!updateState.hasUpdate) return;
-    appUpdateMessage.textContent = updateState.message || "Aktualisiere bewusst. Deine lokalen Daten bleiben erhalten.";
+    const failed = updateState.status === "error";
     const activating = updateState.status === "activating";
+    appUpdateNotice.setAttribute("role", failed ? "alert" : "status");
+    appUpdateNotice.setAttribute("aria-live", failed ? "assertive" : "polite");
+    appUpdateTitle.textContent = failed
+      ? "Aktualisierung nicht abgeschlossen"
+      : "Neue FRECKA-Version verfügbar.";
+    appUpdateNotes.textContent = updateState.releaseNote || "Enthält Verbesserungen für Stabilität und Bedienung.";
+    appUpdateNotes.hidden = failed || activating;
+    appUpdateMessage.textContent = updateState.message || "Deine lokalen Daten bleiben erhalten.";
     appUpdateNotice.classList.toggle("is-activating", activating);
+    appUpdateNotice.classList.toggle("is-error", failed);
+    appUpdateLater.hidden = activating;
+    appUpdateLater.textContent = failed ? "Später" : "Später erinnern";
     appUpdateAction.disabled = activating;
     appUpdateAction.setAttribute("aria-busy", activating ? "true" : "false");
-    appUpdateAction.textContent = activating ? "Wird aktualisiert …" : "Jetzt aktualisieren";
+    appUpdateAction.textContent = failed
+      ? "Erneut versuchen"
+      : activating ? "Wird aktualisiert …" : "Jetzt aktualisieren";
   }
 
   pwaUpdateController?.subscribe(renderPwaUpdateState);
   appUpdateAction?.addEventListener("click", () => {
     pwaUpdateController?.activate(updateActivationPermission);
+  });
+  appUpdateLater?.addEventListener("click", () => {
+    pwaUpdateController?.defer();
   });
 
   function voucherQrReference(voucher) {

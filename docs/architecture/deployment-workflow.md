@@ -169,6 +169,9 @@ Mit der in OFFLINE-001 eingeführten App-Shell kommen zwingend hinzu:
 - `registration.waiting` beim Start und `updatefound` während der Sitzung;
 - kein Aktivierungsaufruf und kein Reload ohne Nutzeraktion;
 - genau eine `SKIP_WAITING`-Nachricht und genau ein Reload nach `controllerchange`;
+- bereits aktivierter Ersatzworker aus der einmaligen Legacy-Brücke, auch wenn dessen `controllerchange` vor der Nutzeraktion lag;
+- „Später erinnern“, erneutes Angebot in derselben Sitzung, Aktivierungszeitüberschreitung und erneuter Versuch;
+- verständlicher Fehlerzustand statt dauerhaftem „Wird aktualisiert …“ bei ausbleibender Aktivierung oder Navigation;
 - unveränderter IndexedDB-Snapshot vor und nach dem Codewechsel.
 
 Reale iOS-/iPadOS- und Android-Prüfungen bleiben für Installation, Backup-Dateiauswahl, Share, Download, PDF und QR-Kamera-Scan ein Produktiv-Gate. Ein Desktop-Smoke-Test ersetzt diese Freigabe nicht.
@@ -520,7 +523,7 @@ Solange kein automatischer Builder existiert, können Dateizeitstempel und Datei
 
 ## 12. Updates über die Synology
 
-SERVICEWORKER-002 implementiert den lokalen Browser-Lifecycle innerhalb einer bereits aufgerufenen Deployment-Origin: eine Online-Prüfung pro Start, Erkennung eines wartenden Workers, Nutzerhinweis, bewusste `SKIP_WAITING`-Nachricht und genau einen Reload nach `controllerchange`. Offline-Start, Public Viewer und IndexedDB bleiben davon unabhängig. Dies ist noch kein signierter, kanalbasierter Updateclient.
+SERVICEWORKER-002 implementiert den lokalen Browser-Lifecycle innerhalb einer bereits aufgerufenen Deployment-Origin: eine Online-Prüfung pro Start, Erkennung eines wartenden Workers, Nutzerhinweis, bewusste `SKIP_WAITING`-Nachricht und genau einen Reload nach `controllerchange`. UPDATE-001 ergänzt denselben zentralen Lifecycle um den bereits aktivierten Legacy-Rennfall, eine begrenzte Abschlusswartezeit, Wiederholung nach einem Fehler und eine sitzungsbezogene Erinnerung nach „Später erinnern“. Worker-Zustand und `controllerchange` verwenden dieselbe Reload-Sperre, sodass auch bei mehreren Ereignissen oder Mehrfachtippen höchstens ein Reload ausgelöst wird. Offline-Start, Public Viewer und IndexedDB bleiben davon unabhängig. Dies ist noch kein signierter, kanalbasierter Updateclient; deshalb bleibt der sichtbare Versionshinweis bis zu einem freigegebenen Metadatenformat bewusst allgemein.
 
 Die spätere signierte PWA-Updatefunktion verwendet dieselben unveränderlichen Releases und ergänzt diesen Browser-Lifecycle um einen kontrollierten Auslieferungsweg:
 
