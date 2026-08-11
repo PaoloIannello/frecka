@@ -1,8 +1,17 @@
-# FRECKA – PERSISTENCE-010
+# FRECKA – UPDATE-001
 
-Browserbasierte FRECKA-PWA 0.10.7 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share- und PWA-Update-Infrastruktur. PERSISTENCE-010 ergänzt ausschließlich eine bewusst ausgelöste, eng begrenzte Reparatur für vier bekannte historische Demo-Gutscheinverkaufsbelege. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
+Browserbasierte FRECKA-PWA 0.10.8 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share- und PWA-Update-Infrastruktur. UPDATE-001 stabilisiert ausschließlich den bewussten PWA-Updateabschluss, Wiederholung und „Später erinnern“. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
 
-## Neu in PERSISTENCE-010
+## Neu in UPDATE-001
+
+- der zentrale Updatezustand berücksichtigt neben `waiting` und `controllerchange` auch einen bereits `activated` Worker; damit bleibt die Updatekarte im einmaligen SERVICEWORKER-002-Legacy-Rennfall nicht mehr dauerhaft bei „Wird aktualisiert …“ stehen
+- genau eine bewusste Nutzeraktion führt weiterhin zu höchstens einer Aktivierungsnachricht und genau einem Reload; Worker-Zustand und `controllerchange` sind durch dieselbe Reload-Sperre abgesichert
+- ein ausbleibender Aktivierungs- oder Navigationsabschluss wird zeitlich begrenzt und als verständlicher Fehler mit „Erneut versuchen“ und „Später“ aufgelöst
+- „Später erinnern“ verschiebt den Hinweis nur in der laufenden Sitzung und bietet ihn nach 15 Minuten erneut an; beim nächsten App-Start wird ein noch vorhandenes Update ebenfalls wieder erkannt
+- kurze allgemeine Versionshinweise nennen nur Verbesserungen für Stabilität und Bedienung, da noch kein signiertes Release-/Update-Manifest mit versionsspezifischen Texten existiert
+- offene Belegentwürfe und laufende Schreibvorgänge blockieren die bewusste Aktivierung weiterhin; Offline-App-Shell, IndexedDB und sämtliche Geschäftsdaten bleiben unberührt
+
+## Grundlage aus PERSISTENCE-010
 
 - ausschließlich nach bewusster Nutzeraktion verfügbare lokale Reparatur für exakt vier bekannte historische Demo-Gutscheinverkaufsbelege;
 - feste Allowlist aus Receipt-ID, Belegnummer, Gutscheinreferenz und Gutscheincode; keine allgemeine Migration und keine Rekonstruktion realer Geschäftsdaten;
@@ -62,16 +71,7 @@ Für den realen iPhone-Test genau einmal **Diagnose erstellen** antippen, den lo
 - einmalige, ausdrücklich freigegebene Legacy-Brücke für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI: automatische Worker-Aktivierung, aber kein `clients.claim()` und kein automatischer Reload
 - eigene automatisierte Lifecycle-Tests zusätzlich zum 145-Fälle-Fach- und Persistenzlauf
 
-Die Legacy-Brücke aus SERVICEWORKER-002 bleibt in 0.10.7 ausnahmsweise unverändert erhalten, solange der reale Übergang bereits ausgelieferter Altclients noch nicht bestätigt ist. Sobald dieser Übergang real nachgewiesen wurde, ist ihre Entfernung ein zwingendes Gate für den unmittelbar folgenden Worker/Release. Die dauerhafte Reihenfolge bleibt: Hinweis → Nutzeraktion → `SKIP_WAITING` → genau ein Reload.
-
-## Neu in UPDATE-001
-
-- der zentrale Updatezustand berücksichtigt neben `waiting` und `controllerchange` auch einen bereits `activated` Worker; damit bleibt die Updatekarte im einmaligen SERVICEWORKER-002-Legacy-Rennfall nicht mehr dauerhaft bei „Wird aktualisiert …“ stehen
-- genau eine bewusste Nutzeraktion führt weiterhin zu höchstens einer Aktivierungsnachricht und genau einem Reload; Worker-Zustand und `controllerchange` sind durch dieselbe Reload-Sperre abgesichert
-- ein ausbleibender Aktivierungs- oder Navigationsabschluss wird zeitlich begrenzt und als verständlicher Fehler mit „Erneut versuchen“ und „Später“ aufgelöst
-- „Später erinnern“ verschiebt den Hinweis nur in der laufenden Sitzung und bietet ihn nach 15 Minuten erneut an; beim nächsten App-Start wird ein noch vorhandenes Update ebenfalls wieder erkannt
-- kurze allgemeine Versionshinweise nennen nur Verbesserungen für Stabilität und Bedienung, da noch kein signiertes Release-/Update-Manifest mit versionsspezifischen Texten existiert
-- offene Belegentwürfe und laufende Schreibvorgänge blockieren die bewusste Aktivierung weiterhin; Offline-App-Shell, IndexedDB und sämtliche Geschäftsdaten bleiben unberührt
+Die Legacy-Brücke aus SERVICEWORKER-002 bleibt in 0.10.8 ausnahmsweise unverändert erhalten, solange der reale Übergang bereits ausgelieferter Altclients noch nicht bestätigt ist. Sobald dieser Übergang real nachgewiesen wurde, ist ihre Entfernung ein zwingendes Gate für den unmittelbar folgenden Worker/Release. Die dauerhafte Reihenfolge bleibt: Hinweis → Nutzeraktion → `SKIP_WAITING` → genau ein Reload.
 
 ## Neu in EXPORT-003
 

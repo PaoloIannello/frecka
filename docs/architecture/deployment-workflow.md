@@ -332,6 +332,8 @@ Es wird nicht minifiziert, kompiliert oder gebündelt. „Build“ bedeutet bei 
 
 `RELEASE.txt` wird ausschließlich aus dem Tag, dem getaggten Quellstand und der darin versionierten Freigabenotiz abgeleitet. Aktuelle Uhrzeit, lokaler Benutzername oder Rechnername dürfen seinen Inhalt nicht bei jedem erneuten Lauf verändern. So bleiben die Dateiinhalte eines aus demselben Tag erneut erzeugten Artefakts reproduzierbar.
 
+Der bereits veröffentlichte annotierte Tag `v0.10.8` ist ein dokumentierter Ausnahmezustand: Er zeigt auf den UPDATE-001-Fach-Commit `ba9fc32`, der dem 0.10.8-Versionsvorbereitungscommit vorausgeht. Der Tag enthält deshalb weder die 0.10.8-Versionssignale noch den Freigabenachweis `docs/releases/0.10.8.md` und erfüllt die Voraussetzungen dieses Abschnitts nicht. Er darf in seinem aktuellen Stand nicht zur Artefakterzeugung oder zum Deployment verwendet werden. Dieser Vorbereitungsschritt verändert oder löscht den Tag nicht; seine weitere Behandlung benötigt eine eigene Freigabe.
+
 ### 7.4 Unveränderlichkeit
 
 - Eine Release-ID darf auf der Synology nur einmal angelegt werden.
@@ -387,7 +389,7 @@ Das Skript ändert weder den Beta-Virtual-Host noch Produktivkonfigurationen. Di
 
 Da das neue Release vor dem Portalwechsel vollständig vorhanden ist, beschränkt sich die Downtime auf den kurzen Konfigurationswechsel. Bestehende Browser-Sitzungen behalten ihren bereits geladenen Code; neue Seitenaufrufe erhalten den neuen Stand.
 
-SERVICEWORKER-002 enthält für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI eine einmalige, ausdrücklich freigegebene Übergangsregel: Erst nach vollständig erfolgreichem App-Shell-Download aktiviert sich der neue Worker automatisch. Ohne `clients.claim()` und ohne Reload bleibt die laufende Sitzung auf ihrem geladenen Code. Solange der reale Altclient-Übergang noch nicht bestätigt ist, darf 0.10.7 dieselbe Brücke einmalig unverändert mitführen. Nach der dokumentierten Bestätigung ist ihre Entfernung im unmittelbar folgenden Worker/Release ein zwingendes Gate; die Regel darf nicht Teil des normalen Releaseablaufs werden.
+SERVICEWORKER-002 enthält für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI eine einmalige, ausdrücklich freigegebene Übergangsregel: Erst nach vollständig erfolgreichem App-Shell-Download aktiviert sich der neue Worker automatisch. Ohne `clients.claim()` und ohne Reload bleibt die laufende Sitzung auf ihrem geladenen Code. Solange der reale Altclient-Übergang noch nicht bestätigt ist, darf 0.10.8 dieselbe Brücke fachlich unverändert mitführen. Nach der dokumentierten Bestätigung ist ihre Entfernung im unmittelbar folgenden Worker/Release ein zwingendes Gate; die Regel darf nicht Teil des normalen Releaseablaufs werden.
 
 ### 8.4 Beta-Abnahme
 
