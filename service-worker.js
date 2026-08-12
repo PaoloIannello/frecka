@@ -1,35 +1,31 @@
 "use strict";
 
 const APP_SHELL_CACHE_PREFIX = "frecka-app-shell-";
-const APP_SHELL_CACHE = `${APP_SHELL_CACHE_PREFIX}0.10.9-update001b-1`;
-// Einmalige Brücke für bereits ausgelieferte 0.10.0/0.10.1-Clients ohne Update-UI.
-// Sie bleibt in 0.10.9 nur bis zur real bestätigten Übergangsabnahme erhalten und
-// muss im unmittelbar folgenden Worker/Release danach entfernt werden.
-const LEGACY_AUTO_ACTIVATION_FOR_SERVICEWORKER_002 = true;
+const APP_SHELL_CACHE = `${APP_SHELL_CACHE_PREFIX}0.10.10-serviceworker003-1`;
 const APP_ENTRY_URL = new URL("./index.html", self.location.href).href;
 const APP_SHELL_PATHS = Object.freeze([
   "./index.html",
-  "./styles.css?v=update001b-1",
-  "./manifest.webmanifest?v=update001b-1",
+  "./styles.css?v=serviceworker003-1",
+  "./manifest.webmanifest?v=serviceworker003-1",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
-  "./vendor/qrcodegen-v1.8.0-es6.js?v=update001b-1",
-  "./vendor/pdf-lib-v1.17.1.min.js?v=update001b-1",
-  "./vendor/jszip-v3.10.1.min.js?v=update001b-1",
-  "./js/config.js?v=update001b-1",
-  "./js/qr.js?v=update001b-1",
-  "./js/documents.js?v=update001b-1",
-  "./js/public-documents.js?v=update001b-1",
-  "./js/sharing.js?v=update001b-1",
-  "./js/document-view.js?v=update001b-1",
-  "./js/public-viewer.js?v=update001b-1",
-  "./js/data.js?v=update001b-1",
-  "./js/persistence.js?v=update001b-1",
-  "./js/backup.js?v=update001b-1",
-  "./js/export.js?v=update001b-1",
-  "./js/export-package.js?v=update001b-1",
-  "./js/pwa-update.js?v=update001b-1",
-  "./js/app.js?v=update001b-1"
+  "./vendor/qrcodegen-v1.8.0-es6.js?v=serviceworker003-1",
+  "./vendor/pdf-lib-v1.17.1.min.js?v=serviceworker003-1",
+  "./vendor/jszip-v3.10.1.min.js?v=serviceworker003-1",
+  "./js/config.js?v=serviceworker003-1",
+  "./js/qr.js?v=serviceworker003-1",
+  "./js/documents.js?v=serviceworker003-1",
+  "./js/public-documents.js?v=serviceworker003-1",
+  "./js/sharing.js?v=serviceworker003-1",
+  "./js/document-view.js?v=serviceworker003-1",
+  "./js/public-viewer.js?v=serviceworker003-1",
+  "./js/data.js?v=serviceworker003-1",
+  "./js/persistence.js?v=serviceworker003-1",
+  "./js/backup.js?v=serviceworker003-1",
+  "./js/export.js?v=serviceworker003-1",
+  "./js/export-package.js?v=serviceworker003-1",
+  "./js/pwa-update.js?v=serviceworker003-1",
+  "./js/app.js?v=serviceworker003-1"
 ]);
 const APP_SHELL_URLS = APP_SHELL_PATHS.map(path => new URL(path, self.location.href).href);
 
@@ -37,7 +33,6 @@ self.addEventListener("install", event => {
   event.waitUntil(
     caches.open(APP_SHELL_CACHE)
       .then(cache => cache.addAll(APP_SHELL_URLS))
-      .then(() => LEGACY_AUTO_ACTIVATION_FOR_SERVICEWORKER_002 ? self.skipWaiting() : undefined)
   );
 });
 

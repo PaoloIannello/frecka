@@ -1,6 +1,6 @@
 # FRECKA: Vollständiger Deployment- und Release-Workflow
 
-Stand: 11. August 2026
+Stand: 12. August 2026
 
 Geltungsbereich: Entwicklung im einzigen Master-Repository, lokaler automatisierter Beta-Release und weiterhin manuelle Web-Station-/Produktivfreigabe
 
@@ -168,7 +168,7 @@ Mit der in OFFLINE-001 eingeführten App-Shell kommen zwingend hinzu:
 - `registration.waiting` beim Start und `updatefound` während der Sitzung;
 - kein Aktivierungsaufruf und kein Reload ohne Nutzeraktion;
 - genau eine `SKIP_WAITING`-Nachricht und genau ein Reload nach `controllerchange`;
-- bereits aktivierter Ersatzworker aus der einmaligen Legacy-Brücke, auch wenn dessen `controllerchange` vor der Nutzeraktion lag;
+- bereits aktivierter Ersatzworker, auch wenn dessen `controllerchange` vor der Nutzeraktion lag;
 - bereits erfolgte oder kurz nach der Nutzeraktion sichtbare Worker-Übernahme bei veraltetem Workerzustand, auch wenn kein weiteres `statechange` oder `controllerchange` eintritt;
 - „Später erinnern“, erneutes Angebot in derselben Sitzung, Aktivierungszeitüberschreitung und erneuter Versuch;
 - verständlicher Fehlerzustand statt dauerhaftem „Wird aktualisiert …“ bei ausbleibender Aktivierung oder Navigation;
@@ -384,6 +384,8 @@ Das Artefakt wird zunächst unter einem versteckten `.build-<release-id>.*`-Name
 
 Der annotierte Tag `v0.10.8` zeigt auf den vollständigen Versionsstand `6056e64`; sein unveränderliches Artefakt bleibt wegen des abgelehnten realen Updateabschlusses unverändert. Der korrigierte Tag `v0.10.9` zeigt auf `5b180b64ec75ab6f6c2ef53842ead45c6cc32b4a`; `0.10.9-5b180b6` hat den realen Update- und Offlinepfad bestanden und ist die aktuelle Beta-Basis. Historische Tags und Artefakte werden durch RELEASE-AUTOMATION-001 weder umbenannt noch neu erzeugt.
 
+Der vorbereitete Patchkandidat `0.10.10` / `SERVICEWORKER-003` dient der ersten realen Validierung dieses Ein-Befehl-Prozesses. Seine maschinenlesbare Freigabenotiz steht unter `docs/releases/0.10.10.md`. SERVICEWORKER-003 entfernt nach bestätigter Altclient-Übergangsabnahme die einmalige SERVICEWORKER-002-Legacy-Brücke; das zugehörige Preflight-Gate bleibt als Regressionsschutz erhalten und blockiert den vorbereiteten Stand nicht mehr.
+
 ### 7.4 Unveränderlichkeit
 
 - Eine Release-ID darf auf der Synology nur einmal angelegt werden.
@@ -449,7 +451,7 @@ Das Skript ändert weder den Beta-Virtual-Host noch Produktivkonfigurationen. Di
 
 Da das neue Release vor dem Portalwechsel vollständig vorhanden ist, beschränkt sich die Downtime auf den kurzen Konfigurationswechsel. Bestehende Browser-Sitzungen behalten ihren bereits geladenen Code; neue Seitenaufrufe erhalten den neuen Stand.
 
-SERVICEWORKER-002 enthält in 0.10.9 für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI noch die einmalige, ausdrücklich freigegebene Übergangsregel. Erst nach vollständig erfolgreichem App-Shell-Download aktiviert sie den neuen Worker automatisch; ohne `clients.claim()` und ohne Reload bleibt die laufende alte Sitzung auf ihrem geladenen Code. Die reale Altclient-Übergangsabnahme ist mit 0.10.9 inzwischen bestätigt. Deshalb blockiert `scripts/release-beta.sh` jeden unmittelbar folgenden Kandidaten, solange `LEGACY_AUTO_ACTIVATION_FOR_SERVICEWORKER_002` noch aktiv ist. Die Regel darf nicht Teil des normalen Releaseablaufs werden.
+SERVICEWORKER-002 enthält in 0.10.9 für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI noch die einmalige, ausdrücklich freigegebene Übergangsregel. Die reale Altclient-Übergangsabnahme ist mit 0.10.9 bestätigt. SERVICEWORKER-003 entfernt deshalb in 0.10.10 sowohl `LEGACY_AUTO_ACTIVATION_FOR_SERVICEWORKER_002` als auch die davon ausgelöste Installations-Autoaktivierung. `scripts/release-beta.sh` behält die Erkennung als Regressionsschutz. Reguläre Worker warten nun ausnahmslos auf die bewusste `SKIP_WAITING`-Nachricht; die Regel ist nicht Teil des normalen Releaseablaufs.
 
 ### 8.4 Beta-Abnahme
 
@@ -587,7 +589,7 @@ Zur Reproduktion werden benötigt:
 
 ## 12. Updates über die Synology
 
-SERVICEWORKER-002 implementiert den lokalen Browser-Lifecycle innerhalb einer bereits aufgerufenen Deployment-Origin: eine Online-Prüfung pro Start, Erkennung eines wartenden Workers, Nutzerhinweis, bewusste `SKIP_WAITING`-Nachricht und genau einen Reload nach erfolgreicher Übernahme. UPDATE-001 ergänzt den bereits aktivierten Legacy-Rennfall, begrenzte Fehlerzustände und „Später erinnern“. UPDATE-001b verifiziert ausschließlich während des laufenden, ausdrücklich gestarteten Updateversuchs zusätzlich Worker-, Registration- und Controllerstand. Damit hängt der Abschluss nicht mehr davon ab, dass nach dem Klick zwingend noch ein `statechange` oder `controllerchange` eintritt. Alle Erfolgssignale und Mehrfachtippen teilen weiterhin dieselbe Einmal-Reload-Sperre. Offline-Start, Public Viewer und IndexedDB bleiben davon unabhängig. Dies ist noch kein signierter, kanalbasierter Updateclient; deshalb bleibt der sichtbare Versionshinweis bis zu einem freigegebenen Metadatenformat bewusst allgemein.
+SERVICEWORKER-002 implementiert den lokalen Browser-Lifecycle innerhalb einer bereits aufgerufenen Deployment-Origin: eine Online-Prüfung pro Start, Erkennung eines wartenden Workers, Nutzerhinweis, bewusste `SKIP_WAITING`-Nachricht und genau einen Reload nach erfolgreicher Übernahme. UPDATE-001 ergänzt den Rennfall eines bereits aktivierten Ersatzworkers, begrenzte Fehlerzustände und „Später erinnern“. UPDATE-001b verifiziert ausschließlich während des laufenden, ausdrücklich gestarteten Updateversuchs zusätzlich Worker-, Registration- und Controllerstand. Damit hängt der Abschluss nicht mehr davon ab, dass nach dem Klick zwingend noch ein `statechange` oder `controllerchange` eintritt. Alle Erfolgssignale und Mehrfachtippen teilen weiterhin dieselbe Einmal-Reload-Sperre. Offline-Start, Public Viewer und IndexedDB bleiben davon unabhängig. Dies ist noch kein signierter, kanalbasierter Updateclient; deshalb bleibt der sichtbare Versionshinweis bis zu einem freigegebenen Metadatenformat bewusst allgemein.
 
 Die spätere signierte PWA-Updatefunktion verwendet dieselben unveränderlichen Releases und ergänzt diesen Browser-Lifecycle um einen kontrollierten Auslieferungsweg:
 

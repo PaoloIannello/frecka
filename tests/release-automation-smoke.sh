@@ -247,7 +247,7 @@ assert_no_release_write "$FIXTURE_REPO" "$FIXTURE_LOG"
 # main ist gegenüber origin behind.
 create_fixture behind
 ADVANCE_REPO="$FIXTURE_BASE/advance"
-git clone -q "$FIXTURE_ORIGIN" "$ADVANCE_REPO"
+git clone -q -b main "$FIXTURE_ORIGIN" "$ADVANCE_REPO"
 (
   cd "$ADVANCE_REPO"
   git config user.name 'FRECKA Release Test'
@@ -320,6 +320,21 @@ create_fixture bad_allowlist
 )
 run_expect_failure "$FIXTURE_BASE/output.log" sh -c "cd '$FIXTURE_REPO' && FRECKA_RELEASE_TEST_LOG='$FIXTURE_LOG' ./scripts/release-beta.sh"
 grep -Fq 'Allowlist enthält einen ungültigen' "$FIXTURE_BASE/output.log"
+assert_no_release_write "$FIXTURE_REPO" "$FIXTURE_LOG"
+
+# Die nach real bestätigter Altclient-Abnahme noch aktive Legacy-Brücke ist
+# ein ausdrückliches Release-Gate: Stopp vor Tag, Artefakt und Deployment.
+create_fixture legacy_bridge
+(
+  cd "$FIXTURE_REPO"
+  sed 's/LEGACY_AUTO_ACTIVATION_FOR_SERVICEWORKER_002 = false/LEGACY_AUTO_ACTIVATION_FOR_SERVICEWORKER_002 = true/' service-worker.js > service-worker.js.new
+  mv service-worker.js.new service-worker.js
+  git add service-worker.js
+  git commit -q -m 'Keep confirmed legacy bridge active'
+  git push -q origin main
+)
+run_expect_failure "$FIXTURE_BASE/output.log" sh -c "cd '$FIXTURE_REPO' && FRECKA_RELEASE_TEST_LOG='$FIXTURE_LOG' ./scripts/release-beta.sh"
+grep -Fq 'SERVICEWORKER-002-Legacy-Brücke muss vor dem nächsten Release entfernt werden' "$FIXTURE_BASE/output.log"
 assert_no_release_write "$FIXTURE_REPO" "$FIXTURE_LOG"
 
 # Serverseitige Release-ID ist bereits belegt: Stopp vor Tag und Artefakt.

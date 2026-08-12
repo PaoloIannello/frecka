@@ -1,6 +1,20 @@
-# FRECKA – UPDATE-001b
+# FRECKA – SERVICEWORKER-003
 
-Browserbasierte FRECKA-PWA 0.10.9 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share- und PWA-Update-Infrastruktur. UPDATE-001b schließt ausschließlich den bewussten PWA-Updatewechsel zuverlässig ab, auch wenn der Browser das erwartete Lifecycle-Ereignis bereits vor der Nutzeraktion ausgelöst hat oder nicht erneut liefert. Geschäftsdaten bleiben lokal; für den geräteübergreifenden Kundenbeleg gibt es weder einen zentralen Belegserver noch einen ungefragten Import in die IndexedDB des zweiten Geräts.
+Browserbasierte FRECKA-PWA 0.10.10 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Dieser Patchkandidat enthält RELEASE-AUTOMATION-001, RELEASE-AUTOMATION-002 und SERVICEWORKER-003; Fach-, Persistenz- und Dokumentlogik bleiben unverändert.
+
+## Neu in RELEASE-AUTOMATION-001/002
+
+- ein lokaler Ein-Befehl-Prozess prüft einen bereits freigegebenen und gepushten Release-Commit, erzeugt erst danach den annotierten Tag und baut das unveränderliche Artefakt ausschließlich aus diesem Tag
+- eine versionierte Laufzeit-Allowlist, reproduzierbare `RELEASE.txt`/`SHA256SUMS`, exakte `0444`/`0555`-Rechte und No-Clobber-Gates sichern Artefakt und Beta-Upload
+- der bestehende Synology-Transport bleibt bei rein lesender Zielprüfung, Dry-Run und anschließendem ausdrücklichem Upload; Web Station und Geräteabnahme bleiben manuell
+- die kompakte Erfolgsausgabe nennt Version, Tag, Release-ID und `/volume1/web/FRECKA/releases/<release-id>/site`
+
+## Neu in SERVICEWORKER-003
+
+- die einmalige SERVICEWORKER-002-Legacy-Konstante und ihre Installations-Autoaktivierung sind nach bestandener 0.10.9-Übergangsabnahme entfernt
+- eine App-Shell-Installation aktiviert den Worker nicht mehr selbst; `skipWaiting()` bleibt ausschließlich hinter der bewussten `SKIP_WAITING`-Nachricht
+- der UPDATE-001b-Nutzeraktionspfad, genau ein Reload, Mehrfachtipp-Schutz, Timeout-/Fehlerpfad und „Später erinnern“ bleiben unverändert
+- das Release-Gate bleibt als Regressionsschutz bestehen und blockiert 0.10.10 nicht mehr
 
 ## Neu in UPDATE-001b
 
@@ -82,10 +96,10 @@ Für den realen iPhone-Test genau einmal **Diagnose erstellen** antippen, den lo
 - genau ein kontrollierter Reload nach `controllerchange`; kein Reload ohne vorherige Nutzeraktion und keine Reload-Schleife
 - Schutz offener Belegentwürfe und laufender lokaler Schreibvorgänge vor einem Updatewechsel
 - Offline-Start ohne falsche Updatefehlermeldung sowie unveränderte App-Shell-, Public-Viewer- und IndexedDB-Isolation
-- einmalige, ausdrücklich freigegebene Legacy-Brücke für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI: automatische Worker-Aktivierung, aber kein `clients.claim()` und kein automatischer Reload
+- historische, ausschließlich bis zur realen Altclient-Abnahme freigegebene Legacy-Brücke für 0.10.0-/0.10.1-Clients; in 0.10.10 durch SERVICEWORKER-003 entfernt
 - eigene automatisierte Lifecycle-Tests zusätzlich zum 145-Fälle-Fach- und Persistenzlauf
 
-Die Legacy-Brücke aus SERVICEWORKER-002 blieb in 0.10.9 ausnahmsweise unverändert erhalten. Der reale Übergang ist mit der erfolgreichen 0.10.9-Geräteabnahme bestätigt; ihre Entfernung ist deshalb ein zwingendes Gate für den unmittelbar folgenden Worker/Release und wird vom neuen Release-Preflight erzwungen. Die dauerhafte Reihenfolge bleibt: Hinweis → Nutzeraktion → `SKIP_WAITING` → genau ein Reload.
+Die Legacy-Brücke aus SERVICEWORKER-002 blieb in 0.10.9 ausnahmsweise erhalten. Nach der erfolgreichen realen Übergangsabnahme entfernt SERVICEWORKER-003 sie in 0.10.10 vollständig. Die dauerhafte Reihenfolge lautet: Hinweis → Nutzeraktion → `SKIP_WAITING` → genau ein Reload.
 
 ## Neu in EXPORT-003
 

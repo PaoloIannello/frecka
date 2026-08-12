@@ -211,18 +211,18 @@ function createHarness({
 }
 
 {
-  const legacyWorker = createWorker("installed");
-  const harness = createHarness({ waiting: legacyWorker });
+  const alreadyActivatedWorker = createWorker("installed");
+  const harness = createHarness({ waiting: alreadyActivatedWorker });
   await harness.controller.start();
   harness.registration.waiting = null;
-  harness.registration.active = legacyWorker;
-  legacyWorker.state = "activated";
-  legacyWorker.dispatch("statechange");
+  harness.registration.active = alreadyActivatedWorker;
+  alreadyActivatedWorker.state = "activated";
+  alreadyActivatedWorker.dispatch("statechange");
   harness.container.dispatch("controllerchange");
-  assert.equal(harness.reloads(), 0, "Die Legacy-Brücke darf ohne Nutzeraktion keinen Reload auslösen.");
+  assert.equal(harness.reloads(), 0, "Ein bereits aktivierter Ersatzworker darf ohne Nutzeraktion keinen Reload auslösen.");
   assert.equal(harness.controller.activate(() => true).status, "requested");
-  assert.equal(legacyWorker.messages.length, 0, "Ein bereits aktivierter Legacy-Worker benötigt keine zweite Aktivierungsnachricht.");
-  assert.equal(harness.reloads(), 1, "Die bewusste Nutzeraktion muss den bereits aktivierten Legacy-Worker per Reload übernehmen.");
+  assert.equal(alreadyActivatedWorker.messages.length, 0, "Ein bereits aktivierter Ersatzworker benötigt keine zweite Aktivierungsnachricht.");
+  assert.equal(harness.reloads(), 1, "Die bewusste Nutzeraktion muss den bereits aktivierten Ersatzworker per Reload übernehmen.");
   harness.container.dispatch("controllerchange");
   assert.equal(harness.reloads(), 1);
 }
@@ -375,14 +375,14 @@ assert.match(indexSource, />Jetzt aktualisieren</);
 assert.match(indexSource, />Später erinnern</);
 assert.match(indexSource, /Verbesserungen für Stabilität und Bedienung/);
 assert.doesNotMatch(indexSource, /Commit|Buildnummer|Service Worker/);
-assert.match(indexSource, /<title>FRECKA – UPDATE-001b<\/title>/);
+assert.match(indexSource, /<title>FRECKA – SERVICEWORKER-003<\/title>/);
 assert.match(appSource, /Aktualisierung nicht abgeschlossen/);
 assert.match(appSource, /Erneut versuchen/);
-assert.match(indexSource, /js\/pwa-update\.js\?v=update001b-1/);
+assert.match(indexSource, /js\/pwa-update\.js\?v=serviceworker003-1/);
 assert.match(stylesSource, /\.app-update-notice\[hidden\],\.app-update-notice \[hidden\]\{display:none\}/);
 assert.match(stylesSource, /@media\(max-width:340px\)/);
-assert.match(dataSource, /version:\s*"0\.10\.9"/);
-assert.match(dataSource, /build:\s*"UPDATE-001b"/);
+assert.match(dataSource, /version:\s*"0\.10\.10"/);
+assert.match(dataSource, /build:\s*"SERVICEWORKER-003"/);
 
 const businessSnapshot = Object.freeze({ receipts: 7, customers: 4, vouchers: 3, settingsVersion: 5 });
 const snapshotBefore = JSON.stringify(businessSnapshot);
@@ -392,4 +392,4 @@ snapshotHarness.controller.activate(() => true);
 snapshotHarness.container.dispatch("controllerchange");
 assert.equal(JSON.stringify(businessSnapshot), snapshotBefore, "Der Update-Lifecycle darf Geschäftsdaten nicht verändern.");
 
-console.log("PWA-Update-Smoke-Test: PASS (waiting, früher/fehlender Lifecycle-Event, Legacy-Rennfall, Verschieben, Fehler, genau ein Reload, Offline, Datenisolation)");
+console.log("PWA-Update-Smoke-Test: PASS (waiting, früher/fehlender Lifecycle-Event, bereits aktiver Ersatzworker, Verschieben, Fehler, genau ein Reload, Offline, Datenisolation)");

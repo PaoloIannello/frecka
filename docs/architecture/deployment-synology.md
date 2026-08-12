@@ -1,8 +1,8 @@
 # FRECKA: Deployment- und Infrastrukturkonzept für Synology Web Station
 
-Stand: 11. August 2026
+Stand: 12. August 2026
 
-Geltungsbereich: freigegebene Beta-Basis `0.10.9-5b180b6`, Build `UPDATE-001b`, und lokaler automatisierter Beta-Release für nachfolgende Kandidaten
+Geltungsbereich: freigegebene Beta-Basis `0.10.9-5b180b6`, vorbereiteter Patchkandidat `0.10.10` / `SERVICEWORKER-003` und lokaler automatisierter Beta-Release
 
 Der verbindliche Infrastrukturrahmen steht in `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`. Dieses Dokument konkretisiert ausschließlich die statische Laufzeitmenge und ihre spätere Zuordnung zu Synology Web Station.
 
@@ -139,9 +139,9 @@ Noch nicht vorhanden beziehungsweise nicht produktionsreif sind:
 
 `js/pwa-update.js` registriert im Auftrag von `js/app.js` den `service-worker.js` relativ zur ausgelieferten App-Adresse mit Scope `./`. Der Service Worker lädt die statische Laufzeit-Allowlist während der Installation vollständig in einen versionsgebundenen Cache. Schlägt dies fehl, wird die neue Version nicht installiert. Bei Aktivierung werden ausschließlich ältere Caches mit dem Präfix `frecka-app-shell-` gelöscht; fremde Cache-Storage-Inhalte und IndexedDB bleiben unverändert. Navigationen innerhalb des Scopes verwenden ausschließlich den aktuellen benannten App-Shell-Cache und dessen `index.html`, sodass die installierte App-Shell nach mindestens einem erfolgreichen Online-Start kalt offline starten kann.
 
-SERVICEWORKER-002 berücksichtigt `registration.waiting` beim Start, beobachtet `updatefound` und `statechange` und ruft bei bestehender Online-Verbindung einmal `registration.update()` auf. Ein wartender Worker wird angezeigt, aber erst durch „Jetzt aktualisieren“ mit `{ type: "SKIP_WAITING" }` aktiviert. UPDATE-001 behandelt zusätzlich den einmaligen Legacy-Rennfall eines bereits aktivierten Workers und verwendet für `activated` und `controllerchange` eine gemeinsame Einmal-Reload-Sperre. Der reale iPhone-Test von `0.10.8-6056e64` zeigte jedoch, dass die UI nach dem Klick blockiert, wenn das gehaltene Worker-Objekt noch keinen aktivierten Zustand meldet und kein weiteres Lifecycle-Ereignis eintritt. UPDATE-001b verifiziert deshalb ausschließlich während des ausdrücklich gestarteten Aktivierungsversuchs zusätzlich `registration.active` sowie Änderungen von aktivem Worker und Controller seit Anzeige des Hinweises. Eine bereits erfolgte Übernahme führt so auch ohne weiteres `controllerchange` zu genau einem Reload. Bleibt Aktivierung oder Navigation tatsächlich aus, endet die Warteanzeige weiterhin zeitlich begrenzt in einem wiederholbaren Fehlerzustand. „Später erinnern“ bleibt rein sitzungsbezogen; ohne Nutzeraktion gibt es weiterhin keinen Reload.
+SERVICEWORKER-002 berücksichtigt `registration.waiting` beim Start, beobachtet `updatefound` und `statechange` und ruft bei bestehender Online-Verbindung einmal `registration.update()` auf. Ein wartender Worker wird angezeigt, aber erst durch „Jetzt aktualisieren“ mit `{ type: "SKIP_WAITING" }` aktiviert. UPDATE-001 behandelt zusätzlich den Rennfall eines bereits aktivierten Ersatzworkers und verwendet für `activated` und `controllerchange` eine gemeinsame Einmal-Reload-Sperre. Der reale iPhone-Test von `0.10.8-6056e64` zeigte jedoch, dass die UI nach dem Klick blockiert, wenn das gehaltene Worker-Objekt noch keinen aktivierten Zustand meldet und kein weiteres Lifecycle-Ereignis eintritt. UPDATE-001b verifiziert deshalb ausschließlich während des ausdrücklich gestarteten Aktivierungsversuchs zusätzlich `registration.active` sowie Änderungen von aktivem Worker und Controller seit Anzeige des Hinweises. Eine bereits erfolgte Übernahme führt so auch ohne weiteres `controllerchange` zu genau einem Reload. Bleibt Aktivierung oder Navigation tatsächlich aus, endet die Warteanzeige weiterhin zeitlich begrenzt in einem wiederholbaren Fehlerzustand. „Später erinnern“ bleibt rein sitzungsbezogen; ohne Nutzeraktion gibt es weiterhin keinen Reload.
 
-Der SERVICEWORKER-002-Worker besitzt in 0.10.9 zusätzlich die **einmalige Legacy-Brücke**, weil bereits ausgelieferte 0.10.0-/0.10.1-Clients die neue Update-UI noch nicht enthalten und deshalb keine Aktivierungsnachricht senden können. Erst nachdem seine vollständige App-Shell erfolgreich gecacht ist, darf diese Brücke automatisch `skipWaiting()` ausführen. Sie verwendet ausdrücklich kein `clients.claim()` und löst keinen Reload aus; die laufende alte Sitzung wechselt damit nicht mitten im Betrieb auf neuen Anwendungscode. Der reale Übergang der bereits ausgelieferten Altclients ist mit der erfolgreichen 0.10.9-Abnahme bestätigt. Legacy-Konstante und automatischer Installationsaufruf müssen deshalb vor dem unmittelbar folgenden Worker/Release entfernt werden; `scripts/release-beta.sh` blockiert einen Kandidaten, solange die Brücke aktiv ist. Die Nachrichtenbehandlung für bewusst ausgelöste spätere Updates bleibt bestehen.
+Der SERVICEWORKER-002-Worker besaß in 0.10.9 zusätzlich die **einmalige Legacy-Brücke** für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI. Der reale Übergang dieser Altclients ist mit der erfolgreichen 0.10.9-Abnahme bestätigt. SERVICEWORKER-003 entfernt deshalb in 0.10.10 sowohl die Legacy-Konstante als auch den automatischen `skipWaiting()`-Aufruf nach erfolgreicher App-Shell-Installation. Die Nachrichtenbehandlung für bewusst ausgelöste Updates bleibt der einzige Aktivierungspfad; `clients.claim()` und automatische Reloads bleiben ausgeschlossen. `scripts/release-beta.sh` behält sein Legacy-Gate als Regressionsschutz.
 
 Signierte Kanalmetadaten, ein Release-/Update-Manifest und ein serverseitiger Updatekanal bleiben spätere, getrennt freizugebende Bausteine.
 
@@ -167,6 +167,8 @@ Der annotierte Tag `v0.10.1` zeigt auf Commit `c195a099ef57af79177496f48d217247f
 
 Der annotierte Tag `v0.10.8` zeigt auf Commit `6056e64db92eb79666f3f6216546cc8cbc1eb6d8`; das daraus erzeugte und auf Beta bereitgestellte Artefakt trägt die Release-ID `0.10.8-6056e64`. Sein realer iPhone-Test ist wegen des blockierten Updateabschlusses abgelehnt. Der korrigierte annotierte Tag `v0.10.9` zeigt auf Commit `5b180b64ec75ab6f6c2ef53842ead45c6cc32b4a`; das daraus erzeugte unveränderliche und auf Beta geprüfte Artefakt trägt die Release-ID `0.10.9-5b180b6`. Es verwendet Build `UPDATE-001b`, den HTML-Titel `FRECKA – UPDATE-001b`, den Asset-Abfragewert `update001b-1` und den App-Shell-Cache `frecka-app-shell-0.10.9-update001b-1`.
 
+Der noch nicht getaggte Patchkandidat `0.10.10` verwendet Build `SERVICEWORKER-003`, den HTML-Titel `FRECKA – SERVICEWORKER-003`, den Asset-Abfragewert `serviceworker003-1` und den App-Shell-Cache `frecka-app-shell-0.10.10-serviceworker003-1`. Er enthält keine neue Fachfunktion. SERVICEWORKER-003 entfernt die bestätigte Legacy-Brücke; das entsprechende Orchestrator-Gate löst im vorbereiteten Stand nicht mehr aus. Es existieren noch kein Tag, keine Release-ID und kein Artefakt für 0.10.10.
+
 Ein Updateformat für signierte Kanäle und ein Signaturverfahren sind ausdrücklich noch nicht implementiert. SERVICEWORKER-002 erkennt ausschließlich Änderungen des Service Workers innerhalb derselben bereits aufgerufenen Deployment-Origin.
 
 ### 2.7 Beta-Betriebsnachweis 0.9.1
@@ -182,6 +184,10 @@ Bewertung: `0.9.1-26dc63f` ist für den Beta-Betrieb freigegeben und gilt als st
 ### 2.9 Beta-Betriebsnachweis 0.10.9
 
 `0.10.9-5b180b6` bestand anschließend auf einem echten iPhone als installierte Home-Screen-PWA den korrigierten UPDATE-001b-Wechsel. Offline-Kaltstart, bestehende lokale Daten, Offline-Belegerstellung und der Fortbestand des offline erzeugten Belegs nach vollständigem Beenden und Rückkehr ins Netz wurden bestätigt. Bewertung: Beta-GO und aktuelle stabile Beta-Basis; noch keine Produktivfreigabe für `app.frecka.app`.
+
+### 2.10 Vorbereiteter Patchkandidat 0.10.10
+
+0.10.10 bündelt die bereits committed Blöcke RELEASE-AUTOMATION-001 und RELEASE-AUTOMATION-002 sowie SERVICEWORKER-003. Die lokale Versionierung und alle automatisierbaren Prüfungen sind vorbereitet. Das Legacy-Gate ist nach der gezielten Entfernung der einmaligen Brücke offen; Web Station und die aktuelle Beta-Basis bleiben bis zu einem ausdrücklichen Release und Portalwechsel unverändert.
 
 ## 3. Abgeleitete Deployment-Prinzipien
 
@@ -360,7 +366,7 @@ Ein Code-Rollback kann keine bereits ausgeführte IndexedDB-Migration zurückdre
 
 Für den Updatekanal beschränkt sich die Rolle der Synology auf die Auslieferung statischer Programmdateien und späterer Update-Metadaten. Die nach ADR-0003 getrennten dynamischen Dienste sind davon unabhängig. SERVICEWORKER-002 erkennt neue Worker innerhalb derselben Deployment-Origin, zeigt einen nichtblockierenden Hinweis und aktiviert einen regulär wartenden Worker erst nach bewusster Nutzeraktion. Diese Browserfunktion benötigt weder einen Serverdienst noch eine zweite Datenhaltung und verändert keine IndexedDB-Daten.
 
-Die einmalige Legacy-Brücke im SERVICEWORKER-002-Worker diente ausschließlich dem Übergang bereits ausgelieferter Clients, die diese Updateoberfläche noch nicht kannten. Sie darf nicht als allgemeine Updatepolitik kopiert werden. 0.10.9 trägt sie noch, die reale Übergangsabnahme ist aber inzwischen bestätigt. Ihre Entfernung ist daher vor dem unmittelbar folgenden Worker/Release ein zwingendes, automatisiert geprüftes Gate. Danach gilt ausschließlich: vollständig installieren → Hinweis anzeigen → Nutzeraktion → `SKIP_WAITING` → genau ein Reload. `clients.claim()` und automatische Reloads bleiben ausgeschlossen.
+Die einmalige Legacy-Brücke im SERVICEWORKER-002-Worker diente ausschließlich dem Übergang bereits ausgelieferter Clients, die diese Updateoberfläche noch nicht kannten. 0.10.9 trägt sie noch; nach bestätigter realer Übergangsabnahme entfernt SERVICEWORKER-003 sie in 0.10.10. Seither gilt ausschließlich: vollständig installieren → Hinweis anzeigen → Nutzeraktion → `SKIP_WAITING` → genau ein Reload. `clients.claim()`, Installations-Autoaktivierung und automatische Reloads bleiben ausgeschlossen. Das Preflight-Gate verhindert eine spätere versehentliche Wiedereinführung.
 
 Ein signierter kanalbasierter Updateclient ist damit noch nicht umgesetzt. Daher werden weiterhin weder Dateinamen noch JSON-Felder eines vermeintlichen Update-Manifests festgelegt.
 

@@ -6,7 +6,7 @@ const source = await readFile(new URL("../service-worker.js", import.meta.url), 
 const appSource = await readFile(new URL("../js/app.js", import.meta.url), "utf8");
 const indexSource = await readFile(new URL("../index.html", import.meta.url), "utf8");
 const manifest = JSON.parse(await readFile(new URL("../manifest.webmanifest", import.meta.url), "utf8"));
-const baseUrl = "https://beta.frecka.app/releases/0.10.9-test/site/";
+const baseUrl = "https://beta.frecka.app/releases/0.10.10-test/site/";
 const listeners = new Map();
 const addedUrls = [];
 const deletedCaches = [];
@@ -81,15 +81,15 @@ listeners.get("install")({
 });
 await installPromise;
 
-assert.equal(skipWaitingCalls, 1, "Die einmalige SERVICEWORKER-002-Legacy-Brücke wurde nicht ausgeführt.");
+assert.equal(skipWaitingCalls, 0, "Die Installation darf den Worker nicht mehr automatisch aktivieren.");
 assert.equal(addedUrls.length, 22, "Der vollständige App-Shell muss vorab gecacht werden.");
 assert.equal(new Set(addedUrls).size, addedUrls.length, "App-Shell-URLs dürfen nicht doppelt sein.");
 assert.ok(addedUrls.includes(`${baseUrl}index.html`));
-assert.ok(addedUrls.includes(`${baseUrl}styles.css?v=update001b-1`));
-assert.ok(addedUrls.includes(`${baseUrl}vendor/jszip-v3.10.1.min.js?v=update001b-1`));
-assert.ok(addedUrls.includes(`${baseUrl}js/export-package.js?v=update001b-1`));
-assert.ok(addedUrls.includes(`${baseUrl}js/pwa-update.js?v=update001b-1`));
-assert.ok(addedUrls.includes(`${baseUrl}js/app.js?v=update001b-1`));
+assert.ok(addedUrls.includes(`${baseUrl}styles.css?v=serviceworker003-1`));
+assert.ok(addedUrls.includes(`${baseUrl}vendor/jszip-v3.10.1.min.js?v=serviceworker003-1`));
+assert.ok(addedUrls.includes(`${baseUrl}js/export-package.js?v=serviceworker003-1`));
+assert.ok(addedUrls.includes(`${baseUrl}js/pwa-update.js?v=serviceworker003-1`));
+assert.ok(addedUrls.includes(`${baseUrl}js/app.js?v=serviceworker003-1`));
 assert.ok(addedUrls.every(url => url.startsWith(baseUrl)), "Alle URLs müssen relativ zum Release-Unterpfad bleiben.");
 
 const htmlRuntimeReferences = [...indexSource.matchAll(/(?:src|href)="([^"]+)"/g)]
@@ -104,15 +104,16 @@ for (const icon of manifest.icons) {
 
 assert.equal(manifest.start_url, "./index.html#/home");
 assert.equal(manifest.scope, "./");
-assert.equal(new URL(manifest.start_url, baseUrl).pathname, "/releases/0.10.9-test/site/index.html");
-assert.equal(new URL(manifest.scope, baseUrl).pathname, "/releases/0.10.9-test/site/");
+assert.equal(new URL(manifest.start_url, baseUrl).pathname, "/releases/0.10.10-test/site/index.html");
+assert.equal(new URL(manifest.scope, baseUrl).pathname, "/releases/0.10.10-test/site/");
 assert.match(appSource, /pwaUpdateController\.start\(\{\s*scriptUrl:\s*"\.\/service-worker\.js",\s*scope:\s*"\.\/"\s*\}\)/);
 assert.doesNotMatch(appSource, /\.unregister\s*\(/);
 assert.doesNotMatch(appSource, /caches\.keys\s*\(/);
-assert.doesNotMatch(source, /clients\.claim\s*\(/, "Die Legacy-Brücke darf laufende Clients nicht übernehmen.");
+assert.doesNotMatch(source, /LEGACY_AUTO_ACTIVATION_FOR_SERVICEWORKER_002/, "Die SERVICEWORKER-002-Legacy-Konstante muss vollständig entfernt sein.");
+assert.doesNotMatch(source, /clients\.claim\s*\(/, "Der Worker darf laufende Clients nicht automatisch übernehmen.");
 assert.doesNotMatch(source, /indexedDB|localStorage|sessionStorage/, "Der Worker darf keine Geschäftsdaten berühren.");
 
-const currentCache = [...cacheNames].find(name => name === "frecka-app-shell-0.10.9-update001b-1");
+const currentCache = [...cacheNames].find(name => name === "frecka-app-shell-0.10.10-serviceworker003-1");
 assert.ok(currentCache, "Der versionsgebundene Cache wurde nicht angelegt.");
 
 let unrelatedMessageWaited = false;
@@ -123,7 +124,7 @@ listeners.get("message")({
   }
 });
 assert.equal(unrelatedMessageWaited, false, "Fremde Nachrichten dürfen den Worker nicht aktivieren.");
-assert.equal(skipWaitingCalls, 1);
+assert.equal(skipWaitingCalls, 0);
 
 let messagePromise;
 listeners.get("message")({
@@ -133,7 +134,7 @@ listeners.get("message")({
   }
 });
 await messagePromise;
-assert.equal(skipWaitingCalls, 2, "Die bewusste Aktivierungsnachricht wurde nicht verarbeitet.");
+assert.equal(skipWaitingCalls, 1, "Die bewusste Aktivierungsnachricht wurde nicht verarbeitet.");
 
 let activatePromise;
 listeners.get("activate")({
@@ -165,7 +166,7 @@ listeners.get("fetch")({
 assert.equal(await navigationResponse, cachedEntry, "Offline-Navigation muss auf index.html zurückfallen.");
 assert.equal(networkRequests.length, 0, "Für den gecachten Offline-Start darf kein Netzwerkzugriff nötig sein.");
 
-const cachedAsset = { source: "cache", url: `${baseUrl}styles.css?v=update001b-1` };
+const cachedAsset = { source: "cache", url: `${baseUrl}styles.css?v=serviceworker003-1` };
 responses.set(cachedAsset.url, cachedAsset);
 let assetResponse;
 listeners.get("fetch")({
@@ -221,4 +222,4 @@ listeners.get("fetch")({
 });
 assert.equal(interceptedExternal, false, "Fremde Origins dürfen nicht abgefangen werden.");
 
-console.log("Service-Worker-Smoke-Test: PASS (Legacy-Brücke, Nachricht, App-Shell, Unterpfad, Offline-Fallback, Cache-Isolation)");
+console.log("Service-Worker-Smoke-Test: PASS (keine Autoaktivierung, Nutzeraktionsnachricht, App-Shell, Unterpfad, Offline-Fallback, Cache-Isolation)");
