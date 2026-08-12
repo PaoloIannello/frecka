@@ -1635,6 +1635,28 @@
         }
       },
       {
+        name: "UX-011 und UPDATE-002 zeigen reale Einstellungen und verwenden den zentralen Updatecontroller",
+        run: async () => {
+          const response = await fetch("../js/app.js", { cache: "no-store" });
+          assert(response.ok, "App-Quelle für UX-011/UPDATE-002 konnte nicht geladen werden");
+          const source = await response.text();
+          const menuStart = source.indexOf("const settingsSections = [");
+          const menuEnd = source.indexOf("const setupSteps", menuStart);
+          const updateStart = source.indexOf("function settingsUpdatePanelMarkup()");
+          const updateEnd = source.indexOf("const userDisplayNameMaxLength", updateStart);
+          const menuSource = source.slice(menuStart, menuEnd);
+          const updateSource = source.slice(updateStart, updateEnd);
+          assert(menuSource.includes('title: "Benutzer", note: "Benutzerprofil und Grundeinstellungen verwalten", available: true'), "Benutzer bleibt veraltet als geplant gekennzeichnet");
+          assert(menuSource.includes('{ id: "settings-update", icon: "↻", title: "Update"'), "Update besitzt keine echte Einstellungsroute");
+          assert(menuSource.includes('title: "TSE-Vorbereitung"') && menuSource.includes('note: "Für eine spätere Version vorbereitet"'), "TSE-Vorbereitung wurde fälschlich aktiviert");
+          assert(updateSource.includes("Aktuelle Version") && updateSource.includes("Build"), "Update-Seite zeigt Version oder Build nicht an");
+          assert(updateSource.includes('data-action="update-check"') && updateSource.includes("Nach Updates suchen"), "Manuelle Update-Suche fehlt");
+          assert(updateSource.includes('data-action="update-install"') && updateSource.includes('data-action="update-later"'), "Kontrollierter Aktivierungs- oder Später-Pfad fehlt");
+          assert(source.includes("await pwaUpdateController?.check?.()") && source.includes("pwaUpdateController?.activate(updateActivationPermission)"), "Update-Seite verwendet nicht den zentralen Updatecontroller");
+          assert(!updateSource.includes("SKIP_WAITING") && !updateSource.includes("location.reload"), "Update-Seite dupliziert Aktivierung oder Reload");
+        }
+      },
+      {
         name: "LICENSE-001 erzeugt genau eine stabile lokale und datensparsame Gerätebindung",
         run: async () => {
           const tenantId = "test-license-model";
@@ -3460,6 +3482,41 @@
         }
       },
       {
+        name: "BACKUP-003 berechnet Wochenfrist, 24-Stunden-Snooze und erfolgreiche Sicherung deterministisch",
+        run: async () => {
+          const baseline = Date.parse("2030-01-01T10:00:00.000Z");
+          const reminder = api.normalizeBackupReminder({}, null, new Date(baseline).toISOString());
+          assert(!api.backupReminderIsDue(reminder, baseline + api.constants.backupReminderDelayMs - 1), "Erinnerung erschien vor sieben Tagen");
+          assert(api.backupReminderIsDue(reminder, baseline + api.constants.backupReminderDelayMs), "Erinnerung erschien nach sieben Tagen nicht");
+
+          const snoozedAt = baseline + api.constants.backupReminderDelayMs;
+          const snoozed = api.snoozeBackupReminder(reminder, snoozedAt);
+          assert(!api.backupReminderIsDue(snoozed, snoozedAt + api.constants.backupReminderSnoozeMs - 1), "Snooze endete vor 24 Stunden");
+          assert(api.backupReminderIsDue(snoozed, snoozedAt + api.constants.backupReminderSnoozeMs), "Erinnerung kehrte nach 24 Stunden nicht zurück");
+
+          const completedAt = snoozedAt + 60_000;
+          const completed = api.completeBackupReminder(snoozed, completedAt);
+          assertEqual(completed.lastSuccessfulAt, new Date(completedAt).toISOString(), "Erfolgreiche Sicherung setzte keinen neuen Referenzzeitpunkt");
+          assertEqual(completed.snoozedUntil, null, "Erfolgreiche Sicherung ließ den Snooze aktiv");
+          assert(!api.backupReminderIsDue(completed, completedAt + api.constants.backupReminderDelayMs - 1), "Neue Sicherung startete die Wochenfrist nicht neu");
+          assert(api.backupReminderIsDue(completed, completedAt + api.constants.backupReminderDelayMs), "Neue Wochenfrist endete nicht deterministisch");
+        }
+      },
+      {
+        name: "BACKUP-003 gibt Erstinstallation und historischem Bestand ohne Metadaten sieben Tage Schonfrist",
+        run: async () => {
+          const initializedAt = "2030-04-01T08:00:00.000Z";
+          const defaults = recordFixture("backup-reminder-legacy");
+          defaults.backupReminder = api.normalizeBackupReminder({}, null, initializedAt);
+          const historical = clone(defaults);
+          delete historical.backupReminder;
+          const normalized = api.normalizeSettingsRecord(historical, defaults, "backup-reminder-legacy");
+          assert(normalized.repairs.includes("BACKUP_REMINDER_DEFAULTED"), "Historischer Bestand weist die Ergänzung nicht aus");
+          assertEqual(normalized.record.backupReminder.baselineAt, initializedAt, "Historischer Bestand erhielt keinen deterministischen lokalen Startzeitpunkt");
+          assert(!api.backupReminderIsDue(normalized.record.backupReminder, Date.parse(initializedAt)), "Historischer Bestand wurde sofort aggressiv erinnert");
+        }
+      },
+      {
         name: "Backup-Workflow bereitet einen erfolgreichen Bestand ohne vorzeitige Ausgabe vor",
         run: async () => {
           const calls = [];
@@ -3577,6 +3634,8 @@
           const outputCatchStart = outputActionBlock.indexOf("} catch (error)", successfulRenderStart);
           assert(cancelledResultStart >= 0 && successfulResultStart > cancelledResultStart, "Share-Abbruch wird nicht vor der Erfolgsbehandlung beendet");
           assert(outputActionBlock.slice(cancelledResultStart, successfulResultStart).includes("return"), "Share-Abbruch kann bis zum Leeren der Kennwortfelder weiterlaufen");
+          assert(!outputActionBlock.slice(cancelledResultStart, successfulResultStart).includes("recordSuccessfulBackup"), "Share-Abbruch setzt fälschlich den Sicherungszeitpunkt zurück");
+          assert(outputActionBlock.slice(successfulResultStart).includes("recordSuccessfulBackup"), "Bestätigte Backup-Ausgabe setzt den Sicherungszeitpunkt nicht zurück");
           assert(successfulRenderStart > successfulResultStart, "Kennwortfelder werden nicht ausschließlich nach bestätigter Ausgabe neu gerendert");
           assert(outputCatchStart > successfulRenderStart && !outputActionBlock.slice(outputCatchStart).includes("renderSettingsBackup"), "Ausgabefehler leeren weiterhin die Kennwortfelder");
           assert(navigateBlock.includes('state.route === "settings-backup" || nextRoute === "settings-backup"'), "Navigation invalidiert laufende Backup-Versuche nicht zentral");
@@ -4315,6 +4374,32 @@
           assertEqual((await persistence.readCatalog()).items[0].name, "Wiederhergestellte Leistung", "Katalog wurde nicht ersetzt");
           assertEqual((await persistence.readReceipts()).receipts[1].note, "Wiederhergestellter Beleg", "Belege wurden nicht ersetzt");
           assertEqual((await persistence.readVouchers()).vouchers[0].qrLink, "https://example.invalid/restored", "Gutscheine wurden nicht ersetzt");
+        }
+      },
+      {
+        name: "Restore bewahrt den lokalen BACKUP-003-Erinnerungsstatus atomar",
+        run: async () => {
+          const persistence = context.makeClient("backup-reminder-restore");
+          const current = completeTenantSnapshotFixture(persistence.tenantId, { companyName: "Aktueller Betrieb" });
+          current.stores.settings.backupReminder = {
+            formatVersion: 1,
+            baselineAt: "2030-03-01T09:00:00.000Z",
+            lastSuccessfulAt: "2030-03-10T09:00:00.000Z",
+            snoozedUntil: "2030-03-18T09:00:00.000Z"
+          };
+          await persistence.writeSettings(current.stores.settings);
+
+          const target = completeTenantSnapshotFixture(persistence.tenantId, { companyName: "Wiederhergestellter Betrieb" });
+          target.stores.settings.backupReminder = {
+            formatVersion: 1,
+            baselineAt: "2029-01-01T09:00:00.000Z",
+            lastSuccessfulAt: "2029-01-02T09:00:00.000Z",
+            snoozedUntil: null
+          };
+          const restored = await persistence.restoreTenantSnapshot(target);
+          assertDeepEqual(restored.records.settings.backupReminder, current.stores.settings.backupReminder, "Restore übernahm fälschlich alte Reminder-Metadaten");
+          assertDeepEqual((await persistence.readSettings()).backupReminder, current.stores.settings.backupReminder, "Persistierter Reminder-Status änderte sich durch Restore");
+          assertEqual((await persistence.readSettings()).company.name, "Wiederhergestellter Betrieb", "Reminder-Schutz verhinderte den fachlichen Restore");
         }
       },
       {

@@ -68,6 +68,7 @@ function createHarness({
   waiting = null,
   active = null,
   updateError = null,
+  onUpdate = null,
   registerError = null,
   reloadError = null,
   currentController = null,
@@ -84,6 +85,7 @@ function createHarness({
   registration.update = async () => {
     registration.updateCalls += 1;
     if (updateError) throw updateError;
+    await onUpdate?.(registration, registration.updateCalls);
   };
 
   const container = new FakeTarget();
@@ -115,6 +117,51 @@ function createHarness({
     reminderDelayMs
   });
   return { controller, container, registration, scheduler, warnings, reloads: () => reloads };
+}
+
+{
+  const harness = createHarness();
+  await harness.controller.start();
+  const result = await harness.controller.check();
+  assert.equal(result.status, "current", "Eine erfolgreiche manuelle Prüfung ohne neuen Worker muss 'aktuell' melden.");
+  assert.equal(harness.controller.getState().status, "current");
+  assert.equal(harness.controller.getState().message, "FRECKA ist aktuell.");
+  assert.match(harness.controller.getState().checkedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(harness.registration.updateCalls, 2, "Manuelle Suche muss die bestehende Registration gezielt erneut prüfen.");
+}
+
+{
+  const waiting = createWorker("installed");
+  const harness = createHarness({
+    onUpdate: registration => { registration.waiting = waiting; }
+  });
+  await harness.controller.start();
+  harness.controller.defer();
+  assert.equal(harness.controller.getState().hasUpdate, false, "Vorbedingung: Update wurde sitzungsbezogen verschoben.");
+  const result = await harness.controller.check();
+  assert.equal(result.status, "available", "Manuelle Suche muss ein weiterhin wartendes Update wieder sichtbar machen.");
+  assert.equal(harness.controller.getState().status, "available");
+  assert.equal(harness.controller.getState().hasUpdate, true);
+  assert.equal(waiting.messages.length, 0, "Manuelle Suche darf den Worker nicht selbst aktivieren.");
+}
+
+{
+  const harness = createHarness({ online: false });
+  const result = await harness.controller.check();
+  assert.equal(result.status, "failed");
+  assert.equal(harness.controller.getState().status, "check-error");
+  assert.match(harness.controller.getState().message, /Internetverbindung/);
+  assert.equal(harness.reloads(), 0, "Eine fehlgeschlagene manuelle Prüfung darf nie neu laden.");
+}
+
+{
+  const harness = createHarness({ updateError: new Error("manual update failed") });
+  await harness.controller.start();
+  const result = await harness.controller.check();
+  assert.equal(result.status, "failed");
+  assert.equal(harness.controller.getState().status, "check-error");
+  assert.equal(harness.reloads(), 0);
+  assert.equal(harness.controller.activate(() => true).status, "unavailable", "Prüffehler darf keinen nicht vorhandenen Worker aktivieren.");
 }
 
 {
@@ -367,8 +414,10 @@ assert.doesNotMatch(source, /userAgent|navigator\.vendor|iPhone|Android/, "Der U
 assert.match(source, /DEFAULT_ACTIVATION_TIMEOUT_MS/);
 assert.match(source, /DEFAULT_ACTIVATION_VERIFICATION_MS/);
 assert.match(source, /DEFAULT_REMINDER_DELAY_MS/);
-assert.match(appSource, /pwaUpdateController\?\.subscribe\(renderPwaUpdateState\)/);
+assert.match(appSource, /pwaUpdateController\?\.subscribe\(updateState =>/);
 assert.match(appSource, /pwaUpdateController\?\.defer\(\)/);
+assert.match(appSource, /data-action="update-check"/);
+assert.match(appSource, /pwaUpdateController\?\.check\?\.\(\)/);
 assert.match(appSource, /state\.cart\.length\s*\|\|\s*state\.checkoutSubmitting/);
 assert.match(indexSource, /Neue FRECKA-Version verfügbar\./);
 assert.match(indexSource, />Jetzt aktualisieren</);

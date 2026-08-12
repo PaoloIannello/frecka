@@ -2,6 +2,8 @@
 
 Browserbasierte FRECKA-PWA 0.10.10 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Dieser Patchkandidat enthält RELEASE-AUTOMATION-001, RELEASE-AUTOMATION-002 und SERVICEWORKER-003; Fach-, Persistenz- und Dokumentlogik bleiben unverändert.
 
+UX-011 / UPDATE-002 / BACKUP-003 ergänzt darauf eine reale Seite **Einstellungen → Update**, bereinigt veraltete „Geplant“-Kennzeichnungen und erinnert nach sieben Tagen ohne bestätigte Sicherungsdatei nicht blockierend an ein neues lokales Backup. Die manuelle Suche verwendet den vorhandenen Updatecontroller; die Erinnerung bleibt im bestehenden Settings-Store und wird durch Restore nicht fälschlich zurückgesetzt.
+
 ## Neu in SETTINGS-002
 
 - eine kompakte Seite **Einstellungen → Betrieb** für die vorhandenen Zahlungsarten, Steuerstatus und Standard-MwSt., den Standard-Geschäftsbereich sowie Belegtexte
@@ -41,6 +43,7 @@ Browserbasierte FRECKA-PWA 0.10.10 mit lokaler IndexedDB-Persistenz, verschlüss
 - genau eine bewusste Nutzeraktion führt weiterhin zu höchstens einer Aktivierungsnachricht und genau einem Reload; Mehrfachtippen, Zustandswechsel, Nachprüfung und `controllerchange` teilen dieselbe Reload-Sperre
 - ein ausbleibender Aktivierungs- oder Navigationsabschluss wird zeitlich begrenzt und als verständlicher Fehler mit „Erneut versuchen“ und „Später“ aufgelöst
 - „Später erinnern“ verschiebt den Hinweis nur in der laufenden Sitzung und bietet ihn nach 15 Minuten erneut an; beim nächsten App-Start wird ein noch vorhandenes Update ebenfalls wieder erkannt
+- **Einstellungen → Update** zeigt Version, Build und den letzten manuellen Prüfstatus; „Nach Updates suchen“ verwendet dieselbe Registration, Updatekarte, Aktivierungsnachricht und Einmal-Reload-Sperre
 - offene Belegentwürfe und laufende Schreibvorgänge blockieren die bewusste Aktivierung weiterhin; Offline-App-Shell, IndexedDB und sämtliche Geschäftsdaten bleiben unberührt
 
 Der reale iPhone/Home-Screen-PWA-Test von `0.10.8-6056e64` am 11. August 2026 bestätigte Updateerkennung und Offline-Kaltstart, blieb nach „Jetzt aktualisieren“ jedoch bei „Wird aktualisiert …“ ohne sichtbaren Reload stehen. Das korrigierte Release `0.10.9-5b180b6` bestand anschließend den realen Updatepfad, Offline-Kaltstart, Offline-Belegerstellung und den fortbestehenden lokalen Datenbestand nach Rückkehr ins Netz. 0.10.9 ist damit die aktuelle freigegebene Beta-Basis, jedoch noch keine Produktivfreigabe für `app.frecka.app`.
@@ -94,8 +97,10 @@ Für den realen iPhone-Test genau einmal **Diagnose erstellen** antippen, den lo
 - Navigation, neue Eingabe, Fehler und neue Versuche entwerten laufende oder vorbereitete Ausgaben; verspätete Promises können danach keinen Dialog mehr auslösen
 - ein Ausgabeversuch verbraucht den vorbereiteten Zustand vor dem ersten Systemaufruf; Share-Abbruch löst weder Download-Fallback noch zweiten Dialog aus
 - Sicherungskennwörter bleiben bei Fehlern und Share-Abbruch erhalten und werden nur nach erfolgreichem Share oder Download geleert
+- eine wöchentliche, nicht blockierende Sicherungserinnerung mit 24-Stunden-Snooze; Erstinstallationen und historische Settings ohne Metadaten erhalten zunächst sieben Tage Schonfrist
+- ausschließlich bestätigter Share oder Download setzt den letzten erfolgreichen Sicherungszeitpunkt; Vorbereitung, Fehler und Share-Abbruch tun dies nicht
 - explizite iOS-taugliche Share-/Speichern-Aktion mit ausreichend lange lesbarer Objekt-URL für einen bewusst gestarteten Download
-- 145 bestandene native Browser-Smoke-Tests einschließlich Erfolgs-, Invarianten-, Navigations-, Verschlüsselungs-, Datei- und Share-Abbruchpfad
+- 179 bestandene native Browser-Smoke-Tests einschließlich Erfolgs-, Invarianten-, Navigations-, Verschlüsselungs-, Datei-, Share-Abbruch- und Sicherungserinnerungspfad
 
 ## Grundlage aus PERSISTENCE-007
 

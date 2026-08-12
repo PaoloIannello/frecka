@@ -14,6 +14,7 @@ window.PROTOTYPE_DATA = Object.freeze({
   ],
   userSettings: { activeUserId: "user-primary" },
   license: {},
+  backupReminder: {},
   company: {
     name: "Studio Beispiel",
     owner: "Angel Luzolo",

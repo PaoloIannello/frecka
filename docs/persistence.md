@@ -97,7 +97,10 @@ Der Settings-Datensatz enthält ausschließlich:
 - `taxSettings`;
 - `receiptSettings` einschließlich Nummernkreis und Belegtexten;
 - `paymentChoices` in ihrer fachlichen Reihenfolge;
+- `backupReminder` mit Formatversion, lokalem Fristbeginn, Zeitpunkt der letzten bestätigten Sicherung und optionalem 24-Stunden-Snooze;
 - `setup.status` mit `not-started`, `started` oder `completed`.
+
+BACKUP-003 verändert weder Datenbankschema noch Settings-Formatversion. Fehlen die Reminder-Metadaten bei Erstinstallation oder historischem Bestand, wird lokal der Zeitpunkt der ersten kompatiblen Initialisierung als Fristbeginn gespeichert; dadurch erscheint keine sofortige Erinnerung. Der Status enthält keine personenbezogenen Daten. Beim atomaren Restore werden Unternehmen und alle fachlichen Stores aus der Sicherung übernommen, `backupReminder` bleibt jedoch vom aktuellen Gerät erhalten. Eine alte Sicherungsdatei kann damit weder die Wochenfrist fälschlich zurücksetzen noch einen lokalen Snooze überschreiben.
 
 SETTINGS-001 speichert genau ein optionales Unternehmenslogo im bestehenden Settings-Datensatz. Zulässig sind ausschließlich anhand ihrer Dateisignatur geprüfte PNG- und JPEG-Daten bis 1 MiB; Formatversion, stabiler Logo-Schlüssel, Dateiname, MIME-Type, Bytegröße, Data-URL und Änderungszeitpunkt werden strikt normalisiert. Historische simulierte Unternehmenslogos werden als `null` übernommen. Simulierte Geschäftsbereichslogos und nicht freigegebene Logo-Nebenfelder bleiben ausgeschlossen. `logoMode` und die sichtbare Geschäftsbezeichnung bleiben normale Geschäftsbereichseinstellungen.
 

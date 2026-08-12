@@ -16,6 +16,9 @@
     companyLogoMaxBytes: 1024 * 1024,
     userFormatVersion: 1,
     licenseFormatVersion: 1,
+    backupReminderFormatVersion: 1,
+    backupReminderDelayMs: 7 * 24 * 60 * 60 * 1000,
+    backupReminderSnoozeMs: 24 * 60 * 60 * 1000,
     settingsFormatVersion: 1,
     catalogFormatVersion: 1,
     customersFormatVersion: 1,
@@ -172,6 +175,63 @@
     }
     const fallbackTimestamp = Date.parse(fallback);
     return Number.isFinite(fallbackTimestamp) ? new Date(fallbackTimestamp).toISOString() : epochIso;
+  }
+
+  function nullableIso(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const normalized = stableIso(value, "");
+    return normalized === epochIso ? null : normalized;
+  }
+
+  function normalizeBackupReminder(source, fallbackSource = null, initializedAt = new Date().toISOString()) {
+    const fallback = isPlainObject(fallbackSource) ? fallbackSource : {};
+    const candidate = isPlainObject(source) ? source : {};
+    if (Number.isInteger(candidate.formatVersion) && candidate.formatVersion > constants.backupReminderFormatVersion) {
+      throw new PersistenceError("UNSUPPORTED_FORMAT", "Diese Sicherungserinnerung benötigt eine neuere FRECKA-Version und wurde nicht verändert.");
+    }
+    const baselineAt = nullableIso(candidate.baselineAt)
+      || nullableIso(fallback.baselineAt)
+      || stableIso(initializedAt, new Date().toISOString());
+    return {
+      formatVersion: constants.backupReminderFormatVersion,
+      baselineAt,
+      lastSuccessfulAt: Object.prototype.hasOwnProperty.call(candidate, "lastSuccessfulAt")
+        ? nullableIso(candidate.lastSuccessfulAt)
+        : nullableIso(fallback.lastSuccessfulAt),
+      snoozedUntil: Object.prototype.hasOwnProperty.call(candidate, "snoozedUntil")
+        ? nullableIso(candidate.snoozedUntil)
+        : nullableIso(fallback.snoozedUntil)
+    };
+  }
+
+  function backupReminderIsDue(source, nowInput = Date.now()) {
+    const reminder = normalizeBackupReminder(source, null, new Date(nowInput).toISOString());
+    const now = nowInput instanceof Date ? nowInput.getTime() : Number(nowInput);
+    const baseline = Date.parse(reminder.lastSuccessfulAt || reminder.baselineAt);
+    const snoozedUntil = Date.parse(reminder.snoozedUntil || "");
+    return Number.isFinite(now)
+      && Number.isFinite(baseline)
+      && now - baseline >= constants.backupReminderDelayMs
+      && (!Number.isFinite(snoozedUntil) || now >= snoozedUntil);
+  }
+
+  function snoozeBackupReminder(source, nowInput = Date.now()) {
+    const now = nowInput instanceof Date ? nowInput.getTime() : Number(nowInput);
+    if (!Number.isFinite(now)) throw new PersistenceError("INVALID_DATA", "Der Zeitpunkt der Sicherungserinnerung ist ungültig.");
+    return {
+      ...normalizeBackupReminder(source, null, new Date(now).toISOString()),
+      snoozedUntil: new Date(now + constants.backupReminderSnoozeMs).toISOString()
+    };
+  }
+
+  function completeBackupReminder(source, nowInput = Date.now()) {
+    const now = nowInput instanceof Date ? nowInput.getTime() : Number(nowInput);
+    if (!Number.isFinite(now)) throw new PersistenceError("INVALID_DATA", "Der Zeitpunkt der erfolgreichen Sicherung ist ungültig.");
+    return {
+      ...normalizeBackupReminder(source, null, new Date(now).toISOString()),
+      lastSuccessfulAt: new Date(now).toISOString(),
+      snoozedUntil: null
+    };
   }
 
   function decodeBase64Bytes(encoded) {
@@ -415,6 +475,7 @@
     const license = normalizeV1License(runtimeLicense, safeTenantId);
     const taxSettings = runtimeData.taxSettings || {};
     const receiptSettings = runtimeData.receiptSettings || {};
+    const backupReminder = normalizeBackupReminder(runtimeData.backupReminder, null, new Date().toISOString());
     const snapshot = {
       formatVersion: constants.formatVersion,
       tenantId: safeTenantId,
@@ -486,6 +547,7 @@
         isDefault: area.isDefault === true,
         defaultServiceLocationId: nullableStringId(area.defaultServiceLocationId)
       })).filter(area => nullableStringId(area.id)),
+      backupReminder,
       setup: { status: validSetupStatus(typeof setupStatus === "string" ? setupStatus : setupStatus?.status) }
     };
 
@@ -1997,6 +2059,14 @@
     const setupStatus = setupStatuses.has(rawSetupStatus) ? rawSetupStatus : validSetupStatus(defaultSetupStatus);
     if (!setupStatuses.has(rawSetupStatus)) repairs.add("SETUP_STATUS_DEFAULTED");
 
+    const defaultBackupReminder = normalizeBackupReminder(defaults.backupReminder, null, defaults.updatedAt || new Date().toISOString());
+    const backupReminder = normalizeBackupReminder(raw.backupReminder, defaultBackupReminder, defaultBackupReminder.baselineAt);
+    if (!isPlainObject(raw.backupReminder)) {
+      repairs.add("BACKUP_REMINDER_DEFAULTED");
+    } else if (JSON.stringify(raw.backupReminder) !== JSON.stringify(backupReminder)) {
+      repairs.add("BACKUP_REMINDER_REPAIRED");
+    }
+
     const normalizedKnownFields = {
         formatVersion: constants.formatVersion,
         tenantId: nullableStringId(expectedTenantId) || constants.tenantId,
@@ -2010,6 +2080,7 @@
         receiptSettings,
         paymentChoices,
         businessAreas,
+        backupReminder,
         setup: { status: setupStatus }
     };
     return {
@@ -4547,14 +4618,15 @@
         const simulatedFailureAfterStore = allowTestFailure && Number.isInteger(options.simulateFailureAfterStore)
           ? options.simulateFailureAfterStore
           : null;
+        const restoredRecords = cloneSafe(validated.snapshot.stores);
         await new Promise((resolve, reject) => {
           let settled = false;
           let failure = null;
           let transaction;
           try {
             transaction = database.transaction(storeNames, "readwrite");
-            storeNames.forEach((currentStoreName, index) => {
-              const request = transaction.objectStore(currentStoreName).put(cloneSafe(validated.snapshot.stores[recordKeys[index]]));
+            const writeStore = (currentStoreName, index, record) => {
+              const request = transaction.objectStore(currentStoreName).put(cloneSafe(record));
               request.onerror = () => {
                 if (!failure) failure = new PersistenceError("BACKUP_RESTORE_FAILED", "Die Wiederherstellung ist fehlgeschlagen. Der bisherige Datenstand bleibt erhalten.", request.error);
               };
@@ -4564,7 +4636,33 @@
                   transaction.abort();
                 };
               }
+            };
+            storeNames.slice(1).forEach((currentStoreName, offset) => {
+              const index = offset + 1;
+              writeStore(currentStoreName, index, restoredRecords[recordKeys[index]]);
             });
+            const settingsStore = transaction.objectStore(storeName);
+            const currentSettingsRequest = settingsStore.get(tenantId);
+            currentSettingsRequest.onerror = () => {
+              if (!failure) failure = new PersistenceError("BACKUP_RESTORE_FAILED", "Der lokale Sicherungsstatus konnte vor der Wiederherstellung nicht gelesen werden.", currentSettingsRequest.error);
+              try { transaction.abort(); } catch {}
+            };
+            currentSettingsRequest.onsuccess = () => {
+              try {
+                const currentReminder = normalizeBackupReminder(
+                  currentSettingsRequest.result?.backupReminder,
+                  null,
+                  new Date().toISOString()
+                );
+                restoredRecords.settings.backupReminder = currentReminder;
+                writeStore(storeName, 0, restoredRecords.settings);
+              } catch (error) {
+                failure = error instanceof PersistenceError
+                  ? error
+                  : new PersistenceError("BACKUP_RESTORE_FAILED", "Der lokale Sicherungsstatus konnte nicht erhalten werden.", error);
+                transaction.abort();
+              }
+            };
           } catch (cause) {
             reject(new PersistenceError("BACKUP_RESTORE_FAILED", "Die Wiederherstellung konnte nicht gestartet werden. Der bisherige Datenstand bleibt erhalten.", cause));
             return;
@@ -4585,8 +4683,8 @@
           };
         });
         return {
-          snapshot: cloneSafe(validated.snapshot),
-          records: cloneSafe(validated.snapshot.stores),
+          snapshot: cloneSafe({ ...validated.snapshot, stores: restoredRecords }),
+          records: cloneSafe(restoredRecords),
           summary: cloneSafe(validated.summary)
         };
       });
@@ -4634,6 +4732,10 @@
     createSettingsPersistence,
     snapshotSettings,
     normalizeSettingsRecord,
+    normalizeBackupReminder,
+    backupReminderIsDue,
+    snoozeBackupReminder,
+    completeBackupReminder,
     normalizeCompanyLogo,
     companyIdentity,
     snapshotCatalog,

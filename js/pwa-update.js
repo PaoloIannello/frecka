@@ -9,6 +9,7 @@
   const DEFAULT_ACTIVATION_VERIFICATION_MS = 250;
   const DEFAULT_RELOAD_TIMEOUT_MS = 8000;
   const DEFAULT_REMINDER_DELAY_MS = 15 * 60 * 1000;
+  const DEFAULT_MANUAL_CHECK_TIMEOUT_MS = 15000;
 
   function createUpdateController(environment = {}) {
     const root = environment.globalScope || globalThis;
@@ -23,6 +24,8 @@
     const activationVerificationMs = environment.activationVerificationMs ?? DEFAULT_ACTIVATION_VERIFICATION_MS;
     const reloadTimeoutMs = environment.reloadTimeoutMs ?? DEFAULT_RELOAD_TIMEOUT_MS;
     const reminderDelayMs = environment.reminderDelayMs ?? DEFAULT_REMINDER_DELAY_MS;
+    const manualCheckTimeoutMs = environment.manualCheckTimeoutMs ?? DEFAULT_MANUAL_CHECK_TIMEOUT_MS;
+    const now = environment.now || (() => new Date());
     const enabled = environment.enabled !== false;
     const listeners = new Set();
     const observedWorkers = new WeakSet();
@@ -36,6 +39,8 @@
     let activationVerificationTimer = null;
     let reloadTimer = null;
     let reminderTimer = null;
+    let manualCheckTimer = null;
+    let manualCheckPending = false;
     let controllerAtAnnouncement = null;
     let activeWorkerAtAnnouncement = null;
     let state = Object.freeze({
@@ -44,7 +49,8 @@
       message: "",
       releaseNote: DEFAULT_RELEASE_NOTE,
       activationRequested: false,
-      reloadTriggered: false
+      reloadTriggered: false,
+      checkedAt: ""
     });
 
     function publish(patch) {
@@ -59,12 +65,34 @@
           ? activationVerificationTimer
           : timerName === "reload"
             ? reloadTimer
-            : reminderTimer;
+            : timerName === "reminder"
+              ? reminderTimer
+              : manualCheckTimer;
       if (timer !== null) cancelScheduled(timer);
       if (timerName === "activation") activationTimer = null;
       else if (timerName === "activation-verification") activationVerificationTimer = null;
       else if (timerName === "reload") reloadTimer = null;
-      else reminderTimer = null;
+      else if (timerName === "reminder") reminderTimer = null;
+      else manualCheckTimer = null;
+    }
+
+    function checkedAtNow() {
+      const value = now();
+      const date = value instanceof Date ? value : new Date(value);
+      return Number.isFinite(date.getTime()) ? date.toISOString() : new Date().toISOString();
+    }
+
+    function finishManualCheck(status, message) {
+      clearTimer("manual-check");
+      manualCheckPending = false;
+      publish({
+        status,
+        hasUpdate: status === "available",
+        message,
+        checkedAt: checkedAtNow(),
+        activationRequested: false,
+        reloadTriggered: false
+      });
     }
 
     function publishFailure(error = null) {
@@ -104,21 +132,25 @@
       }
     }
 
-    function announceWaiting(worker) {
+    function announceWaiting(worker, { force = false } = {}) {
       if (!worker || !serviceWorker?.controller) return;
       const sameWorkerAlreadyKnown = waitingWorker === worker
         && ["available", "activating", "deferred", "error"].includes(state.status);
-      if (sameWorkerAlreadyKnown) return;
+      if (sameWorkerAlreadyKnown && !force) return;
       waitingWorker = worker;
       controllerAtAnnouncement = serviceWorker.controller;
       activeWorkerAtAnnouncement = registration?.active || null;
+      const checkedAt = manualCheckPending ? checkedAtNow() : state.checkedAt;
+      clearTimer("manual-check");
+      manualCheckPending = false;
       publish({
         status: "available",
         hasUpdate: true,
         message: DEFAULT_AVAILABLE_MESSAGE,
         releaseNote: DEFAULT_RELEASE_NOTE,
         activationRequested: false,
-        reloadTriggered: false
+        reloadTriggered: false,
+        checkedAt
       });
     }
 
@@ -142,6 +174,10 @@
             waitingWorker = null;
             publish({ status: "idle", hasUpdate: false, message: "" });
           }
+          return;
+        }
+        if (worker.state === "redundant" && manualCheckPending) {
+          finishManualCheck("current", "FRECKA ist aktuell.");
         }
       };
       worker.addEventListener?.("statechange", inspect);
@@ -224,6 +260,47 @@
       return () => listeners.delete(listener);
     }
 
+    async function check() {
+      if (activationRequested) return { status: "busy" };
+      if (!enabled || !serviceWorker || !isSecureContext) {
+        finishManualCheck("check-error", "Die Update-Prüfung ist in diesem Browser nicht verfügbar.");
+        return { status: "failed" };
+      }
+      if (!isOnline()) {
+        finishManualCheck("check-error", "Für die Update-Prüfung wird eine Internetverbindung benötigt.");
+        return { status: "failed" };
+      }
+
+      publish({ status: "checking", hasUpdate: false, message: "FRECKA sucht nach Updates …" });
+      try {
+        const nextRegistration = await start();
+        if (!nextRegistration) throw new Error("Service worker registration unavailable");
+        manualCheckPending = true;
+        await nextRegistration.update?.();
+        const worker = nextRegistration.waiting || waitingWorker;
+        if (worker) {
+          announceWaiting(worker, { force: true });
+          return { status: "available" };
+        }
+        if (nextRegistration.installing) {
+          observeWorker(nextRegistration.installing);
+          if (!manualCheckPending) {
+            return { status: state.hasUpdate ? "available" : "current" };
+          }
+          manualCheckTimer = schedule(() => {
+            if (manualCheckPending) finishManualCheck("check-error", "Die Update-Prüfung konnte nicht abgeschlossen werden. Bitte versuche es erneut.");
+          }, manualCheckTimeoutMs);
+          return { status: "checking" };
+        }
+        finishManualCheck("current", "FRECKA ist aktuell.");
+        return { status: "current" };
+      } catch (error) {
+        finishManualCheck("check-error", "Die Update-Prüfung ist fehlgeschlagen. Bitte versuche es erneut.");
+        warn("FRECKA-Update-Prüfung konnte nicht abgeschlossen werden.", error);
+        return { status: "failed", error };
+      }
+    }
+
     function activate(canActivate = () => true) {
       if (activationRequested) return { status: "already-requested" };
       const worker = registration?.waiting || waitingWorker;
@@ -297,6 +374,7 @@
 
     return Object.freeze({
       start,
+      check,
       subscribe,
       activate,
       defer,

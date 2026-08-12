@@ -126,6 +126,7 @@
     vouchersReadyForWrites: false,
     settingsStorageNotice: "",
     settingsStorageNoticeIsError: false,
+    pwaUpdateState: pwaUpdateController?.getState?.() || { status: "idle", hasUpdate: false, message: "", checkedAt: "" },
     backupStage: "select",
     backupNotice: "",
     backupNoticeIsError: false,
@@ -184,7 +185,7 @@
   const appUpdateMessage = document.getElementById("appUpdateMessage");
   const appUpdateLater = document.getElementById("appUpdateLater");
   const appUpdateAction = document.getElementById("appUpdateAction");
-  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "qr-not-found", "settings-company", "settings-user", "settings-license", "settings-location", "settings-operations", "settings-taxes", "settings-payments", "settings-business-areas", "settings-catalog", "settings-help", "settings-backup", "settings-export", "setup-wizard"]);
+  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "qr-not-found", "settings-company", "settings-user", "settings-license", "settings-location", "settings-operations", "settings-taxes", "settings-payments", "settings-business-areas", "settings-catalog", "settings-help", "settings-backup", "settings-export", "settings-update", "setup-wizard"]);
   const validRoutes = new Set(["home", "receipts", "customers", "vouchers", "settings", ...flowRoutes]);
 
   const escapeHtml = value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -303,7 +304,11 @@
       : activating ? "Wird aktualisiert …" : "Jetzt aktualisieren";
   }
 
-  pwaUpdateController?.subscribe(renderPwaUpdateState);
+  pwaUpdateController?.subscribe(updateState => {
+    state.pwaUpdateState = updateState;
+    renderPwaUpdateState(updateState);
+    if (state.settingsReady && state.route === "settings-update") updateSettingsUpdatePanel();
+  });
   appUpdateAction?.addEventListener("click", () => {
     pwaUpdateController?.activate(updateActivationPermission);
   });
@@ -698,6 +703,8 @@
     replaceSettingsArray(data.taxSettings.rates, record.taxSettings.rates);
     Object.assign(data.receiptSettings, cloneSettingsValue(record.receiptSettings));
     replaceSettingsArray(data.paymentChoices, record.paymentChoices);
+    Object.keys(data.backupReminder).forEach(key => { delete data.backupReminder[key]; });
+    Object.assign(data.backupReminder, cloneSettingsValue(record.backupReminder));
     state.setup.status = validSetupStatuses.has(record.setup?.status) ? record.setup.status : "not-started";
   }
 
@@ -956,7 +963,7 @@
     await persistence.openDatabase();
     const savedRecord = await persistence.readSettings();
     const normalized = persistence.normalizeSettingsRecord(savedRecord, defaultSettingsRecord, persistence.tenantId);
-    if (savedRecord === null || normalized.repairs.some(repair => repair.startsWith("USER_") || repair === "ACTIVE_USER_REPAIRED" || repair.startsWith("LICENSE_"))) {
+    if (savedRecord === null || normalized.repairs.some(repair => repair.startsWith("USER_") || repair === "ACTIVE_USER_REPAIRED" || repair.startsWith("LICENSE_") || repair.startsWith("BACKUP_REMINDER_"))) {
       await persistence.writeSettings(normalized.record);
     }
     applySettingsRecord(normalized.record);
@@ -1104,6 +1111,23 @@
     });
   }
 
+  function backupReminderIsDue(now = Date.now()) {
+    return persistence?.backupReminderIsDue?.(data.backupReminder, now) === true;
+  }
+
+  function backupReminderMarkup() {
+    if (!backupReminderIsDue()) return "";
+    const lastSuccessful = Date.parse(data.backupReminder?.lastSuccessfulAt || "");
+    const detail = Number.isFinite(lastSuccessful)
+      ? "Deine letzte Sicherung ist mindestens 7 Tage her."
+      : "Seit der Einrichtung wurde noch keine aktuelle Sicherung erstellt.";
+    return `<section class="backup-reminder" aria-labelledby="backupReminderTitle">
+      <span class="backup-reminder-icon" aria-hidden="true">↥</span>
+      <div><strong id="backupReminderTitle">Zeit für eine Sicherung</strong><p>${detail} Erstelle jetzt eine aktuelle Sicherung deiner FRECKA-Daten.</p></div>
+      <div class="backup-reminder-actions"><button class="button button-primary" type="button" data-action="backup-reminder-now">Jetzt sichern</button><button class="button button-ghost" type="button" data-action="backup-reminder-later">Später erinnern</button></div>
+    </section>`;
+  }
+
   function renderHome() {
     const draftCount = cartCount();
     const hasDraft = draftCount > 0;
@@ -1113,7 +1137,7 @@
       <p>${draftCount} ${draftCount === 1 ? "Position" : "Positionen"} · ${formatCurrency(cartTotal())} · ${escapeHtml(draftCustomer)}</p>
       <div class="open-receipt-actions"><button class="button button-secondary" type="button" data-action="resume-receipt">Weiter bearbeiten</button><button class="button button-ghost" type="button" data-action="discard-receipt">Verwerfen</button></div>
     </section>` : "";
-    mainContent.innerHTML = `<div class="home-layout ${hasDraft ? "has-draft" : "has-no-draft"} page-enter">${state.settingsStorageNotice ? `<div class="settings-save-notice ${state.settingsStorageNoticeIsError ? "is-error" : ""}" role="${state.settingsStorageNoticeIsError ? "alert" : "status"}">${escapeHtml(state.settingsStorageNotice)}</div>` : ""}${state.setupFirstStartVisible ? setupStartHint() : ""}<section class="hero-card"><p class="eyebrow">${escapeHtml(getAreaLabel())}</p><h1>Was möchtest du erfassen?</h1><p class="hero-copy">Leistungen und Produkte direkt auswählen.</p><button class="button button-primary" type="button" data-action="new-receipt"><span aria-hidden="true">＋</span><span>Neuer Beleg</span></button></section>${openReceipt}</div>`;
+    mainContent.innerHTML = `<div class="home-layout ${hasDraft ? "has-draft" : "has-no-draft"} page-enter">${state.settingsStorageNotice ? `<div class="settings-save-notice ${state.settingsStorageNoticeIsError ? "is-error" : ""}" role="${state.settingsStorageNoticeIsError ? "alert" : "status"}">${escapeHtml(state.settingsStorageNotice)}</div>` : ""}${state.setupFirstStartVisible ? setupStartHint() : ""}${backupReminderMarkup()}<section class="hero-card"><p class="eyebrow">${escapeHtml(getAreaLabel())}</p><h1>Was möchtest du erfassen?</h1><p class="hero-copy">Leistungen und Produkte direkt auswählen.</p><button class="button button-primary" type="button" data-action="new-receipt"><span aria-hidden="true">＋</span><span>Neuer Beleg</span></button></section>${openReceipt}</div>`;
   }
 
   function catalogItems() {
@@ -3474,7 +3498,7 @@
 
   const settingsSections = [
     { id: "settings-company", icon: "▣", title: "Unternehmen", note: "Rechtliche Angaben, Kontakt und Logo", available: true },
-    { id: "settings-user", icon: "◎", title: "Benutzer", note: "Anzeigename und lokale Benutzerangaben", available: true },
+    { id: "settings-user", icon: "◎", title: "Benutzer", note: "Benutzerprofil und Grundeinstellungen verwalten", available: true },
     { id: "settings-license", icon: "✓", title: "Lizenz & Gerät", note: "Lizenz und aktuell zugeordnetes Gerät", available: true },
     { id: "settings-location", icon: "⌖", title: "Leistungsorte", note: "Orte, Zuordnungen und Standards", available: true },
     { id: "settings-operations", icon: "%", title: "Betrieb", note: "Zahlungsarten, Steuern und Belegvorgaben", available: true },
@@ -3483,7 +3507,7 @@
     { id: "settings-help", icon: "?", title: "Hilfe & Lernen", note: "Erste Schritte und häufige Fragen", available: true },
     { id: "settings-backup", icon: "↥", title: "Sicherung & Wiederherstellung", note: "Verschlüsselte Gesamtsicherung erstellen oder einspielen", available: true },
     { id: "settings-export", icon: "⇥", title: "Export", note: "Steuerberater-ZIP und eigene Daten", available: true },
-    { icon: "↻", title: "Update", note: "Für eine spätere Version vorbereitet", help: "update" },
+    { id: "settings-update", icon: "↻", title: "Update", note: "Version prüfen und kontrolliert installieren", available: true },
     { icon: "T", title: "TSE-Vorbereitung", note: "Für eine spätere Version vorbereitet", help: "tse" }
   ];
 
@@ -3976,6 +4000,58 @@
     </section>`;
   }
 
+  function settingsUpdatePanelMarkup() {
+    const updateState = state.pwaUpdateState || {};
+    const checking = updateState.status === "checking";
+    const activating = updateState.status === "activating";
+    const available = updateState.hasUpdate === true;
+    const checkFailed = updateState.status === "check-error";
+    const activationFailed = updateState.status === "error";
+    const failed = checkFailed || activationFailed;
+    const current = updateState.status === "current";
+    const statusTitle = checking
+      ? "Update wird geprüft"
+      : checkFailed
+        ? "Prüfung fehlgeschlagen"
+        : activationFailed
+          ? "Aktualisierung fehlgeschlagen"
+          : available
+            ? "Update verfügbar"
+            : current
+              ? "FRECKA ist aktuell"
+              : "Noch nicht manuell geprüft";
+    const statusMessage = updateState.message || (current
+      ? "Auf diesem Gerät ist derzeit keine neuere Version verfügbar."
+      : "Du kannst jederzeit selbst nach einer neuen FRECKA-Version suchen.");
+    const checkedAt = updateState.checkedAt
+      ? `Letzte manuelle Prüfung: ${formatStoredDateTime(updateState.checkedAt)}`
+      : "In dieser Sitzung wurde noch keine manuelle Prüfung ausgeführt.";
+    return `<section id="settingsUpdatePanel" class="settings-update-card ${failed ? "is-error" : available ? "is-available" : current ? "is-current" : ""}">
+      <div class="settings-update-status"><span aria-hidden="true">${failed ? "!" : available ? "↻" : current ? "✓" : "○"}</span><div><strong>${escapeHtml(statusTitle)}</strong><p>${escapeHtml(statusMessage)}</p><small>${escapeHtml(checkedAt)}</small></div></div>
+      <button class="button button-secondary" type="button" data-action="update-check" ${checking || activating ? "disabled" : ""}>${checking ? "Wird geprüft …" : "Nach Updates suchen"}</button>
+      ${available ? `<div class="settings-update-actions"><button class="button button-primary" type="button" data-action="update-install" ${activating ? "disabled" : ""}>${activating ? "Wird aktualisiert …" : failed ? "Erneut versuchen" : "Jetzt aktualisieren"}</button><button class="button button-ghost" type="button" data-action="update-later" ${activating ? "disabled" : ""}>Später erinnern</button></div>` : ""}
+    </section>`;
+  }
+
+  function updateSettingsUpdatePanel() {
+    const panel = document.getElementById("settingsUpdatePanel");
+    if (panel) panel.outerHTML = settingsUpdatePanelMarkup();
+  }
+
+  function renderSettingsUpdate() {
+    mainContent.innerHTML = `<section class="flow-page settings-form-page settings-update-page page-enter">
+      <div class="flow-head compact-flow-head">
+        <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
+        <p class="eyebrow">Einstellungen</p>
+        <h1 class="flow-title">Update</h1>
+        <p class="page-copy">FRECKA prüft neue Programmversionen kontrolliert. Deine lokalen Geschäftsdaten bleiben davon getrennt.</p>
+      </div>
+      <section class="settings-update-version"><div><span>Aktuelle Version</span><strong>${escapeHtml(data.version || "–")}</strong></div><div><span>Build</span><strong>${escapeHtml(data.build || "–")}</strong></div></section>
+      ${settingsUpdatePanelMarkup()}
+      <p class="prototype-note">Die automatische Updatekarte bleibt der primäre Hinweis. Installiert wird weiterhin erst nach deiner bewussten Bestätigung.</p>
+    </section>`;
+  }
+
   const userDisplayNameMaxLength = 80;
 
   function activeUser() {
@@ -4145,6 +4221,21 @@
       return "Die Sicherung kann derzeit nicht erstellt werden, weil der vorhandene Datenbestand Inkonsistenzen enthält. Neue Belege können weiterhin erstellt werden. Bitte bereinige den Datenbestand, bevor eine Sicherung erstellt wird.";
     }
     return "Die Sicherung konnte aufgrund eines technischen Fehlers nicht erstellt werden.";
+  }
+
+  async function recordSuccessfulBackup() {
+    const previous = cloneSettingsValue(data.backupReminder);
+    const completed = persistence?.completeBackupReminder?.(data.backupReminder, Date.now());
+    if (!completed) return false;
+    Object.assign(data.backupReminder, completed);
+    try {
+      await persistCurrentSettings();
+      return true;
+    } catch (error) {
+      Object.keys(data.backupReminder).forEach(key => { delete data.backupReminder[key]; });
+      Object.assign(data.backupReminder, previous);
+      return false;
+    }
   }
 
   function discardPendingBackupOutput() {
@@ -5201,6 +5292,7 @@
       "settings-help",
       "settings-backup",
       "settings-export",
+      "settings-update",
       "setup-wizard"
     ].includes(state.route));
     if (state.route === "home") renderHome();
@@ -5234,6 +5326,7 @@
     else if (state.route === "settings-help") renderHelpLearning();
     else if (state.route === "settings-backup") renderSettingsBackup();
     else if (state.route === "settings-export") renderSettingsExport();
+    else if (state.route === "settings-update") renderSettingsUpdate();
     else if (state.route === "setup-wizard") renderSetupWizard();
     else renderPlaceholder(state.route);
     if (state.settingsStorageNotice && !["home", "settings"].includes(state.route)) {
@@ -6090,6 +6183,38 @@
       return;
     }
     const action = event.target.closest("[data-action]")?.dataset.action;
+    if (action === "update-check") {
+      await pwaUpdateController?.check?.();
+      return;
+    }
+    if (action === "update-install") {
+      pwaUpdateController?.activate(updateActivationPermission);
+      return;
+    }
+    if (action === "update-later") {
+      pwaUpdateController?.defer();
+      return;
+    }
+    if (action === "backup-reminder-now") {
+      navigate("settings-backup");
+      return;
+    }
+    if (action === "backup-reminder-later") {
+      const previous = cloneSettingsValue(data.backupReminder);
+      try {
+        Object.assign(data.backupReminder, persistence.snoozeBackupReminder(data.backupReminder, Date.now()));
+        await persistCurrentSettings();
+        state.settingsStorageNotice = "Du wirst in 24 Stunden erneut an die Sicherung erinnert.";
+        state.settingsStorageNoticeIsError = false;
+      } catch (error) {
+        Object.keys(data.backupReminder).forEach(key => { delete data.backupReminder[key]; });
+        Object.assign(data.backupReminder, previous);
+        state.settingsStorageNotice = `Die Erinnerung konnte nicht lokal gespeichert werden: ${persistenceErrorMessage(error)}`;
+        state.settingsStorageNoticeIsError = true;
+      }
+      renderHome();
+      return;
+    }
     if (action === "integrity-demo-repair") {
       if (state.integrityRepairBusy || state.integrityDiagnostic?.historicalDemoRepair?.status !== "repairable") return;
       openConfirmDialog({
@@ -6176,9 +6301,11 @@
           return;
         }
         if (!["shared", "downloaded"].includes(result.status)) throw new Error("Backup output failed");
+        const reminderRecorded = await recordSuccessfulBackup();
         state.backupNotice = result.status === "shared"
           ? "Die verschlüsselte Gesamtsicherung wurde an den Teilen-Dialog übergeben."
           : "Die verschlüsselte Gesamtsicherung wurde zum Speichern bereitgestellt.";
+        if (!reminderRecorded) state.backupNotice += " Der neue Sicherungszeitpunkt konnte lokal nicht gespeichert werden.";
         state.backupNoticeIsError = false;
         renderSettingsBackup();
       } catch (error) {
@@ -6632,8 +6759,9 @@
         const snapshot = await currentTenantSnapshot();
         const encrypted = await backup.encryptTenantSnapshot(snapshot, passphrase);
         backup.downloadBackup(encrypted, backup.backupFilename(snapshot.createdAt, "vor-wiederherstellung"));
+        const reminderRecorded = await recordSuccessfulBackup();
         state.backupSafetyCreated = true;
-        state.backupNotice = "Der aktuelle Datenstand wurde als verschlüsseltes Sicherheitsbackup zum Download bereitgestellt.";
+        state.backupNotice = `Der aktuelle Datenstand wurde als verschlüsseltes Sicherheitsbackup zum Download bereitgestellt.${reminderRecorded ? "" : " Der neue Sicherungszeitpunkt konnte lokal nicht gespeichert werden."}`;
         state.backupNoticeIsError = false;
       } catch (error) {
         logPersistenceError("Sicherheitsbackup erstellen fehlgeschlagen", error);
