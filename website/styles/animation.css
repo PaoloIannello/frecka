@@ -1,0 +1,160 @@
+/**
+ * FRECKA global motion primitives
+ * Requires design-tokens.css to be loaded first.
+ *
+ * No component animation lives here. Utilities are opt-in. Scroll reveal is
+ * progressive: content is hidden only after JavaScript explicitly marks the
+ * document as motion-ready.
+ */
+
+@keyframes frecka-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes frecka-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes frecka-slide-in-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, var(--distance-reveal), 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes frecka-slide-in-down {
+  from {
+    opacity: 0;
+    transform: translate3d(0, var(--distance-reveal-reverse), 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes frecka-reveal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, var(--distance-subtle), 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes frecka-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(var(--scale-enter));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.motion-fade-in {
+  animation: frecka-fade-in var(--duration-standard) var(--ease-enter) both;
+}
+
+.motion-fade-out {
+  animation: frecka-fade-out var(--duration-fast) var(--ease-exit) both;
+}
+
+.motion-slide-in-up {
+  animation: frecka-slide-in-up var(--duration-slow) var(--ease-enter) both;
+}
+
+.motion-slide-in-down {
+  animation: frecka-slide-in-down var(--duration-slow) var(--ease-enter) both;
+}
+
+.motion-reveal {
+  animation: frecka-reveal var(--duration-slow) var(--ease-enter) both;
+}
+
+.motion-scale-in {
+  animation: frecka-scale-in var(--duration-standard) var(--ease-enter) both;
+}
+
+/* Generic interaction utilities; apply only to genuinely interactive nodes. */
+.motion-hover {
+  transition: var(--transition-interactive);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .motion-hover:hover {
+    transform: translate3d(0, var(--distance-hover), 0);
+  }
+}
+
+.motion-press:active {
+  transform: translate3d(0, var(--distance-press), 0)
+    scale(var(--scale-press));
+  transition-duration: var(--duration-instant);
+}
+
+/* Global focus language. Components may refine shape, never suppress it. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 3px;
+}
+
+.focus-ring:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 3px;
+  box-shadow: var(--shadow-focus);
+}
+
+/*
+ * Scroll reveal contract:
+ * 1. All [data-reveal] content is visible by default.
+ * 2. JavaScript may set data-motion="ready" only after the observer is ready.
+ * 3. It adds data-reveal-state="visible" when an item intersects.
+ * 4. It removes or avoids readiness when reduced motion is requested.
+ */
+[data-reveal] {
+  opacity: 1;
+  transform: none;
+}
+
+:root[data-motion="ready"] [data-reveal]:not([data-reveal-state="visible"]) {
+  opacity: 0;
+  transform: translate3d(0, var(--distance-reveal), 0);
+}
+
+:root[data-motion="ready"] [data-reveal][data-reveal-state="visible"] {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  transition: var(--transition-reveal);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-delay: 0s !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-delay: 0s !important;
+    transition-duration: 1ms !important;
+  }
+
+  :root[data-motion="ready"] [data-reveal] {
+    opacity: 1;
+    transform: none;
+  }
+}

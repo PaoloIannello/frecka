@@ -1,0 +1,275 @@
+/**
+ * FRECKA Website Design Tokens
+ * Marke: FRECKA
+ * Claim: Einfach. Erledigt. Weiter.
+ * Logo-Konzept: D TILE (in diesem Stand nicht gestaltet)
+ *
+ * Dieses Stylesheet enthält ausschließlich globale Designentscheidungen.
+ * Es implementiert keine Komponenten und erzeugt keinen Seiteninhalt.
+ */
+
+:root {
+  /* -----------------------------------------------------------------------
+   * Color primitives
+   * -------------------------------------------------------------------- */
+  --color-white: #ffffff;
+  --color-ink-950: #102722;
+  --color-ink-900: #17322c;
+  --color-ink-700: #405b54;
+  --color-ink-600: #526a64;
+  --color-ink-500: #687a75;
+
+  --color-green-800: #06463c;
+  --color-green-700: #075246;
+  --color-green-600: #0d6b5b;
+  --color-green-500: #16806d;
+  --color-green-200: #b9ddd2;
+  --color-green-100: #dff0eb;
+  --color-green-050: #eff8f5;
+
+  --color-neutral-100: #dbe4e1;
+  --color-neutral-075: #e5ece9;
+  --color-neutral-050: #eef3f1;
+  --color-neutral-025: #f5f7f6;
+
+  --color-red-700: #8f1c14;
+  --color-red-600: #b42318;
+  --color-red-100: #fee4e2;
+  --color-amber-800: #774d00;
+  --color-amber-100: #fff1cc;
+
+  /* Semantic colors */
+  --color-page: var(--color-neutral-025);
+  --color-surface: var(--color-white);
+  --color-surface-subtle: var(--color-neutral-050);
+  --color-surface-accent: var(--color-green-050);
+  --color-surface-inverse: var(--color-ink-900);
+
+  --color-text: var(--color-ink-900);
+  --color-text-soft: var(--color-ink-600);
+  /* The app-reference ink-500 reaches only 4.22:1 on the page background.
+   * Website body/meta text therefore uses the AA-safe ink-600 (5.41:1). */
+  --color-text-muted: var(--color-ink-600);
+  --color-text-inverse: var(--color-white);
+  --color-text-link: var(--color-green-700);
+
+  --color-primary: var(--color-green-600);
+  --color-primary-hover: var(--color-green-700);
+  --color-primary-active: var(--color-green-800);
+  --color-primary-soft: var(--color-green-100);
+  --color-primary-border: var(--color-green-200);
+
+  --color-border: var(--color-neutral-100);
+  --color-border-subtle: var(--color-neutral-075);
+  --color-focus: var(--color-green-600);
+  --color-focus-halo: rgb(13 107 91 / 24%);
+  --color-selection: var(--color-green-100);
+
+  --color-danger: var(--color-red-600);
+  --color-danger-strong: var(--color-red-700);
+  --color-danger-soft: var(--color-red-100);
+  --color-warning: var(--color-amber-800);
+  --color-warning-soft: var(--color-amber-100);
+
+  /* -----------------------------------------------------------------------
+   * Typography
+   * -------------------------------------------------------------------- */
+  --font-family-sans: Inter, ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-family-body: var(--font-family-sans);
+  --font-family-heading: var(--font-family-sans);
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 650;
+  --font-weight-bold: 750;
+  --font-weight-extrabold: 850;
+  --font-weight-black: 900;
+
+  --font-size-100: 0.75rem;
+  --font-size-200: 0.875rem;
+  --font-size-300: 1rem;
+  --font-size-400: 1.125rem;
+  --font-size-500: 1.25rem;
+  --font-size-600: clamp(1.5rem, 1.33rem + 0.75vw, 1.875rem);
+  --font-size-700: clamp(1.875rem, 1.53rem + 1.5vw, 2.625rem);
+  --font-size-800: clamp(2.25rem, 1.68rem + 2.5vw, 3.5rem);
+  --font-size-900: clamp(2.625rem, 1.77rem + 3.75vw, 4.5rem);
+
+  --line-height-tight: 1.02;
+  --line-height-heading: 1.12;
+  --line-height-compact: 1.3;
+  --line-height-body: 1.6;
+  --line-height-relaxed: 1.72;
+
+  --letter-spacing-display: -0.05em;
+  --letter-spacing-heading: -0.03em;
+  --letter-spacing-body: -0.01em;
+  --letter-spacing-label: 0.06em;
+
+  --measure-compact: 28rem;
+  --measure-reading: 40rem;
+  --measure-wide: 52rem;
+
+  /* -----------------------------------------------------------------------
+   * Spacing – 4px base
+   * -------------------------------------------------------------------- */
+  --space-0: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-14: 3.5rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+  --space-24: 6rem;
+  --space-28: 7rem;
+  --space-32: 8rem;
+
+  --space-page-inline: clamp(1rem, 0.64rem + 1.6vw, 2rem);
+  --space-section-block: clamp(4rem, 2.86rem + 5vw, 8rem);
+  --space-section-block-compact: clamp(3rem, 2.43rem + 2.5vw, 5rem);
+  --space-component: clamp(1.25rem, 1.07rem + 0.8vw, 1.75rem);
+
+  /* -----------------------------------------------------------------------
+   * Borders and radii
+   * -------------------------------------------------------------------- */
+  --border-width-thin: 1px;
+  --border-width-strong: 2px;
+
+  --radius-none: 0;
+  --radius-sm: 0.875rem;
+  --radius-md: 1.25rem;
+  --radius-lg: 1.75rem;
+  --radius-xl: 2.25rem;
+  --radius-pill: 999px;
+  --radius-round: 50%;
+
+  /* -----------------------------------------------------------------------
+   * Shadows
+   * -------------------------------------------------------------------- */
+  --shadow-none: none;
+  --shadow-xs: 0 3px 12px rgb(19 50 44 / 5%);
+  --shadow-sm: 0 8px 24px rgb(19 50 44 / 8%);
+  --shadow-md: 0 14px 36px rgb(19 50 44 / 10%);
+  --shadow-lg: 0 22px 54px rgb(19 50 44 / 12%);
+  --shadow-focus: 0 0 0 3px var(--color-focus-halo);
+  --shadow-inset-border: inset 0 0 0 1px var(--color-border);
+
+  /* -----------------------------------------------------------------------
+   * Motion
+   * -------------------------------------------------------------------- */
+  --duration-instant: 80ms;
+  --duration-fast: 140ms;
+  --duration-standard: 200ms;
+  --duration-slow: 280ms;
+  --duration-max: 320ms;
+
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-linear: linear;
+
+  --distance-press: 1px;
+  --distance-hover: -1px;
+  --distance-subtle: 0.25rem;
+  --distance-reveal: 0.5rem;
+  --distance-reveal-reverse: -0.5rem;
+  --scale-press: 0.99;
+  --scale-enter: 0.985;
+
+  --transition-color: color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+  --transition-interactive: color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard),
+    transform var(--duration-instant) var(--ease-standard);
+  --transition-reveal: opacity var(--duration-slow) var(--ease-enter),
+    transform var(--duration-slow) var(--ease-enter);
+
+  /* -----------------------------------------------------------------------
+   * Containers
+   * -------------------------------------------------------------------- */
+  --container-text: 40rem;
+  --container-content: 70rem;
+  --container-wide: 80rem;
+  --container-max: 90rem;
+  --container-gutter: var(--space-page-inline);
+
+  /* -----------------------------------------------------------------------
+   * Control dimensions
+   * -------------------------------------------------------------------- */
+  --control-min-size: 2.75rem;
+  --control-height-sm: 2.75rem;
+  --control-height-md: 3.25rem;
+  --control-height-lg: 4rem;
+  --icon-size-sm: 1rem;
+  --icon-size-md: 1.25rem;
+  --icon-size-lg: 1.5rem;
+
+  /* -----------------------------------------------------------------------
+   * Layering
+   * -------------------------------------------------------------------- */
+  --z-base: 0;
+  --z-raised: 10;
+  --z-sticky: 100;
+  --z-dropdown: 200;
+  --z-overlay: 300;
+  --z-dialog: 400;
+  --z-toast: 500;
+  --z-skip-link: 600;
+
+  /* -----------------------------------------------------------------------
+   * Breakpoint metadata
+   * CSS custom properties cannot be used in @media conditions. Future media
+   * queries must use the matching fixed values documented below.
+   * -------------------------------------------------------------------- */
+  --breakpoint-mobile-max: 43.6875rem; /* 699px */
+  --breakpoint-tablet: 43.75rem; /* 700px */
+  --breakpoint-desktop: 64rem; /* 1024px */
+  --breakpoint-wide: 90rem; /* 1440px */
+}
+
+/* Breakpoint contract for later stylesheets:
+ * Mobile: default, 0–699px
+ * Tablet: @media (min-width: 43.75rem)             / 700px
+ * Desktop: @media (min-width: 64rem)               / 1024px
+ * Wide:    @media (min-width: 90rem)               / 1440px
+ *
+ * Breakpoints are content thresholds, not device detection. Components may
+ * switch later than a global threshold when their own content requires it.
+ */
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 1ms;
+    --duration-fast: 1ms;
+    --duration-standard: 1ms;
+    --duration-slow: 1ms;
+    --duration-max: 1ms;
+    --distance-press: 0px;
+    --distance-hover: 0px;
+    --distance-subtle: 0px;
+    --distance-reveal: 0px;
+    --distance-reveal-reverse: 0px;
+    --scale-press: 1;
+    --scale-enter: 1;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --color-text-soft: var(--color-ink-900);
+    --color-text-muted: var(--color-ink-700);
+    --color-border: var(--color-ink-700);
+    --color-focus-halo: rgb(13 107 91 / 36%);
+    --border-width-thin: 2px;
+  }
+}

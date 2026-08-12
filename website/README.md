@@ -1,0 +1,70 @@
+# FRECKA Website
+
+Projektgrundlage für die offizielle FRECKA-Landingpage.
+
+## Status
+
+Dieses Verzeichnis enthält Konzeption, Dokumentation und das globale CSS-Fundament. Es gibt bewusst noch keine Landingpage, keine HTML-Dateien, keine Komponentenimplementierung, kein JavaScript, keine Bilder und keine Logoentwicklung.
+
+## Dokumente
+
+- [PROJECT.md](PROJECT.md) definiert Ziel, Zielgruppen, UX-Ziele und Informationsarchitektur.
+- [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md) übersetzt die bestehende App-Sprache in Leitlinien für die Website.
+- [CONTENT-PLAN.md](CONTENT-PLAN.md) beschreibt Botschaften, Inhaltsreihenfolge und redaktionelle Regeln.
+- [ROADMAP.md](ROADMAP.md) legt Phasen, Freigaben und Qualitätskriterien fest.
+- [01_CREATIVE_DIRECTION.md](01_CREATIVE_DIRECTION.md) definiert Markenwirkung und kreative Haltung.
+- [02_VISUAL_LANGUAGE.md](02_VISUAL_LANGUAGE.md) legt die visuelle Sprache für spätere Entwürfe fest.
+- [03_WIREFRAME.md](03_WIREFRAME.md) beschreibt den vollständigen mobile-first Seitenaufbau.
+- [04_COMPONENT_MAP.md](04_COMPONENT_MAP.md) erfasst alle später benötigten Komponenten und Zustände.
+- [05_ANIMATION_GUIDE.md](05_ANIMATION_GUIDE.md) definiert ruhige, funktionale Bewegung.
+- [06_ASSET_LIST.md](06_ASSET_LIST.md) plant benötigte Marken-, Produkt- und Medienassets.
+- [components.md](components.md) definiert API, Semantik, Varianten und Zustände der späteren Komponenten.
+- [responsive.md](responsive.md) legt die vier verbindlichen Responsive-Modi und das Komponentenverhalten fest.
+- [accessibility.md](accessibility.md) beschreibt den WCAG-2.2-AA-Standard und die Abnahme.
+
+## Technisches Fundament
+
+- `styles/design-tokens.css`: globale Farben, Typografie, Abstände, Radien, Schatten, Container, Ebenen und Motion-Tokens.
+- `styles/animation.css`: ausschließlich globale, optionale Bewegungsprimitiven mit Reduced-Motion-Fallback.
+- `components/`: reserviert für spätere, einzeln beauftragte Komponentenimplementierungen.
+- `scripts/`: reserviert für spätere progressive Verbesserungen in Vanilla JavaScript.
+- `assets/`: reserviert für später freigegebene Marken- und Medienassets.
+
+## Vorgesehene Struktur
+
+```text
+website/
+├── README.md
+├── PROJECT.md
+├── DESIGN-SYSTEM.md
+├── CONTENT-PLAN.md
+├── ROADMAP.md
+├── components.md
+├── responsive.md
+├── accessibility.md
+├── assets/
+│   ├── fonts/       # nur lokal ausgelieferte Webfonts, falls später freigegeben
+│   ├── icons/       # optimierte, zugängliche Website-Icons
+│   └── images/      # freigegebene Screenshots und Bildmedien
+├── content/         # redaktionelle Quelldokumente und Textvarianten
+├── components/      # spätere Komponentenimplementierungen
+├── scripts/         # kleines, optionales Vanilla JavaScript
+└── styles/
+    ├── design-tokens.css
+    └── animation.css
+```
+
+Die Medien-, Inhalts-, Komponenten- und Skriptordner sind als spätere Zielstruktur vorgemerkt und werden erst in einer ausdrücklich beauftragten Umsetzungsphase befüllt. HTML-Seiten sollen später direkt unter `website/` liegen, damit die statische Veröffentlichung ohne Build-Schritt funktioniert.
+
+## Verbindliche Grenzen
+
+- Änderungen für die Website bleiben vollständig in `website/`.
+- Die bestehende App ist ausschließlich Referenz und wird nicht verändert.
+- Die Website bleibt statisch: HTML, CSS und bei Bedarf Vanilla JavaScript.
+- Keine Frameworks, Build-Tools, Paketmanager-Runtime oder zusätzlichen Abhängigkeiten.
+- Keine unbestätigten Produkt-, Preis-, Rechts- oder Sicherheitsversprechen veröffentlichen.
+- App und Website teilen eine Designsprache, aber nicht zwingend dieselben Komponenten oder Dateien.
+
+## Referenzstand
+
+Die Analyse basiert auf dem am 12. August 2026 vorhandenen App-Stand. Die Verzeichnisse `app/` und `assets/` waren zu diesem Zeitpunkt leer; die bestehende statische App im Repository-Stamm wurde deshalb ausschließlich lesend als Referenz herangezogen. Maßgeblich waren insbesondere die vorhandenen Farb- und Formtokens, responsiven Komponenten, UX-Grundsätze sowie die Architektur- und Produktdokumentation.
