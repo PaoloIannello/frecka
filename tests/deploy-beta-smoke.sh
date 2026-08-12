@@ -107,6 +107,16 @@ assert_mode() {
   fi
 }
 
+TARGET_LOG="$TEST_DIRECTORY/target-check.log"
+TARGET_OUTPUT=$(FRECKA_DEPLOY_TEST_LOG="$TARGET_LOG" PATH="$TEST_BIN:$PATH" \
+  "$TEST_REPOSITORY/scripts/deploy-beta.sh" --check-target "$TEST_RELEASE_ID")
+
+printf '%s\n' "$TARGET_OUTPUT" | grep -Fq 'ZIELPRÜFUNG BESTANDEN'
+assert_log_count "$TARGET_LOG" 1 'SSH'
+assert_log_count "$TARGET_LOG" 1 '<frecka-synology>'
+assert_log_count "$TARGET_LOG" 0 'SCP_PROBE'
+assert_no_transfer "$TARGET_LOG"
+
 DRY_LOG="$TEST_DIRECTORY/dry-run.log"
 DRY_OUTPUT=$(FRECKA_DEPLOY_TEST_LOG="$DRY_LOG" PATH="$TEST_BIN:$PATH" \
   "$TEST_REPOSITORY/scripts/deploy-beta.sh" --dry-run "$TEST_RELEASE_ID")
@@ -200,6 +210,20 @@ fi
 if grep -Eq 'chmod[[:space:]]+0?777' "$TEST_REPOSITORY/scripts/deploy-beta.sh"; then
   printf '%s\n' 'FEHLER: Der produktive Pfad enthält einen pauschalen Modus 777.' >&2
   exit 1
+fi
+
+TAMPERED_LOG="$TEST_DIRECTORY/tampered.log"
+printf '%s\n' 'Manipuliert' >> "$TEST_RELEASE/site/index.html"
+if FRECKA_DEPLOY_TEST_LOG="$TAMPERED_LOG" PATH="$TEST_BIN:$PATH" \
+  "$TEST_REPOSITORY/scripts/deploy-beta.sh" --dry-run "$TEST_RELEASE_ID" \
+  > "$TEST_DIRECTORY/tampered-output.log" 2>&1; then
+  printf '%s\n' 'FEHLER: Eine manipulierte Artefaktdatei wurde nicht abgewiesen.' >&2
+  exit 1
+fi
+grep -Fq 'Lokale SHA-256-Prüfung ist fehlgeschlagen' "$TEST_DIRECTORY/tampered-output.log"
+if [ -f "$TAMPERED_LOG" ]; then
+  assert_log_count "$TAMPERED_LOG" 0 'SSH'
+  assert_no_transfer "$TAMPERED_LOG"
 fi
 
 # Der serverseitige Lifecycle wird lokal ohne Netzwerk nachgestellt: Das

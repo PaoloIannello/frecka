@@ -12,6 +12,7 @@ REMOTE_RELEASE_BASE='/volume1/web/FRECKA/releases'
 usage() {
   cat <<EOF
 Aufruf:
+  $PROGRAM_NAME --check-target <release-id>
   $PROGRAM_NAME --dry-run <release-id>
   $PROGRAM_NAME <release-id>
 
@@ -26,11 +27,18 @@ fail() {
 }
 
 DRY_RUN=0
+CHECK_TARGET=0
 
-if [ "${1:-}" = '--dry-run' ]; then
-  DRY_RUN=1
-  shift
-fi
+case "${1:-}" in
+  --dry-run)
+    DRY_RUN=1
+    shift
+    ;;
+  --check-target)
+    CHECK_TARGET=1
+    shift
+    ;;
+esac
 
 if [ "$#" -ne 1 ]; then
   usage >&2
@@ -54,6 +62,65 @@ REMOTE_PUBLISH_LOCK="$REMOTE_RELEASE_BASE/.publish-$RELEASE_ID.lock"
 REMOTE_DESTINATION="$DEPLOY_SSH_ALIAS:$REMOTE_STAGING/"
 
 command -v ssh >/dev/null 2>&1 || fail 'ssh ist auf diesem Mac nicht verfügbar.'
+
+ssh_deploy() {
+  ssh -T \
+    -o BatchMode=yes \
+    -o PasswordAuthentication=no \
+    -o KbdInteractiveAuthentication=no \
+    -o IdentitiesOnly=yes \
+    -o ConnectTimeout=10 \
+    "$DEPLOY_SSH_ALIAS" "$@"
+}
+
+remote_preflight() {
+  ssh_deploy 'sh -s' <<EOF
+  if [ ! -d '$REMOTE_RELEASE_BASE' ]; then
+    echo 'FEHLER: Die Zielbasis fehlt: $REMOTE_RELEASE_BASE' >&2
+    exit 20
+  fi
+  if [ ! -w '$REMOTE_RELEASE_BASE' ]; then
+    echo 'FEHLER: Das Deployment-Konto darf nicht in die Zielbasis schreiben.' >&2
+    exit 21
+  fi
+  for required_command in scp sha256sum find awk sed sort grep mv mkdir rmdir chmod; do
+    if ! command -v "\$required_command" >/dev/null 2>&1; then
+      echo "FEHLER: Serverseitiges \$required_command fehlt." >&2
+      exit 22
+    fi
+  done
+  MV_HELP=\$(mv --help 2>&1 || true)
+  if ! printf '%s\n' "\$MV_HELP" | grep -Eq 'no-clobber|\[[^]]*n[^]]*\]'; then
+    echo 'FEHLER: Serverseitiges mv unterstützt kein sicheres No-Clobber (-n).' >&2
+    exit 23
+  fi
+  if ! printf '%s\n' "\$MV_HELP" | grep -Eq 'no-target-directory|\[[^]]*T[^]]*\]'; then
+    echo 'FEHLER: Serverseitiges mv unterstützt kein sicheres No-Target-Directory (-T).' >&2
+    exit 23
+  fi
+  if [ -e '$REMOTE_RELEASE' ] || [ -L '$REMOTE_RELEASE' ]; then
+    echo 'FEHLER: Das Ziel-Release existiert bereits und wird nicht überschrieben.' >&2
+    exit 24
+  fi
+  if [ -e '$REMOTE_STAGING' ] || [ -L '$REMOTE_STAGING' ]; then
+    echo 'FEHLER: Das temporäre Upload-Verzeichnis existiert bereits. Manuell prüfen; keine automatische Bereinigung.' >&2
+    exit 25
+  fi
+  if [ -e '$REMOTE_PUBLISH_LOCK' ] || [ -L '$REMOTE_PUBLISH_LOCK' ]; then
+    echo 'FEHLER: Die Veröffentlichungssperre existiert bereits. Manuell prüfen; keine automatische Bereinigung.' >&2
+    exit 26
+  fi
+EOF
+}
+
+if [ "$CHECK_TARGET" -eq 1 ]; then
+  if ! remote_preflight; then
+    fail 'Synology-Zielprüfung ist fehlgeschlagen.'
+  fi
+  printf 'ZIELPRÜFUNG BESTANDEN: %s ist auf der Synology noch frei.\n' "$RELEASE_ID"
+  exit 0
+fi
+
 command -v scp >/dev/null 2>&1 || fail 'scp ist auf diesem Mac nicht verfügbar.'
 if scp -O 2>&1 | grep -Eqi 'illegal option|unknown option|unrecognized option'; then
   fail 'Das lokale scp unterstützt den für die Synology benötigten Legacy-Modus -O nicht.'
@@ -87,16 +154,6 @@ trap 'exit 143' TERM
 
 LISTED_FILES="$TEMP_DIRECTORY/listed-files"
 ACTUAL_FILES="$TEMP_DIRECTORY/actual-files"
-
-ssh_deploy() {
-  ssh -T \
-    -o BatchMode=yes \
-    -o PasswordAuthentication=no \
-    -o KbdInteractiveAuthentication=no \
-    -o IdentitiesOnly=yes \
-    -o ConnectTimeout=10 \
-    "$DEPLOY_SSH_ALIAS" "$@"
-}
 
 scp_deploy() {
   # Die drei Artefaktbestandteile werden einzeln in das bereits mit 0700
@@ -178,44 +235,7 @@ printf '  Ziel:    %s:%s/\n' "$DEPLOY_SSH_ALIAS" "$REMOTE_RELEASE"
 # die Unvergebenheit der Release-ID. Die normale SSH-Host-Key-Prüfung bleibt
 # aktiv. Benutzer und Schlüssel kommen aus dem lokalen SSH-Alias; BatchMode
 # und deaktivierte Passwortverfahren verhindern jede Passwortabfrage.
-if ! ssh_deploy 'sh -s' <<EOF
-  if [ ! -d '$REMOTE_RELEASE_BASE' ]; then
-    echo 'FEHLER: Die Zielbasis fehlt: $REMOTE_RELEASE_BASE' >&2
-    exit 20
-  fi
-  if [ ! -w '$REMOTE_RELEASE_BASE' ]; then
-    echo 'FEHLER: Das Deployment-Konto darf nicht in die Zielbasis schreiben.' >&2
-    exit 21
-  fi
-  for required_command in scp sha256sum find awk sed sort grep mv mkdir rmdir chmod; do
-    if ! command -v "\$required_command" >/dev/null 2>&1; then
-      echo "FEHLER: Serverseitiges \$required_command fehlt." >&2
-      exit 22
-    fi
-  done
-  MV_HELP=\$(mv --help 2>&1 || true)
-  if ! printf '%s\n' "\$MV_HELP" | grep -Eq 'no-clobber|\[[^]]*n[^]]*\]'; then
-    echo 'FEHLER: Serverseitiges mv unterstützt kein sicheres No-Clobber (-n).' >&2
-    exit 23
-  fi
-  if ! printf '%s\n' "\$MV_HELP" | grep -Eq 'no-target-directory|\[[^]]*T[^]]*\]'; then
-    echo 'FEHLER: Serverseitiges mv unterstützt kein sicheres No-Target-Directory (-T).' >&2
-    exit 23
-  fi
-  if [ -e '$REMOTE_RELEASE' ] || [ -L '$REMOTE_RELEASE' ]; then
-    echo 'FEHLER: Das Ziel-Release existiert bereits und wird nicht überschrieben.' >&2
-    exit 24
-  fi
-  if [ -e '$REMOTE_STAGING' ] || [ -L '$REMOTE_STAGING' ]; then
-    echo 'FEHLER: Das temporäre Upload-Verzeichnis existiert bereits. Manuell prüfen; keine automatische Bereinigung.' >&2
-    exit 25
-  fi
-  if [ -e '$REMOTE_PUBLISH_LOCK' ] || [ -L '$REMOTE_PUBLISH_LOCK' ]; then
-    echo 'FEHLER: Die Veröffentlichungssperre existiert bereits. Manuell prüfen; keine automatische Bereinigung.' >&2
-    exit 26
-  fi
-EOF
-then
+if ! remote_preflight; then
   fail 'Synology-Vorabprüfung ist fehlgeschlagen.'
 fi
 

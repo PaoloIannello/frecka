@@ -11,7 +11,7 @@ Browserbasierte FRECKA-PWA 0.10.9 mit lokaler IndexedDB-Persistenz, verschlüsse
 - „Später erinnern“ verschiebt den Hinweis nur in der laufenden Sitzung und bietet ihn nach 15 Minuten erneut an; beim nächsten App-Start wird ein noch vorhandenes Update ebenfalls wieder erkannt
 - offene Belegentwürfe und laufende Schreibvorgänge blockieren die bewusste Aktivierung weiterhin; Offline-App-Shell, IndexedDB und sämtliche Geschäftsdaten bleiben unberührt
 
-Der reale iPhone/Home-Screen-PWA-Test von `0.10.8-6056e64` am 11. August 2026 bestätigte Updateerkennung und Offline-Kaltstart, blieb nach „Jetzt aktualisieren“ jedoch bei „Wird aktualisiert …“ ohne sichtbaren Reload stehen. Erst vollständiges Beenden und erneutes Öffnen startete 0.10.8. Dieser Beta-Stand ist deshalb real getestet, aber nicht freigegeben; die erneute Geräteabnahme von UPDATE-001b bleibt das abschließende Gate für 0.10.9.
+Der reale iPhone/Home-Screen-PWA-Test von `0.10.8-6056e64` am 11. August 2026 bestätigte Updateerkennung und Offline-Kaltstart, blieb nach „Jetzt aktualisieren“ jedoch bei „Wird aktualisiert …“ ohne sichtbaren Reload stehen. Das korrigierte Release `0.10.9-5b180b6` bestand anschließend den realen Updatepfad, Offline-Kaltstart, Offline-Belegerstellung und den fortbestehenden lokalen Datenbestand nach Rückkehr ins Netz. 0.10.9 ist damit die aktuelle freigegebene Beta-Basis, jedoch noch keine Produktivfreigabe für `app.frecka.app`.
 
 ## Grundlage aus PERSISTENCE-010
 
@@ -29,6 +29,18 @@ Der reale iPhone/Home-Screen-PWA-Test von `0.10.8-6056e64` am 11. August 2026 be
 ## Kernablauf
 
 Start → Neuer Beleg → Positionen direkt antippen → Beleg bei Bedarf aufklappen und bearbeiten → Weiter → Kunde optional und Zahlungsart simulieren → Demo abschließen.
+
+## Beta-Release
+
+Nach vollständig geprüfter Versionsvorbereitung, Commit und Push auf `origin/main` ist der normale technische Releaseweg genau ein lokaler Befehl:
+
+```sh
+./scripts/release-beta.sh
+```
+
+Der Befehl leitet Version und Build aus dem sauberen `main` ab, prüft `origin/main`, den versionierten Freigabenachweis, lokale und entfernte Tag-/Release-Kollisionen, die Laufzeit-Allowlist und alle automatisierbaren Regressionen. Erst danach erzeugt und veröffentlicht er den annotierten Tag, baut das unveränderliche Artefakt ausschließlich aus diesem Tag und ruft den bestehenden Beta-Dry-Run sowie bei Erfolg den Beta-Upload auf. Er ändert weder Versionsquellen noch Fachcode, Commit, Web Station oder Produktion.
+
+Die Release-Notiz `docs/releases/<version>.md` muss vor dem Commit mindestens die eindeutigen Felder `Status: Für automatisierten Beta-Release freigegeben`, `Beta-Release-Freigabe: FREIGEGEBEN`, `Lokale Release-Prüfung: BESTANDEN`, Release-Verantwortung, Vorgängerversion, Migrations-/Bestandsprüfung und einen Abschnitt `Bekannte Einschränkungen` enthalten. Nach erfolgreichem Upload bleiben Web-Station-Umschaltung und realer Home-Screen-PWA-Test bewusste manuelle Freigabegates.
 
 ## Neu in PERSISTENCE-008
 
@@ -73,7 +85,7 @@ Für den realen iPhone-Test genau einmal **Diagnose erstellen** antippen, den lo
 - einmalige, ausdrücklich freigegebene Legacy-Brücke für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI: automatische Worker-Aktivierung, aber kein `clients.claim()` und kein automatischer Reload
 - eigene automatisierte Lifecycle-Tests zusätzlich zum 145-Fälle-Fach- und Persistenzlauf
 
-Die Legacy-Brücke aus SERVICEWORKER-002 bleibt in 0.10.9 ausnahmsweise unverändert erhalten, solange der reale Übergang bereits ausgelieferter Altclients noch nicht bestätigt ist. UPDATE-001b ändert ausschließlich die clientseitige Erkennung nach der bewussten Nutzeraktion. Sobald der Altclient-Übergang real nachgewiesen wurde, ist die Entfernung der Brücke ein zwingendes Gate für den unmittelbar folgenden Worker/Release. Die dauerhafte Reihenfolge bleibt: Hinweis → Nutzeraktion → `SKIP_WAITING` → genau ein Reload.
+Die Legacy-Brücke aus SERVICEWORKER-002 blieb in 0.10.9 ausnahmsweise unverändert erhalten. Der reale Übergang ist mit der erfolgreichen 0.10.9-Geräteabnahme bestätigt; ihre Entfernung ist deshalb ein zwingendes Gate für den unmittelbar folgenden Worker/Release und wird vom neuen Release-Preflight erzwungen. Die dauerhafte Reihenfolge bleibt: Hinweis → Nutzeraktion → `SKIP_WAITING` → genau ein Reload.
 
 ## Neu in EXPORT-003
 

@@ -2,7 +2,7 @@
 
 Stand: 11. August 2026
 
-Geltungsbereich: vorbereiteter Stand `0.10.9`, Build `UPDATE-001b`; noch kein Release-Tag, Artefakt oder Deployment für 0.10.9
+Geltungsbereich: freigegebene Beta-Basis `0.10.9-5b180b6`, Build `UPDATE-001b`, und lokaler automatisierter Beta-Release für nachfolgende Kandidaten
 
 Der verbindliche Infrastrukturrahmen steht in `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`. Dieses Dokument konkretisiert ausschließlich die statische Laufzeitmenge und ihre spätere Zuordnung zu Synology Web Station.
 
@@ -79,6 +79,8 @@ vendor/
   jszip-v3.10.1.LICENSE.markdown
 ```
 
+Die operative, maschinenlesbare Fassung dieser Liste steht in `scripts/release-files.txt` und wird zusammen mit jedem künftigen Release-Kandidaten versioniert. Dokumentation und Datei müssen denselben Bestand beschreiben; der Release-Preflight verwirft fehlende, ungetrackte, doppelte, absolute, übergeordnete oder typfremde Pfade. Der Artefakt-Builder liest ausschließlich die im annotierten Tag enthaltene Allowlist.
+
 Die Laufzeitmenge einschließlich Lizenztexte umfasst im aktuellen Stand rund 1,64 MB. Die drei lokal ausgelieferten Bibliotheken stimmen mit den in `vendor/README.md` dokumentierten SHA-256-Werten überein. Es gibt keine CDN-Abhängigkeit und keine vom Anwendungscode ausgelösten Server-/API-Aufrufe.
 
 Nicht in ein produktives App-Document-Root gehören:
@@ -108,7 +110,7 @@ lokale Vendor-Dateien
 
 Ein Deployment darf Skripte weder automatisch umsortieren noch einzeln minifizieren, umbenennen oder bündeln. Eine solche Änderung wäre ein eigener Entwicklungsblock und kein Infrastrukturvorgang.
 
-Alle produktiven Pfade sind relativ. Manifest, Stylesheet, alle 17 Skriptdateien und die Service-Worker-Registrierung werden daher sowohl am Origin-Root als auch unter einem gemeinsamen Release-Unterpfad korrekt aufgelöst. Das Hash-Routing benötigt keine serverseitige Rewrite-Regel.
+Alle produktiven Pfade sind relativ. Manifest, Stylesheet, sämtliche in der Allowlist aufgeführten Skriptdateien und die Service-Worker-Registrierung werden daher sowohl am Origin-Root als auch unter einem gemeinsamen Release-Unterpfad korrekt aufgelöst. Das Hash-Routing benötigt keine serverseitige Rewrite-Regel.
 
 ### 2.4 PWA-Status
 
@@ -129,7 +131,7 @@ Vorhanden sind:
 Noch nicht vorhanden beziehungsweise nicht produktionsreif sind:
 
 - kein Release-/Update-Manifest;
-- keine reproduzierbare automatische Release-Pipeline;
+- kein externer CI-Runner; der reproduzierbare lokale Beta-Release ist mit RELEASE-AUTOMATION-001 vorhanden;
 - kein eigener PWA-Installationsidentifikator im Manifest;
 - keine Maskable-Icons;
 - veraltete Manifesttexte wie „UX-Prototyp ohne echte Datenhaltung“;
@@ -139,7 +141,7 @@ Noch nicht vorhanden beziehungsweise nicht produktionsreif sind:
 
 SERVICEWORKER-002 berücksichtigt `registration.waiting` beim Start, beobachtet `updatefound` und `statechange` und ruft bei bestehender Online-Verbindung einmal `registration.update()` auf. Ein wartender Worker wird angezeigt, aber erst durch „Jetzt aktualisieren“ mit `{ type: "SKIP_WAITING" }` aktiviert. UPDATE-001 behandelt zusätzlich den einmaligen Legacy-Rennfall eines bereits aktivierten Workers und verwendet für `activated` und `controllerchange` eine gemeinsame Einmal-Reload-Sperre. Der reale iPhone-Test von `0.10.8-6056e64` zeigte jedoch, dass die UI nach dem Klick blockiert, wenn das gehaltene Worker-Objekt noch keinen aktivierten Zustand meldet und kein weiteres Lifecycle-Ereignis eintritt. UPDATE-001b verifiziert deshalb ausschließlich während des ausdrücklich gestarteten Aktivierungsversuchs zusätzlich `registration.active` sowie Änderungen von aktivem Worker und Controller seit Anzeige des Hinweises. Eine bereits erfolgte Übernahme führt so auch ohne weiteres `controllerchange` zu genau einem Reload. Bleibt Aktivierung oder Navigation tatsächlich aus, endet die Warteanzeige weiterhin zeitlich begrenzt in einem wiederholbaren Fehlerzustand. „Später erinnern“ bleibt rein sitzungsbezogen; ohne Nutzeraktion gibt es weiterhin keinen Reload.
 
-Der SERVICEWORKER-002-Worker besitzt zusätzlich eine **einmalige Legacy-Brücke**, weil bereits ausgelieferte 0.10.0-/0.10.1-Clients die neue Update-UI noch nicht enthalten und deshalb keine Aktivierungsnachricht senden können. Erst nachdem seine vollständige App-Shell erfolgreich gecacht ist, darf diese Brücke automatisch `skipWaiting()` ausführen. Sie verwendet ausdrücklich kein `clients.claim()` und löst keinen Reload aus; die laufende alte Sitzung wechselt damit nicht mitten im Betrieb auf neuen Anwendungscode. Da der reale Übergang der bereits ausgelieferten Altclients noch nicht dokumentiert bestätigt ist, bleibt die Brücke im 0.10.9-Worker fachlich unverändert erhalten. UPDATE-001b ändert daran nichts. Sobald dieser Übergang real bestätigt wurde, müssen Legacy-Konstante und automatischer Installationsaufruf im unmittelbar folgenden Worker/Release entfernt werden. Die Nachrichtenbehandlung für bewusst ausgelöste spätere Updates bleibt bestehen.
+Der SERVICEWORKER-002-Worker besitzt in 0.10.9 zusätzlich die **einmalige Legacy-Brücke**, weil bereits ausgelieferte 0.10.0-/0.10.1-Clients die neue Update-UI noch nicht enthalten und deshalb keine Aktivierungsnachricht senden können. Erst nachdem seine vollständige App-Shell erfolgreich gecacht ist, darf diese Brücke automatisch `skipWaiting()` ausführen. Sie verwendet ausdrücklich kein `clients.claim()` und löst keinen Reload aus; die laufende alte Sitzung wechselt damit nicht mitten im Betrieb auf neuen Anwendungscode. Der reale Übergang der bereits ausgelieferten Altclients ist mit der erfolgreichen 0.10.9-Abnahme bestätigt. Legacy-Konstante und automatischer Installationsaufruf müssen deshalb vor dem unmittelbar folgenden Worker/Release entfernt werden; `scripts/release-beta.sh` blockiert einen Kandidaten, solange die Brücke aktiv ist. Die Nachrichtenbehandlung für bewusst ausgelöste spätere Updates bleibt bestehen.
 
 Signierte Kanalmetadaten, ein Release-/Update-Manifest und ein serverseitiger Updatekanal bleiben spätere, getrennt freizugebende Bausteine.
 
@@ -157,13 +159,13 @@ Daraus folgt eine verbindliche Sicherheitsregel:
 
 Die leere `publicViewerBaseUrl` in `js/config.js` ist mit dieser Trennung kompatibel: Public-Links verwenden jeweils die aktuelle Deployment-Adresse. Ein Beta-Beleg verweist damit standardmäßig auf den Beta-Viewer. Ob Beta künftig öffentliche Kundenlinks der Produktiv-App verwenden darf, ist eine fachliche Entscheidung und wird hier nicht angenommen.
 
-### 2.6 Release-Zustand und vorbereiteter Kandidat
+### 2.6 Release-Zustand und aktuelle Beta-Basis
 
 Der annotierte Release-Tag `v0.9.1` zeigt auf Commit `26dc63fbea434d9fb33a7e88a6af0419cb8cddae`. Das unveränderliche Artefakt trägt die Release-ID `0.9.1-26dc63f` und bleibt die dokumentierte stabile Beta-Basis. Der Tag `v0.10.0` zeigt auf Commit `dc55cf06fdb00548307beb8efc6e6eaac6369840`.
 
 Der annotierte Tag `v0.10.1` zeigt auf Commit `c195a099ef57af79177496f48d217247f2144175`; das daraus erzeugte unveränderliche Artefakt trägt die Release-ID `0.10.1-c195a09`. Der annotierte Tag `v0.10.2` zeigt auf Commit `18f41b5a47b93fee0efc086674e8d7e7007d14d8`; das daraus erzeugte und auf Beta bereitgestellte Artefakt trägt die Release-ID `0.10.2-18f41b5`. Der annotierte Tag `v0.10.3` zeigt auf Commit `3591b0b9f16534ce489b2a246d1c26c105c49477`; das daraus erzeugte und auf Beta bereitgestellte Artefakt trägt die Release-ID `0.10.3-3591b0b`. Der annotierte Tag `v0.10.4` zeigt auf Commit `2d5d3c4a6ae1ab3438bf9940dcc1928c204021fa`; das daraus erzeugte und auf Beta bereitgestellte Artefakt trägt die Release-ID `0.10.4-2d5d3c4`. Der annotierte Tag `v0.10.5` zeigt auf Commit `4a9bd007f6ede1696b41a6b7d29088f2ffab85aa`; das daraus erzeugte unveränderliche Artefakt trägt die Release-ID `0.10.5-4a9bd00`. Der annotierte Tag `v0.10.6` zeigt auf Commit `986a830bc4448e953cccbc46fc4a690f40e87436`; das daraus erzeugte unveränderliche Artefakt trägt die Release-ID `0.10.6-986a830`. Der annotierte Tag `v0.10.7` zeigt auf Commit `7d170cbf987afd11c279e4d29ca9eba7c33ab9e4`; das daraus erzeugte unveränderliche Artefakt trägt die Release-ID `0.10.7-7d170cb`.
 
-Der aktuelle annotierte Tag `v0.10.8` zeigt auf Commit `6056e64db92eb79666f3f6216546cc8cbc1eb6d8`; das daraus erzeugte und auf Beta bereitgestellte Artefakt trägt die Release-ID `0.10.8-6056e64`. Sein realer iPhone-Test ist wegen des blockierten Updateabschlusses abgelehnt. Der vorbereitete Folgepatch `0.10.9` verwendet Build `UPDATE-001b`, den HTML-Titel `FRECKA – UPDATE-001b`, den Asset-Abfragewert `update001b-1` und den App-Shell-Cache `frecka-app-shell-0.10.9-update001b-1`. Für 0.10.9 existieren in diesem Stand weder Commit noch Tag, Artefakt oder Deployment.
+Der annotierte Tag `v0.10.8` zeigt auf Commit `6056e64db92eb79666f3f6216546cc8cbc1eb6d8`; das daraus erzeugte und auf Beta bereitgestellte Artefakt trägt die Release-ID `0.10.8-6056e64`. Sein realer iPhone-Test ist wegen des blockierten Updateabschlusses abgelehnt. Der korrigierte annotierte Tag `v0.10.9` zeigt auf Commit `5b180b64ec75ab6f6c2ef53842ead45c6cc32b4a`; das daraus erzeugte unveränderliche und auf Beta geprüfte Artefakt trägt die Release-ID `0.10.9-5b180b6`. Es verwendet Build `UPDATE-001b`, den HTML-Titel `FRECKA – UPDATE-001b`, den Asset-Abfragewert `update001b-1` und den App-Shell-Cache `frecka-app-shell-0.10.9-update001b-1`.
 
 Ein Updateformat für signierte Kanäle und ein Signaturverfahren sind ausdrücklich noch nicht implementiert. SERVICEWORKER-002 erkennt ausschließlich Änderungen des Service Workers innerhalb derselben bereits aufgerufenen Deployment-Origin.
 
@@ -175,7 +177,11 @@ Bewertung: `0.9.1-26dc63f` ist für den Beta-Betrieb freigegeben und gilt als st
 
 ### 2.8 Beta-Betriebsbefund 0.10.8
 
-`0.10.8-6056e64` wurde am 11. August 2026 real auf einem iPhone als installierte Home-Screen-PWA geprüft. Updateerkennung, Updatekarte, anschließender Start von 0.10.8 nach vollständigem Beenden und erneutem Öffnen sowie Offline-Kaltstart bestanden. Nach „Jetzt aktualisieren“ blieb die laufende Sitzung jedoch ohne sichtbaren Reload bei „Wird aktualisiert …“. Bewertung: real getestet, aber kein Beta-GO. UPDATE-001b/0.10.9 benötigt deshalb nach den automatisierten Prüfungen zwingend einen erneuten realen iPhone-Update-Test.
+`0.10.8-6056e64` wurde am 11. August 2026 real auf einem iPhone als installierte Home-Screen-PWA geprüft. Updateerkennung, Updatekarte, anschließender Start von 0.10.8 nach vollständigem Beenden und erneutem Öffnen sowie Offline-Kaltstart bestanden. Nach „Jetzt aktualisieren“ blieb die laufende Sitzung jedoch ohne sichtbaren Reload bei „Wird aktualisiert …“. Bewertung: real getestet, aber kein Beta-GO.
+
+### 2.9 Beta-Betriebsnachweis 0.10.9
+
+`0.10.9-5b180b6` bestand anschließend auf einem echten iPhone als installierte Home-Screen-PWA den korrigierten UPDATE-001b-Wechsel. Offline-Kaltstart, bestehende lokale Daten, Offline-Belegerstellung und der Fortbestand des offline erzeugten Belegs nach vollständigem Beenden und Rückkehr ins Netz wurden bestätigt. Bewertung: Beta-GO und aktuelle stabile Beta-Basis; noch keine Produktivfreigabe für `app.frecka.app`.
 
 ## 3. Abgeleitete Deployment-Prinzipien
 
@@ -251,9 +257,19 @@ Produktiv und Beta werden dagegen als zwei namensbasierte HTTPS-Portale eingeric
 - Nach bestandener serverseitiger Dateibestands- und SHA-256-Prüfung werden Release-Dateien auf `0444` und Release-Verzeichnisse auf `0555` gesetzt. Erst dieser bereits schreibgeschützte Stand erhält atomar seinen finalen Release-Namen.
 - Das Deployment-Skript ändert weder Rechte des Elternverzeichnisses `/volume1/web/FRECKA/releases/` noch ACLs.
 
-### 5.3 Manueller Beta-Upload über LAN/VPN
+### 5.3 Automatisierter Beta-Release und manueller Wiederaufnahmeweg über LAN/VPN
 
-Der vorbereitete Transport verwendet keinen öffentlichen SSH-Port. Der Mac muss sich im lokalen Netz oder im VPN befinden. Das Skript verwendet ausschließlich den lokalen SSH-Alias `frecka-synology`; Hostname, Benutzer und IdentityFile bleiben in `~/.ssh/config`. Das Skript verwaltet weder Passwörter noch private Schlüssel und behält die normale Host-Key-Prüfung bei.
+Der Transport verwendet keinen öffentlichen SSH-Port. Der Mac muss sich im lokalen Netz oder im VPN befinden. Die Skripte verwenden ausschließlich den lokalen SSH-Alias `frecka-synology`; Hostname, Benutzer und IdentityFile bleiben in `~/.ssh/config`. Sie verwalten weder Passwörter noch private Schlüssel und behalten die normale Host-Key-Prüfung bei.
+
+Nach einem vollständig geprüften, freigegebenen und zu `origin/main` gepushten Release-Commit ist der normale Befehl:
+
+```sh
+./scripts/release-beta.sh
+```
+
+Der Orchestrator prüft die noch freie Synology-Release-ID vor dem Tag mit dem rein lesenden Modus `deploy-beta.sh --check-target`, erzeugt und pusht anschließend ausschließlich bei vollständig bestandenem Preflight den annotierten Tag, baut das Artefakt aus diesem Tag und führt Dry-Run und Upload nacheinander aus. Er verändert keine Web-Station-Konfiguration.
+
+Der direkte Transport bleibt für Diagnose und bewusste Wiederaufnahme eines bereits vorhandenen Artefakts verfügbar:
 
 ```sh
 ./scripts/deploy-beta.sh --dry-run <release-id>
@@ -311,23 +327,25 @@ Mindestens:
 
 ### Phase 3: Staging
 
-1. neues Verzeichnis `releases/<release-id>/site/` anlegen;
-2. ausschließlich die Allowlist aus Abschnitt 2.2 hineinkopieren;
-3. `RELEASE.txt` nach dem verbindlichen Workflow erzeugen;
-4. für `site/` und `RELEASE.txt` eine deterministisch sortierte `SHA256SUMS` erzeugen;
-5. Prüfsummen unmittelbar gegen die Staging-Kopie prüfen;
-6. vollständiges Release-Verzeichnis danach nicht mehr verändern.
+1. `scripts/release-files.txt` als operative, im Tag versionierte Fassung der Allowlist aus Abschnitt 2.2 prüfen;
+2. mit `scripts/build-release.sh` ein exklusiv gesperrtes verborgenes Staging anlegen;
+3. ausschließlich die Allowlist per `git archive` aus dem annotierten Tag extrahieren;
+4. `RELEASE.txt` deterministisch aus Tagzeitpunkt, getaggtem Quellstand und getaggtem Freigabenachweis erzeugen;
+5. für `site/` und `RELEASE.txt` eine deterministisch sortierte `SHA256SUMS` erzeugen;
+6. vollständigen Dateibestand, Prüfsummen und Bytegleichheit mit dem Tag prüfen;
+7. Dateien auf `0444`, Verzeichnisse auf `0555` setzen und das vollständige Release-Verzeichnis danach nicht mehr verändern.
 
 Hierfür genügen vorhandene Betriebssystemwerkzeuge. Ein Node-Paket, Bundler oder Container ist nicht erforderlich.
 
 ### Phase 4: Beta
 
-1. statischen Webdienst auf das neue `site/` zeigen lassen;
-2. ausschließlich das Beta-Portal auf diesen Dienst umstellen;
-3. HTTPS-, Browser-, PWA-, 320-/390-px- und reale Zielgerätetests durchführen;
-4. auf einem echten iPhone die installierte Home-Screen-PWA mindestens einmal vollständig online starten, schließen, im Flugmodus erneut öffnen und die lokal vorhandenen Kunden, Belege und Gutscheine prüfen;
-5. insbesondere IndexedDB-Migration, Backup/Restore und Public-Links prüfen;
-6. Kandidaten bei einem Fehler nicht verändern, sondern einen neuen Release-Identifier bauen.
+1. `scripts/release-beta.sh` führt vorab den nicht schreibenden Synology-Zieltest, den vollständigen Beta-Dry-Run und danach den bestehenden sicheren Upload aus;
+2. Web Station anschließend manuell auf das ausgegebene neue `site/` zeigen lassen;
+3. ausschließlich das Beta-Portal auf diesen Dienst umstellen;
+4. HTTPS-, Browser-, PWA-, 320-/390-px- und reale Zielgerätetests durchführen;
+5. auf einem echten iPhone die installierte Home-Screen-PWA mindestens einmal vollständig online starten, schließen, im Flugmodus erneut öffnen und die lokal vorhandenen Kunden, Belege und Gutscheine prüfen;
+6. insbesondere IndexedDB-Migration, Backup/Restore und Public-Links prüfen;
+7. Kandidaten bei einem Fehler nicht verändern, sondern einen neuen Release-Identifier bauen.
 
 ### Phase 5: Produktion
 
@@ -342,7 +360,7 @@ Ein Code-Rollback kann keine bereits ausgeführte IndexedDB-Migration zurückdre
 
 Für den Updatekanal beschränkt sich die Rolle der Synology auf die Auslieferung statischer Programmdateien und späterer Update-Metadaten. Die nach ADR-0003 getrennten dynamischen Dienste sind davon unabhängig. SERVICEWORKER-002 erkennt neue Worker innerhalb derselben Deployment-Origin, zeigt einen nichtblockierenden Hinweis und aktiviert einen regulär wartenden Worker erst nach bewusster Nutzeraktion. Diese Browserfunktion benötigt weder einen Serverdienst noch eine zweite Datenhaltung und verändert keine IndexedDB-Daten.
 
-Die einmalige Legacy-Brücke im SERVICEWORKER-002-Worker dient ausschließlich dem Übergang bereits ausgelieferter Clients, die diese Updateoberfläche noch nicht kennen. Sie darf nicht als allgemeine Updatepolitik kopiert werden. 0.10.9 behält sie nur deshalb fachlich unverändert bei, weil der reale Altclient-Übergang noch nicht bestätigt ist. Nach dieser Bestätigung ist ihre Entfernung im unmittelbar folgenden Worker/Release ein zwingendes Release-Gate. Danach gilt ausschließlich: vollständig installieren → Hinweis anzeigen → Nutzeraktion → `SKIP_WAITING` → genau ein Reload. `clients.claim()` und automatische Reloads bleiben ausgeschlossen.
+Die einmalige Legacy-Brücke im SERVICEWORKER-002-Worker diente ausschließlich dem Übergang bereits ausgelieferter Clients, die diese Updateoberfläche noch nicht kannten. Sie darf nicht als allgemeine Updatepolitik kopiert werden. 0.10.9 trägt sie noch, die reale Übergangsabnahme ist aber inzwischen bestätigt. Ihre Entfernung ist daher vor dem unmittelbar folgenden Worker/Release ein zwingendes, automatisiert geprüftes Gate. Danach gilt ausschließlich: vollständig installieren → Hinweis anzeigen → Nutzeraktion → `SKIP_WAITING` → genau ein Reload. `clients.claim()` und automatische Reloads bleiben ausgeschlossen.
 
 Ein signierter kanalbasierter Updateclient ist damit noch nicht umgesetzt. Daher werden weiterhin weder Dateinamen noch JSON-Felder eines vermeintlichen Update-Manifests festgelegt.
 

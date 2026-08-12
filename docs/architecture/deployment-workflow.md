@@ -1,8 +1,8 @@
 # FRECKA: Vollständiger Deployment- und Release-Workflow
 
-Stand: 10. August 2026
+Stand: 11. August 2026
 
-Geltungsbereich: Entwicklung im einzigen Master-Repository, manuelles Deployment auf Synology Web Station und Vorbereitung einer späteren Automatisierung
+Geltungsbereich: Entwicklung im einzigen Master-Repository, lokaler automatisierter Beta-Release und weiterhin manuelle Web-Station-/Produktivfreigabe
 
 ## 1. Ziel und Verbindlichkeit
 
@@ -18,7 +18,7 @@ Verbindliche Systemgrenzen:
 - Ein Release wird genau einmal erzeugt und danach nicht mehr verändert.
 - Beta und Produktion verwenden getrennte HTTPS-Origins.
 - Ein Produktiv-Deployment verwendet exakt das auf Beta freigegebene Artefakt. Es wird nicht erneut gebaut.
-- Dieser Dokumentationsblock führt kein Build-System, keine CI und keine externe Abhängigkeit ein.
+- RELEASE-AUTOMATION-001 automatisiert ausschließlich die lokalen mechanischen Beta-Release-Schritte mit vorhandenen Projekt- und Betriebssystemmitteln. Es führt weder Build-System, CI noch externe Laufzeitabhängigkeit ein.
 
 ## 2. Vertrauens- und Verantwortungsmodell
 
@@ -43,10 +43,9 @@ Anforderung
 → lokale Prüfungen
 → Review
 → Merge nach main
-→ Release-Vorbereitung
-→ unveränderlicher Git-Tag
-→ einmaliges Release-Artefakt
-→ Beta-Deployment
+→ Release-Vorbereitung und Push des freigegebenen main-Commits
+→ ./scripts/release-beta.sh
+   (Preflight → Tests → unveränderlicher Git-Tag → Artefakt → Beta-Deployment)
 → Beta-Abnahme
 → Produktivfreigabe
 → Portalwechsel auf dasselbe Artefakt
@@ -269,10 +268,57 @@ Es gibt keinen dauerhaft parallelen `develop`- oder `release`-Branch. Für jede 
 4. Änderungen, Migrationen, Upgradepfad, Rückweg, bekannte Grenzen und Prüfumfang dokumentieren;
 5. vollständige Release-Kandidatenprüfung ausführen;
 6. Release-Vorbereitungsbranch nach Review in `main` integrieren;
-7. den resultierenden sauberen `main`-Commit annotiert taggen;
-8. erst anschließend das Artefakt aus genau diesem Tag erzeugen.
+7. den resultierenden sauberen `main`-Commit zu `origin/main` pushen;
+8. erst danach den automatisierten Beta-Release aus Abschnitt 6.6 starten.
 
-`docs/releases/` wird erst mit dem ersten echten Release angelegt; in diesem Dokumentationsblock entsteht kein leerer Platzhalter. Ändert sich nach dem Tag auch nur eine Datei, ist ein neuer Commit und eine neue Vorab- beziehungsweise Patchversion erforderlich.
+`docs/releases/` enthält die unveränderten historischen Release-Nachweise. Neue Release-Notizen erfüllen zusätzlich den nachfolgenden maschinenlesbaren Freigabevertrag; bestehende Nachweise werden dafür nicht rückwirkend umgeschrieben. Ändert sich nach dem Tag auch nur eine Datei, ist ein neuer Commit und eine neue Vorab- beziehungsweise Patchversion erforderlich.
+
+### 6.6 Maschinenlesbarer Freigabenachweis
+
+Die Automatisierung ändert keine Release-Dokumentation und errät keine Freigabe. `docs/releases/<version>.md` muss deshalb vor dem Release-Commit mindestens folgende eindeutige Zeilen enthalten:
+
+```text
+Status: Für automatisierten Beta-Release freigegeben; Geräteabnahme ausstehend
+Beta-Release-Freigabe: FREIGEGEBEN
+Lokale Release-Prüfung: BESTANDEN
+Release-Verantwortung: <benannte Verantwortung>
+Unmittelbare Vorgängerversion: <version>
+Datenbankschema-Migration erforderlich: ja|nein
+Bestandsprüfung vor In-place-Beta-Test: ja|nein
+```
+
+Zusätzlich ist ein Abschnitt `## Bekannte Einschränkungen` mit mindestens einem konkreten Listenpunkt erforderlich. Der Status bedeutet ausschließlich, dass der bereits fachlich und technisch geprüfte Commit getaggt, paketiert und auf die Beta-Infrastruktur übertragen werden darf. Er ist weder Geräte-GO noch Produktivfreigabe.
+
+Ein Status wie `Release-Vorbereitung`, `NO-GO`, `abgelehnt` oder `nicht freigabefähig` darf nicht durch den Orchestrator umgedeutet werden. Die Release-Vorbereitung muss den Nachweis bewusst korrigieren, erneut prüfen, committen und zu `origin/main` pushen.
+
+### 6.7 Normaler automatisierter Beta-Release
+
+Nach dem freigegebenen und gepushten Release-Commit lautet der normale Nutzerbefehl:
+
+```sh
+./scripts/release-beta.sh
+```
+
+Der Befehl erhält absichtlich keine Version als Argument. Er leitet Produktversion, Build, Tag und Release-ID ausschließlich aus dem geprüften `HEAD` ab und verhindert damit manuell vertauschte Versions- oder Tagparameter.
+
+Für die bereits vorhandenen `.mjs`-Regressionstests benötigt `scripts/verify-release.sh` eine lokale Node.js-Laufzeit. Es verwendet zuerst `FRECKA_NODE_BIN`, danach `node` aus `PATH` und schließlich – falls vorhanden – die lokale Codex-Desktop-Laufzeit. Es werden keine npm-Pakete installiert und keine neue Runtime in das Repository aufgenommen. Fehlt Node.js vollständig, stoppt der Release vor dem Tag mit einer klaren Meldung.
+
+Vor der ersten dauerhaften Release-Aktion und nach den Tests werden mindestens erneut geprüft:
+
+- sauberer Arbeitsbaum und Branch `main`;
+- exakte Gleichheit von `HEAD` und dem tatsächlich über `git ls-remote` gelesenen `origin/main`;
+- eindeutiger vollständiger Commit und eindeutiger 7-stelliger Kurzhash;
+- Versions-, Build-, HTML-, Asset- und App-Shell-Konsistenz;
+- getaggte Freigabedokumentation nach Abschnitt 6.6;
+- lokal und auf `origin` noch nicht vorhandener Tag;
+- lokal und auf der Synology noch nicht vorhandene Release-, Staging- und Sperrpfade;
+- sichere, vollständige operative Allowlist `scripts/release-files.txt`;
+- alle automatisierbaren Release-, PWA-, Service-Worker-, Dokument-, Deployment- und Sicherheitsprüfungen;
+- `git diff --check`.
+
+Erst dann erzeugt das Skript den annotierten Tag mit der Meldung `FRECKA <version> - <build>`, prüft Tagtyp, Zielcommit und Meldung erneut und pusht exakt diese Tagreferenz ohne Force. Bestehende Tags werden niemals verschoben, gelöscht oder überschrieben.
+
+Nach erfolgreichem Tag-Push erzeugt `scripts/build-release.sh` das Artefakt, anschließend führt der Orchestrator zwingend `scripts/deploy-beta.sh --dry-run <release-id>` und nur bei dessen Erfolg `scripts/deploy-beta.sh <release-id>` aus. Web Station, `app.frecka.app`, Rollback und Geräteabnahme liegen außerhalb der Automatisierung.
 
 ## 7. Release-Artefakt
 
@@ -318,22 +364,25 @@ Sie enthält keine Zugangsdaten, Schlüssel oder personenbezogenen Daten.
 
 ### 7.3 Erzeugung
 
-Die Erzeugung erfolgt ausschließlich aus einem sauberen, ausgecheckten Release-Tag:
+Die Erzeugung erfolgt durch `scripts/build-release.sh` ausschließlich aus dem neu erzeugten annotierten Release-Tag. Der Helfer ist Teil des Ein-Befehl-Prozesses; er taggt, pusht und deployt selbst nicht:
 
 1. Tag und Commit prüfen;
-2. neues lokales Staging-Verzeichnis anlegen;
-3. ausschließlich die Laufzeit-Allowlist kopieren;
+2. die im Tag enthaltene operative Laufzeit-Allowlist `scripts/release-files.txt` lesen und sicher validieren;
+3. ein exklusiv gesperrtes lokales Staging-Verzeichnis anlegen und ausschließlich die Allowlist per `git archive` aus dem Tag extrahieren;
 4. `RELEASE.txt` erzeugen;
 5. deterministisch sortierte SHA-256-Prüfliste über `site/` und `RELEASE.txt` erzeugen;
 6. Prüfliste lokal verifizieren;
 7. Dateianzahl und Gesamtgröße festhalten;
-8. Staging-Artefakt danach nicht mehr verändern.
+8. Dateien auf `0444` und Verzeichnisse auf `0555` härten;
+9. das geprüfte Staging ohne Überschreiben unter `tmp/releases/<release-id>/` finalisieren und danach nicht mehr verändern.
 
 Es wird nicht minifiziert, kompiliert oder gebündelt. „Build“ bedeutet bei FRECKA in diesem Stand ausschließlich prüfen, selektiv kopieren und verifizieren.
 
-`RELEASE.txt` wird ausschließlich aus dem Tag, dem getaggten Quellstand und der darin versionierten Freigabenotiz abgeleitet. Aktuelle Uhrzeit, lokaler Benutzername oder Rechnername dürfen seinen Inhalt nicht bei jedem erneuten Lauf verändern. So bleiben die Dateiinhalte eines aus demselben Tag erneut erzeugten Artefakts reproduzierbar.
+`RELEASE.txt` wird ausschließlich aus dem Tag, dem getaggten Quellstand und der darin versionierten Freigabenotiz abgeleitet. Als Zeitpunkt wird der UTC-Zeitpunkt des annotierten Tags verwendet. Aktuelle Uhrzeit, lokaler Benutzername oder Rechnername dürfen seinen Inhalt nicht bei jedem erneuten Lauf verändern. Die Automation prüft in zwei isolierten Klonen, dass derselbe Tag dieselben Site-Dateien, dieselbe `RELEASE.txt` und dieselbe `SHA256SUMS` erzeugt.
 
-Der aktuelle annotierte Tag `v0.10.8` zeigt auf den vollständigen Versionsstand `6056e64`; das daraus erzeugte unveränderliche Artefakt trägt die Release-ID `0.10.8-6056e64`. Sein realer iPhone-Befund ist abgelehnt, weil der bewusste Updateabschluss ohne sichtbaren Reload blockierte. Korrekturen daran werden nicht in dieses Artefakt zurückgeschrieben, sondern ausschließlich als neuer Patchstand 0.10.9 vorbereitet.
+Das Artefakt wird zunächst unter einem versteckten `.build-<release-id>.*`-Namen erstellt. Eine exklusive `.publish-<release-id>.lock` verhindert zwei gleichzeitige lokale Finalisierungen. Bei einem Fehler entfernt der Builder ausschließlich sein eigenes unvollständiges lokales Staging; ein finaler Release-Name entsteht erst nach vollständiger Inhalts-, Bytegleichheits-, Prüfsummen- und Rechteprüfung.
+
+Der annotierte Tag `v0.10.8` zeigt auf den vollständigen Versionsstand `6056e64`; sein unveränderliches Artefakt bleibt wegen des abgelehnten realen Updateabschlusses unverändert. Der korrigierte Tag `v0.10.9` zeigt auf `5b180b64ec75ab6f6c2ef53842ead45c6cc32b4a`; `0.10.9-5b180b6` hat den realen Update- und Offlinepfad bestanden und ist die aktuelle Beta-Basis. Historische Tags und Artefakte werden durch RELEASE-AUTOMATION-001 weder umbenannt noch neu erzeugt.
 
 ### 7.4 Unveränderlichkeit
 
@@ -368,7 +417,15 @@ Die Übertragung startet immer aus dem lokalen Release-Staging, nie aus einem be
 
 DEPLOY-005 konkretisiert den manuellen Beta-Transport über SSH/SCP; DEPLOY-006 legt den Rechte-Lifecycle für Staging und finales Release verbindlich fest. Der Transport erfolgt ausschließlich über LAN oder VPN mit dem lokalen SSH-Alias `frecka-synology`; ein öffentlicher SSH-Port ist weder erforderlich noch zulässig. Hostname, Deployment-Benutzer und IdentityFile bleiben in `~/.ssh/config`. Das lokale Skript `scripts/deploy-beta.sh` verwendet die feste DSM-Zielbasis `/volume1/web/FRECKA/releases/`; Zugangsdaten, Passwörter und private Schlüssel stehen niemals in Repository oder Release-Artefakt.
 
-Verbindlicher Ablauf für ein bereits erzeugtes Release:
+Der normale Ablauf für einen bereits geprüften, freigegebenen und nach `origin/main` gepushten Kandidaten ist:
+
+```sh
+./scripts/release-beta.sh
+```
+
+Der Orchestrator verwendet vor Tag-Erzeugung den rein lesenden Zieltest `scripts/deploy-beta.sh --check-target <release-id>`. Dieser prüft über denselben SSH-Alias dieselbe Zielbasis, benötigte Serverwerkzeuge sowie freie Staging-, Sperr- und Zielpfade, benötigt aber noch kein lokales Artefakt und verändert die Synology nicht.
+
+Für die bewusste Diagnose oder Wiederaufnahme eines bereits vorhandenen, korrekt getaggten Artefakts bleibt der bestehende Transportvertrag unverändert:
 
 ```sh
 ./scripts/deploy-beta.sh --dry-run 0.10.0-dc55cf0
@@ -376,6 +433,8 @@ Verbindlicher Ablauf für ein bereits erzeugtes Release:
 ```
 
 Der erste Aufruf prüft das lokale Artefakt, den SSH-Zugang, die serverseitigen Voraussetzungen, einen No-Clobber-Namenswechsel und freie Staging-, Sperr- und Zielpfade, verändert aber keine Datei auf der Synology. Erst der zweite, ausdrücklich gestartete Aufruf reserviert `.upload-<release-id>` mit Modus `0700`, überträgt `RELEASE.txt`, `SHA256SUMS` und `site/` per SCP und verifiziert Dateibestand sowie `SHA256SUMS` serverseitig. Danach werden Dateien auf `0444` und Verzeichnisse auf `0555` gehärtet. Nur der vollständig geprüfte und bereits schreibgeschützte Stand wird ohne Überschreiben unter dem finalen Release-Namen veröffentlicht. Das Skript verändert weder den Modus des Elternverzeichnisses noch ACLs und verwendet weder `sudo` noch pauschale `0777`-Rechte. Vorhandene Ziel- oder Staging-Pfade führen zum Abbruch; unvollständige Uploads werden weder automatisch gelöscht noch überschrieben.
+
+Scheitert der Orchestrator vor dem Tag, entsteht weder Tag noch Artefakt noch Upload. Scheitert der Tag-Push, bleibt der lokale annotierte Tag zur manuellen Zustandsprüfung erhalten und wird nicht automatisch gelöscht. Scheitert ein späterer Schritt, bleiben ein bereits veröffentlichter Tag und ein bereits finalisiertes lokales Artefakt unverändert; die Ausgabe benennt den erreichten Zustand. Ein fehlgeschlagener Dry-Run startet niemals den echten Upload. Es gibt keine automatische Wiederholung und keinen automatischen Rollback.
 
 Das Skript ändert weder den Beta-Virtual-Host noch Produktivkonfigurationen. Die Aktivierung bleibt ein getrennter manueller Infrastrukturschritt nach erfolgreicher Übertragung und Prüfung.
 
@@ -390,7 +449,7 @@ Das Skript ändert weder den Beta-Virtual-Host noch Produktivkonfigurationen. Di
 
 Da das neue Release vor dem Portalwechsel vollständig vorhanden ist, beschränkt sich die Downtime auf den kurzen Konfigurationswechsel. Bestehende Browser-Sitzungen behalten ihren bereits geladenen Code; neue Seitenaufrufe erhalten den neuen Stand.
 
-SERVICEWORKER-002 enthält für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI eine einmalige, ausdrücklich freigegebene Übergangsregel: Erst nach vollständig erfolgreichem App-Shell-Download aktiviert sich der neue Worker automatisch. Ohne `clients.claim()` und ohne Reload bleibt die laufende Sitzung auf ihrem geladenen Code. Solange der reale Altclient-Übergang noch nicht bestätigt ist, darf 0.10.9 dieselbe Brücke fachlich unverändert mitführen. UPDATE-001b ändert ausschließlich die clientseitige Abschlusserkennung nach bewusster Nutzeraktion. Nach der dokumentierten Bestätigung ist die Entfernung der Brücke im unmittelbar folgenden Worker/Release ein zwingendes Gate; die Regel darf nicht Teil des normalen Releaseablaufs werden.
+SERVICEWORKER-002 enthält in 0.10.9 für bereits ausgelieferte 0.10.0-/0.10.1-Clients ohne Update-UI noch die einmalige, ausdrücklich freigegebene Übergangsregel. Erst nach vollständig erfolgreichem App-Shell-Download aktiviert sie den neuen Worker automatisch; ohne `clients.claim()` und ohne Reload bleibt die laufende alte Sitzung auf ihrem geladenen Code. Die reale Altclient-Übergangsabnahme ist mit 0.10.9 inzwischen bestätigt. Deshalb blockiert `scripts/release-beta.sh` jeden unmittelbar folgenden Kandidaten, solange `LEGACY_AUTO_ACTIVATION_FOR_SERVICEWORKER_002` noch aktiv ist. Die Regel darf nicht Teil des normalen Releaseablaufs werden.
 
 ### 8.4 Beta-Abnahme
 
@@ -411,7 +470,9 @@ Das Ergebnis wird ausdrücklich als freigegeben oder abgelehnt festgehalten. Bei
 
 ### 8.5 Aktueller Beta-Abnahmenachweis
 
-Für `0.9.1-26dc63f` ist die reale iPhone-Abnahme einschließlich Online-Start, Offline-Kaltstart, lokaler Datennutzung, Offline-Belegerstellung, Neustart mit wieder aktiviertem Netz sowie PDF-/QR-/Belegansicht bestanden. Der releasebezogene Nachweis und die klare Abgrenzung zur noch ausstehenden Produktivfreigabe stehen in `docs/releases/0.9.1.md`. Offene Produkt-/UX-Beobachtungen werden zentral in `PROJECT.md` geführt und verändern das bereits geprüfte Artefakt nicht.
+Für `0.9.1-26dc63f` ist die reale iPhone-Abnahme einschließlich Online-Start, Offline-Kaltstart, lokaler Datennutzung, Offline-Belegerstellung, Neustart mit wieder aktiviertem Netz sowie PDF-/QR-/Belegansicht bestanden. Der releasebezogene Nachweis und die klare Abgrenzung zur noch ausstehenden Produktivfreigabe stehen in `docs/releases/0.9.1.md`.
+
+Die aktuelle Beta-Basis `0.10.9-5b180b6` hat auf einem echten iPhone als installierte Home-Screen-PWA zusätzlich den korrigierten UPDATE-001b-Wechsel bestanden. Offline-Kaltstart, Offline-Belegerstellung sowie vorhandene und offline neu erzeugte lokale Daten blieben nach vollständigem Beenden und Rückkehr ins Netz verfügbar. Damit ist 0.10.9 für Beta freigegeben und die Altclient-Übergangsabnahme bestätigt; eine Produktivfreigabe für `app.frecka.app` folgt daraus nicht. Offene Produkt-/UX-Beobachtungen werden zentral in `PROJECT.md` geführt und verändern die geprüften Artefakte nicht.
 
 ## 9. Produktiv-Deployment
 
@@ -522,7 +583,7 @@ Zur Reproduktion werden benötigt:
 - Prüfschritte und Prüfergebnis;
 - keine nicht dokumentierte Datei von einem Entwicklerrechner oder der Synology.
 
-Solange kein automatischer Builder existiert, können Dateizeitstempel und Dateisystemmetadaten variieren. Die ausgelieferten Dateiinhalte müssen dennoch den archivierten SHA-256-Werten entsprechen.
+`scripts/build-release.sh` erzeugt die ausgelieferten Dateiinhalte reproduzierbar aus Tag, getaggter Allowlist und getaggtem Freigabenachweis. Dateisystemzeitstempel sind kein Integritätsmerkmal; maßgeblich bleiben der vollständige Dateibestand, die Bytegleichheit mit dem Tag und die archivierten SHA-256-Werte.
 
 ## 12. Updates über die Synology
 
@@ -596,7 +657,7 @@ Vor Umsetzung müssen Provider, Absenderidentität, Rechtsgrundlage, Auftragsver
 
 ## 15. Spätere CI-Unterstützung
 
-Eine spätere CI darf den manuellen Workflow automatisieren, aber nicht dessen Sicherheitsregeln ändern. Ihre Stufen entsprechen exakt:
+Eine spätere CI darf den jetzt lokal orchestrierten Workflow übernehmen, aber nicht dessen Sicherheitsregeln ändern. Ihre Stufen entsprechen exakt:
 
 ```text
 validate
