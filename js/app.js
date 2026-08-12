@@ -97,6 +97,7 @@
     voucherSaleSubmitting: false,
     voucherSaleCreatedReference: null,
     settingsNotice: "",
+    settingsNoticeIsError: false,
     userSettingsNotice: "",
     userSettingsNoticeIsError: false,
     serviceLocationNotice: "",
@@ -199,6 +200,10 @@
     displayName: String(company?.name || company?.owner || "").trim()
   };
   const companyDisplayName = company => companyIdentityValue(company).displayName || "FRECKA";
+  const companyStreetLine = company => [
+    String(company?.street || "").trim(),
+    String(company?.houseNumber || "").trim()
+  ].filter(Boolean).join(" ");
   const sameDisplayText = (left, right) => String(left || "").trim().localeCompare(String(right || "").trim(), "de-DE", { sensitivity: "base" }) === 0;
   const distinctBrandingName = (branding, company) => {
     const visibleName = String(branding?.visibleName || "").trim();
@@ -336,7 +341,7 @@
     return documentService.createReceiptDocumentModel(receipt, {
       qrService,
       companyIdentity: persistence?.companyIdentity,
-      company: data.company,
+      company: { ...data.company, street: companyStreetLine(data.company), logo: data.company.logo ? { id: data.company.logo.id, simulated: true } : null },
       linkedVoucher
     });
   }
@@ -350,7 +355,7 @@
     return documentService.createVoucherDocumentModel(voucher, {
       qrService,
       companyIdentity: persistence?.companyIdentity,
-      company: data.company
+      company: { ...data.company, street: companyStreetLine(data.company), logo: data.company.logo ? { id: data.company.logo.id, simulated: true } : null }
     });
   }
 
@@ -2468,7 +2473,9 @@
     return {
       name: identity.name,
       owner: identity.owner,
-      street: data.company.street || "",
+      street: companyStreetLine(data.company),
+      streetName: data.company.street || "",
+      houseNumber: data.company.houseNumber || "",
       zip: data.company.zip || "",
       city: data.company.city || "",
       country: data.company.country || "",
@@ -2476,7 +2483,11 @@
       email: data.company.email || "",
       taxNumber: data.company.taxNumber || "",
       vatId: data.company.vatId || "",
-      logo: data.company.logo ? { ...data.company.logo } : null
+      logo: data.company.logo ? {
+        id: data.company.logo.id || "company-logo",
+        label: "Unternehmenslogo",
+        simulated: true
+      } : null
     };
   }
 
@@ -2519,12 +2530,12 @@
   function serviceLocationContextSnapshot(location = currentServiceLocation()) {
     const usesCompanyAddress = location.addressMode === "company";
     const streetName = usesCompanyAddress ? data.company.street || "" : location.street || "";
-    const houseNumber = usesCompanyAddress ? "" : location.houseNumber || "";
+    const houseNumber = usesCompanyAddress ? data.company.houseNumber || "" : location.houseNumber || "";
     return {
       id: location.id || "",
       name: location.name || (usesCompanyAddress ? companyDisplayName(data.company) : "Leistungsort"),
       addressMode: usesCompanyAddress ? "company" : "own",
-      street: usesCompanyAddress ? streetName : [streetName, houseNumber].filter(Boolean).join(" "),
+      street: [streetName, houseNumber].filter(Boolean).join(" "),
       streetName,
       houseNumber,
       zip: usesCompanyAddress ? data.company.zip || "" : location.zip || "",
@@ -3464,7 +3475,7 @@
   }
 
   const settingsSections = [
-    { id: "settings-company", icon: "▣", title: "Unternehmensdaten", note: "Name, Anschrift und Kontaktdaten", available: true },
+    { id: "settings-company", icon: "▣", title: "Unternehmen", note: "Rechtliche Angaben, Kontakt und Logo", available: true },
     { id: "settings-user", icon: "◎", title: "Benutzer", note: "Anzeigename und lokale Benutzerangaben", available: true },
     { id: "settings-license", icon: "✓", title: "Lizenz & Gerät", note: "Lizenz und aktuell zugeordnetes Gerät", available: true },
     { id: "settings-location", icon: "⌖", title: "Leistungsorte", note: "Orte, Zuordnungen und Standards", available: true },
@@ -3489,35 +3500,86 @@
     return `<section class="setup-start-hint"><span class="setup-start-icon" aria-hidden="true">✓</span><div><strong>In etwa fünf Minuten ist FRECKA einsatzbereit.</strong><p>Wir richten gemeinsam alles ein. Du kannst jederzeit unterbrechen und später weitermachen.</p></div><button class="button button-primary" type="button" data-action="setup-start">Jetzt einrichten</button><button class="button button-ghost" type="button" data-action="setup-later">Später</button></section>`;
   }
 
+  const companyFieldLimits = Object.freeze({
+    name: 160, owner: 160, contactPerson: 160, street: 160, houseNumber: 24,
+    zip: 16, city: 100, country: 80, phone: 50, email: 254, website: 2048,
+    taxNumber: 50, vatId: 32
+  });
+  const companyFieldLabels = Object.freeze({
+    name: "die Geschäftsbezeichnung", owner: "Unternehmer/in", contactPerson: "den Ansprechpartner",
+    street: "die Straße", houseNumber: "die Hausnummer", zip: "die PLZ", city: "den Ort",
+    country: "das Land", phone: "die Telefonnummer", email: "die E-Mail-Adresse",
+    website: "die Website-Adresse", taxNumber: "die Steuernummer", vatId: "die USt-IdNr."
+  });
+
+  function companyFormValue(formData, name, fallback = "") {
+    return formData.has(name) ? String(formData.get(name) || "").trim() : String(fallback || "").trim();
+  }
+
+  function normalizeCompanyWebsite(value) {
+    const submitted = String(value || "").trim();
+    if (!submitted) return { value: "" };
+    try {
+      const parsed = new URL(/^[a-z][a-z0-9+.-]*:/i.test(submitted) ? submitted : `https://${submitted}`);
+      if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password || !parsed.hostname) {
+        return { error: "Bitte eine gültige Website-Adresse angeben." };
+      }
+      return { value: parsed.href };
+    } catch (error) {
+      return { error: "Bitte eine gültige Website-Adresse angeben." };
+    }
+  }
+
   function applyCompanyForm(formData) {
-    const owner = String(formData.get("owner") || "").trim();
-    if (!owner) return "Bitte Unternehmer/in angeben.";
+    const candidate = {
+      name: companyFormValue(formData, "name", data.company.name),
+      owner: companyFormValue(formData, "owner", data.company.owner),
+      contactPerson: companyFormValue(formData, "contactPerson", data.company.contactPerson),
+      street: companyFormValue(formData, "street", data.company.street),
+      houseNumber: companyFormValue(formData, "houseNumber", data.company.houseNumber),
+      zip: companyFormValue(formData, "zip", data.company.zip),
+      city: companyFormValue(formData, "city", data.company.city),
+      country: companyFormValue(formData, "country", data.company.country || "Deutschland") || "Deutschland",
+      phone: companyFormValue(formData, "phone", data.company.phone),
+      email: companyFormValue(formData, "email", data.company.email),
+      website: companyFormValue(formData, "website", data.company.website),
+      taxNumber: companyFormValue(formData, "taxNumber", data.company.taxNumber),
+      vatId: companyFormValue(formData, "vatId", data.company.vatId)
+    };
+    if (!candidate.owner) return { error: "Bitte Unternehmer/in angeben.", changed: false };
+    if (!candidate.street || !candidate.zip || !candidate.city || !candidate.country) {
+      return { error: "Bitte die vollständige Unternehmensanschrift angeben.", changed: false };
+    }
+    const legacyCombinedStreetUnchanged = !String(data.company.houseNumber || "").trim()
+      && candidate.street === String(data.company.street || "").trim();
+    if (!candidate.houseNumber && !legacyCombinedStreetUnchanged) {
+      return { error: "Bitte die Hausnummer separat angeben.", changed: false };
+    }
+    const oversizedField = Object.entries(companyFieldLimits).find(([name, limit]) => candidate[name].length > limit);
+    if (oversizedField) return { error: `Bitte ${companyFieldLabels[oversizedField[0]]} auf maximal ${oversizedField[1]} Zeichen kürzen.`, changed: false };
+    if (candidate.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate.email)) {
+      return { error: "Bitte eine gültige E-Mail-Adresse angeben.", changed: false };
+    }
+    const website = normalizeCompanyWebsite(candidate.website);
+    if (website.error) return { error: website.error, changed: false };
+    candidate.website = website.value;
     const requestedCompanyLocationUse = formData.has("useAsServiceLocation")
       ? formData.get("useAsServiceLocation") === "on"
       : data.company.useAsServiceLocation !== false;
     const uncoveredArea = uncoveredBusinessAreaForCompanyLocationChoice(requestedCompanyLocationUse);
     if (formData.has("useAsServiceLocation") && uncoveredArea) {
-      return `Bitte zuerst einen eigenen aktiven Leistungsort für ${uncoveredArea.label} zuordnen.`;
+      return { error: `Bitte zuerst einen eigenen aktiven Leistungsort für ${uncoveredArea.label} zuordnen.`, changed: false };
     }
-    Object.assign(data.company, {
-      name: String(formData.get("name") || "").trim(),
-      owner,
-      street: String(formData.get("street") || "").trim(),
-      zip: String(formData.get("zip") || "").trim(),
-      city: String(formData.get("city") || "").trim(),
-      country: String(formData.get("country") || "Deutschland").trim() || "Deutschland",
-      phone: String(formData.get("phone") || "").trim(),
-      email: String(formData.get("email") || "").trim(),
-      taxNumber: String(formData.get("taxNumber") ?? data.company.taxNumber ?? "").trim(),
-      vatId: String(formData.get("vatId") ?? data.company.vatId ?? "").trim(),
-      useAsServiceLocation: requestedCompanyLocationUse
-    });
-    const identity = companyIdentityValue(data.company);
-    data.company.name = identity.name;
-    data.company.owner = identity.owner;
+    const identity = companyIdentityValue(candidate);
+    candidate.name = identity.name;
+    candidate.owner = identity.owner;
+    candidate.useAsServiceLocation = requestedCompanyLocationUse;
+    const changed = Object.entries(candidate).some(([key, value]) => data.company[key] !== value);
+    if (!changed) return { error: "", changed: false };
+    Object.assign(data.company, candidate, { updatedAt: new Date().toISOString() });
     repairBusinessAreaLocationDefaults();
     companyName.textContent = companyDisplayName(data.company);
-    return "";
+    return { error: "", changed: true };
   }
 
   function applyServiceLocationForm(formData, validate = true) {
@@ -3656,7 +3718,7 @@
         <span class="branding-preview-label">Dokumentvorschau</span>
         <div class="branding-preview-head">
           <span class="document-brand-logo is-compact" data-preview-logo ${logoSource === "none" ? "hidden" : ""}><strong>${logoSource === "business-area" ? "GB" : "UN"}</strong><small>${logoSource === "business-area" ? "Bereich" : "Firma"}</small></span>
-          <div><em class="document-visible-name" data-preview-visible-name ${brandingName ? "" : "hidden"}>${escapeHtml(brandingName)}</em>${companyIdentityMarkup(data.company, "small")}<small>${escapeHtml(data.company.street || "")}</small><small>${escapeHtml(addressCityLine(data.company))}</small></div>
+          <div><em class="document-visible-name" data-preview-visible-name ${brandingName ? "" : "hidden"}>${escapeHtml(brandingName)}</em>${companyIdentityMarkup(data.company, "small")}<small>${escapeHtml(companyStreetLine(data.company))}</small><small>${escapeHtml(addressCityLine(data.company))}</small></div>
         </div>
         <footer><span>Geschäftsbereich</span><strong data-preview-area>${escapeHtml(area.label)}</strong><span>Gutschein · Einlösbar bei</span><strong data-preview-location>${escapeHtml(location?.name || "Noch nicht festgelegt")}</strong></footer>
       </article>
@@ -3762,7 +3824,7 @@
       ${brandingLogoMarkup(branding, true)}
       ${brandingName ? `<em class="document-visible-name">${escapeHtml(brandingName)}</em>` : ""}
       <h3>${companyIdentityMarkup(data.company, "small")}</h3>
-      <p>${escapeHtml(data.company.street || "")}<br>${escapeHtml(addressCityLine(data.company))}</p>
+      <p>${escapeHtml(companyStreetLine(data.company))}<br>${escapeHtml(addressCityLine(data.company))}</p>
       <p>Geschäftsbereich: ${escapeHtml(defaultArea?.label || "Geschäftsbereich")}</p>
       <div class="setup-test-line"><span>${escapeHtml(testItemName)}</span><strong>${formatCurrency(testItemPrice)}</strong></div>
       <div class="setup-test-line total"><span>Gesamt</span><strong>${formatCurrency(testItemPrice)}</strong></div>
@@ -3781,13 +3843,14 @@
     switch (state.setupStep) {
       case 1: return `<div class="setup-welcome"><div class="setup-welcome-symbol" aria-hidden="true">✓</div><h2>In etwa fünf Minuten ist FRECKA einsatzbereit.</h2><p>Wir richten gemeinsam alles ein.<br>Du kannst jederzeit unterbrechen und später weitermachen.</p><ul><li>Unternehmen und Leistungsort</li><li>Steuern und Belegnummern</li><li>Zahlungsarten und Geschäftsbereich</li></ul></div>${setupActions("Einrichtung starten")}`;
       case 2: return `<section class="settings-form-card"><h2>Unternehmen</h2>
-        <label class="setting-field full"><span>Geschäftsbezeichnung <small>optional</small></span><input name="name" autocomplete="organization" value="${escapeHtml(company.name || "")}"></label>
-        <label class="setting-field full"><span>Unternehmer/in</span><input name="owner" autocomplete="name" required value="${escapeHtml(company.owner || "")}"></label>
-        <label class="setting-field full"><span>Straße und Hausnummer</span><input name="street" required value="${escapeHtml(company.street || "")}"></label>
-        <label class="setting-field"><span>PLZ</span><input name="zip" inputmode="numeric" required value="${escapeHtml(company.zip || "")}"></label>
-        <label class="setting-field"><span>Ort</span><input name="city" required value="${escapeHtml(company.city || "")}"></label>
-        <label class="setting-field"><span>E-Mail <small>optional</small></span><input name="email" type="email" value="${escapeHtml(company.email || "")}"></label>
-        <label class="setting-field"><span>Telefon <small>optional</small></span><input name="phone" type="tel" value="${escapeHtml(company.phone || "")}"></label>
+        <label class="setting-field full"><span>Geschäftsbezeichnung <small>optional</small></span><input name="name" autocomplete="organization" maxlength="160" value="${escapeHtml(company.name || "")}"></label>
+        <label class="setting-field full"><span>Unternehmer/in</span><input name="owner" autocomplete="name" maxlength="160" required value="${escapeHtml(company.owner || "")}"></label>
+        <label class="setting-field full"><span>Straße</span><input name="street" autocomplete="address-line1" maxlength="160" required value="${escapeHtml(company.street || "")}"></label>
+        <label class="setting-field"><span>Hausnummer</span><input name="houseNumber" autocomplete="address-line2" maxlength="24" ${company.houseNumber ? "required" : ""} value="${escapeHtml(company.houseNumber || "")}"></label>
+        <label class="setting-field"><span>PLZ</span><input name="zip" inputmode="text" autocomplete="postal-code" maxlength="16" required value="${escapeHtml(company.zip || "")}"></label>
+        <label class="setting-field"><span>Ort</span><input name="city" autocomplete="address-level2" maxlength="100" required value="${escapeHtml(company.city || "")}"></label>
+        <label class="setting-field"><span>E-Mail <small>optional</small></span><input name="email" type="email" inputmode="email" autocomplete="email" maxlength="254" value="${escapeHtml(company.email || "")}"></label>
+        <label class="setting-field"><span>Telefon <small>optional</small></span><input name="phone" type="tel" autocomplete="tel" maxlength="50" value="${escapeHtml(company.phone || "")}"></label>
         <input type="hidden" name="country" value="${escapeHtml(company.country || "Deutschland")}"></section>${setupActions()}`;
       case 3: return `<section class="settings-form-card settings-single-column">${cardTitle("Leistungsorte", "location")}<p class="settings-neutral-note">Leistungsorte beschreiben, wo deine Leistungen tatsächlich erbracht werden. Die Unternehmensanschrift bleibt unabhängig davon bestehen.</p><label class="company-location-toggle"><input type="checkbox" name="useAsServiceLocation" ${data.company.useAsServiceLocation !== false ? "checked" : ""}><span><strong>Unternehmensanschrift gleichzeitig als Leistungsort verwenden</strong><small>Du kannst weitere Orte später zentral ergänzen.</small></span></label></section><div class="setup-location-overview">${data.serviceLocations.map(entry => { const snapshot = serviceLocationContextSnapshot(entry); return `<article><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(snapshot.street)} · ${escapeHtml(addressCityLine(snapshot))}</small><span>${entry.businessAreaIds.map(id => data.businessAreas.find(area => area.id === id)?.label).filter(Boolean).map(escapeHtml).join(", ")}</span></article>`; }).join("")}</div>${setupActions()}`;
       case 4: return `<section class="settings-form-card settings-single-column"><fieldset class="settings-option-list"><legend>Wie ist dein Steuerstatus?</legend>
@@ -3836,14 +3899,17 @@
     if (state.setupStep === 2) {
       const required = ["owner", "street", "zip", "city"];
       if (validate && required.some(name => !String(formData.get(name) || "").trim())) return "Bitte alle Pflichtangaben zum Unternehmen ausfüllen.";
-      const error = applyCompanyForm(formData);
-      if (validate && error) return error;
+      const result = applyCompanyForm(formData);
+      if (validate && result.error) return result.error;
     }
     if (state.setupStep === 3) {
       const requestedCompanyLocationUse = formData.get("useAsServiceLocation") === "on";
       const uncoveredArea = uncoveredBusinessAreaForCompanyLocationChoice(requestedCompanyLocationUse);
       if (uncoveredArea) return validate ? `Bitte zuerst einen eigenen aktiven Leistungsort für ${uncoveredArea.label} zuordnen.` : "";
-      data.company.useAsServiceLocation = requestedCompanyLocationUse;
+      if (data.company.useAsServiceLocation !== requestedCompanyLocationUse) {
+        data.company.useAsServiceLocation = requestedCompanyLocationUse;
+        data.company.updatedAt = new Date().toISOString();
+      }
       repairBusinessAreaLocationDefaults();
     }
     if (state.setupStep === 4) {
@@ -3853,7 +3919,10 @@
       data.taxSettings.status = ["vat", "small-business", "undecided"].includes(status) ? status : "undecided";
       if (status === "vat") {
         data.taxSettings.defaultRate = defaultRate;
-        data.company.defaultTaxRate = defaultRate;
+        if (data.company.defaultTaxRate !== defaultRate) {
+          data.company.defaultTaxRate = defaultRate;
+          data.company.updatedAt = new Date().toISOString();
+        }
         data.taxSettings.rates.forEach(rate => { rate.active = rate.rate === defaultRate || rate.active; });
       }
     }
@@ -4503,44 +4572,154 @@
     refreshBusinessSwitcher();
   }
 
+  function companyLogoCardMarkup() {
+    const logo = data.company.logo?.dataUrl ? data.company.logo : null;
+    return `<section class="settings-form-card settings-logo-card" data-company-logo-card>
+      <div class="settings-logo-placeholder">${logo ? `<img src="${escapeHtml(logo.dataUrl)}" alt="Aktuelles Unternehmenslogo">` : `<span aria-hidden="true">Logo</span>`}</div>
+      <div class="settings-logo-copy"><h2>Unternehmenslogo</h2><p>${logo ? `${escapeHtml(logo.name)} · ${Math.max(1, Math.round(logo.size / 1024))} KB` : "Noch kein Logo gespeichert."}</p>
+        <div class="settings-logo-actions">
+          <label class="button button-secondary logo-file-button">${logo ? "Logo ersetzen" : "Logo auswählen"}<input type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" data-company-logo-input></label>
+          ${logo ? `<button class="button button-ghost" type="button" data-action="company-logo-remove">Logo entfernen</button>` : ""}
+        </div>
+      </div>
+      <div class="logo-recommendations"><strong>Zulässige Formate</strong><span>PNG · JPEG</span><strong>Maximale Dateigröße</strong><span>1 MB</span><small>Quadratisch und mindestens 600 × 600 Pixel empfohlen. Ein transparenter PNG-Hintergrund ist häufig am flexibelsten.</small></div>
+      <p class="company-logo-default-note">Dieses Logo wird lokal gespeichert. Die echte Logoausgabe in PDFs und im öffentlichen QR-Viewer folgt in einem eigenen Produktblock.</p>
+    </section>`;
+  }
+
+  function showCompanySettingsNotice(message, isError = false) {
+    state.settingsNotice = message;
+    state.settingsNoticeIsError = isError;
+    const notice = document.getElementById("companySettingsNotice");
+    if (!notice) return;
+    notice.hidden = !message;
+    notice.classList.toggle("is-error", isError);
+    notice.setAttribute("role", isError ? "alert" : "status");
+    notice.textContent = message;
+  }
+
+  function detectCompanyLogoMime(bytes) {
+    const isPng = bytes.length >= 20
+      && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((value, index) => bytes[index] === value)
+      && [0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82].every((value, index) => bytes[bytes.length - 8 + index] === value);
+    if (isPng) return "image/png";
+    const isJpeg = bytes.length >= 4
+      && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+      && bytes[bytes.length - 2] === 0xff && bytes[bytes.length - 1] === 0xd9;
+    return isJpeg ? "image/jpeg" : "";
+  }
+
+  function logoBytesDataUrl(bytes, mimeType) {
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 32768) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
+    }
+    return `data:${mimeType};base64,${btoa(binary)}`;
+  }
+
+  async function prepareCompanyLogo(file) {
+    const maxBytes = persistence?.constants?.companyLogoMaxBytes || 1024 * 1024;
+    if (!(file instanceof File) || file.size < 1) {
+      throw Object.assign(new Error("Empty logo file"), { userMessage: "Bitte eine PNG- oder JPEG-Datei auswählen." });
+    }
+    if (file.size > maxBytes) {
+      throw Object.assign(new Error("Logo file too large"), { userMessage: "Das Unternehmenslogo darf maximal 1 MB groß sein." });
+    }
+    const declaredType = String(file.type || "").toLowerCase();
+    if (declaredType && !["image/png", "image/jpeg"].includes(declaredType)) {
+      throw Object.assign(new Error("Unsupported logo MIME type"), { userMessage: "Als Unternehmenslogo sind ausschließlich PNG- und JPEG-Dateien zulässig." });
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const mimeType = detectCompanyLogoMime(bytes);
+    if (!mimeType || (declaredType && declaredType !== mimeType)) {
+      throw Object.assign(new Error("Logo signature mismatch"), { userMessage: "Die ausgewählte Datei ist kein gültiges PNG- oder JPEG-Bild." });
+    }
+    const updatedAt = new Date().toISOString();
+    return {
+      formatVersion: persistence?.constants?.companyLogoFormatVersion || 1,
+      id: "company-logo",
+      name: String(file.name || (mimeType === "image/png" ? "Unternehmenslogo.png" : "Unternehmenslogo.jpg")).trim().slice(0, 120),
+      mimeType,
+      size: bytes.length,
+      dataUrl: logoBytesDataUrl(bytes, mimeType),
+      updatedAt
+    };
+  }
+
+  async function saveCompanyLogo(nextLogo) {
+    const previousCompany = cloneSettingsValue(data.company);
+    const changedAt = nextLogo?.updatedAt || new Date().toISOString();
+    data.company.logo = nextLogo;
+    data.company.updatedAt = changedAt;
+    try {
+      await persistCurrentSettings();
+      showCompanySettingsNotice(nextLogo ? "Unternehmenslogo wurde lokal gespeichert." : "Unternehmenslogo wurde entfernt.");
+    } catch (error) {
+      Object.keys(data.company).forEach(key => { delete data.company[key]; });
+      Object.assign(data.company, previousCompany);
+      showCompanySettingsNotice(`Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`, true);
+    }
+    const card = mainContent.querySelector("[data-company-logo-card]");
+    if (card) {
+      card.outerHTML = companyLogoCardMarkup();
+      attachCompanyLogoBehavior();
+    }
+  }
+
+  function attachCompanyLogoBehavior() {
+    const input = mainContent.querySelector("[data-company-logo-input]");
+    input?.addEventListener("change", async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      input.disabled = true;
+      try {
+        await saveCompanyLogo(await prepareCompanyLogo(file));
+      } catch (error) {
+        showCompanySettingsNotice(error?.userMessage || "Das Unternehmenslogo konnte nicht verarbeitet werden.", true);
+        input.disabled = false;
+        input.value = "";
+      }
+    });
+  }
+
   function renderCompanySettings() {
     const company = data.company;
     mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter">
       <div class="flow-head compact-flow-head">
         <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
         <p class="eyebrow">Einstellungen</p>
-        <h1 class="flow-title">Unternehmensdaten</h1>
-        <p class="page-copy">Diese Angaben werden für neue Belege und Gutscheine vorbereitet.</p>
+        <h1 class="flow-title">Unternehmen</h1>
+        <p class="page-copy">Rechtliche Angaben, Kontakt und Logo für diesen Mandanten.</p>
       </div>
-      ${state.settingsNotice ? `<div class="settings-save-notice ${state.settingsNotice.startsWith("Bitte") || state.settingsNotice.startsWith("Lokales") ? "is-error" : ""}" role="status">${escapeHtml(state.settingsNotice)}</div>` : ""}
+      <div id="companySettingsNotice" class="settings-save-notice ${state.settingsNoticeIsError ? "is-error" : ""}" role="${state.settingsNoticeIsError ? "alert" : "status"}" ${state.settingsNotice ? "" : "hidden"}>${escapeHtml(state.settingsNotice)}</div>
       <form id="companySettingsForm" class="settings-form">
         <section class="settings-form-card">
-          ${cardTitle("Unternehmensdaten", "company")}
-          <label class="setting-field full"><span>Geschäftsbezeichnung <small>optional</small></span><input name="name" autocomplete="organization" value="${escapeHtml(company.name || "")}"></label>
-          <label class="setting-field full"><span>Unternehmer/in</span><input name="owner" autocomplete="name" required value="${escapeHtml(company.owner || "")}"></label>
-          <label class="setting-field full"><span>Straße und Hausnummer</span><input name="street" autocomplete="street-address" value="${escapeHtml(company.street || "")}"></label>
-          <label class="setting-field"><span>PLZ</span><input name="zip" inputmode="numeric" autocomplete="postal-code" value="${escapeHtml(company.zip || "")}"></label>
-          <label class="setting-field"><span>Ort</span><input name="city" autocomplete="address-level2" value="${escapeHtml(company.city || "")}"></label>
-          <label class="setting-field full"><span>Land</span><input name="country" autocomplete="country-name" value="${escapeHtml(company.country || "Deutschland")}"></label>
+          ${cardTitle("Rechtliche Angaben", "company")}
+          <label class="setting-field full"><span>Geschäftsbezeichnung (Firmenname) <small>optional</small></span><input name="name" autocomplete="organization" maxlength="160" value="${escapeHtml(company.name || "")}"></label>
+          <label class="setting-field full"><span>Unternehmer/in</span><input name="owner" autocomplete="name" maxlength="160" required value="${escapeHtml(company.owner || "")}"></label>
+          <label class="setting-field full"><span>Ansprechpartner <small>optional</small></span><input name="contactPerson" autocomplete="name" maxlength="160" value="${escapeHtml(company.contactPerson || "")}"></label>
+          <label class="setting-field"><span>Straße</span><input name="street" autocomplete="address-line1" maxlength="160" required value="${escapeHtml(company.street || "")}"></label>
+          <label class="setting-field"><span>Hausnummer</span><input name="houseNumber" autocomplete="address-line2" maxlength="24" ${company.houseNumber ? "required" : ""} value="${escapeHtml(company.houseNumber || "")}"></label>
+          ${company.street && !company.houseNumber ? `<p class="settings-legacy-address-note full">Bestehende kombinierte Straßenangabe erkannt. Sie bleibt unverändert erhalten. Beim Ändern bitte die Hausnummer separat ergänzen.</p>` : ""}
+          <label class="setting-field"><span>PLZ</span><input name="zip" inputmode="text" autocomplete="postal-code" maxlength="16" required value="${escapeHtml(company.zip || "")}"></label>
+          <label class="setting-field"><span>Ort</span><input name="city" autocomplete="address-level2" maxlength="100" required value="${escapeHtml(company.city || "")}"></label>
+          <label class="setting-field full"><span>Land</span><input name="country" autocomplete="country-name" maxlength="80" required value="${escapeHtml(company.country || "Deutschland")}"></label>
           <label class="company-location-toggle full"><input type="checkbox" name="useAsServiceLocation" ${company.useAsServiceLocation !== false ? "checked" : ""}><span><strong>Unternehmensanschrift gleichzeitig als Leistungsort verwenden</strong><small>Wenn deaktiviert, bleibt sie ausschließlich Unternehmensanschrift.</small></span></label>
         </section>
         <section class="settings-form-card">
           <h2>Kontakt und Belegangaben</h2>
-          <label class="setting-field"><span>Telefon <small>optional</small></span><input name="phone" type="tel" autocomplete="tel" value="${escapeHtml(company.phone || "")}"></label>
-          <label class="setting-field"><span>E-Mail <small>optional</small></span><input name="email" type="email" inputmode="email" autocomplete="email" value="${escapeHtml(company.email || "")}"></label>
-          <label class="setting-field"><span>Steuernummer</span><input name="taxNumber" autocomplete="off" value="${escapeHtml(company.taxNumber || "")}"></label>
-          <label class="setting-field"><span>USt-IdNr. <small>optional</small></span><input name="vatId" autocomplete="off" value="${escapeHtml(company.vatId || "")}"></label>
+          <label class="setting-field"><span>Telefon <small>optional</small></span><input name="phone" type="tel" autocomplete="tel" maxlength="50" value="${escapeHtml(company.phone || "")}"></label>
+          <label class="setting-field"><span>E-Mail <small>optional</small></span><input name="email" type="email" inputmode="email" autocomplete="email" maxlength="254" value="${escapeHtml(company.email || "")}"></label>
+          <label class="setting-field full"><span>Website <small>optional</small></span><input name="website" type="text" inputmode="url" autocomplete="url" maxlength="2048" placeholder="https://example.de" value="${escapeHtml(company.website || "")}"></label>
+          <label class="setting-field"><span>Steuernummer <small>optional</small></span><input name="taxNumber" autocomplete="off" maxlength="50" value="${escapeHtml(company.taxNumber || "")}"></label>
+          <label class="setting-field"><span>USt-IdNr. <small>optional</small></span><input name="vatId" autocomplete="off" maxlength="32" value="${escapeHtml(company.vatId || "")}"></label>
         </section>
-        <section class="settings-form-card settings-logo-card">
-          <div class="settings-logo-placeholder" aria-hidden="true">${company.logo ? "Logo · simuliert" : "Logo"}</div>
-          <div class="settings-logo-copy"><h2>Unternehmenslogo</h2><p>Der Upload wird in diesem Prototyp nur simuliert.</p><button class="button button-secondary logo-simulation-button" type="button" data-action="logo-simulation">Logo auswählen (Simulation)</button></div>
-          <div class="logo-recommendations"><strong>Empfohlene Formate</strong><span>PNG · JPG · SVG</span><strong>Empfohlene Größe</strong><span>quadratisch · mindestens 600 × 600 Pixel · maximal 5 MB</span><small>Transparenter PNG-Hintergrund empfohlen.</small></div>
-          <p class="company-logo-default-note">Dieses Logo wird standardmäßig auf allen Belegen, Gutscheinen und PDF-Dokumenten verwendet.<br>Geschäftsbereiche mit eigenem Logo überschreiben diese Einstellung.</p>
-        </section>
-        <p class="prototype-note">Unternehmensdaten werden lokal auf diesem Gerät gespeichert. Die Logoauswahl bleibt eine nicht gespeicherte Simulation.</p>
+        ${companyLogoCardMarkup()}
+        <p class="prototype-note">Unternehmensdaten und Logo werden ausschließlich lokal auf diesem Gerät gespeichert und in verschlüsselte Sicherungen aufgenommen.</p>
         <button class="button button-primary settings-save" type="submit">Änderungen speichern</button>
       </form>
     </section>`;
+    attachCompanyLogoBehavior();
   }
 
   function renderServiceLocationSettings() {
@@ -5501,11 +5680,8 @@
       else renderBusinessAreaSettings();
       return;
     }
-    if (sheetAction === "logo-simulation") {
-      data.company.logo = { id: `company-logo-${Date.now()}`, label: "Unternehmenslogo", simulated: true };
-      const companyLogoPlaceholder = mainContent.querySelector(".settings-logo-placeholder");
-      if (companyLogoPlaceholder) companyLogoPlaceholder.textContent = "Logo · simuliert";
-      openBottomSheet("Unternehmenslogo", `<div class="context-help-copy"><p>Das Unternehmenslogo wurde für diese Sitzung als Platzhalter ausgewählt.</p><p>Es wird keine Datei geöffnet, übertragen oder gespeichert.</p></div>`);
+    if (sheetAction === "company-logo-remove") {
+      if (data.company.logo?.dataUrl) await saveCompanyLogo(null);
       return;
     }
     if (sheetAction === "business-logo-simulation") {
@@ -5904,7 +6080,10 @@
         state.customerNotice = "";
         state.customerNoticeIsError = false;
       }
-      if (route.dataset.route === "settings-company" && state.route !== "settings-company") state.settingsNotice = "";
+      if (route.dataset.route === "settings-company" && state.route !== "settings-company") {
+        state.settingsNotice = "";
+        state.settingsNoticeIsError = false;
+      }
       if (route.dataset.route === "settings-location" && state.route !== "settings-location") {
         state.serviceLocationNotice = "";
         state.serviceLocationEditingId = null;
@@ -6547,18 +6726,35 @@
     const companySettingsForm = event.target.closest("#companySettingsForm");
     if (companySettingsForm) {
       event.preventDefault();
+      const previousCompany = cloneSettingsValue(data.company);
+      const previousLocations = cloneSettingsValue(data.serviceLocations);
+      const previousAreas = cloneSettingsValue(data.businessAreas);
       const formData = new FormData(companySettingsForm);
-      const companyError = applyCompanyForm(formData);
-      if (companyError) {
-        state.settingsNotice = companyError;
+      const companyResult = applyCompanyForm(formData);
+      if (companyResult.error) {
+        state.settingsNotice = companyResult.error;
+        state.settingsNoticeIsError = true;
+        renderCompanySettings();
+        return;
+      }
+      if (!companyResult.changed) {
+        state.settingsNotice = "Unternehmensdaten sind bereits aktuell.";
+        state.settingsNoticeIsError = false;
         renderCompanySettings();
         return;
       }
       try {
         await persistCurrentSettings();
         state.settingsNotice = "Änderungen wurden lokal auf diesem Gerät gespeichert.";
+        state.settingsNoticeIsError = false;
       } catch (persistenceError) {
+        Object.keys(data.company).forEach(key => { delete data.company[key]; });
+        Object.assign(data.company, previousCompany);
+        replaceSettingsArray(data.serviceLocations, previousLocations);
+        replaceSettingsArray(data.businessAreas, previousAreas);
+        companyName.textContent = companyDisplayName(data.company);
         state.settingsNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(persistenceError)}`;
+        state.settingsNoticeIsError = true;
       }
       renderCompanySettings();
       return;
@@ -6648,7 +6844,10 @@
       data.taxSettings.status = ["vat", "small-business", "undecided"].includes(formData.get("taxStatus")) ? formData.get("taxStatus") : "undecided";
       data.taxSettings.rates.forEach(rate => { rate.active = activeRates.includes(rate.rate); });
       data.taxSettings.defaultRate = defaultRate;
-      data.company.defaultTaxRate = defaultRate;
+      if (data.company.defaultTaxRate !== defaultRate) {
+        data.company.defaultTaxRate = defaultRate;
+        data.company.updatedAt = new Date().toISOString();
+      }
       Object.assign(data.receiptSettings, {
         yearPrefix,
         nextNumber,
@@ -7077,6 +7276,7 @@
         state.setupTestPreviewVisible = false;
         state.setupNotice = "";
         state.settingsNotice = "";
+        state.settingsNoticeIsError = false;
         state.serviceLocationNotice = "";
         state.taxSettingsNotice = "";
         state.paymentSettingsNotice = "";

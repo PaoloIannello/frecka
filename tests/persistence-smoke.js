@@ -20,6 +20,20 @@
 
   const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
   const clone = value => JSON.parse(JSON.stringify(value));
+  const tinyPngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+  function companyLogoFixture(overrides = {}) {
+    return {
+      formatVersion: 1,
+      id: "company-logo",
+      name: "Testlogo.png",
+      mimeType: "image/png",
+      size: atob(tinyPngBase64).length,
+      dataUrl: `data:image/png;base64,${tinyPngBase64}`,
+      updatedAt: "2030-01-02T10:00:00.000Z",
+      ...overrides
+    };
+  }
 
   function assert(condition, message) {
     if (!condition) throw new Error(message);
@@ -77,17 +91,21 @@
       company: {
         name: "Teststudio Nord",
         owner: "Testperson",
+        contactPerson: "Test Kontakt",
         street: "Testweg 10",
+        houseNumber: "",
         zip: "12345",
         city: "Teststadt",
         country: "Deutschland",
         phone: "0123 456789",
         email: "test@example.invalid",
+        website: "https://test.example.invalid/",
         taxNumber: "TEST-100",
         vatId: "",
         defaultTaxRate: 19,
         useAsServiceLocation: true,
-        logo: { id: "simulated-company-logo", simulated: true }
+        updatedAt: "2030-01-02T10:00:00.000Z",
+        logo: companyLogoFixture()
       },
       serviceLocations: [
         {
@@ -920,14 +938,19 @@
             id: "receipt-secret-internal-id",
             internalNote: "INTERN-NOTIZ-SECRET",
             activity: [{ label: "HISTORY-SECRET" }],
-            companySnapshot: { name: "Studio", owner: "Testperson", phone: "COMPANY-PHONE-SECRET", email: "COMPANY-MAIL-SECRET@example.invalid", street: "Testweg 1", zip: "12345", city: "Teststadt" },
+            companySnapshot: { name: "Studio", owner: "Testperson", phone: "COMPANY-PHONE-SECRET", email: "COMPANY-MAIL-SECRET@example.invalid", website: "https://COMPANY-WEBSITE-SECRET.invalid", logo: { dataUrl: "COMPANY-LOGO-DATA-SECRET" }, street: "Testweg 1", zip: "12345", city: "Teststadt" },
             customerSnapshot: { id: "CUSTOMER-ID-SECRET", name: "Sichtbarer Name", phone: "CUSTOMER-PHONE-SECRET", email: "CUSTOMER-MAIL-SECRET@example.invalid", street: "Sichtweg 1", zip: "12345", city: "Teststadt" }
           });
           const model = documentApi.createReceiptDocumentModel(source, documentOptions());
-          const serialized = JSON.stringify(publicDocumentApi.projectDocument(model));
-          ["receipt-secret-internal-id", "INTERN-NOTIZ-SECRET", "HISTORY-SECRET", "COMPANY-PHONE-SECRET", "COMPANY-MAIL-SECRET", "CUSTOMER-ID-SECRET", "CUSTOMER-PHONE-SECRET", "CUSTOMER-MAIL-SECRET", "contextSnapshot", "history", "internalNote"].forEach(secret => {
+          const publicModel = { ...model, issuer: { ...model.issuer, taxNumber: "COMPANY-TAX-SECRET", vatId: "COMPANY-VAT-SECRET" } };
+          const serialized = JSON.stringify(publicDocumentApi.projectDocument(publicModel));
+          ["receipt-secret-internal-id", "INTERN-NOTIZ-SECRET", "HISTORY-SECRET", "COMPANY-PHONE-SECRET", "COMPANY-MAIL-SECRET", "COMPANY-WEBSITE-SECRET", "COMPANY-TAX-SECRET", "COMPANY-VAT-SECRET", "COMPANY-LOGO-DATA-SECRET", "CUSTOMER-ID-SECRET", "CUSTOMER-PHONE-SECRET", "CUSTOMER-MAIL-SECRET", "contextSnapshot", "history", "internalNote"].forEach(secret => {
             assert(!serialized.includes(secret), `Nicht öffentliche Information gelangte in die Payload: ${secret}`);
           });
+          const bundle = await publicDocumentApi.createPublicBundle(publicModel, { baseUrl: "https://app.example.invalid/frecka/", qrService: qrApi });
+          const decoded = await publicDocumentApi.decodePublicLink(bundle.link, { qrService: qrApi });
+          assertEqual(decoded.model.issuer.taxNumber, "", "Öffentlicher Beleg rekonstruierte eine ausgeschlossene Steuernummer");
+          assertEqual(decoded.model.issuer.vatId, "", "Öffentlicher Beleg rekonstruierte eine ausgeschlossene USt-IdNr.");
         }
       },
       {
@@ -1421,6 +1444,42 @@
         }
       },
       {
+        name: "SETTINGS-001 nutzt eine zentrale Unternehmensseite mit validiertem lokalen Logo",
+        run: async () => {
+          const response = await fetch("../js/app.js", { cache: "no-store" });
+          assert(response.ok, "App-Quelle für SETTINGS-001 konnte nicht geladen werden");
+          const source = await response.text();
+          const renderStart = source.indexOf("function renderCompanySettings()");
+          const renderEnd = source.indexOf("function renderServiceLocationSettings()", renderStart);
+          const applyStart = source.indexOf("function normalizeCompanyWebsite(value)");
+          const applyEnd = source.indexOf("function applyServiceLocationForm", applyStart);
+          const snapshotStart = source.indexOf("function companyContextSnapshot()");
+          const snapshotEnd = source.indexOf("function serviceLocationAvailable", snapshotStart);
+          const logoStart = source.indexOf("function companyLogoCardMarkup()");
+          const logoEnd = source.indexOf("function showCompanySettingsNotice", logoStart);
+          const renderSource = source.slice(renderStart, renderEnd);
+          const applySource = source.slice(applyStart, applyEnd);
+          const snapshotSource = source.slice(snapshotStart, snapshotEnd);
+          const logoSource = source.slice(logoStart, logoEnd);
+          assert(source.includes('{ id: "settings-company", icon: "▣", title: "Unternehmen"'), "Einstellungsbereich Unternehmen fehlt");
+          ["name", "owner", "contactPerson", "street", "houseNumber", "zip", "city", "country", "phone", "email", "website", "taxNumber", "vatId"].forEach(field => {
+            assert(renderSource.includes(`name="${field}"`), `Unternehmensfeld fehlt: ${field}`);
+          });
+          assert(renderSource.includes("Geschäftsbezeichnung (Firmenname)") && renderSource.includes("Unternehmer/in"), "Geschäftsbezeichnung und rechtliche Person sind nicht getrennt");
+          assert(renderSource.includes("Bestehende kombinierte Straßenangabe erkannt"), "Verlustfreie Legacy-Adressbehandlung ist nicht erklärt");
+          assert(applySource.includes("legacyCombinedStreetUnchanged"), "Historische kombinierte Straße wird nicht geschützt");
+          assert(applySource.includes("new URL(") && applySource.includes("https://${submitted}"), "Website wird nicht zentral normalisiert");
+          assert(applySource.includes("candidate.email") && applySource.includes("gültige E-Mail-Adresse"), "E-Mail-Validierung fehlt");
+          assert(applySource.includes("if (!changed)") && applySource.includes("updatedAt: new Date().toISOString()"), "company.updatedAt ist nicht an tatsächliche Änderungen gebunden");
+          assert(logoSource.includes('accept="image/png,image/jpeg,.png,.jpg,.jpeg"'), "Logoauswahl ist nicht auf PNG/JPEG begrenzt");
+          assert(!logoSource.includes(".svg") && !logoSource.includes("image/svg"), "Logoauswahl lässt SVG zu");
+          assert(source.includes("companyLogoMaxBytes || 1024 * 1024"), "1-MB-Grenze des Logos fehlt");
+          assert(source.includes("await persistCurrentSettings()") && source.includes("async function saveCompanyLogo"), "Logo verwendet nicht den zentralen Settings-Writer");
+          assert(!snapshotSource.includes("dataUrl"), "Echte Logo-Bilddaten werden in Geschäftsvorgang-Snapshots kopiert");
+          assert(source.includes("company: { ...data.company, street: companyStreetLine(data.company)"), "PDF-/Beleg-Fallback kombiniert getrennte Adressfelder nicht verlustfrei");
+        }
+      },
+      {
         name: "USER-001 modelliert genau einen aktiven mandantenbezogenen Benutzer",
         run: async () => {
           const tenantId = "test-user-model";
@@ -1749,7 +1808,7 @@
         }
       },
       {
-        name: "Geschäftsdaten und simulierte Logos werden nicht gespeichert",
+        name: "Unternehmenslogo bleibt zentral, ausgeschlossene Geschäftsdaten und Logo-Nebenfelder nicht",
         run: async () => {
           const persistence = context.makeClient("scope-exclusions");
           const record = recordFixture(persistence.tenantId);
@@ -1764,7 +1823,7 @@
             cancellations: [{ id: "forbidden-cancellation" }],
             credits: [{ id: "forbidden-credit" }]
           });
-          record.company.logo = { id: "forbidden-company-logo", data: "binary-placeholder" };
+          record.company.logo = companyLogoFixture({ privateMetadata: "forbidden" });
           record.company.logoData = "forbidden";
           record.businessAreas[0].logo = { id: "forbidden-area-logo" };
           record.businessAreas[0].logoFile = "forbidden";
@@ -1774,9 +1833,92 @@
           const stored = await persistence.readSettings();
           const forbiddenKeys = ["catalog", "categories", "customers", "receipts", "vouchers", "histories", "drafts", "cancellations", "credits"];
           forbiddenKeys.forEach(key => assert(!hasOwn(stored, key), `Ausgeschlossenes Root-Feld gespeichert: ${key}`));
-          assert(!hasOwn(stored.company, "logo") && !hasOwn(stored.company, "logoData"), "Simuliertes Unternehmenslogo gespeichert");
+          assertDeepEqual(stored.company.logo, companyLogoFixture(), "Validiertes Unternehmenslogo wurde nicht verlustfrei gespeichert");
+          assert(!hasOwn(stored.company.logo, "privateMetadata"), "Unbekanntes Logo-Nebenfeld wurde gespeichert");
+          assert(!hasOwn(stored.company, "logoData"), "Nicht freigegebenes Logo-Nebenfeld wurde gespeichert");
           assert(!hasOwn(stored.businessAreas[0], "logo") && !hasOwn(stored.businessAreas[0], "logoFile"), "Simuliertes Geschäftsbereichslogo gespeichert");
           assertEqual(stored.businessAreas[0].logoMode, "custom", "Zulässige Branding-Einstellung wurde entfernt");
+        }
+      },
+      {
+        name: "Unternehmensfelder, getrennte Adresse und eigener Änderungszeitpunkt überstehen Reload",
+        run: async () => {
+          const persistence = context.makeClient("company-settings-roundtrip");
+          const unrelatedRuntime = runtimeFixture();
+          const beforeUnrelatedChange = api.snapshotSettings(unrelatedRuntime, "completed", persistence.tenantId);
+          unrelatedRuntime.receiptSettings.footerText = "Nur eine Belegtextänderung";
+          const afterUnrelatedChange = api.snapshotSettings(unrelatedRuntime, "completed", persistence.tenantId);
+          assertEqual(afterUnrelatedChange.company.updatedAt, beforeUnrelatedChange.company.updatedAt, "Unabhängige Einstellungsänderung hat company.updatedAt verändert");
+          const record = recordFixture(persistence.tenantId, "completed");
+          Object.assign(record.company, {
+            name: "Testatelier",
+            owner: "Tessa Beispiel",
+            contactPerson: "Alex Kontakt",
+            street: "Neue Straße",
+            houseNumber: "17 a",
+            zip: "93047",
+            city: "Regensburg",
+            country: "Deutschland",
+            phone: "+49 941 123",
+            email: "kontakt@test.invalid",
+            website: "https://test.invalid/",
+            taxNumber: "123/456/789",
+            vatId: "DE123456789",
+            updatedAt: "2030-02-03T04:05:00.000Z"
+          });
+          await persistence.writeSettings(record);
+          persistence.closeDatabase();
+          const stored = await persistence.readSettings();
+          assertEqual(stored.company.contactPerson, "Alex Kontakt", "Ansprechpartner ging beim Reload verloren");
+          assertEqual(stored.company.street, "Neue Straße", "Straße ging beim Reload verloren");
+          assertEqual(stored.company.houseNumber, "17 a", "Hausnummer ging beim Reload verloren");
+          assertEqual(stored.company.website, "https://test.invalid/", "Website ging beim Reload verloren");
+          assertEqual(stored.company.updatedAt, "2030-02-03T04:05:00.000Z", "Unternehmens-Änderungszeitpunkt wurde überschrieben");
+          assertDeepEqual(stored.company.logo, companyLogoFixture(), "Unternehmenslogo ging beim Reload verloren");
+        }
+      },
+      {
+        name: "Historische kombinierte Straßenangaben werden nicht automatisch zerlegt",
+        run: async () => {
+          const tenantId = "test-company-legacy-address";
+          const defaults = recordFixture(tenantId);
+          const legacy = clone(defaults);
+          legacy.company.street = "Historischer Weg 12 B";
+          delete legacy.company.houseNumber;
+          const normalized = api.normalizeSettingsRecord(legacy, defaults, tenantId).record;
+          assertEqual(normalized.company.street, "Historischer Weg 12 B", "Historische Straßenangabe wurde verändert");
+          assertEqual(normalized.company.houseNumber, "", "Historische Straßenangabe wurde automatisch zerlegt");
+        }
+      },
+      {
+        name: "Unternehmenslogo akzeptiert nur vollständige PNG-/JPEG-Daten bis 1 MB",
+        run: async () => {
+          assertDeepEqual(api.normalizeCompanyLogo(companyLogoFixture()), companyLogoFixture(), "Gültiges PNG-Logo wurde verändert");
+          assertThrows(
+            () => api.normalizeCompanyLogo(companyLogoFixture({ mimeType: "image/svg+xml", dataUrl: "data:image/svg+xml;base64,PHN2Zy8+" })),
+            "INVALID_DATA",
+            "SVG-Unternehmenslogo"
+          );
+          assertThrows(
+            () => api.normalizeCompanyLogo(companyLogoFixture({ size: api.constants.companyLogoMaxBytes + 1 })),
+            "INVALID_DATA",
+            "Unternehmenslogo über 1 MB"
+          );
+          assertThrows(
+            () => api.normalizeCompanyLogo(companyLogoFixture({ size: 7 })),
+            "INVALID_DATA",
+            "Abweichende Logogröße"
+          );
+          assertThrows(
+            () => api.normalizeCompanyLogo(companyLogoFixture({ mimeType: "image/jpeg", dataUrl: `data:image/jpeg;base64,${tinyPngBase64}` })),
+            "INVALID_DATA",
+            "Falsche Logo-Dateisignatur"
+          );
+          assertThrows(
+            () => api.normalizeCompanyLogo(companyLogoFixture({ formatVersion: 2 })),
+            "UNSUPPORTED_FORMAT",
+            "Zukünftiges Logoformat"
+          );
         }
       },
       {
@@ -3634,16 +3776,25 @@
           assertDeepEqual(taxFiles.files.map(file => file.name), ["Belege.csv", "Belegpositionen.csv", "Gutscheine.csv", "Gutschein-Historie.csv", "Export-Info.txt"], "Bestehende Steuerberater-Einzeldatei-API wurde verändert");
           assertEqual(taxFiles.projection.activeUser, null, "Steuerberatungsexport enthält Benutzerstammdaten");
           assertEqual(taxFiles.projection.license, null, "Steuerberatungsexport enthält Lizenzdaten");
+          assertEqual(taxFiles.projection.company, null, "Steuerberatungsexport enthält zusätzliche Unternehmensstammdaten");
           assert(ownFiles.files.some(file => file.name === "Kunden.csv"), "Eigene Daten enthalten trotz Auswahl keine Kundendatei");
           assertDeepEqual(ownFiles.projection.customers.map(customer => customer.id), ["customer-anna"], "Nicht zugeordnete Kunden wurden exportiert");
           assertEqual(ownFiles.projection.activeUser?.displayName, "Testperson", "Eigene-Daten-Projektion enthält den aktiven Benutzer nicht");
           assertEqual(ownFiles.projection.activeUser?.tenantId, snapshot.tenantId, "Exportierter Benutzer gehört zum falschen Mandanten");
           assertDeepEqual(ownFiles.projection.license, snapshot.stores.settings.license, "Eigene-Daten-Projektion enthält die lokale Lizenz nicht vollständig");
+          assertEqual(ownFiles.projection.company?.contactPerson, "Test Kontakt", "Eigene-Daten-Projektion enthält den Ansprechpartner nicht");
+          assertEqual(ownFiles.projection.company?.website, "https://test.example.invalid/", "Eigene-Daten-Projektion enthält die Website nicht");
+          assertEqual(ownFiles.projection.company?.houseNumber, "", "Historische kombinierte Straße wurde im Export künstlich zerlegt");
+          assertEqual(ownFiles.projection.company?.logo?.name, "Testlogo.png", "Eigene-Daten-Projektion enthält keine Logo-Metadaten");
+          assert(!hasOwn(ownFiles.projection.company?.logo || {}, "dataUrl"), "Eigene-Daten-Projektion enthält unnötige Logo-Bilddaten");
           const taxInfo = taxFiles.files.find(file => file.name === "Export-Info.txt")?.content || "";
           const ownInfo = ownFiles.files.find(file => file.name === "Export-Info.txt")?.content || "";
           assert(!taxInfo.includes("Aktiver Benutzer:"), "Steuerberatungsexport weist den internen Benutzer aus");
           assert(!taxInfo.includes("Lizenz-ID:") && !taxInfo.includes("Geräte-ID:"), "Steuerberatungsexport weist Lizenz- oder Gerätedaten aus");
+          assert(!taxInfo.includes("Ansprechpartner:") && !taxInfo.includes("Website:"), "Steuerberatungsexport wurde um eigene Unternehmensstammdaten erweitert");
           assert(ownInfo.includes("Aktiver Benutzer: Testperson"), "Eigene-Daten-Export dokumentiert den aktiven Benutzer nicht");
+          assert(ownInfo.includes("Ansprechpartner: Test Kontakt"), "Eigene-Daten-Export dokumentiert den Ansprechpartner nicht");
+          assert(ownInfo.includes("Website: https://test.example.invalid/"), "Eigene-Daten-Export dokumentiert die Website nicht");
           assert(ownInfo.includes(`Lizenz-ID: ${snapshot.stores.settings.license.licenseId}`), "Eigene-Daten-Export dokumentiert die Lizenz-ID nicht");
           assert(ownInfo.includes(`Geräte-ID: ${snapshot.stores.settings.license.deviceId}`), "Eigene-Daten-Export dokumentiert die Geräte-ID nicht");
         }
@@ -4147,6 +4298,8 @@
           assertEqual(validated.snapshot.stores.settings.company.name, "Rundlauf Betrieb", "Restore-Export-Rundlauf verlor Einstellungen");
           assertEqual(validated.snapshot.stores.settings.users.length, 1, "Restore-Export-Rundlauf verlor den Benutzer");
           assertEqual(validated.snapshot.stores.settings.activeUserId, validated.snapshot.stores.settings.users[0].id, "Restore-Export-Rundlauf verlor den aktiven Benutzer");
+          assertDeepEqual(validated.snapshot.stores.settings.company.logo, companyLogoFixture(), "Restore-Export-Rundlauf verlor das verschlüsselt gesicherte Unternehmenslogo");
+          assertEqual(validated.snapshot.stores.settings.company.contactPerson, "Test Kontakt", "Restore-Export-Rundlauf verlor den Ansprechpartner");
           assertEqual(validated.snapshot.stores.vouchers.vouchers[0].history.length, 1, "Gutscheinhistorie ging im Rundlauf verloren");
           assertEqual(validated.snapshot.stores.receipts.receipts[0].companySnapshot.name, "Teststudio Nord", "Belegsnapshot ging im Rundlauf verloren");
         }

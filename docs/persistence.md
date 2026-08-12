@@ -1,7 +1,7 @@
 # Lokale Settings-, Katalog-, Kunden-, Beleg- und Gutscheinpersistenz
 
-**Stand:** LICENSE-001 und USER-002 auf Basis PERSISTENCE-007, PERSIST-005, BACKUP-001 und EXPORT-003
-**Geltungsbereich:** Vollständige FRECKA-Einstellungen einschließlich lokalem Benutzer und lokaler Gerätebindung, Katalog, Kundenstammdaten, abgeschlossene Belege, offene Zahlungen, Stornos, Gutschriften, Gutscheine und Gutschein-Historien
+**Stand:** SETTINGS-001 auf Basis LICENSE-001, USER-002, PERSISTENCE-007, PERSIST-005, BACKUP-001 und EXPORT-003
+**Geltungsbereich:** Vollständige FRECKA-Einstellungen einschließlich Unternehmen, lokalem Benutzer und lokaler Gerätebindung, Katalog, Kundenstammdaten, abgeschlossene Belege, offene Zahlungen, Stornos, Gutschriften, Gutscheine und Gutschein-Historien
 **Nicht enthalten:** Entwürfe, QR-Grafiken, E-Mail-, Kamera- und Druckstatus, PDF-Dateien sowie eine dauerhafte Ablage von Backup-Dateien
 
 ## Ausgangsfluss vor PERSIST-001a
@@ -10,7 +10,7 @@ Die einzige fachliche Laufzeitquelle ist `window.PROTOTYPE_DATA` aus `js/data.js
 
 Zentrale Einstellungsbereiche:
 
-- `data.company`: Unternehmensdaten, Unternehmensanschrift und `useAsServiceLocation`;
+- `data.company`: optionale Geschäftsbezeichnung, verpflichtende rechtliche Person, optionaler Ansprechpartner, Unternehmensanschrift, Kontakt- und Steuerangaben, Website, Unternehmenslogo, eigener Änderungszeitpunkt und `useAsServiceLocation`;
 - `data.serviceLocations`: Liste aller Leistungsorte einschließlich n:m-Zuordnungen über `businessAreaIds`;
 - `data.businessAreas`: Geschäftsbereiche einschließlich Aktivstatus, Standardbereich und `defaultServiceLocationId`;
 - `data.taxSettings`: Steuerstatus, Steuersätze und Standardsteuersatz;
@@ -91,7 +91,7 @@ Der Settings-Datensatz enthält ausschließlich:
 - `formatVersion`, `tenantId`, `updatedAt`;
 - `users` mit genau einem aktiven, versionierten und mandantenbezogenen Benutzer sowie `activeUserId` als stabile Referenz;
 - `license` mit Lizenz-ID, opaker Geräte-ID, Mandant, Formatversion und lokalen Zeitpunkten;
-- `company` einschließlich Anschrift und `useAsServiceLocation`;
+- `company` einschließlich getrennter Anschrift, Kontakt- und Steuerangaben, Website, validiertem Unternehmenslogo, eigenem `updatedAt` und `useAsServiceLocation`;
 - `serviceLocations` als Liste;
 - `businessAreas` einschließlich Aktivstatus, Standardbereich und Standard-Leistungsort;
 - `taxSettings`;
@@ -99,7 +99,9 @@ Der Settings-Datensatz enthält ausschließlich:
 - `paymentChoices` in ihrer fachlichen Reihenfolge;
 - `setup.status` mit `not-started`, `started` oder `completed`.
 
-Simulierte Logoobjekte beziehungsweise Bilddaten werden nicht gespeichert. `logoMode` und die sichtbare Geschäftsbezeichnung bleiben normale Geschäftsbereichseinstellungen.
+SETTINGS-001 speichert genau ein optionales Unternehmenslogo im bestehenden Settings-Datensatz. Zulässig sind ausschließlich anhand ihrer Dateisignatur geprüfte PNG- und JPEG-Daten bis 1 MiB; Formatversion, stabiler Logo-Schlüssel, Dateiname, MIME-Type, Bytegröße, Data-URL und Änderungszeitpunkt werden strikt normalisiert. Historische simulierte Unternehmenslogos werden als `null` übernommen. Simulierte Geschäftsbereichslogos und nicht freigegebene Logo-Nebenfelder bleiben ausgeschlossen. `logoMode` und die sichtbare Geschäftsbezeichnung bleiben normale Geschäftsbereichseinstellungen.
+
+Geschäftsbezeichnung und `Unternehmer/in` bleiben getrennte Felder. Ein Ansprechpartner ist optional. Bestehende kombinierte Werte in `company.street` werden beim Laden nicht automatisch zerlegt; `houseNumber` bleibt dann leer. Neue oder bearbeitete Anschriften können beide Werte getrennt führen, während Dokument-Snapshots weiterhin eine verlustfreie kombinierte Straßenzeile erhalten. `company.updatedAt` ändert sich nur zusammen mit einer tatsächlichen Änderung dieser Unternehmensdaten oder des Logos; der allgemeine Settings-Zeitpunkt bleibt davon unabhängig.
 
 USER-001 verändert weder Datenbankschema noch Store- oder Settings-Formatversion. Das Listenmodell bereitet spätere Mehrbenutzerfähigkeit vor, ohne sie in V1.0 freizuschalten. Historische Settings ohne Benutzer werden deterministisch aus `Unternehmer/in` und der aktuellen `tenantId` ergänzt; mehrere oder neuere Benutzerdaten werden von V1.0 nicht reduziert. Der vollständige Vertrag steht in `docs/users.md`.
 
@@ -237,7 +239,7 @@ Beim Laden werden verwaiste Zuordnungen entfernt. Ein Standardort ist nur gülti
 
 `tests/persistence-smoke.html` führt ohne zusätzliche Bibliothek native IndexedDB- und Web-Crypto-Prüfungen aus. Die Seite muss über HTTP oder HTTPS geöffnet werden und startet automatisch. Jeder Lauf verwendet einen zufälligen Datenbanknamen mit dem Präfix `frecka-persist-smoke-`, zeigt jeden Fall als PASS oder FAIL und löscht anschließend ausschließlich diese Testdatenbank. Ein Guard schützt die Produktionsdatenbank `frecka`.
 
-Geprüft werden weiterhin alle Fälle aus PERSIST-001a bis PERSIST-004. PERSIST-005 ergänzt das Upgrade 4 → 5, Voucher-Roundtrip, Centwerte, QR- und Belegreferenzen, unveränderliche Snapshots und Historien, atomaren Verkauf, Teil- und Voll-Einlösung, idempotente Wiederholung, Duplikat- und Restwertschutz, Transaktionsfehler ohne halbe Datensätze oder Nummernverbrauch, erweiterte Kundensuche sowie den tenant- und storeisolierten Voucher-Reset. BACKUP-001 ergänzt Snapshot-, Verschlüsselungs-, Manipulations-, Export-, Restore- und Rollbackprüfungen einschließlich des Einspielens in einen leeren Mandanten. HARDEN-001 ergänzt den reversiblen Kundenstatus sowie Dateinamen- und Downloadtypprüfungen. EXPORT-001 ergänzt Zeitraum- und Geschäftsbereichsfilter, offene Zahlung, Storno, Gutschrift, Gutscheinverkaufsbeleg, Gutscheinhistorie, CSV-Regeln, Injection-Schutz, Steuerberater-ZIP, PDF-Einträge, Datenschutz und Snapshot-Unveränderlichkeit. EXPORT-003 ergänzt die positiven Demo- und End-to-End-Fälle sowie Negativfälle für fehlende Belege, falsche ID-/Nummernpaarung, falsche Belegart, falsche Gegenreferenz, verwaiste Verkaufsbelege, Restore und Export-Stopp. PERSISTENCE-007 ergänzt Schreibtests gegen einen unverändert inkonsistenten Altbestand, lokale Gegenreferenzprüfungen sowie den fortbestehenden Backup-, Export- und Restore-Stopp. PERSISTENCE-008 ergänzt die lokale Read-only-Diagnose. PERSISTENCE-010 ergänzt Vorprüfung aller vier bekannten Demo-Fälle, No-op, Teil- und Vollreparatur, ID-/Nummern-/Daten-/Referenz-/Mehrfachanspruch-Stopps, atomaren Rollback, Reload-Idempotenz, unveränderte Nummernfolge und Stores sowie erfolgreiche Snapshot-, Backup- und Steuerberaterexportpfade nach der Reparatur. Der aktuelle native Browserlauf umfasst 161 bestandene Fälle. QR-001 ergänzt zentrale Service-, App-Link-, Matrix-, SVG-, Suchmuster- und Fehlerfallprüfungen.
+Geprüft werden weiterhin alle Fälle aus PERSIST-001a bis PERSIST-004. PERSIST-005 ergänzt das Upgrade 4 → 5, Voucher-Roundtrip, Centwerte, QR- und Belegreferenzen, unveränderliche Snapshots und Historien, atomaren Verkauf, Teil- und Voll-Einlösung, idempotente Wiederholung, Duplikat- und Restwertschutz, Transaktionsfehler ohne halbe Datensätze oder Nummernverbrauch, erweiterte Kundensuche sowie den tenant- und storeisolierten Voucher-Reset. BACKUP-001 ergänzt Snapshot-, Verschlüsselungs-, Manipulations-, Export-, Restore- und Rollbackprüfungen einschließlich des Einspielens in einen leeren Mandanten. HARDEN-001 ergänzt den reversiblen Kundenstatus sowie Dateinamen- und Downloadtypprüfungen. EXPORT-001 ergänzt Zeitraum- und Geschäftsbereichsfilter, offene Zahlung, Storno, Gutschrift, Gutscheinverkaufsbeleg, Gutscheinhistorie, CSV-Regeln, Injection-Schutz, Steuerberater-ZIP, PDF-Einträge, Datenschutz und Snapshot-Unveränderlichkeit. EXPORT-003 ergänzt die positiven Demo- und End-to-End-Fälle sowie Negativfälle für fehlende Belege, falsche ID-/Nummernpaarung, falsche Belegart, falsche Gegenreferenz, verwaiste Verkaufsbelege, Restore und Export-Stopp. PERSISTENCE-007 ergänzt Schreibtests gegen einen unverändert inkonsistenten Altbestand, lokale Gegenreferenzprüfungen sowie den fortbestehenden Backup-, Export- und Restore-Stopp. PERSISTENCE-008 ergänzt die lokale Read-only-Diagnose. PERSISTENCE-010 ergänzt Vorprüfung aller vier bekannten Demo-Fälle, No-op, Teil- und Vollreparatur, ID-/Nummern-/Daten-/Referenz-/Mehrfachanspruch-Stopps, atomaren Rollback, Reload-Idempotenz, unveränderte Nummernfolge und Stores sowie erfolgreiche Snapshot-, Backup- und Steuerberaterexportpfade nach der Reparatur. SETTINGS-001 ergänzt Unternehmensfelder, Legacy-Anschrift, getrennten Änderungszeitpunkt, Logoformat und -Reload, Backup/Restore, Eigene-Daten-Export sowie die Public-QR-Datenschutzgrenze. Der aktuelle native Browserlauf umfasst 174 bestandene Fälle. QR-001 ergänzt zentrale Service-, App-Link-, Matrix-, SVG-, Suchmuster- und Fehlerfallprüfungen.
 
 ## Reset
 

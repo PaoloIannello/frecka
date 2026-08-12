@@ -17,16 +17,20 @@ window.PROTOTYPE_DATA = Object.freeze({
   company: {
     name: "Studio Beispiel",
     owner: "Angel Luzolo",
+    contactPerson: "",
     street: "Musterstraße 12",
+    houseNumber: "",
     zip: "12345",
     city: "Musterstadt",
     country: "Deutschland",
     phone: "0941 123456",
     email: "studio@example.de",
+    website: "",
     taxNumber: "123/456/78901",
     vatId: "",
     defaultTaxRate: 19,
     useAsServiceLocation: true,
+    updatedAt: "2026-08-12T00:00:00.000Z",
     logo: { id: "company-logo-demo", label: "Unternehmenslogo", simulated: true }
   },
   serviceLocations: [

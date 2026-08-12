@@ -2882,10 +2882,26 @@ body.work-mode:not(.catalog-mode) .flow-page {
   background: var(--surface);
 }
 .settings-logo-copy { min-width: 0; }
-.logo-simulation-button {
-  width: 100%;
-  min-height: 44px;
+.settings-logo-actions {
   margin-top: 11px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.settings-logo-actions .button {
+  min-height: 44px;
+}
+.logo-file-button {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+.logo-file-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 .logo-recommendations {
   grid-column: 1 / -1;
@@ -4233,6 +4249,22 @@ button.settings-entry:active {
   place-items: center;
   font-size: .72rem;
   font-weight: 900;
+  overflow: hidden;
+}
+.settings-logo-placeholder img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+.settings-legacy-address-note {
+  margin: -2px 0 2px;
+  padding: 10px 12px;
+  border-radius: 13px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: .72rem;
+  line-height: 1.45;
 }
 .settings-logo-card h2,
 .settings-logo-card p {

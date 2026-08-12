@@ -127,17 +127,6 @@
       trimmed(issuer.owner),
       trimmed(issuer.street),
       trimmed(issuer.cityLine),
-      trimmed(issuer.taxNumber),
-      trimmed(issuer.vatId)
-    ];
-  }
-
-  function voucherIssuerProjection(issuer = {}) {
-    return [
-      trimmed(issuer.name),
-      trimmed(issuer.owner),
-      trimmed(issuer.street),
-      trimmed(issuer.cityLine),
       "",
       ""
     ];
@@ -196,7 +185,7 @@
       Number(model.issuedValueCents),
       Number(model.currentValueCents),
       compactDateTime(model.soldAt),
-      voucherIssuerProjection(model.issuer),
+      issuerProjection(model.issuer),
       brandingProjection(model.branding),
       trimmed(model.displayName),
       [

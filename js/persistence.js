@@ -12,6 +12,8 @@
     vouchersStoreName: "vouchers",
     tenantId: "local-default",
     formatVersion: 1,
+    companyLogoFormatVersion: 1,
+    companyLogoMaxBytes: 1024 * 1024,
     userFormatVersion: 1,
     licenseFormatVersion: 1,
     settingsFormatVersion: 1,
@@ -69,6 +71,9 @@
   ]);
   const licenseAllowedKeys = new Set([
     "formatVersion", "licenseId", "tenantId", "deviceId", "activatedAt", "lastValidation"
+  ]);
+  const companyLogoAllowedKeys = new Set([
+    "formatVersion", "id", "name", "mimeType", "size", "dataUrl", "updatedAt"
   ]);
   const dangerousKeys = new Set(["__proto__", "prototype", "constructor"]);
   const sensitiveKeyPattern = /(password|passphrase|credential|secret|access.?token|refresh.?token|private.?key)/i;
@@ -167,6 +172,78 @@
     }
     const fallbackTimestamp = Date.parse(fallback);
     return Number.isFinite(fallbackTimestamp) ? new Date(fallbackTimestamp).toISOString() : epochIso;
+  }
+
+  function decodeBase64Bytes(encoded) {
+    if (typeof encoded !== "string"
+      || !encoded.length
+      || encoded.length % 4 !== 0
+      || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
+      throw new PersistenceError("INVALID_DATA", "Das gespeicherte Unternehmenslogo ist ungültig.");
+    }
+    try {
+      const binary = globalThis.atob(encoded);
+      return Uint8Array.from(binary, character => character.charCodeAt(0));
+    } catch (cause) {
+      throw new PersistenceError("INVALID_DATA", "Das gespeicherte Unternehmenslogo ist ungültig.", cause);
+    }
+  }
+
+  function normalizeCompanyLogo(source) {
+    if (source === undefined || source === null || source?.simulated === true) return null;
+    if (!isPlainObject(source)) {
+      throw new PersistenceError("INVALID_DATA", "Das gespeicherte Unternehmenslogo ist ungültig.");
+    }
+    if (!Number.isInteger(source.formatVersion) || source.formatVersion < 1) {
+      throw new PersistenceError("INVALID_DATA", "Das gespeicherte Unternehmenslogo besitzt keine gültige Formatversion.");
+    }
+    if (source.formatVersion > constants.companyLogoFormatVersion) {
+      throw new PersistenceError("UNSUPPORTED_FORMAT", "Dieses Unternehmenslogo benötigt eine neuere FRECKA-Version und wurde nicht verändert.");
+    }
+    const mimeType = trimmedString(source.mimeType).toLowerCase();
+    if (!new Set(["image/png", "image/jpeg"]).has(mimeType)) {
+      throw new PersistenceError("INVALID_DATA", "Als Unternehmenslogo sind ausschließlich PNG- und JPEG-Dateien zulässig.");
+    }
+    if (!Number.isInteger(source.size) || source.size < 1 || source.size > constants.companyLogoMaxBytes) {
+      throw new PersistenceError("INVALID_DATA", "Das Unternehmenslogo darf maximal 1 MB groß sein.");
+    }
+    const prefix = `data:${mimeType};base64,`;
+    if (typeof source.dataUrl !== "string"
+      || !source.dataUrl.startsWith(prefix)
+      || source.dataUrl.length > prefix.length + Math.ceil(constants.companyLogoMaxBytes / 3) * 4) {
+      throw new PersistenceError("INVALID_DATA", "Das gespeicherte Unternehmenslogo ist ungültig.");
+    }
+    const bytes = decodeBase64Bytes(source.dataUrl.slice(prefix.length));
+    if (bytes.length !== source.size || bytes.length > constants.companyLogoMaxBytes) {
+      throw new PersistenceError("INVALID_DATA", "Die Größe des gespeicherten Unternehmenslogos ist ungültig.");
+    }
+    const isPng = bytes.length >= 20
+      && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((value, index) => bytes[index] === value)
+      && [0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82].every((value, index) => bytes[bytes.length - 8 + index] === value);
+    const isJpeg = bytes.length >= 4
+      && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+      && bytes[bytes.length - 2] === 0xff && bytes[bytes.length - 1] === 0xd9;
+    if ((mimeType === "image/png" && !isPng) || (mimeType === "image/jpeg" && !isJpeg)) {
+      throw new PersistenceError("INVALID_DATA", "Dateityp und Inhalt des Unternehmenslogos stimmen nicht überein.");
+    }
+    const id = trimmedString(source.id);
+    const name = trimmedString(source.name);
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(id) || !name || name.length > 120) {
+      throw new PersistenceError("INVALID_DATA", "Die Angaben zum gespeicherten Unternehmenslogo sind ungültig.");
+    }
+    const updatedAt = stableIso(source.updatedAt, "");
+    if (updatedAt === epochIso) {
+      throw new PersistenceError("INVALID_DATA", "Der Änderungszeitpunkt des Unternehmenslogos ist ungültig.");
+    }
+    return {
+      formatVersion: constants.companyLogoFormatVersion,
+      id,
+      name,
+      mimeType,
+      size: bytes.length,
+      dataUrl: source.dataUrl,
+      updatedAt
+    };
   }
 
   const generatedLocalLicenses = new Map();
@@ -348,14 +425,19 @@
       company: {
         name: identity.name,
         owner: identity.owner,
+        contactPerson: stringValue(company.contactPerson),
         street: stringValue(company.street),
+        houseNumber: stringValue(company.houseNumber),
         zip: stringValue(company.zip),
         city: stringValue(company.city),
         country: stringValue(company.country, "Deutschland"),
         phone: stringValue(company.phone),
         email: stringValue(company.email),
+        website: stringValue(company.website),
         taxNumber: stringValue(company.taxNumber),
         vatId: stringValue(company.vatId),
+        logo: normalizeCompanyLogo(company.logo),
+        updatedAt: stableIso(company.updatedAt, epochIso),
         defaultTaxRate: finiteNumber(company.defaultTaxRate, finiteNumber(taxSettings.defaultRate, 19)),
         useAsServiceLocation: company.useAsServiceLocation !== false
       },
@@ -1683,14 +1765,19 @@
     const company = {
       name: identity.name,
       owner: identity.owner,
+      contactPerson: stringValue(rawCompany.contactPerson, stringValue(defaultCompany.contactPerson)),
       street: stringValue(rawCompany.street, stringValue(defaultCompany.street)),
+      houseNumber: stringValue(rawCompany.houseNumber, stringValue(defaultCompany.houseNumber)),
       zip: stringValue(rawCompany.zip, stringValue(defaultCompany.zip)),
       city: stringValue(rawCompany.city, stringValue(defaultCompany.city)),
       country: stringValue(rawCompany.country, stringValue(defaultCompany.country, "Deutschland")),
       phone: stringValue(rawCompany.phone, stringValue(defaultCompany.phone)),
       email: stringValue(rawCompany.email, stringValue(defaultCompany.email)),
+      website: stringValue(rawCompany.website, stringValue(defaultCompany.website)),
       taxNumber: stringValue(rawCompany.taxNumber, stringValue(defaultCompany.taxNumber)),
       vatId: stringValue(rawCompany.vatId, stringValue(defaultCompany.vatId)),
+      logo: normalizeCompanyLogo(Object.prototype.hasOwnProperty.call(rawCompany, "logo") ? rawCompany.logo : defaultCompany.logo),
+      updatedAt: stableIso(rawCompany.updatedAt, raw.updatedAt || defaultCompany.updatedAt || defaults.updatedAt),
       defaultTaxRate: finiteNumber(rawCompany.defaultTaxRate, finiteNumber(defaultCompany.defaultTaxRate, 19)),
       useAsServiceLocation: booleanValue(rawCompany.useAsServiceLocation, defaultCompany.useAsServiceLocation !== false)
     };
@@ -2553,8 +2640,13 @@
     forbiddenRootKeys.forEach(key => { delete cleaned[key]; });
     if (isPlainObject(cleaned.company)) {
       Object.keys(cleaned.company).forEach(key => {
-        if (key.toLowerCase().startsWith("logo")) delete cleaned.company[key];
+        if (key.toLowerCase().startsWith("logo") && key !== "logo") delete cleaned.company[key];
       });
+      if (isPlainObject(cleaned.company.logo)) {
+        Object.keys(cleaned.company.logo).forEach(key => {
+          if (!companyLogoAllowedKeys.has(key)) delete cleaned.company.logo[key];
+        });
+      } else if (cleaned.company.logo !== null) delete cleaned.company.logo;
     }
     if (Array.isArray(cleaned.businessAreas)) {
       cleaned.businessAreas.forEach(area => {
@@ -4542,6 +4634,7 @@
     createSettingsPersistence,
     snapshotSettings,
     normalizeSettingsRecord,
+    normalizeCompanyLogo,
     companyIdentity,
     snapshotCatalog,
     normalizeCatalogRecord,

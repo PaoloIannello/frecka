@@ -109,10 +109,11 @@ Nicht transportiert werden insbesondere:
 
 - interne Beleg-, Kunden-, Gutschein-, QR- oder Geschäftsbereichs-IDs;
 - Telefonnummern und E-Mail-Adressen von Unternehmen oder Kunden;
+- Websites und echte Unternehmenslogo-Bilddaten;
 - interne Notizen, Aktivitäten und Historien;
 - Kundenstammdaten außerhalb der tatsächlich sichtbaren Beleganschrift;
 - Verkaufsbeleg- und Einlösungsreferenzen des Gutscheins;
-- nicht im Gutschein dargestellte Steuernummer und USt-IdNr.;
+- Steuernummer, USt-IdNr. und weitere Steuerdaten;
 - Leistungsorte normaler Belege;
 - Rohsnapshots, IndexedDB-Inhalte, Logs oder Entwicklerdaten;
 - QR-Grafiken, PDF-Dateien und Bilddaten.

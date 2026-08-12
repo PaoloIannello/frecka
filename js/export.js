@@ -126,6 +126,32 @@
     return resolver(company);
   }
 
+  function projectOwnCompany(company) {
+    const identity = snapshotCompanyIdentity(company);
+    return Object.freeze({
+      name: identity.name,
+      owner: identity.owner,
+      contactPerson: text(company?.contactPerson),
+      street: text(company?.street),
+      houseNumber: text(company?.houseNumber),
+      postalCode: text(company?.zip),
+      city: text(company?.city),
+      country: text(company?.country),
+      phone: text(company?.phone),
+      email: text(company?.email),
+      website: text(company?.website),
+      taxNumber: text(company?.taxNumber),
+      vatId: text(company?.vatId),
+      updatedAt: text(company?.updatedAt),
+      logo: isPlainObject(company?.logo) ? Object.freeze({
+        name: text(company.logo.name),
+        mimeType: text(company.logo.mimeType),
+        size: finiteNumber(company.logo.size),
+        updatedAt: text(company.logo.updatedAt)
+      }) : null
+    });
+  }
+
   function projectActiveUser(settings, tenantId) {
     const users = Array.isArray(settings?.users) ? settings.users : [];
     const activeUser = users.find(user => text(user?.id) === text(settings?.activeUserId) && user?.active === true);
@@ -705,6 +731,7 @@
       companyName: company.name,
       companyOwner: company.owner,
       companyDisplayName: company.displayName,
+      company: normalized.exportType === "own-data" ? projectOwnCompany(settings.company) : null,
       activeUser: normalized.exportType === "own-data" ? activeUser : null,
       license: normalized.exportType === "own-data" ? localLicense : null,
       range: Object.freeze(clone(normalized.range)),
@@ -753,6 +780,18 @@
       `Exportdatum: ${formatDateKey(projection.generatedAt)} • ${formatTime(projection.generatedAt)}`.trim(),
       `Zeitraum: ${formatDateKey(projection.range.dateFrom)} bis ${formatDateKey(projection.range.dateTo)}`,
       `Exporttyp: ${projection.exportType === "own-data" ? "Eigene Daten" : "Steuerberatung"}`,
+      ...(projection.company ? [
+        ...(projection.company.contactPerson ? [`Ansprechpartner: ${projection.company.contactPerson}`] : []),
+        `Anschrift: ${[projection.company.street, projection.company.houseNumber].filter(Boolean).join(" ")}, ${[projection.company.postalCode, projection.company.city].filter(Boolean).join(" ")}`,
+        `Land: ${projection.company.country}`,
+        ...(projection.company.phone ? [`Telefon: ${projection.company.phone}`] : []),
+        ...(projection.company.email ? [`E-Mail: ${projection.company.email}`] : []),
+        ...(projection.company.website ? [`Website: ${projection.company.website}`] : []),
+        ...(projection.company.taxNumber ? [`Steuernummer: ${projection.company.taxNumber}`] : []),
+        ...(projection.company.vatId ? [`USt-IdNr.: ${projection.company.vatId}`] : []),
+        ...(projection.company.updatedAt ? [`Unternehmensdaten geändert: ${formatDateKey(projection.company.updatedAt)} • ${formatTime(projection.company.updatedAt)}`] : []),
+        ...(projection.company.logo ? [`Unternehmenslogo: ${projection.company.logo.name} (${projection.company.logo.mimeType}, ${projection.company.logo.size} Bytes)`] : [])
+      ] : []),
       ...(projection.activeUser ? [`Aktiver Benutzer: ${projection.activeUser.displayName}`] : []),
       ...(projection.license ? [
         `Lizenz-ID: ${projection.license.licenseId}`,
