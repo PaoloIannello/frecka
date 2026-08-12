@@ -18,14 +18,17 @@ website/
 ├── styles/
 │   ├── design-tokens.css
 │   ├── animation.css
-│   └── main.css
+│   ├── main.css
+│   └── brand-assets.css
 ├── scripts/
 │   └── main.js
 ├── components/          # für spätere modularisierte Teilimplementierungen
 └── assets/
-    ├── fonts/
-    ├── icons/
-    └── images/
+    ├── logo/
+    ├── app-icon/
+    ├── screenshots/
+    ├── photos/
+    └── social/
 ```
 
 Die bestehenden Konzept- und Richtungsdokumente bleiben unverändert als fachliche Grundlage im Wurzelverzeichnis von `website/` erhalten.
@@ -66,6 +69,13 @@ Die bestehenden Konzept- und Richtungsdokumente bleiben unverändert als fachlic
 - Forced-Colors-Grundlagen;
 - keine eigenen Keyframes und keine verspielten Bewegungen.
 
+### `styles/brand-assets.css`
+
+- zentrale, dauerhafte Dateipfade für Logo, Screenshots und Foto;
+- transparente Austauschschicht über den vorhandenen RC2-Fallbacks;
+- keine Layoutänderung beim späteren Dateiaustausch;
+- Forced-Colors-Fallback auf Text und CSS-Grundflächen.
+
 ### `scripts/main.js`
 
 - Öffnen und Schließen der mobilen Navigation;
@@ -101,7 +111,7 @@ Die API-Namen und Zustände folgen `components.md`. Wiederkehrende Gestaltung ve
 
 **Aktuell:** `.c-brand` enthält die Text-Wordmark „FRECKA“ und den Claim.
 
-**Später:** Wort- und Bildmarken-SVG innerhalb desselben Links einsetzen. Der zugängliche Linkname bleibt „FRECKA Startseite“. Redundante Logo-Bildtexte müssen assistiv verborgen werden.
+**Später:** Die freigegebene Datei unter `assets/logo/svg/frecka-logo-horizontal-positive.svg` ablegen. Sie überlagert die Text-Wordmark automatisch. Der zugängliche Linkname bleibt „FRECKA Startseite“ und der Claim bleibt Live-Text.
 
 **Betroffene Stellen:** Header und Footer.
 
@@ -109,7 +119,7 @@ Die API-Namen und Zustände folgen `components.md`. Wiederkehrende Gestaltung ve
 
 **Aktuell:** `.c-product-stage` enthält eine CSS-basierte, nicht interaktive Produktvorschau in `.c-device`.
 
-**Später:** Innerhalb der Product Stage ein `picture` mit freigegebenem App-Screenshot einsetzen. Breite, Höhe und `aspect-ratio` müssen vorab feststehen. Der Hero-Screenshot lädt nicht lazy.
+**Später:** Den freigegebenen App-Screenshot unter `assets/screenshots/hero/frecka-hero-receipt-flow.webp` ablegen. Er überlagert die bestehende CSS-Vorschau automatisch und behält deren Maße.
 
 **Erwartete Assets:** mobile AVIF-/WebP-Ausgaben plus Fallback, vollständige fiktive Daten, Alt-Text und sichtbare Caption.
 
@@ -117,25 +127,25 @@ Die API-Namen und Zustände folgen `components.md`. Wiederkehrende Gestaltung ve
 
 **Aktuell:** `.c-mini-screen` visualisiert die drei Schritte abstrakt.
 
-**Später:** Je Schritt kann ein fokussierter Screenshot-Ausschnitt eingesetzt werden. DOM-Reihenfolge, Titel und Beschreibung bleiben bestehen.
+**Später:** Die drei freigegebenen Dateien unter den in `BRAND_INTEGRATION.md` dokumentierten Workflow-Namen ablegen. DOM-Reihenfolge, Titel und Beschreibung bleiben bestehen.
 
 ### Arbeitsfoto
 
 **Aktuell:** `.c-photo-slot__surface` ist eine reine CSS-Komposition mit festem Raum und Caption.
 
-**Später:** Die innere Fläche durch ein responsives `picture` ersetzen. Figure und Caption bleiben erhalten. Das Motiv benötigt authentische Freigabe, natürlichen Zuschnitt und einen zweckbezogenen Alt-Text.
+**Später:** Die optimierte Fassung als `assets/photos/optimized/frecka-workday.webp` ablegen. Die CSS-Fotofläche wird automatisch überlagert. Figure, Beschreibung, Maße und Caption bleiben erhalten.
 
 ### OpenGraph-Bild
 
 **Aktuell:** OpenGraph- und X/Twitter-Textmetadaten sind vorhanden; es wird bewusst kein generisches Bild ausgeliefert.
 
-**Später:** Nach finaler Markenfreigabe ein eigenes Social-Preview-Bild ergänzen und `og:image`, Bildmaße, Alt-Text sowie `twitter:image` mit absoluter Produktions-URL eintragen.
+**Später:** Das finale Social-Preview-Bild als `assets/social/frecka-og-1200x630.png` ablegen. Die Metadaten referenzieren diesen Pfad bereits. Bei Domainfreigabe werden `og:image` und Canonical über das Hosting als absolute URLs ausgeliefert.
 
 ### Favicon und Touch Icon
 
-**Aktuell:** keine provisorische Bildmarke.
+**Aktuell:** keine provisorische Bildmarke; die finalen Pfade sind bereits im Dokumentkopf eingebunden.
 
-**Später:** aus dem freigegebenen D-TILE-Zeichen ableiten und in den Head aufnehmen.
+**Später:** `assets/logo/favicon/favicon.svg`, `assets/logo/favicon/favicon-32.png` und `assets/app-icon/ios/apple-touch-icon-180.png` unter exakt diesen Namen ablegen. Keine HTML-Anpassung nötig.
 
 ## 6. Noch offene Assets
 

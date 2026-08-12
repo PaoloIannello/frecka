@@ -23,11 +23,15 @@ RC2 der Landingpage ist als statische HTML5-/CSS-/Vanilla-JavaScript-Seite umges
 - [accessibility.md](accessibility.md) beschreibt den WCAG-2.2-AA-Standard und die Abnahme.
 - [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) dokumentiert RC2, Austauschpunkte, offene Assets und Veröffentlichungsgates.
 - [RC2_REVIEW.md](RC2_REVIEW.md) dokumentiert Designentscheidungen, Verbesserungen und offene Punkte des Reviews.
+- [BRAND_GUIDELINES.md](BRAND_GUIDELINES.md) definiert die verbindliche Anwendung von D TILE, Wortmarke, Claim, Farben und Typografie.
+- [ASSET_CHECKLIST.md](ASSET_CHECKLIST.md) führt alle erforderlichen Marken-, Plattform-, Screenshot-, Foto- und Social-Assets.
+- [BRAND_INTEGRATION.md](BRAND_INTEGRATION.md) dokumentiert feste Dateinamen, Größen, Einsatzstellen und Austauschlogik.
 
 ## Technisches Fundament
 
 - `styles/design-tokens.css`: globale Farben, Typografie, Abstände, Radien, Schatten, Container, Ebenen und Motion-Tokens.
 - `styles/animation.css`: ausschließlich globale, optionale Bewegungsprimitiven mit Reduced-Motion-Fallback.
+- `styles/brand-assets.css`: finale Pfad- und Austauschschicht für Logos, Screenshots und Fotos.
 - `components/`: reserviert für spätere, einzeln beauftragte Komponentenimplementierungen.
 - `scripts/`: reserviert für spätere progressive Verbesserungen in Vanilla JavaScript.
 - `assets/`: reserviert für später freigegebene Marken- und Medienassets.
@@ -45,15 +49,19 @@ website/
 ├── responsive.md
 ├── accessibility.md
 ├── assets/
-│   ├── fonts/       # nur lokal ausgelieferte Webfonts, falls später freigegeben
-│   ├── icons/       # optimierte, zugängliche Website-Icons
-│   └── images/      # freigegebene Screenshots und Bildmedien
+│   ├── logo/        # SVG, PNG und Favicons
+│   ├── app-icon/    # iOS-, Android- und Adaptive-Exports
+│   ├── screenshots/ # Hero, Workflow und Produktbereiche
+│   ├── photos/      # Originale und optimierte Webfassungen
+│   └── social/      # OpenGraph und Social Preview
 ├── content/         # redaktionelle Quelldokumente und Textvarianten
 ├── components/      # spätere Komponentenimplementierungen
 ├── scripts/         # kleines, optionales Vanilla JavaScript
 └── styles/
     ├── design-tokens.css
-    └── animation.css
+    ├── animation.css
+    ├── main.css
+    └── brand-assets.css
 ```
 
 Die Medien-, Inhalts-, Komponenten- und Skriptordner sind als spätere Zielstruktur vorgemerkt und werden erst in einer ausdrücklich beauftragten Umsetzungsphase befüllt. HTML-Seiten sollen später direkt unter `website/` liegen, damit die statische Veröffentlichung ohne Build-Schritt funktioniert.

@@ -182,25 +182,32 @@ Anforderungen:
 - Impressums- und Datenschutzinhalte als Text, nicht als Bild;
 - keine Siegelgrafik ohne gültige Berechtigung und Nutzungsregeln.
 
-## 13. Empfohlene spätere Ablagestruktur
+## 13. Verbindliche Asset-Struktur ab WEBSITE-006
 
 ```text
 website/assets/
-├── brand/
-│   ├── source/
-│   └── web/
-├── icons/
-├── images/
-│   ├── photos/
-│   ├── screenshots/
-│   │   ├── source/
-│   │   └── web/
-│   └── social/
-├── mockups/
-└── fonts/
+├── logo/
+│   ├── svg/
+│   ├── png/
+│   └── favicon/
+├── app-icon/
+│   ├── ios/
+│   ├── android/
+│   └── adaptive/
+├── screenshots/
+│   ├── hero/
+│   ├── workflow/
+│   ├── customers/
+│   ├── vouchers/
+│   ├── receipts/
+│   └── settings/
+├── photos/
+│   ├── originals/
+│   └── optimized/
+└── social/
 ```
 
-Quellassets mit großen Dateien müssen vor Aufnahme in Git bewusst geprüft werden. Generierte Webvarianten benötigen einen nachvollziehbaren, auch ohne Build-Tool dokumentierten Erstellungsprozess.
+Dateinamen und Einsatzstellen sind verbindlich in `BRAND_INTEGRATION.md` dokumentiert. Quellassets mit großen Dateien müssen vor Aufnahme in Git bewusst geprüft werden. Optimierte Webvarianten benötigen einen nachvollziehbaren, auch ohne Build-Tool dokumentierten Erstellungsprozess.
 
 ## 14. Asset-Produktionsreihenfolge
 
@@ -230,4 +237,3 @@ Ein Asset ist erst einsatzbereit, wenn:
 - helle und gegebenenfalls dunkle Nutzung geprüft sind;
 - keine unnötige externe Anfrage entsteht;
 - eine ältere Fassung eindeutig ersetzt oder archiviert werden kann.
-

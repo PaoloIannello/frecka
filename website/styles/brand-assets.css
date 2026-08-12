@@ -1,0 +1,110 @@
+/**
+ * FRECKA final brand asset contract
+ *
+ * No asset in this file is a placeholder. The URLs are the permanent delivery
+ * slots for approved brand files. Until a file exists, the RC2 text and CSS
+ * fallbacks remain visible. Replacing a file never requires HTML or CSS edits.
+ */
+
+:root {
+  /* Logo lockups */
+  --asset-logo-positive: url("../assets/logo/svg/frecka-logo-horizontal-positive.svg");
+  --asset-logo-negative: url("../assets/logo/svg/frecka-logo-horizontal-negative.svg");
+  --asset-logo-monochrome: url("../assets/logo/svg/frecka-logo-horizontal-monochrome.svg");
+
+  /* Landingpage screenshots */
+  --asset-screenshot-hero: url("../assets/screenshots/hero/frecka-hero-receipt-flow.webp");
+  --asset-screenshot-workflow-01: url("../assets/screenshots/workflow/frecka-workflow-01-select.webp");
+  --asset-screenshot-workflow-02: url("../assets/screenshots/workflow/frecka-workflow-02-payment.webp");
+  --asset-screenshot-workflow-03: url("../assets/screenshots/workflow/frecka-workflow-03-receipt.webp");
+
+  /* Landingpage photography */
+  --asset-photo-workday: url("../assets/photos/optimized/frecka-workday.webp");
+}
+
+/*
+ * Logo fallback contract
+ * The approved horizontal SVG overlays only the text wordmark. The separate
+ * HTML claim remains live text and is never baked into the logo asset.
+ */
+.c-brand__wordmark {
+  width: 7.5rem;
+  min-height: 1.25rem;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.c-brand__wordmark::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background-image: var(--asset-logo-positive);
+  background-repeat: no-repeat;
+  background-position: left center;
+  background-size: contain;
+  pointer-events: none;
+}
+
+.c-brand--footer .c-brand__wordmark {
+  width: 9.5rem;
+  min-height: 1.75rem;
+}
+
+/*
+ * Media fallback contract
+ * Each final bitmap is painted above the existing CSS fallback. Missing files
+ * remain transparent and therefore do not create broken-image UI or layout
+ * shifts. The parent surfaces keep their current dimensions and semantics.
+ */
+.c-device__screen,
+.c-mini-screen,
+.c-photo-slot__surface {
+  position: relative;
+}
+
+.c-device__screen::after,
+.c-mini-screen::after,
+.c-photo-slot__surface::after {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  border-radius: inherit;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+  pointer-events: none;
+}
+
+.c-device__screen::after {
+  background-image: var(--asset-screenshot-hero);
+  background-size: 100% 100%;
+}
+
+.c-step-item:nth-child(1) .c-mini-screen::after {
+  background-image: var(--asset-screenshot-workflow-01);
+}
+
+.c-step-item:nth-child(2) .c-mini-screen::after {
+  background-image: var(--asset-screenshot-workflow-02);
+}
+
+.c-step-item:nth-child(3) .c-mini-screen::after {
+  background-image: var(--asset-screenshot-workflow-03);
+}
+
+.c-photo-slot__surface::after {
+  background-image: var(--asset-photo-workday);
+}
+
+@media (forced-colors: active) {
+  .c-brand__wordmark::after,
+  .c-device__screen::after,
+  .c-mini-screen::after,
+  .c-photo-slot__surface::after {
+    display: none;
+  }
+}
+
