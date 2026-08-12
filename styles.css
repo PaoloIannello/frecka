@@ -3269,6 +3269,7 @@ body.work-mode:not(.catalog-mode) .flow-page {
   grid-template-columns: repeat(2,minmax(0,1fr));
 }
 .settings-fixed-values > div {
+  min-width: 0;
   min-height: 60px;
   padding: 12px 14px;
   display: grid;
@@ -3280,6 +3281,16 @@ body.work-mode:not(.catalog-mode) .flow-page {
 .settings-fixed-values span {
   color: var(--muted);
   font-size: .7rem;
+}
+.settings-fixed-values strong {
+  overflow-wrap: anywhere;
+}
+.user-fixed-values {
+  grid-template-columns: 1fr;
+}
+.user-fixed-values > div + div {
+  border-top: 1px solid var(--border);
+  border-left: 0;
 }
 .settings-tse-note,
 .business-model-note {

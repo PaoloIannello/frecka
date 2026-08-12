@@ -97,6 +97,8 @@
     voucherSaleSubmitting: false,
     voucherSaleCreatedReference: null,
     settingsNotice: "",
+    userSettingsNotice: "",
+    userSettingsNoticeIsError: false,
     serviceLocationNotice: "",
     serviceLocationEditingId: null,
     taxSettingsNotice: "",
@@ -181,7 +183,7 @@
   const appUpdateMessage = document.getElementById("appUpdateMessage");
   const appUpdateLater = document.getElementById("appUpdateLater");
   const appUpdateAction = document.getElementById("appUpdateAction");
-  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "qr-not-found", "settings-company", "settings-location", "settings-taxes", "settings-payments", "settings-business-areas", "settings-catalog", "settings-help", "settings-backup", "settings-export", "setup-wizard"]);
+  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "qr-not-found", "settings-company", "settings-user", "settings-location", "settings-taxes", "settings-payments", "settings-business-areas", "settings-catalog", "settings-help", "settings-backup", "settings-export", "setup-wizard"]);
   const validRoutes = new Set(["home", "receipts", "customers", "vouchers", "settings", ...flowRoutes]);
 
   const escapeHtml = value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -3461,13 +3463,13 @@
 
   const settingsSections = [
     { id: "settings-company", icon: "▣", title: "Unternehmensdaten", note: "Name, Anschrift und Kontaktdaten", available: true },
+    { id: "settings-user", icon: "◎", title: "Benutzer", note: "Anzeigename und lokale Benutzerangaben", available: true },
     { id: "settings-location", icon: "⌖", title: "Leistungsorte", note: "Orte, Zuordnungen und Standards", available: true },
     { id: "settings-taxes", icon: "%", title: "Steuern und Belegangaben", note: "Steuerstatus, Nummern und Belegtexte", available: true },
     { id: "settings-payments", icon: "€", title: "Zahlungsarten", note: "Aktive Arten und Reihenfolge", available: true },
     { id: "settings-business-areas", icon: "◇", title: "Geschäftsbereiche", note: "Fachbereiche und Standardauswahl", available: true },
     { id: "settings-catalog", icon: "≡", title: "Leistungen & Produkte", note: "Katalog je Geschäftsbereich verwalten", available: true },
     { id: "settings-help", icon: "?", title: "Hilfe & Lernen", note: "Erste Schritte und häufige Fragen", available: true },
-    { icon: "◎", title: "Benutzer", note: "Für eine spätere Version vorbereitet" },
     { id: "settings-backup", icon: "↥", title: "Sicherung & Wiederherstellung", note: "Verschlüsselte Gesamtsicherung erstellen oder einspielen", available: true },
     { id: "settings-export", icon: "⇥", title: "Export", note: "Steuerberater-ZIP und eigene Daten", available: true },
     { icon: "↻", title: "Update", note: "Für eine spätere Version vorbereitet", help: "update" },
@@ -3919,6 +3921,58 @@
       ${developerToolsMarkup()}
       <p class="prototype-note">Einstellungen, Katalog, Kunden, Belege und Gutscheine werden lokal und mandantenbezogen gespeichert.</p>
       ${appVersionMarkup()}
+    </section>`;
+  }
+
+  const userDisplayNameMaxLength = 80;
+
+  function activeUser() {
+    const activeUserId = String(data.userSettings?.activeUserId || "");
+    return data.users.find(user => user.id === activeUserId && user.active === true) || null;
+  }
+
+  function validateUserDisplayName(value) {
+    const displayName = String(value || "").trim();
+    if (!displayName) return { error: "Bitte einen Anzeigenamen angeben.", value: "" };
+    if (displayName.length > userDisplayNameMaxLength) {
+      return { error: `Der Anzeigename darf höchstens ${userDisplayNameMaxLength} Zeichen lang sein.`, value: displayName };
+    }
+    return { error: "", value: displayName };
+  }
+
+  function renderUserSettings() {
+    const user = activeUser();
+    const notice = state.userSettingsNotice
+      ? `<div class="settings-save-notice ${state.userSettingsNoticeIsError ? "is-error" : ""}" role="${state.userSettingsNoticeIsError ? "alert" : "status"}">${escapeHtml(state.userSettingsNotice)}</div>`
+      : "";
+    const content = user ? `<form id="userSettingsForm" class="settings-form" novalidate>
+        <section class="settings-form-card settings-single-column">
+          <h2>Persönliche Angabe</h2>
+          <label class="setting-field full"><span>Anzeigename</span><input name="displayName" autocomplete="name" required maxlength="${userDisplayNameMaxLength}" aria-describedby="userDisplayNameHint" value="${escapeHtml(user.displayName)}"></label>
+          <p id="userDisplayNameHint" class="settings-neutral-note">Dieser Name kennzeichnet den aktiven lokalen Benutzer. Maximal ${userDisplayNameMaxLength} Zeichen.</p>
+        </section>
+        <section class="settings-form-card settings-single-column">
+          <h2>Lokale Benutzerangaben</h2>
+          <div class="settings-fixed-values user-fixed-values">
+            <div><span>Benutzer-ID</span><strong>${escapeHtml(user.id)}</strong></div>
+            <div><span>Mandant</span><strong>${escapeHtml(user.tenantId)}</strong></div>
+            <div><span>Status</span><strong>Aktiv</strong></div>
+            <div><span>Erstellt am</span><strong>${escapeHtml(formatGermanDateTime({ iso: user.createdAt }))}</strong></div>
+            <div><span>Geändert am</span><strong>${escapeHtml(formatGermanDateTime({ iso: user.updatedAt }))}</strong></div>
+          </div>
+          <p class="settings-neutral-note">Benutzer-ID, Mandant, Status und Zeitstempel werden von FRECKA verwaltet und können hier nicht bearbeitet werden.</p>
+        </section>
+        <button class="button button-primary settings-save" type="submit">Anzeigename speichern</button>
+      </form>` : `<div class="settings-save-notice is-error" role="alert">Der aktive lokale Benutzer ist nicht verfügbar. Die Einstellungen wurden nicht verändert.</div>`;
+    mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter">
+      <div class="flow-head compact-flow-head">
+        <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
+        <p class="eyebrow">Einstellungen</p>
+        <h1 class="flow-title">Benutzer</h1>
+        <p class="page-copy">FRECKA V1.0 verwendet genau einen aktiven lokalen Benutzer.</p>
+      </div>
+      ${notice}
+      ${content}
     </section>`;
   }
 
@@ -4954,6 +5008,7 @@
       "voucher-sale-success",
       "qr-not-found",
       "settings-company",
+      "settings-user",
       "settings-location",
       "settings-taxes",
       "settings-payments",
@@ -4986,6 +5041,7 @@
     else if (state.route === "qr-not-found") renderQrNotFound();
     else if (state.route === "settings") renderSettings();
     else if (state.route === "settings-company") renderCompanySettings();
+    else if (state.route === "settings-user") renderUserSettings();
     else if (state.route === "settings-location") renderServiceLocationSettings();
     else if (state.route === "settings-taxes") renderTaxSettings();
     else if (state.route === "settings-payments") renderPaymentSettings();
@@ -6470,6 +6526,47 @@
         state.settingsNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(persistenceError)}`;
       }
       renderCompanySettings();
+      return;
+    }
+
+    const userSettingsForm = event.target.closest("#userSettingsForm");
+    if (userSettingsForm) {
+      event.preventDefault();
+      const user = activeUser();
+      if (!user) {
+        state.userSettingsNotice = "Der aktive lokale Benutzer ist nicht verfügbar. Die Einstellungen wurden nicht verändert.";
+        state.userSettingsNoticeIsError = true;
+        renderUserSettings();
+        return;
+      }
+      const validated = validateUserDisplayName(new FormData(userSettingsForm).get("displayName"));
+      if (validated.error) {
+        state.userSettingsNotice = validated.error;
+        state.userSettingsNoticeIsError = true;
+        renderUserSettings();
+        return;
+      }
+      if (validated.value === user.displayName) {
+        state.userSettingsNotice = "Der Anzeigename ist bereits aktuell.";
+        state.userSettingsNoticeIsError = false;
+        renderUserSettings();
+        return;
+      }
+      const previousDisplayName = user.displayName;
+      const previousUpdatedAt = user.updatedAt;
+      user.displayName = validated.value;
+      user.updatedAt = new Date().toISOString();
+      try {
+        await persistCurrentSettings();
+        state.userSettingsNotice = "Der Anzeigename wurde lokal gespeichert.";
+        state.userSettingsNoticeIsError = false;
+      } catch (persistenceError) {
+        user.displayName = previousDisplayName;
+        user.updatedAt = previousUpdatedAt;
+        state.userSettingsNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(persistenceError)}`;
+        state.userSettingsNoticeIsError = true;
+      }
+      renderUserSettings();
       return;
     }
 

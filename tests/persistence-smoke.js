@@ -1476,6 +1476,73 @@
         }
       },
       {
+        name: "USER-002 Benutzerseite bleibt ein einzelnes mandantenbezogenes Anzeigenamen-Formular",
+        run: async () => {
+          const response = await fetch("../js/app.js", { cache: "no-store" });
+          assert(response.ok, "App-Quelle für USER-002 konnte nicht geladen werden");
+          const source = await response.text();
+          const renderStart = source.indexOf("function renderUserSettings()");
+          const renderEnd = source.indexOf("function backupFallbackRecords()", renderStart);
+          const submitStart = source.indexOf('const userSettingsForm = event.target.closest("#userSettingsForm")');
+          const submitEnd = source.indexOf('const serviceLocationForm = event.target.closest("#serviceLocationForm")', submitStart);
+          assert(renderStart > 0 && renderEnd > renderStart, "Benutzerseite fehlt");
+          assert(submitStart > 0 && submitEnd > submitStart, "Benutzerformular besitzt keinen Speicherablauf");
+          const renderSource = source.slice(renderStart, renderEnd);
+          const submitSource = source.slice(submitStart, submitEnd);
+          assert(source.includes('{ id: "settings-user", icon: "◎", title: "Benutzer"'), "Vorhandener Einstellungsbereich Benutzer ist nicht aktiviert");
+          assert(renderSource.includes('id="userSettingsForm"'), "Benutzerformular fehlt");
+          assert(renderSource.includes('name="displayName"') && renderSource.includes('maxlength="${userDisplayNameMaxLength}"'), "Anzeigename oder Maximallänge fehlt");
+          ["Benutzer-ID", "Mandant", "Status", "Erstellt am", "Geändert am"].forEach(label => {
+            assert(renderSource.includes(label), `Nicht bearbeitbare Benutzerangabe fehlt: ${label}`);
+          });
+          assert(!/name="(?:id|tenantId|active|createdAt|updatedAt|pin|role|permissions?)"/.test(renderSource), "Unveränderliche oder ausgeschlossene Benutzerdaten sind editierbar");
+          assert(source.includes("const userDisplayNameMaxLength = 80"), "Sinnvolle Maximallänge ist nicht zentral festgelegt");
+          assert(source.includes('String(value || "").trim()'), "Anzeigename wird nicht getrimmt");
+          assert(submitSource.includes("await persistCurrentSettings()"), "Benutzeränderung verwendet nicht den zentralen Settings-Writer");
+          assert(submitSource.includes("user.updatedAt = new Date().toISOString()"), "Änderungszeitpunkt wird nicht aktualisiert");
+          assert(!/name="(?:login|pin|role|roleIds|permission|permissions|rights)"/i.test(renderSource), "Benutzerseite führt Login-, PIN-, Rollen- oder Rechtefelder ein");
+        }
+      },
+      {
+        name: "USER-002 Anzeigename bleibt nach Persistenz, Backup, Restore und Eigene-Daten-Export erhalten",
+        run: async () => {
+          const persistence = context.makeClient("user002-roundtrip");
+          const settings = recordFixture(persistence.tenantId, "completed");
+          const userId = settings.users[0].id;
+          const createdAt = settings.users[0].createdAt;
+          settings.users[0].displayName = "Neue Testperson";
+          settings.users[0].updatedAt = "2030-02-02T09:30:00.000Z";
+          await persistence.writeSettings(settings);
+          const stored = await persistence.readSettings();
+          assertEqual(stored.users[0].displayName, "Neue Testperson", "Getrimmter Anzeigename wurde nicht sofort persistiert");
+          assertEqual(stored.users[0].id, userId, "Benutzer-ID wurde beim Bearbeiten verändert");
+          assertEqual(stored.users[0].tenantId, persistence.tenantId, "Mandant wurde beim Bearbeiten verändert");
+          assertEqual(stored.users[0].active, true, "Aktivstatus wurde beim Bearbeiten verändert");
+          assertEqual(stored.users[0].createdAt, createdAt, "Erstellungszeitpunkt wurde beim Bearbeiten verändert");
+          assertEqual(stored.users[0].updatedAt, "2030-02-02T09:30:00.000Z", "Änderungszeitpunkt wurde nicht übernommen");
+
+          const snapshot = completeTenantSnapshotFixture(persistence.tenantId);
+          snapshot.stores.settings = stored;
+          const validated = api.validateTenantSnapshot(snapshot, persistence.tenantId).snapshot;
+          const encrypted = await backupApi.encryptTenantSnapshot(validated, cryptoPassphrase);
+          const decrypted = await backupApi.decryptTenantSnapshot(encrypted, cryptoPassphrase);
+          const ownExport = exportApi.createExportFiles(decrypted, {
+            exportType: "own-data",
+            periodType: "custom",
+            dateFrom: "2030-01-01",
+            dateTo: "2030-01-31",
+            businessAreaId: "all",
+            includeCustomers: false
+          });
+          assertEqual(ownExport.projection.activeUser?.displayName, "Neue Testperson", "Eigene-Daten-Export verlor den geänderten Anzeigenamen");
+          await persistence.restoreTenantSnapshot(decrypted);
+          const restored = await persistence.readSettings();
+          assertEqual(restored.users[0].displayName, "Neue Testperson", "Restore verlor den geänderten Anzeigenamen");
+          assertEqual(restored.users[0].id, userId, "Restore veränderte die Benutzer-ID");
+          assertEqual(restored.users[0].createdAt, createdAt, "Restore veränderte den Erstellungszeitpunkt");
+        }
+      },
+      {
         name: "Erststart liefert null und initialisiert Settings-, Katalog-, Kunden-, Beleg- und Gutscheinschema",
         run: async () => {
           const persistence = context.makeClient("first-start");
