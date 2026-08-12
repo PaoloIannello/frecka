@@ -387,6 +387,7 @@
 
   function historicalDemoRepairSnapshotFixture(tenantId, missingNumbers = []) {
     const seed = clone(globalThis.PROTOTYPE_DATA);
+    seed.users.forEach(user => { user.tenantId = tenantId; });
     const settings = api.snapshotSettings(seed, "completed", tenantId);
     const catalog = api.snapshotCatalog(seed, tenantId);
     const customers = api.snapshotCustomers(seed, tenantId);
@@ -1420,6 +1421,61 @@
         }
       },
       {
+        name: "USER-001 modelliert genau einen aktiven mandantenbezogenen Benutzer",
+        run: async () => {
+          const tenantId = "test-user-model";
+          const runtime = runtimeFixture();
+          runtime.users = [{
+            formatVersion: 1,
+            id: "user-owner",
+            tenantId,
+            displayName: "Lokale Testperson",
+            active: true,
+            pin: "1234",
+            roleIds: ["admin"],
+            permissions: ["all"],
+            createdAt: "2030-01-01T10:00:00.000Z",
+            updatedAt: "2030-01-02T10:00:00.000Z"
+          }];
+          runtime.activeUserId = "user-owner";
+          const snapshot = api.snapshotSettings(runtime, "started", tenantId);
+          assertEqual(snapshot.users.length, 1, "V1.0 besitzt nicht genau einen Benutzer");
+          assertEqual(snapshot.users[0].tenantId, tenantId, "Benutzer gehört nicht zum Mandanten");
+          assertEqual(snapshot.users[0].displayName, "Lokale Testperson", "Anzeigename fehlt");
+          assertEqual(snapshot.users[0].active, true, "Einziger V1.0-Benutzer ist nicht aktiv");
+          assertEqual(snapshot.activeUserId, "user-owner", "Aktiver Benutzer ist nicht eindeutig referenziert");
+          assert(!hasOwn(snapshot.users[0], "roleIds") && !hasOwn(snapshot.users[0], "roles") && !hasOwn(snapshot.users[0], "permissions") && !hasOwn(snapshot.users[0], "pin"), "V1.0 enthält Rollen-, Rechte- oder PIN-Daten");
+
+          const multiple = runtimeFixture();
+          multiple.users = [snapshot.users[0], { ...snapshot.users[0], id: "user-second" }];
+          assertThrows(() => api.snapshotSettings(multiple, "started", tenantId), "INVALID_DATA", "Mehrere V1.0-Benutzer");
+          const foreign = runtimeFixture();
+          foreign.users = [{ ...snapshot.users[0], tenantId: "tenant-foreign" }];
+          foreign.activeUserId = "user-owner";
+          assertThrows(() => api.snapshotSettings(foreign, "started", tenantId), "INVALID_DATA", "Mandantenfremder Benutzer");
+        }
+      },
+      {
+        name: "USER-001 ergänzt historische Settings deterministisch und schützt künftige Mehrbenutzerdaten",
+        run: async () => {
+          const tenantId = "test-user-legacy";
+          const defaults = recordFixture(tenantId, "completed");
+          const legacy = clone(defaults);
+          delete legacy.users;
+          delete legacy.activeUserId;
+          const normalized = api.normalizeSettingsRecord(legacy, defaults, tenantId);
+          assertEqual(normalized.record.users.length, 1, "Historischer Settings-Datensatz erhielt keinen Benutzer");
+          assertEqual(normalized.record.users[0].displayName, legacy.company.owner, "Historischer Benutzer wurde nicht aus Unternehmer/in abgeleitet");
+          assertEqual(normalized.record.users[0].tenantId, tenantId, "Historischer Benutzer erhielt falschen Mandanten");
+          assertEqual(normalized.record.activeUserId, normalized.record.users[0].id, "Historischer aktiver Benutzer ist nicht eindeutig");
+          assert(normalized.repairs.includes("USER_MODEL_DEFAULTED"), "Ergänzung des User-Modells wurde nicht ausgewiesen");
+
+          const future = clone(defaults);
+          future.users.push({ ...future.users[0], id: "user-future" });
+          assertThrows(() => api.normalizeSettingsRecord(future, defaults, tenantId), "UNSUPPORTED_FORMAT", "Künftige Mehrbenutzerdaten");
+        }
+      },
+      {
         name: "Erststart liefert null und initialisiert Settings-, Katalog-, Kunden-, Beleg- und Gutscheinschema",
         run: async () => {
           const persistence = context.makeClient("first-start");
@@ -1452,6 +1508,9 @@
           assertDeepEqual(stored.paymentChoices.map(choice => choice.id), ["cash", "ec", "voucher"], "Zahlungsarten oder Reihenfolge fehlen");
           assertEqual(stored.businessAreas.length, 2, "Geschäftsbereiche fehlen");
           assertEqual(stored.setup.status, "started", "Einrichtungsstatus fehlt");
+          assertEqual(stored.users.length, 1, "Lokaler Benutzer fehlt im Settings-Store");
+          assertEqual(stored.users[0].tenantId, persistence.tenantId, "Persistierter Benutzer gehört zum falschen Mandanten");
+          assertEqual(stored.activeUserId, stored.users[0].id, "Persistierter aktiver Benutzer ist nicht eindeutig");
           assert(!Number.isNaN(Date.parse(written.updatedAt)), "updatedAt ist kein gültiger Zeitstempel");
           assertEqual(stored.tenantId, persistence.tenantId, "Tenant-ID wurde verändert");
         }
@@ -3421,8 +3480,15 @@
           const ownFiles = exportApi.createExportFiles(snapshot, { ...options, exportType: "own-data" });
           assert(!taxFiles.files.some(file => file.name === "Kunden.csv"), "Steuerberatungsexport enthält Kundenstammdaten");
           assertDeepEqual(taxFiles.files.map(file => file.name), ["Belege.csv", "Belegpositionen.csv", "Gutscheine.csv", "Gutschein-Historie.csv", "Export-Info.txt"], "Bestehende Steuerberater-Einzeldatei-API wurde verändert");
+          assertEqual(taxFiles.projection.activeUser, null, "Steuerberatungsexport enthält Benutzerstammdaten");
           assert(ownFiles.files.some(file => file.name === "Kunden.csv"), "Eigene Daten enthalten trotz Auswahl keine Kundendatei");
           assertDeepEqual(ownFiles.projection.customers.map(customer => customer.id), ["customer-anna"], "Nicht zugeordnete Kunden wurden exportiert");
+          assertEqual(ownFiles.projection.activeUser?.displayName, "Testperson", "Eigene-Daten-Projektion enthält den aktiven Benutzer nicht");
+          assertEqual(ownFiles.projection.activeUser?.tenantId, snapshot.tenantId, "Exportierter Benutzer gehört zum falschen Mandanten");
+          const taxInfo = taxFiles.files.find(file => file.name === "Export-Info.txt")?.content || "";
+          const ownInfo = ownFiles.files.find(file => file.name === "Export-Info.txt")?.content || "";
+          assert(!taxInfo.includes("Aktiver Benutzer:"), "Steuerberatungsexport weist den internen Benutzer aus");
+          assert(ownInfo.includes("Aktiver Benutzer: Testperson"), "Eigene-Daten-Export dokumentiert den aktiven Benutzer nicht");
         }
       },
       {
@@ -3615,6 +3681,29 @@
           assertEqual(validated.summary.customers, 2, "Kundenzählung ist falsch");
           assertEqual(validated.summary.receipts, 2, "Belegzählung ist falsch");
           assertEqual(validated.summary.vouchers, 1, "Gutscheinzählung ist falsch");
+          assertEqual(validated.snapshot.stores.settings.users.length, 1, "Benutzer fehlt im Backup-Snapshot");
+          assertEqual(validated.snapshot.stores.settings.users[0].tenantId, tenantId, "Backup-Benutzer gehört zum falschen Mandanten");
+        }
+      },
+      {
+        name: "Historische Sicherung ohne USER-001 wird beim Restore deterministisch ergänzt",
+        run: async () => {
+          const tenantId = "test-backup-user-legacy";
+          const legacy = completeTenantSnapshotFixture(tenantId);
+          delete legacy.stores.settings.users;
+          delete legacy.stores.settings.activeUserId;
+          const validated = api.validateTenantSnapshot(legacy, tenantId);
+          assertEqual(validated.snapshot.stores.settings.users.length, 1, "Historische Sicherung erhielt keinen Benutzer");
+          assertEqual(validated.snapshot.stores.settings.users[0].displayName, legacy.stores.settings.company.owner, "Historischer Backup-Benutzer wurde nicht deterministisch abgeleitet");
+          assertEqual(validated.snapshot.stores.settings.activeUserId, validated.snapshot.stores.settings.users[0].id, "Historischer Backup-Benutzer ist nicht aktiv referenziert");
+
+          const persistence = context.makeClient("backup-user-legacy-restore");
+          legacy.tenantId = persistence.tenantId;
+          Object.values(legacy.stores).forEach(store => { store.tenantId = persistence.tenantId; });
+          await persistence.restoreTenantSnapshot(legacy);
+          const restored = await persistence.readSettings();
+          assertEqual(restored.users.length, 1, "Restore persistierte den ergänzten Benutzer nicht");
+          assertEqual(restored.users[0].tenantId, persistence.tenantId, "Restore persistierte einen mandantenfremden Benutzer");
         }
       },
       {
@@ -3866,6 +3955,8 @@
           const decrypted = await backupApi.decryptTenantSnapshot(encrypted, cryptoPassphrase);
           const validated = persistence.validateTenantSnapshot(decrypted);
           assertEqual(validated.snapshot.stores.settings.company.name, "Rundlauf Betrieb", "Restore-Export-Rundlauf verlor Einstellungen");
+          assertEqual(validated.snapshot.stores.settings.users.length, 1, "Restore-Export-Rundlauf verlor den Benutzer");
+          assertEqual(validated.snapshot.stores.settings.activeUserId, validated.snapshot.stores.settings.users[0].id, "Restore-Export-Rundlauf verlor den aktiven Benutzer");
           assertEqual(validated.snapshot.stores.vouchers.vouchers[0].history.length, 1, "Gutscheinhistorie ging im Rundlauf verloren");
           assertEqual(validated.snapshot.stores.receipts.receipts[0].companySnapshot.name, "Teststudio Nord", "Belegsnapshot ging im Rundlauf verloren");
         }

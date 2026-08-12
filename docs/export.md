@@ -1,6 +1,6 @@
 # FRECKA-Exportkern Version 1
 
-**Stand:** EXPORT-003 Gutscheinverkaufsbeleg-Invariante
+**Stand:** USER-001 auf Basis EXPORT-003
 **Datenbankschema:** unverändert Version 5  
 **Exportformat:** `FRECKA_EXPORT`, Version 1
 
@@ -52,6 +52,8 @@ Der Geschäftsbereich wird über die stabile ID gefiltert. Standard für Steuerb
 `Steuerberatung` erzeugt keine Kundenstammdatendatei. Insbesondere enthält das ZIP niemals `Kunden.csv`. Namen und Anschriften, die bereits unveränderlicher Bestandteil eines Belegs, Gutscheins oder Beleg-PDFs sind, bleiben als fachlicher Dokumentinhalt erhalten.
 
 `Eigene Daten` bietet `Kunden.csv` als ausdrückliche, standardmäßig nicht aktivierte Option an. Enthalten sind ausschließlich Kunden, die in den gefilterten Belegen, Gutscheinen oder relevanten Gutscheinhistorien referenziert werden. Nicht zugeordnete Kunden werden nicht vorsorglich mit exportiert.
+
+USER-001 ergänzt ausschließlich den strukturierten Projektionskontext `activeUser` für den Exporttyp `Eigene Daten`; `Export-Info.txt` nennt dort den Anzeigenamen des aktiven Benutzers. Im Steuerberaterexport ist `activeUser` ausdrücklich `null`. Es entsteht keine Benutzer-CSV und der bestehende Steuerberater-Dateisatz bleibt unverändert.
 
 Alle Dateien entstehen im Arbeitsspeicher des Endgeräts. Die Anwendung überträgt weder Snapshot noch Exportdateien an FRECKA oder einen anderen Server. Ein Download ist eine bewusste Nutzeraktion; ab diesem Zeitpunkt ist der Nutzer für den gewählten Speicherort verantwortlich.
 

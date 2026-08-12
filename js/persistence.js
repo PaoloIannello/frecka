@@ -12,6 +12,7 @@
     vouchersStoreName: "vouchers",
     tenantId: "local-default",
     formatVersion: 1,
+    userFormatVersion: 1,
     settingsFormatVersion: 1,
     catalogFormatVersion: 1,
     customersFormatVersion: 1,
@@ -60,6 +61,10 @@
   const voucherForbiddenKeys = new Set([
     "pdf", "pdfFile", "qrImage", "qrGraphic", "qrCells", "mailStatus", "emailStatus",
     "cameraData", "scanData", "printStatus", "printedAt"
+  ]);
+  const userForbiddenKeys = new Set([
+    "pin", "password", "passphrase", "login", "roles", "roleids", "permissions", "rights",
+    "session", "sessions", "sessiontoken", "token", "accesstoken", "refreshtoken"
   ]);
   const dangerousKeys = new Set(["__proto__", "prototype", "constructor"]);
   const sensitiveKeyPattern = /(password|passphrase|credential|secret|access.?token|refresh.?token|private.?key)/i;
@@ -160,6 +165,36 @@
     return Number.isFinite(fallbackTimestamp) ? new Date(fallbackTimestamp).toISOString() : epochIso;
   }
 
+  function normalizeV1User(source, expectedTenantId, fallbackDisplayName, fallbackTimestamp = epochIso) {
+    const safeTenantId = nullableStringId(expectedTenantId) || constants.tenantId;
+    const candidate = isPlainObject(source) ? source : {};
+    const createdAt = stableIso(candidate.createdAt, fallbackTimestamp);
+    const normalized = cloneSafe(mergePreservingUnknown(candidate, {
+      formatVersion: constants.userFormatVersion,
+      id: nullableStringId(candidate.id) || "user-primary",
+      tenantId: safeTenantId,
+      displayName: trimmedString(candidate.displayName, trimmedString(fallbackDisplayName, "Benutzer/in")),
+      active: true,
+      createdAt,
+      updatedAt: stableIso(candidate.updatedAt, createdAt)
+    }));
+    Object.keys(normalized).forEach(key => {
+      if (userForbiddenKeys.has(key.toLowerCase())) delete normalized[key];
+    });
+    return normalized;
+  }
+
+  function settingsWithLegacyUserModel(record, expectedTenantId) {
+    if (!isPlainObject(record) || record.users !== undefined || record.activeUserId !== undefined) return record;
+    const migrated = cloneSafe(record);
+    const identity = companyIdentity(migrated.company);
+    const timestamp = stableIso(migrated.updatedAt, epochIso);
+    const user = normalizeV1User(null, expectedTenantId, identity.owner, timestamp);
+    migrated.users = [user];
+    migrated.activeUserId = user.id;
+    return migrated;
+  }
+
   const centsFrom = (centsValue, decimalValue = 0) => Number.isInteger(centsValue)
     ? centsValue
     : Math.round(finiteNumber(decimalValue) * 100);
@@ -193,14 +228,37 @@
       throw new PersistenceError("INVALID_DATA", "Die zentralen Einstellungen sind nicht verfügbar.");
     }
 
+    const safeTenantId = nullableStringId(tenantId) || constants.tenantId;
     const company = runtimeData.company;
     const identity = companyIdentity(company);
+    const runtimeUsers = Array.isArray(runtimeData.users) ? runtimeData.users : [];
+    if (runtimeUsers.length > 1) {
+      throw new PersistenceError("INVALID_DATA", "FRECKA V1.0 unterstützt genau einen lokalen Benutzer.");
+    }
+    const submittedUser = runtimeUsers[0] || null;
+    if (Number.isInteger(submittedUser?.formatVersion) && submittedUser.formatVersion > constants.userFormatVersion) {
+      throw new PersistenceError("UNSUPPORTED_FORMAT", "Diese Benutzerdaten benötigen eine neuere FRECKA-Version und wurden nicht verändert.");
+    }
+    if (nullableStringId(submittedUser?.tenantId) && submittedUser.tenantId !== safeTenantId) {
+      throw new PersistenceError("INVALID_DATA", "Der lokale Benutzer gehört zu einem anderen Mandanten.");
+    }
+    if (submittedUser?.active === false) {
+      throw new PersistenceError("INVALID_DATA", "FRECKA V1.0 benötigt genau einen aktiven lokalen Benutzer.");
+    }
+    const user = normalizeV1User(submittedUser, safeTenantId, identity.owner);
+    const runtimeActiveUserId = nullableStringId(runtimeData.userSettings?.activeUserId)
+      || nullableStringId(runtimeData.activeUserId);
+    if (runtimeActiveUserId && runtimeActiveUserId !== user.id) {
+      throw new PersistenceError("INVALID_DATA", "Der aktive lokale Benutzer ist nicht eindeutig.");
+    }
     const taxSettings = runtimeData.taxSettings || {};
     const receiptSettings = runtimeData.receiptSettings || {};
     const snapshot = {
       formatVersion: constants.formatVersion,
-      tenantId: nullableStringId(tenantId) || constants.tenantId,
+      tenantId: safeTenantId,
       updatedAt: new Date().toISOString(),
+      users: [user],
+      activeUserId: user.id,
       company: {
         name: identity.name,
         owner: identity.owner,
@@ -1551,6 +1609,34 @@
       useAsServiceLocation: booleanValue(rawCompany.useAsServiceLocation, defaultCompany.useAsServiceLocation !== false)
     };
 
+    const safeTenantId = nullableStringId(expectedTenantId) || constants.tenantId;
+    const defaultUserSource = Array.isArray(defaults.users) && defaults.users.length === 1
+      ? defaults.users[0]
+      : null;
+    const defaultUser = normalizeV1User(defaultUserSource, safeTenantId, identity.owner, defaults.updatedAt);
+    const rawUsers = Array.isArray(raw.users) ? raw.users : null;
+    if (!rawUsers) repairs.add("USER_MODEL_DEFAULTED");
+    else if (rawUsers.length > 1) {
+      throw new PersistenceError("UNSUPPORTED_FORMAT", "Diese Benutzerdaten benötigen eine neuere FRECKA-Version und wurden nicht verändert.");
+    } else if (rawUsers.length !== 1) repairs.add("USER_COUNT_REPAIRED");
+    const submittedUser = rawUsers?.length === 1 ? rawUsers[0] : null;
+    if (Number.isInteger(submittedUser?.formatVersion) && submittedUser.formatVersion > constants.userFormatVersion) {
+      throw new PersistenceError("UNSUPPORTED_FORMAT", "Diese Benutzerdaten benötigen eine neuere FRECKA-Version und wurden nicht verändert.");
+    }
+    const user = normalizeV1User(submittedUser, safeTenantId, identity.owner, raw.updatedAt || defaultUser.createdAt);
+    if (!isPlainObject(submittedUser)
+      || submittedUser.formatVersion !== constants.userFormatVersion
+      || nullableStringId(submittedUser.id) !== user.id
+      || nullableStringId(submittedUser.tenantId) !== safeTenantId
+      || trimmedString(submittedUser.displayName) !== user.displayName
+      || submittedUser.active !== true
+      || stableIso(submittedUser.createdAt, "") !== user.createdAt
+      || stableIso(submittedUser.updatedAt, "") !== user.updatedAt) {
+      repairs.add("USER_MODEL_REPAIRED");
+    }
+    const activeUserId = user.id;
+    if (nullableStringId(raw.activeUserId) !== user.id) repairs.add("ACTIVE_USER_REPAIRED");
+
     const defaultAreaById = new Map((defaults.businessAreas || []).map(area => [area.id, area]));
     let areaSource = Array.isArray(raw.businessAreas) ? raw.businessAreas : defaults.businessAreas || [];
     if (!Array.isArray(raw.businessAreas)) repairs.add("BUSINESS_AREAS_DEFAULTED");
@@ -1734,6 +1820,8 @@
         formatVersion: constants.formatVersion,
         tenantId: nullableStringId(expectedTenantId) || constants.tenantId,
         updatedAt: stringValue(raw.updatedAt),
+        users: [user],
+        activeUserId,
         company,
         serviceLocations,
         taxSettings,
@@ -1868,9 +1956,10 @@
       }
     });
 
+    const settingsInput = settingsWithLegacyUserModel(snapshot.stores.settings, safeTenantId);
     const settings = assertSnapshotRecord(
-      normalizeSettingsRecord(snapshot.stores.settings, snapshot.stores.settings, safeTenantId),
-      snapshot.stores.settings,
+      normalizeSettingsRecord(settingsInput, settingsInput, safeTenantId),
+      settingsInput,
       "Die Einstellungen",
       stripExcludedData
     );
@@ -2376,6 +2465,14 @@
         if (!isPlainObject(area)) return;
         Object.keys(area).forEach(key => {
           if (key !== "logoMode" && key.toLowerCase().startsWith("logo")) delete area[key];
+        });
+      });
+    }
+    if (Array.isArray(cleaned.users)) {
+      cleaned.users.forEach(user => {
+        if (!isPlainObject(user)) return;
+        Object.keys(user).forEach(key => {
+          if (userForbiddenKeys.has(key.toLowerCase())) delete user[key];
         });
       });
     }

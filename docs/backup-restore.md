@@ -1,6 +1,6 @@
 # Verschlüsselte Sicherung und Wiederherstellung
 
-**Stand:** BACKUP-002-Hardening auf Basis BACKUP-001 und PERSISTENCE-007
+**Stand:** USER-001 auf Basis BACKUP-002, BACKUP-001 und PERSISTENCE-007
 **Datenbankschema:** 5
 **Backupformat:** 1
 **Geltungsbereich:** Vollständiger lokaler Datenstand eines Mandanten
@@ -48,6 +48,8 @@ Der verschlüsselte Payload ist ein JSON-Objekt mit:
 
 Jeder Store enthält seinen bestehenden versionierten Datensatz einschließlich `tenantId`. Das Snapshotformat erfindet keine zusätzlichen Geschäftsmodelle. Beleg- und Gutscheinsnapshots, Historien, QR-Referenzen, Nummernstand und fachliche Referenzen bleiben Teil ihrer bisherigen Store-Objekte.
 
+USER-001 liegt innerhalb von `stores.settings` als `users` und `activeUserId`. Dadurch wird der lokale Benutzer ohne zusätzliche Sammlung oder Änderung des äußeren Backupformats vollständig mitgesichert.
+
 ## Äußeres Dateiformat
 
 Dateiendung: `.frecka-backup`
@@ -89,6 +91,7 @@ Vor jeder Schreibtransaktion werden mindestens geprüft:
 - äußeres und inneres Format sowie unterstützte Versionsstände;
 - vollständige Anwesenheit aller fünf Stores;
 - Übereinstimmung sämtlicher `tenantId`-Werte;
+- genau ein aktiver Settings-Benutzer mit derselben `tenantId` und passender `activeUserId`;
 - gültige Store-Formatversionen und Datenstrukturen;
 - eindeutige Kunden-, Beleg- und Gutschein-IDs;
 - eindeutige Belegnummern, Gutscheinreferenzen und sichtbare Gutscheincodes;
@@ -103,7 +106,7 @@ Historische Referenzen auf Einlösungs- oder Korrekturbelege dürfen nach einem 
 
 PERSISTENCE-010 lockert diese Regel nicht. Eine ausdrücklich bestätigte lokale Reparatur darf ausschließlich die vier fest freigegebenen historischen Demo-Gutscheinverkaufsbelege aus dem kanonischen Seed ergänzen. Vor dem einzigen atomaren Receipt-Store-Schreibvorgang muss der daraus gebildete vollständige Tenant-Kandidat alle Snapshotregeln erfüllen; anschließend wird der gespeicherte Tenant erneut vollständig validiert. Erst dann können Backup und Export wieder verwendet werden. Beliebige fehlende Belege, reale Geschäftsdaten, Kollisionen oder mehrdeutige Referenzen werden niemals rekonstruiert.
 
-Unvollständige, beschädigte, manipulierte, mandantenfremde oder inkompatible Daten werden vollständig abgelehnt. Die Validierung führt keine stillen Reparaturen durch und schreibt nichts in IndexedDB.
+Unvollständige, beschädigte, manipulierte, mandantenfremde oder inkompatible Daten werden vollständig abgelehnt. Die einzige additive Kompatibilitätsregel ergänzt bei einem historischen gültigen Snapshot, dem sowohl `users` als auch `activeUserId` vollständig fehlen, deterministisch den USER-001-Primärbenutzer aus `Unternehmer/in` und der Snapshot-`tenantId`. Teilweise vorhandene oder widersprüchliche Benutzerdaten werden nicht repariert. Die Validierung schreibt selbst nichts in IndexedDB; erst der bestätigte Restore persistiert den vollständig geprüften Snapshot.
 
 ## Atomare Wiederherstellung
 

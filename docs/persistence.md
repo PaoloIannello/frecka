@@ -1,7 +1,7 @@
 # Lokale Settings-, Katalog-, Kunden-, Beleg- und Gutscheinpersistenz
 
-**Stand:** PERSISTENCE-007 auf Basis PERSIST-005, BACKUP-001, EXPORT-003 und SERVICEWORKER-002
-**Geltungsbereich:** Vollständige FRECKA-Einstellungen, Katalog, Kundenstammdaten, abgeschlossene Belege, offene Zahlungen, Stornos, Gutschriften, Gutscheine und Gutschein-Historien
+**Stand:** USER-001 auf Basis PERSISTENCE-007, PERSIST-005, BACKUP-001 und EXPORT-003
+**Geltungsbereich:** Vollständige FRECKA-Einstellungen einschließlich lokalem Benutzer, Katalog, Kundenstammdaten, abgeschlossene Belege, offene Zahlungen, Stornos, Gutschriften, Gutscheine und Gutschein-Historien
 **Nicht enthalten:** Entwürfe, QR-Grafiken, E-Mail-, Kamera- und Druckstatus, PDF-Dateien sowie eine dauerhafte Ablage von Backup-Dateien
 
 ## Ausgangsfluss vor PERSIST-001a
@@ -16,6 +16,7 @@ Zentrale Einstellungsbereiche:
 - `data.taxSettings`: Steuerstatus, Steuersätze und Standardsteuersatz;
 - `data.receiptSettings`: Nummernkreis, Belegtexte, Währung und Sprache;
 - `data.paymentChoices`: Zahlungsarten, Aktivstatus und Reihenfolge;
+- `data.users` und `data.userSettings.activeUserId`: genau ein aktiver mandantenbezogener Benutzer in V1.0;
 - UI-State des Einrichtungsassistenten: bisher nicht dauerhaft gespeichert.
 
 Die Mutationen erfolgen insbesondere über `applyCompanyForm`, `applyServiceLocationForm`, `applyBusinessAreaForm`, `saveSetupStep`, den Steuerformular-Handler sowie die Zahlungsarten-Toggle- und Sortieraktionen. Leser sind die Einstellungsansichten, der Header, der Beleg- und Gutscheinabschluss, die Dokument-Snapshot-Erzeugung sowie der Einrichtungsassistent.
@@ -87,6 +88,7 @@ QR-001 verändert das Datenbankschema ebenfalls nicht. Beleg-IDs und Gutschein-Q
 Der Settings-Datensatz enthält ausschließlich:
 
 - `formatVersion`, `tenantId`, `updatedAt`;
+- `users` mit genau einem aktiven, versionierten und mandantenbezogenen Benutzer sowie `activeUserId` als stabile Referenz;
 - `company` einschließlich Anschrift und `useAsServiceLocation`;
 - `serviceLocations` als Liste;
 - `businessAreas` einschließlich Aktivstatus, Standardbereich und Standard-Leistungsort;
@@ -96,6 +98,8 @@ Der Settings-Datensatz enthält ausschließlich:
 - `setup.status` mit `not-started`, `started` oder `completed`.
 
 Simulierte Logoobjekte beziehungsweise Bilddaten werden nicht gespeichert. `logoMode` und die sichtbare Geschäftsbezeichnung bleiben normale Geschäftsbereichseinstellungen.
+
+USER-001 verändert weder Datenbankschema noch Store- oder Settings-Formatversion. Das Listenmodell bereitet spätere Mehrbenutzerfähigkeit vor, ohne sie in V1.0 freizuschalten. Historische Settings ohne Benutzer werden deterministisch aus `Unternehmer/in` und der aktuellen `tenantId` ergänzt; mehrere oder neuere Benutzerdaten werden von V1.0 nicht reduziert. Der vollständige Vertrag steht in `docs/users.md`.
 
 Der Datensatz im Store `catalog` enthält ausschließlich:
 

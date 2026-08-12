@@ -126,6 +126,23 @@
     return resolver(company);
   }
 
+  function projectActiveUser(settings, tenantId) {
+    const users = Array.isArray(settings?.users) ? settings.users : [];
+    const activeUser = users.find(user => text(user?.id) === text(settings?.activeUserId) && user?.active === true);
+    if (users.length !== 1 || !activeUser || text(activeUser.tenantId) !== text(tenantId)) {
+      throw new ExportError("INVALID_SNAPSHOT", "Der lokale Benutzer des FRECKA-Datensnapshots ist nicht eindeutig.");
+    }
+    return Object.freeze({
+      formatVersion: finiteNumber(activeUser.formatVersion, 1),
+      id: text(activeUser.id),
+      tenantId: text(activeUser.tenantId),
+      displayName: text(activeUser.displayName),
+      active: true,
+      createdAt: text(activeUser.createdAt),
+      updatedAt: text(activeUser.updatedAt)
+    });
+  }
+
   function clone(value) {
     if (typeof structuredClone === "function") return structuredClone(value);
     return JSON.parse(JSON.stringify(value));
@@ -654,6 +671,7 @@
       : [];
     const selectedArea = settingsAreaById.get(normalized.businessAreaId);
     const company = snapshotCompanyIdentity(settings.company);
+    const activeUser = projectActiveUser(settings, snapshot.tenantId);
     const projection = {
       exportFormat: constants.exportFormat,
       exportFormatVersion: constants.exportFormatVersion,
@@ -664,6 +682,7 @@
       companyName: company.name,
       companyOwner: company.owner,
       companyDisplayName: company.displayName,
+      activeUser: normalized.exportType === "own-data" ? activeUser : null,
       range: Object.freeze(clone(normalized.range)),
       businessAreaId: normalized.businessAreaId,
       businessAreasLabel: normalized.businessAreaId === "all" ? "Alle" : text(selectedArea?.label) || normalized.businessAreaId,
@@ -710,6 +729,7 @@
       `Exportdatum: ${formatDateKey(projection.generatedAt)} • ${formatTime(projection.generatedAt)}`.trim(),
       `Zeitraum: ${formatDateKey(projection.range.dateFrom)} bis ${formatDateKey(projection.range.dateTo)}`,
       `Exporttyp: ${projection.exportType === "own-data" ? "Eigene Daten" : "Steuerberatung"}`,
+      ...(projection.activeUser ? [`Aktiver Benutzer: ${projection.activeUser.displayName}`] : []),
       `Anzahl Belege: ${projection.receipts.length}`,
       `Anzahl Gutscheine: ${projection.vouchers.length}`,
       `Geschäftsbereiche: ${projection.businessAreasLabel}`,

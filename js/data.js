@@ -1,6 +1,18 @@
 window.PROTOTYPE_DATA = Object.freeze({
   version: "0.10.10",
   build: "SERVICEWORKER-003",
+  users: [
+    {
+      formatVersion: 1,
+      id: "user-primary",
+      tenantId: "local-default",
+      displayName: "Angel Luzolo",
+      active: true,
+      createdAt: "2026-08-12T00:00:00.000Z",
+      updatedAt: "2026-08-12T00:00:00.000Z"
+    }
+  ],
+  userSettings: { activeUserId: "user-primary" },
   company: {
     name: "Studio Beispiel",
     owner: "Angel Luzolo",

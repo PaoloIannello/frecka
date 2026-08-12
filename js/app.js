@@ -671,6 +671,8 @@
 
   function applySettingsRecord(record) {
     const existingAreaLogos = new Map(data.businessAreas.map(area => [area.id, area.logo ?? null]));
+    replaceSettingsArray(data.users, record.users);
+    data.userSettings.activeUserId = record.activeUserId;
     Object.assign(data.company, cloneSettingsValue(record.company));
     replaceSettingsArray(data.serviceLocations, record.serviceLocations);
     replaceSettingsArray(data.businessAreas, record.businessAreas.map(area => ({
@@ -945,6 +947,9 @@
     await persistence.openDatabase();
     const savedRecord = await persistence.readSettings();
     const normalized = persistence.normalizeSettingsRecord(savedRecord, defaultSettingsRecord, persistence.tenantId);
+    if (savedRecord && normalized.repairs.some(repair => repair.startsWith("USER_") || repair === "ACTIVE_USER_REPAIRED")) {
+      await persistence.writeSettings(normalized.record);
+    }
     applySettingsRecord(normalized.record);
     return { firstStart: savedRecord === null, repairs: normalized.repairs };
   }
