@@ -1480,6 +1480,39 @@
         }
       },
       {
+        name: "SETTINGS-002 bündelt bestehende betriebliche Vorgaben ohne Parallelmodell",
+        run: async () => {
+          const response = await fetch("../js/app.js", { cache: "no-store" });
+          assert(response.ok, "App-Quelle für SETTINGS-002 konnte nicht geladen werden");
+          const source = await response.text();
+          const menuStart = source.indexOf("const settingsSections = [");
+          const menuEnd = source.indexOf("const setupSteps", menuStart);
+          const renderStart = source.indexOf("function renderOperatingSettings()");
+          const renderEnd = source.indexOf("function renderBusinessAreaSettings()", renderStart);
+          const submitStart = source.indexOf('const operatingSettingsForm = event.target.closest("#operatingSettingsForm")');
+          const submitEnd = source.indexOf('const businessAreaSettingsForm = event.target.closest("#businessAreaSettingsForm")', submitStart);
+          const setupStart = source.indexOf("function setupStepContent()");
+          const setupEnd = source.indexOf("function attachSetupStepBehavior()", setupStart);
+          const menuSource = source.slice(menuStart, menuEnd);
+          const renderSource = source.slice(renderStart, renderEnd);
+          const submitSource = source.slice(submitStart, submitEnd);
+          const setupSource = source.slice(setupStart, setupEnd);
+          assert(menuSource.includes('{ id: "settings-operations", icon: "%", title: "Betrieb"'), "Einstellungsbereich Betrieb fehlt");
+          assert(!menuSource.includes('{ id: "settings-taxes"') && !menuSource.includes('{ id: "settings-payments"'), "Alte parallele Menüeinträge blieben sichtbar");
+          assert(renderSource.includes('id="operatingSettingsForm"'), "Zentrales Betriebsformular fehlt");
+          ["taxStatus", "activeTaxRate", "defaultTaxRate", "defaultBusinessArea", "footerText", "thankYouText"].forEach(field => {
+            assert(renderSource.includes(`name="${field}"`), `Betriebliche Einstellung fehlt: ${field}`);
+          });
+          assert(renderSource.includes("Währung</span><strong>EUR") && !renderSource.includes('name="currency"'), "EUR ist nicht eindeutig schreibgeschützt");
+          assert(renderSource.includes("data-payment-toggle") && renderSource.includes("data-payment-move"), "Bestehende Zahlungsartensteuerung wurde nicht wiederverwendet");
+          assert(!renderSource.includes('name="yearPrefix"') && !renderSource.includes('name="nextNumber"'), "Produktiver Nummernkreis ist weiterhin frei bearbeitbar");
+          assert(renderSource.includes("ST-${escapeHtml(receiptSettings.yearPrefix)}-000101") && renderSource.includes("GS-${escapeHtml(receiptSettings.yearPrefix)}-000101"), "Getrennte Nummernkreise werden nicht ausgewiesen");
+          assert(!setupSource.includes('name="yearPrefix"') && !setupSource.includes('name="nextNumber"'), "Erneut gestarteter Assistent umgeht den Nummernkreisschutz");
+          assert(!submitSource.includes("receiptSettings.nextNumber") && !submitSource.includes("receiptCounter"), "Betriebsformular verändert den Nummernstand");
+          assert(submitSource.includes("data.businessAreas.forEach(area => { area.isDefault = area.id === defaultAreaId; })"), "Bestehendes Standardbereichsmodell wird nicht verwendet");
+        }
+      },
+      {
         name: "USER-001 modelliert genau einen aktiven mandantenbezogenen Benutzer",
         run: async () => {
           const tenantId = "test-user-model";
@@ -1712,9 +1745,14 @@
           assertEqual(stored.company.name, "Teststudio Nord", "Unternehmensdaten fehlen");
           assertEqual(stored.company.street, "Testweg 10", "Unternehmensanschrift fehlt");
           assertEqual(stored.taxSettings.defaultRate, 19, "Steuerstatus fehlt");
+          assertDeepEqual(stored.taxSettings.rates.filter(rate => rate.active).map(rate => rate.rate), [19, 7], "Aktive Steuersätze fehlen");
           assertEqual(stored.receiptSettings.nextNumber, 77, "Nummernkreis fehlt");
+          assertEqual(stored.receiptSettings.footerText, "Test-Fußtext", "Beleg-Fußtext fehlt");
+          assertEqual(stored.receiptSettings.thankYouText, "Danke für den Test.", "Beleg-Dankestext fehlt");
+          assertEqual(stored.receiptSettings.currency, "EUR", "Währung wurde verändert");
           assertDeepEqual(stored.paymentChoices.map(choice => choice.id), ["cash", "ec", "voucher"], "Zahlungsarten oder Reihenfolge fehlen");
           assertEqual(stored.businessAreas.length, 2, "Geschäftsbereiche fehlen");
+          assertEqual(stored.businessAreas.find(area => area.isDefault)?.id, "hair", "Standard-Geschäftsbereich fehlt");
           assertEqual(stored.setup.status, "started", "Einrichtungsstatus fehlt");
           assertEqual(stored.users.length, 1, "Lokaler Benutzer fehlt im Settings-Store");
           assertEqual(stored.users[0].tenantId, persistence.tenantId, "Persistierter Benutzer gehört zum falschen Mandanten");
@@ -3777,6 +3815,7 @@
           assertEqual(taxFiles.projection.activeUser, null, "Steuerberatungsexport enthält Benutzerstammdaten");
           assertEqual(taxFiles.projection.license, null, "Steuerberatungsexport enthält Lizenzdaten");
           assertEqual(taxFiles.projection.company, null, "Steuerberatungsexport enthält zusätzliche Unternehmensstammdaten");
+          assertEqual(taxFiles.projection.operatingSettings, null, "Steuerberatungsexport enthält reine App-Einstellungen");
           assert(ownFiles.files.some(file => file.name === "Kunden.csv"), "Eigene Daten enthalten trotz Auswahl keine Kundendatei");
           assertDeepEqual(ownFiles.projection.customers.map(customer => customer.id), ["customer-anna"], "Nicht zugeordnete Kunden wurden exportiert");
           assertEqual(ownFiles.projection.activeUser?.displayName, "Testperson", "Eigene-Daten-Projektion enthält den aktiven Benutzer nicht");
@@ -3787,16 +3826,29 @@
           assertEqual(ownFiles.projection.company?.houseNumber, "", "Historische kombinierte Straße wurde im Export künstlich zerlegt");
           assertEqual(ownFiles.projection.company?.logo?.name, "Testlogo.png", "Eigene-Daten-Projektion enthält keine Logo-Metadaten");
           assert(!hasOwn(ownFiles.projection.company?.logo || {}, "dataUrl"), "Eigene-Daten-Projektion enthält unnötige Logo-Bilddaten");
+          assertEqual(ownFiles.projection.operatingSettings?.currency, "EUR", "Eigene-Daten-Projektion enthält die Währung nicht");
+          assertEqual(ownFiles.projection.operatingSettings?.defaultTaxRate, 19, "Eigene-Daten-Projektion enthält die Standard-MwSt. nicht");
+          assertEqual(ownFiles.projection.operatingSettings?.defaultBusinessArea?.id, "hair", "Eigene-Daten-Projektion enthält den Standard-Geschäftsbereich nicht");
+          assertDeepEqual(ownFiles.projection.operatingSettings?.paymentChoices.map(choice => choice.id), ["cash", "ec", "voucher"], "Eigene-Daten-Projektion verändert die Zahlungsartenreihenfolge");
+          assertEqual(ownFiles.projection.operatingSettings?.receiptNumbering.nextNumber, 77, "Eigene-Daten-Projektion enthält den Nummernstand nicht");
+          assertEqual(ownFiles.projection.operatingSettings?.receiptTexts.footerText, "Test-Fußtext", "Eigene-Daten-Projektion enthält den Beleg-Fußtext nicht");
           const taxInfo = taxFiles.files.find(file => file.name === "Export-Info.txt")?.content || "";
           const ownInfo = ownFiles.files.find(file => file.name === "Export-Info.txt")?.content || "";
           assert(!taxInfo.includes("Aktiver Benutzer:"), "Steuerberatungsexport weist den internen Benutzer aus");
           assert(!taxInfo.includes("Lizenz-ID:") && !taxInfo.includes("Geräte-ID:"), "Steuerberatungsexport weist Lizenz- oder Gerätedaten aus");
           assert(!taxInfo.includes("Ansprechpartner:") && !taxInfo.includes("Website:"), "Steuerberatungsexport wurde um eigene Unternehmensstammdaten erweitert");
+          assert(!taxInfo.includes("Standard-MwSt.:") && !taxInfo.includes("Aktive Zahlungsarten:"), "Steuerberatungsexport weist reine App-Einstellungen aus");
           assert(ownInfo.includes("Aktiver Benutzer: Testperson"), "Eigene-Daten-Export dokumentiert den aktiven Benutzer nicht");
           assert(ownInfo.includes("Ansprechpartner: Test Kontakt"), "Eigene-Daten-Export dokumentiert den Ansprechpartner nicht");
           assert(ownInfo.includes("Website: https://test.example.invalid/"), "Eigene-Daten-Export dokumentiert die Website nicht");
           assert(ownInfo.includes(`Lizenz-ID: ${snapshot.stores.settings.license.licenseId}`), "Eigene-Daten-Export dokumentiert die Lizenz-ID nicht");
           assert(ownInfo.includes(`Geräte-ID: ${snapshot.stores.settings.license.deviceId}`), "Eigene-Daten-Export dokumentiert die Geräte-ID nicht");
+          assert(ownInfo.includes("Währung: EUR"), "Eigene-Daten-Export dokumentiert die Währung nicht");
+          assert(ownInfo.includes("Steuerstatus: Umsatzsteuer wird berechnet"), "Eigene-Daten-Export dokumentiert den Steuerstatus nicht verständlich");
+          assert(ownInfo.includes("Standard-MwSt.: 19,00 %"), "Eigene-Daten-Export dokumentiert die Standard-MwSt. nicht");
+          assert(ownInfo.includes("Standard-Geschäftsbereich: Friseur"), "Eigene-Daten-Export dokumentiert den Standard-Geschäftsbereich nicht");
+          assert(ownInfo.includes("Aktive Zahlungsarten: Bar, EC, Gutschein"), "Eigene-Daten-Export dokumentiert die aktiven Zahlungsarten nicht");
+          assert(ownInfo.includes("Nächste Belegnummer: 2030-000077"), "Eigene-Daten-Export dokumentiert den geschützten Nummernstand nicht");
         }
       },
       {

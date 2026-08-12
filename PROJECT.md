@@ -74,6 +74,8 @@ Seit PERSIST-001a speichert der Prototyp die vollständigen Einstellungen über 
 
 SETTINGS-001 erweitert innerhalb desselben Settings-Datensatzes genau eine Unternehmenskonfiguration pro Mandant. Optionale Geschäftsbezeichnung, verpflichtende rechtliche Person und optionaler Ansprechpartner bleiben getrennt. Historische kombinierte Straßenangaben werden nicht automatisch zerlegt; neu bearbeitete Anschriften können Straße und Hausnummer getrennt führen. Ein validiertes PNG-/JPEG-Unternehmenslogo bis 1 MB gehört zu Settings, verschlüsseltem Backup und Restore, wird aber weder als echte Bilddatei in Geschäftsvorgang-Snapshots noch in die Public-QR-Whitelist kopiert. PDF- und Public-Viewer-Logoausgabe bleiben getrennte spätere Darstellungsblöcke.
 
+SETTINGS-002 bündelt die bereits vorhandenen betrieblichen Vorgaben ohne neues Fachmodell unter **Einstellungen → Betrieb**. Zahlungsarten behalten IDs und Reihenfolge, `taxSettings.defaultRate` bleibt ausschließlich die Vorauswahl für neue Katalogeinträge, `businessAreas[].isDefault` bleibt die einzige Standardbereichsquelle und EUR die feste V1.0-Währung. Belegtexte werden nur in neue Dokument-Snapshots übernommen. Produktiv verwendete Belegnummern sowie die automatisch abgeleiteten Storno- und Gutschriftnummern sind in der normalen Oberfläche und im erneut gestarteten Assistenten nur lesbar.
+
 ### Verbindliche Zielbasis
 
 - HTML5, CSS und modernes JavaScript als Webplattform;

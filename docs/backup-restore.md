@@ -1,6 +1,6 @@
 # Verschlüsselte Sicherung und Wiederherstellung
 
-**Stand:** SETTINGS-001 auf Basis USER-001, BACKUP-002, BACKUP-001 und PERSISTENCE-007
+**Stand:** SETTINGS-002 auf Basis SETTINGS-001, USER-001, BACKUP-002, BACKUP-001 und PERSISTENCE-007
 **Datenbankschema:** 5
 **Backupformat:** 1
 **Geltungsbereich:** Vollständiger lokaler Datenstand eines Mandanten
@@ -51,6 +51,8 @@ Jeder Store enthält seinen bestehenden versionierten Datensatz einschließlich 
 USER-001 liegt innerhalb von `stores.settings` als `users` und `activeUserId`. Dadurch wird der lokale Benutzer ohne zusätzliche Sammlung oder Änderung des äußeren Backupformats vollständig mitgesichert.
 
 LICENSE-001 liegt innerhalb desselben `stores.settings`-Datensatzes als `license`. Lizenz- und Gerätekennung werden deshalb ohne zweite Sammlung, neuen Store oder neues Backupformat verschlüsselt mitgesichert und atomar wiederhergestellt.
+
+SETTINGS-002 verwendet ausschließlich die bereits enthaltenen `taxSettings`, `receiptSettings`, `paymentChoices` und `businessAreas`. Betriebliche Vorgaben, geschützter Nummernstand und Standard-Geschäftsbereich werden deshalb ohne neue Sammelroutine, Schemaerhöhung oder Backupformatänderung vollständig verschlüsselt gesichert und wiederhergestellt.
 
 ## Äußeres Dateiformat
 
@@ -161,7 +163,7 @@ Fehlerlogs enthalten nur Vorgang und Fehlercode. Passphrase, Schlüsselmaterial,
 
 ## Tests
 
-`tests/persistence-smoke.html` prüft ohne zusätzliches Testframework die gesamte bisherige Persistenz sowie BACKUP-001/002, HARDEN-001, EXPORT-001/003, PERSISTENCE-007/008/010 und QR-001. Der aktuelle Lauf umfasst 161 Fälle. Die Backup-Ergänzungen decken insbesondere die reine Vorbereitung ohne vorzeitige Ausgabe, den Stopp eines historisch inkonsistenten Bestands vor Verschlüsselung und Ausgabe, verspätete Promise-Abschlüsse nach Navigation, Verschlüsselungs- und Dateifehler ohne vorbereiteten Zustand, Share-Abbruch ohne Fallback oder zweite Ausgabe, erhaltene Kennwortfelder und gefilterte UI-Meldungen ab. PERSISTENCE-010 ergänzt den erfolgreichen Backup- und Steuerberaterexport nach atomarer Reparatur sowie Stop- und Rollbackfälle ohne Store-Veränderung. Unverändert geprüft werden Format- und Mandantenprüfung, Vollständigkeit, Referenzen einschließlich der bidirektionalen Gutscheinverkaufsbeleg-Invariante, Nummernstand, Verschlüsselungs-Roundtrip, zufällige Ciphertexte, Klartextausschluss, falsches Kennwort, Payload- und Headermanipulation, abgeschnittene und unbekannte Formate, Export mit und ohne persistierte Stores, Restore in einen leeren Mandanten, vollständiges Überschreiben, atomarer Rollback, erneute Sicherung nach Restore, reversibler Kundenstatus sowie iOS-robuster Dateiname und Downloadtyp. Die fachlichen Export- und ZIP-Fälle sind in `docs/export.md`, die QR-Fälle in `docs/qr.md` beschrieben.
+`tests/persistence-smoke.html` prüft ohne zusätzliches Testframework die gesamte bisherige Persistenz sowie BACKUP-001/002, HARDEN-001, EXPORT-001/003, PERSISTENCE-007/008/010, SETTINGS-001/002 und QR-001. Der aktuelle Lauf umfasst 175 Fälle. Die Backup-Ergänzungen decken insbesondere die reine Vorbereitung ohne vorzeitige Ausgabe, den Stopp eines historisch inkonsistenten Bestands vor Verschlüsselung und Ausgabe, verspätete Promise-Abschlüsse nach Navigation, Verschlüsselungs- und Dateifehler ohne vorbereiteten Zustand, Share-Abbruch ohne Fallback oder zweite Ausgabe, erhaltene Kennwortfelder und gefilterte UI-Meldungen ab. SETTINGS-002 bestätigt zusätzlich den unveränderten zentralen Settings-Roundtrip für Steuer-, Zahlungs-, Standardbereichs-, Nummern- und Belegtextwerte. PERSISTENCE-010 ergänzt den erfolgreichen Backup- und Steuerberaterexport nach atomarer Reparatur sowie Stop- und Rollbackfälle ohne Store-Veränderung. Unverändert geprüft werden Format- und Mandantenprüfung, Vollständigkeit, Referenzen einschließlich der bidirektionalen Gutscheinverkaufsbeleg-Invariante, Nummernstand, Verschlüsselungs-Roundtrip, zufällige Ciphertexte, Klartextausschluss, falsches Kennwort, Payload- und Headermanipulation, abgeschnittene und unbekannte Formate, Export mit und ohne persistierte Stores, Restore in einen leeren Mandanten, vollständiges Überschreiben, atomarer Rollback, erneute Sicherung nach Restore, reversibler Kundenstatus sowie iOS-robuster Dateiname und Downloadtyp. Die fachlichen Export- und ZIP-Fälle sind in `docs/export.md`, die QR-Fälle in `docs/qr.md` beschrieben.
 
 Jeder Lauf verwendet ausschließlich eine zufällig benannte Testdatenbank mit Guard gegen `frecka` und löscht diese anschließend. Ein simulierter Restore-Abbruch ist nur für eindeutig benannte Testdatenbanken freigeschaltet.
 

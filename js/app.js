@@ -184,7 +184,7 @@
   const appUpdateMessage = document.getElementById("appUpdateMessage");
   const appUpdateLater = document.getElementById("appUpdateLater");
   const appUpdateAction = document.getElementById("appUpdateAction");
-  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "qr-not-found", "settings-company", "settings-user", "settings-license", "settings-location", "settings-taxes", "settings-payments", "settings-business-areas", "settings-catalog", "settings-help", "settings-backup", "settings-export", "setup-wizard"]);
+  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "qr-not-found", "settings-company", "settings-user", "settings-license", "settings-location", "settings-operations", "settings-taxes", "settings-payments", "settings-business-areas", "settings-catalog", "settings-help", "settings-backup", "settings-export", "setup-wizard"]);
   const validRoutes = new Set(["home", "receipts", "customers", "vouchers", "settings", ...flowRoutes]);
 
   const escapeHtml = value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -1352,8 +1352,6 @@
   const isNormalPaymentChoice = choice => choice.id !== "voucher";
   const activeNormalPaymentChoices = () => activePaymentChoices().filter(isNormalPaymentChoice);
   const preferredNormalPaymentId = () => activeNormalPaymentChoices()[0]?.id ?? null;
-  const receiptNumberExists = number => data.receipts.some(receipt => receipt.number === number)
-    || data.vouchers.some(voucher => voucher.saleReceipt?.number === number);
 
   function paymentLabel() {
     return data.paymentChoices.find(choice => choice.id === state.paymentChoice)?.title ?? "Nicht angegeben";
@@ -3479,9 +3477,8 @@
     { id: "settings-user", icon: "◎", title: "Benutzer", note: "Anzeigename und lokale Benutzerangaben", available: true },
     { id: "settings-license", icon: "✓", title: "Lizenz & Gerät", note: "Lizenz und aktuell zugeordnetes Gerät", available: true },
     { id: "settings-location", icon: "⌖", title: "Leistungsorte", note: "Orte, Zuordnungen und Standards", available: true },
-    { id: "settings-taxes", icon: "%", title: "Steuern und Belegangaben", note: "Steuerstatus, Nummern und Belegtexte", available: true },
-    { id: "settings-payments", icon: "€", title: "Zahlungsarten", note: "Aktive Arten und Reihenfolge", available: true },
-    { id: "settings-business-areas", icon: "◇", title: "Geschäftsbereiche", note: "Fachbereiche und Standardauswahl", available: true },
+    { id: "settings-operations", icon: "%", title: "Betrieb", note: "Zahlungsarten, Steuern und Belegvorgaben", available: true },
+    { id: "settings-business-areas", icon: "◇", title: "Geschäftsbereiche", note: "Fachbereiche, Branding und Leistungsorte", available: true },
     { id: "settings-catalog", icon: "≡", title: "Leistungen & Produkte", note: "Katalog je Geschäftsbereich verwalten", available: true },
     { id: "settings-help", icon: "?", title: "Hilfe & Lernen", note: "Erste Schritte und häufige Fragen", available: true },
     { id: "settings-backup", icon: "↥", title: "Sicherung & Wiederherstellung", note: "Verschlüsselte Gesamtsicherung erstellen oder einspielen", available: true },
@@ -3626,17 +3623,11 @@
     return "";
   }
 
-  function receiptNumberValidation(yearPrefix, nextNumber) {
-    if (!/^\d{4}$/.test(yearPrefix) || !Number.isInteger(nextNumber) || nextNumber < 1) {
-      return "Bitte ein vierstelliges Jahrespräfix und eine gültige nächste Belegnummer eingeben.";
-    }
-    const candidateNumber = `${yearPrefix}-${String(nextNumber).padStart(6, "0")}`;
-    return receiptNumberExists(candidateNumber) ? "Bitte eine noch nicht vergebene nächste Belegnummer wählen." : "";
-  }
-
   function applyBusinessAreaForm(formData) {
     const activeIds = formData.getAll("activeBusinessArea").map(String);
-    const defaultId = String(formData.get("defaultBusinessArea") || "");
+    const submittedDefaultId = formData.has("defaultBusinessArea") ? String(formData.get("defaultBusinessArea") || "") : "";
+    const currentDefaultId = defaultBusinessArea()?.id || "";
+    const defaultId = submittedDefaultId || (activeIds.includes(currentDefaultId) ? currentDefaultId : activeIds[0] || "");
     const labels = new Map(data.businessAreas.map(area => [area.id, String(formData.get(`areaLabel:${area.id}`) || "").trim()]));
     if ([...labels.values()].some(label => !label)) return "Bitte für jeden Geschäftsbereich einen Namen eingeben.";
     if (!activeIds.length) return "Mindestens ein Geschäftsbereich muss aktiv bleiben.";
@@ -3857,7 +3848,7 @@
         ${[["vat","Umsatzsteuer wird berechnet","Neue Belege zeigen den gewählten Standardsteuersatz."],["small-business","Kleinunternehmerregelung","Belege werden ohne ausgewiesene Umsatzsteuer vorbereitet."],["undecided","Noch nicht sicher","Du kannst fortfahren und die Auswahl später klären."]].map(([value,label,note]) => `<label><input type="radio" name="taxStatus" value="${value}" ${data.taxSettings.status === value ? "checked" : ""}><span><strong>${label}</strong><small>${note}</small></span></label>`).join("")}</fieldset>
         <div class="setup-tax-rate" ${data.taxSettings.status === "vat" ? "" : "hidden"}><span>Standard-Steuersatz</span><div class="setup-choice-row"><label><input type="radio" name="defaultTaxRate" value="19" ${data.taxSettings.defaultRate === 19 ? "checked" : ""}><span>19 %</span></label><label><input type="radio" name="defaultTaxRate" value="7" ${data.taxSettings.defaultRate === 7 ? "checked" : ""}><span>7 %</span></label></div></div>
         <p class="settings-neutral-note">Bitte kläre Unsicherheiten mit deiner Steuerberatung. FRECKA trifft keine rechtliche Entscheidung.</p></section>${setupActions()}`;
-      case 5: return `<section class="settings-form-card"><h2>Belegnummern</h2><label class="setting-field"><span>Jahrespräfix</span><input id="setupReceiptPrefix" name="yearPrefix" inputmode="numeric" maxlength="4" value="${escapeHtml(receipt.yearPrefix)}"></label><label class="setting-field"><span>Nächste Belegnummer</span><input id="setupReceiptNext" name="nextNumber" type="number" min="1" step="1" value="${escapeHtml(receipt.nextNumber)}"></label><div class="receipt-number-preview full"><span>Vorschau</span><strong id="setupReceiptPreview">${escapeHtml(receipt.yearPrefix)}-${String(receipt.nextNumber).padStart(6,"0")}</strong><small>Änderungen wirken nur auf neue Belege. Bestehende Belege bleiben unverändert.</small></div></section><p class="settings-neutral-note">Nach dem produktiven Start sollte der Nummernkreis nicht ohne fachliche Prüfung geändert werden.</p>${setupActions()}`;
+      case 5: return `<section class="settings-form-card settings-single-column"><h2>Belegnummern</h2><div class="receipt-number-preview full"><span>Nächster automatisch vergebener Stand</span><strong>${escapeHtml(receipt.yearPrefix)}-${String(receipt.nextNumber).padStart(6,"0")}</strong><small>Normale Belege und Gutscheinverkäufe verwenden denselben geschützten Nummernkreis.</small></div><p class="settings-neutral-note">Der Nummernkreis ist nach seiner Verwendung nur lesbar. Bereits vergebene Nummern werden weder zurückgesetzt noch neu vergeben.</p></section>${setupActions()}`;
       case 6: return `<div class="payment-settings-list">${data.paymentChoices.map(choice => `<article class="payment-setting-row"><span class="payment-setting-icon" aria-hidden="true">${escapeHtml(choice.icon)}</span><span class="payment-setting-name"><strong>${escapeHtml(choice.title)}</strong><small>${choice.id === "voucher" ? "Gutscheinsystem" : "Normale Zahlungsart"}</small></span><label class="payment-setting-toggle"><input type="checkbox" data-payment-toggle="${escapeHtml(choice.id)}" ${choice.active !== false ? "checked" : ""}><span>${choice.active !== false ? "Aktiv" : "Deaktiviert"}</span></label></article>`).join("")}</div><p class="prototype-note">Mindestens eine normale Zahlungsart muss aktiv bleiben. Offene Zahlungen werden getrennt im Checkout erfasst.</p>${setupActions()}`;
       case 7: return `<div class="business-model-note"><strong>Eine Instanz entspricht einer Filiale.</strong><span>Hier legst du nur fachliche Geschäftsbereiche fest.</span></div><div class="business-area-list">${setupBusinessAreaRows()}</div><button class="button button-secondary business-area-add" type="button" data-action="business-area-add">＋ Geschäftsbereich</button>${setupActions()}`;
       case 8: return `<section class="settings-form-card settings-single-column"><h2>Optionale Belegtexte</h2><label class="setting-field full"><span>Dankestext <small>optional</small></span><input name="thankYouText" maxlength="120" placeholder="z. B. Vielen Dank für deinen Besuch." value="${escapeHtml(receipt.thankYouText || "")}"></label><label class="setting-field full"><span>Fußtext <small>optional</small></span><textarea name="footerText" rows="3" maxlength="240" placeholder="z. B. Termine bitte 24 Stunden vorher absagen.">${escapeHtml(receipt.footerText || "")}</textarea></label></section>${setupActions("Weiter oder überspringen")}`;
@@ -3924,17 +3915,6 @@
           data.company.updatedAt = new Date().toISOString();
         }
         data.taxSettings.rates.forEach(rate => { rate.active = rate.rate === defaultRate || rate.active; });
-      }
-    }
-    if (state.setupStep === 5) {
-      const yearPrefix = String(formData.get("yearPrefix") || "").trim();
-      const nextNumber = Number(formData.get("nextNumber"));
-      const error = receiptNumberValidation(yearPrefix, nextNumber);
-      if (validate && error) return error;
-      if (!error) {
-        data.receiptSettings.yearPrefix = yearPrefix;
-        data.receiptSettings.nextNumber = nextNumber;
-        state.receiptCounter = nextNumber - 1;
       }
     }
     if (state.setupStep === 6 && !activeNormalPaymentChoices().length) return "Mindestens eine normale Zahlungsart muss aktiv bleiben.";
@@ -4792,19 +4772,21 @@
     }));
   }
 
-  function renderTaxSettings() {
+  function renderOperatingSettings() {
     const settings = data.taxSettings;
     const receiptSettings = data.receiptSettings;
     const previewNumber = `${receiptSettings.yearPrefix}-${String(receiptSettings.nextNumber).padStart(6, "0")}`;
+    const activeAreas = activeBusinessAreas();
+    const defaultArea = defaultBusinessArea();
     mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter">
       <div class="flow-head compact-flow-head">
         <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
         <p class="eyebrow">Einstellungen</p>
-        <h1 class="flow-title">Steuern und Belegangaben</h1>
-        <p class="page-copy">Zentrale Vorgaben für neue Belege. Keine automatische rechtliche Bewertung.</p>
+        <h1 class="flow-title">Betrieb</h1>
+        <p class="page-copy">Zentrale Vorgaben für neue Vorgänge. Bestehende Belege und gespeicherte Positionen bleiben unverändert.</p>
       </div>
       ${state.taxSettingsNotice ? `<div class="settings-save-notice ${state.taxSettingsNotice.startsWith("Bitte") || state.taxSettingsNotice.startsWith("Lokales") ? "is-error" : ""}" role="status">${escapeHtml(state.taxSettingsNotice)}</div>` : ""}
-      <form id="taxSettingsForm" class="settings-form">
+      <form id="operatingSettingsForm" class="settings-form">
         <section class="settings-form-card settings-single-column">
           ${cardTitle("Steuerstatus", "taxes")}
           <fieldset class="settings-option-list">
@@ -4819,59 +4801,37 @@
         </section>
 
         <section class="settings-form-card settings-single-column">
-          <h2>Standard-Steuersätze</h2>
+          <h2>Standard-MwSt.</h2>
           <div class="tax-rate-list">
             ${settings.rates.map(rate => `<div class="tax-rate-row">
               <label><input type="checkbox" name="activeTaxRate" value="${rate.rate}" ${rate.active ? "checked" : ""}><span>${rate.rate} % aktiv</span></label>
               <label><input type="radio" name="defaultTaxRate" value="${rate.rate}" ${settings.defaultRate === rate.rate ? "checked" : ""}><span>Standard</span></label>
             </div>`).join("")}
           </div>
-          <p class="settings-neutral-note">Gutscheinverkäufe bleiben steuerlich offen und werden hier nicht automatisch bewertet.</p>
+          <p class="settings-neutral-note">Der Standard gilt nur als Vorauswahl für neue Katalogeinträge. Vorhandene Leistungen, Produkte und Belege behalten ihren gespeicherten Steuersatz. Gutscheinverkäufe bleiben steuerlich offen.</p>
         </section>
 
-        <section class="settings-form-card">
-          <h2>Belegnummern</h2>
-          <label class="setting-field"><span>Jahrespräfix</span><input id="receiptYearPrefix" name="yearPrefix" inputmode="numeric" maxlength="4" value="${escapeHtml(receiptSettings.yearPrefix)}"></label>
-          <label class="setting-field"><span>Nächste Belegnummer</span><input id="receiptNextNumber" name="nextNumber" type="number" min="1" step="1" value="${escapeHtml(receiptSettings.nextNumber)}"></label>
-          <div class="receipt-number-preview full"><span>Vorschau</span><strong id="receiptNumberPreview">${escapeHtml(previewNumber)}</strong><small>Normale Belege und Gutscheinverkäufe verwenden denselben Nummernkreis.</small></div>
+        <section class="settings-form-card settings-single-column">
+          <h2>Standard-Geschäftsbereich</h2>
+          <label class="setting-field full"><span>Vorauswahl</span><select name="defaultBusinessArea" required>${activeAreas.map(area => `<option value="${escapeHtml(area.id)}" ${area.id === defaultArea?.id ? "selected" : ""}>${escapeHtml(area.label)}</option>`).join("")}</select><small>Wird beim nächsten App-Start vorausgewählt. Ein bereits begonnener Beleg wird nicht umgestellt.</small></label>
         </section>
 
         <section class="settings-form-card settings-single-column">
           ${cardTitle("Belegtexte", "receiptTexts")}
           <label class="setting-field full"><span>Fußtext <small>optional</small></span><textarea name="footerText" rows="3" maxlength="240" placeholder="Kurzer Hinweis am Belegende">${escapeHtml(receiptSettings.footerText || "")}</textarea></label>
           <label class="setting-field full"><span>Dankestext <small>optional</small></span><input name="thankYouText" maxlength="120" value="${escapeHtml(receiptSettings.thankYouText || "")}"></label>
+          <p class="settings-neutral-note">Die Texte werden als Momentaufnahme nur in neue Belege übernommen. FRECKA ergänzt keine rechtlichen Pflichttexte.</p>
         </section>
 
         <section class="settings-fixed-values">
           <div><span>Währung</span><strong>EUR</strong></div>
           <div><span>Sprache</span><strong>Deutsch</strong></div>
         </section>
-        <div class="settings-tse-note">TSE-Einrichtung folgt in einem eigenen Assistenten.</div>
-        <p class="prototype-note">Einstellungen werden lokal gespeichert. Keine Steuerautomatik, Fiskalisierung oder TSE-Verbindung.</p>
-        <button class="button button-primary settings-save" type="submit">Einstellungen speichern</button>
+        <button class="button button-primary settings-save" type="submit">Betriebliche Vorgaben speichern</button>
       </form>
-    </section>`;
-
-    const updateReceiptNumberPreview = () => {
-      const prefix = String(document.getElementById("receiptYearPrefix")?.value || "").trim() || "–";
-      const next = Math.max(1, Number(document.getElementById("receiptNextNumber")?.value || 1));
-      const preview = document.getElementById("receiptNumberPreview");
-      if (preview) preview.textContent = `${prefix}-${String(Math.trunc(next)).padStart(6, "0")}`;
-    };
-    document.getElementById("receiptYearPrefix")?.addEventListener("input", updateReceiptNumberPreview);
-    document.getElementById("receiptNextNumber")?.addEventListener("input", updateReceiptNumberPreview);
-  }
-
-  function renderPaymentSettings() {
-    mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter">
-      <div class="flow-head compact-flow-head">
-        <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
-        <p class="eyebrow">Einstellungen</p>
-        <h1 class="flow-title">Zahlungsarten</h1>
-        <p class="page-copy">Aktive Zahlungsarten erscheinen im Belegabschluss und werden lokal gespeichert.</p>
-      </div>
-      ${state.paymentSettingsNotice ? `<div class="settings-save-notice ${state.paymentSettingsNotice.startsWith("Mindestens") || state.paymentSettingsNotice.startsWith("Lokales") ? "is-error" : ""}" role="status">${escapeHtml(state.paymentSettingsNotice)}</div>` : ""}
-      <div class="settings-standalone-title">${cardTitle("Zahlungsarten", "payments")}</div>
+      <section class="operating-settings-section" aria-labelledby="operating-payment-title">
+        <div class="settings-standalone-title" id="operating-payment-title">${cardTitle("Zahlungsarten", "payments")}</div>
+        ${state.paymentSettingsNotice ? `<div class="settings-save-notice ${state.paymentSettingsNotice.startsWith("Mindestens") || state.paymentSettingsNotice.startsWith("Lokales") ? "is-error" : ""}" role="status">${escapeHtml(state.paymentSettingsNotice)}</div>` : ""}
       <div class="payment-settings-list" aria-label="Zahlungsarten und Reihenfolge">
         ${data.paymentChoices.map((choice, index) => `<article class="payment-setting-row">
           <span class="payment-setting-icon" aria-hidden="true">${escapeHtml(choice.icon)}</span>
@@ -4883,7 +4843,18 @@
           </span>
         </article>`).join("")}
       </div>
-      <p class="prototype-note">Mindestens eine normale Zahlungsart bleibt aktiv. Offene Zahlungen sind ein getrennter Ausnahmefall. Keine Verbindung zu Zahlungsanbietern.</p>
+        <p class="prototype-note">Mindestens eine normale Zahlungsart bleibt aktiv. Die bestehende Reihenfolge wird nur über die Pfeile verändert. Offene Zahlungen sind ein getrennter Ausnahmefall.</p>
+      </section>
+      <section class="settings-form-card settings-single-column operating-number-ranges" aria-labelledby="operating-number-title">
+        <h2 id="operating-number-title">Nummernkreise</h2>
+        <div class="operating-number-list">
+          <div><span>Belege und Gutscheinverkäufe</span><strong>${escapeHtml(previewNumber)}</strong><small>Nächster automatisch vergebener Stand</small></div>
+          <div><span>Stornobelege</span><strong>ST-${escapeHtml(receiptSettings.yearPrefix)}-000101 …</strong><small>Automatisch aus vorhandenen Stornos fortgeführt</small></div>
+          <div><span>Gutschriften</span><strong>GS-${escapeHtml(receiptSettings.yearPrefix)}-000101 …</strong><small>Automatisch aus vorhandenen Gutschriften fortgeführt</small></div>
+        </div>
+        <p class="settings-neutral-note">Nummernkreise sind hier bewusst nur lesbar. Bereits verwendete Nummern werden weder zurückgesetzt noch neu vergeben.</p>
+      </section>
+      <div class="settings-tse-note">Einstellungen werden lokal gespeichert. Keine Steuerautomatik, Fiskalisierung, Zahlungsanbieter- oder TSE-Verbindung.</div>
     </section>`;
   }
 
@@ -4904,14 +4875,13 @@
             <label class="setting-field"><span>Name</span><input name="areaLabel:${escapeHtml(area.id)}" value="${escapeHtml(area.label)}" required></label>
             <div class="business-area-controls">
               <label><input type="checkbox" name="activeBusinessArea" value="${escapeHtml(area.id)}" ${area.active !== false ? "checked" : ""}><span>Aktiv</span></label>
-              <label><input type="radio" name="defaultBusinessArea" value="${escapeHtml(area.id)}" ${area.isDefault ? "checked" : ""}><span>Standard</span></label>
             </div>
             ${businessAreaServiceLocationField(area)}
             ${businessAreaBrandingFields(area)}
           </section>`).join("")}
         </div>
         <button class="button button-secondary business-area-add" type="button" data-action="business-area-add">＋ Geschäftsbereich</button>
-        <p class="prototype-note">Leistungen, Produkte und vorhandene Belege bleiben ihrem bisherigen Bereich zugeordnet. Keine Filial- oder Rechteverwaltung.</p>
+        <p class="prototype-note">Leistungen, Produkte und vorhandene Belege bleiben ihrem bisherigen Bereich zugeordnet. Den Standard-Geschäftsbereich legst du unter Betrieb fest.</p>
         <button class="button button-primary settings-save" type="submit">Geschäftsbereiche speichern</button>
       </form>
     </section>`;
@@ -5223,6 +5193,7 @@
       "settings-user",
       "settings-license",
       "settings-location",
+      "settings-operations",
       "settings-taxes",
       "settings-payments",
       "settings-business-areas",
@@ -5257,8 +5228,7 @@
     else if (state.route === "settings-user") renderUserSettings();
     else if (state.route === "settings-license") renderLicenseSettings();
     else if (state.route === "settings-location") renderServiceLocationSettings();
-    else if (state.route === "settings-taxes") renderTaxSettings();
-    else if (state.route === "settings-payments") renderPaymentSettings();
+    else if (["settings-operations", "settings-taxes", "settings-payments"].includes(state.route)) renderOperatingSettings();
     else if (state.route === "settings-business-areas") renderBusinessAreaSettings();
     else if (state.route === "settings-catalog") renderCatalogSettings();
     else if (state.route === "settings-help") renderHelpLearning();
@@ -6035,6 +6005,10 @@
         showPaymentNotice("Mindestens eine normale Zahlungsart muss aktiv bleiben.", true);
         return;
       }
+      const previousActive = choice.active !== false;
+      const previousPaymentChoice = state.paymentChoice;
+      const previousRemainderPayment = state.checkoutVoucherRemainderPayment;
+      const previousVoucherSalePayment = state.voucherSalePaymentChoice;
       choice.active = wantsActive;
       if (!activePaymentChoices().some(entry => entry.id === state.paymentChoice)) state.paymentChoice = preferredNormalPaymentId() || activePaymentChoices()[0]?.id || "cash";
       if (!activeNormalPaymentChoices().some(entry => entry.id === state.checkoutVoucherRemainderPayment)) state.checkoutVoucherRemainderPayment = preferredNormalPaymentId() || "cash";
@@ -6045,6 +6019,12 @@
         await persistCurrentSettings();
         showPaymentNotice(`${choice.title} wurde lokal als ${wantsActive ? "aktiv" : "deaktiviert"} gespeichert.`);
       } catch (error) {
+        choice.active = previousActive;
+        state.paymentChoice = previousPaymentChoice;
+        state.checkoutVoucherRemainderPayment = previousRemainderPayment;
+        state.voucherSalePaymentChoice = previousVoucherSalePayment;
+        paymentToggle.checked = previousActive;
+        if (label) label.textContent = previousActive ? "Aktiv" : "Deaktiviert";
         showPaymentNotice(`Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`, true);
       }
       return;
@@ -6054,15 +6034,17 @@
       const index = data.paymentChoices.findIndex(choice => choice.id === paymentMove.dataset.paymentMove);
       const targetIndex = paymentMove.dataset.direction === "up" ? index - 1 : index + 1;
       if (index < 0 || targetIndex < 0 || targetIndex >= data.paymentChoices.length) return;
+      const previousOrder = [...data.paymentChoices];
       const [choice] = data.paymentChoices.splice(index, 1);
       data.paymentChoices.splice(targetIndex, 0, choice);
       try {
         await persistCurrentSettings();
         state.paymentSettingsNotice = "Reihenfolge wurde lokal gespeichert.";
       } catch (error) {
+        replaceSettingsArray(data.paymentChoices, previousOrder);
         state.paymentSettingsNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`;
       }
-      renderPaymentSettings();
+      renderOperatingSettings();
       return;
     }
     const route = event.target.closest("[data-route]");
@@ -6088,8 +6070,11 @@
         state.serviceLocationNotice = "";
         state.serviceLocationEditingId = null;
       }
-      if (route.dataset.route === "settings-taxes" && state.route !== "settings-taxes") state.taxSettingsNotice = "";
-      if (route.dataset.route === "settings-payments" && state.route !== "settings-payments") state.paymentSettingsNotice = "";
+      if (["settings-operations", "settings-taxes", "settings-payments"].includes(route.dataset.route)
+        && !["settings-operations", "settings-taxes", "settings-payments"].includes(state.route)) {
+        state.taxSettingsNotice = "";
+        state.paymentSettingsNotice = "";
+      }
       if (route.dataset.route === "settings-business-areas" && state.route !== "settings-business-areas") state.businessAreaSettingsNotice = "";
       if (route.dataset.route === "settings-catalog" && state.route !== "settings-catalog") {
         state.catalogManagerReturnRoute = "settings";
@@ -6822,25 +6807,35 @@
       return;
     }
 
-    const taxSettingsForm = event.target.closest("#taxSettingsForm");
-    if (taxSettingsForm) {
+    const operatingSettingsForm = event.target.closest("#operatingSettingsForm");
+    if (operatingSettingsForm) {
       event.preventDefault();
-      const formData = new FormData(taxSettingsForm);
+      const formData = new FormData(operatingSettingsForm);
       const activeRates = formData.getAll("activeTaxRate").map(Number);
       const defaultRate = Number(formData.get("defaultTaxRate"));
-      const yearPrefix = String(formData.get("yearPrefix") || "").trim();
-      const nextNumber = Number(formData.get("nextNumber"));
+      const defaultAreaId = String(formData.get("defaultBusinessArea") || "");
+      const footerText = String(formData.get("footerText") || "").trim();
+      const thankYouText = String(formData.get("thankYouText") || "").trim();
       if (!activeRates.length || !activeRates.includes(defaultRate)) {
         state.taxSettingsNotice = "Bitte mindestens einen aktiven Steuersatz wählen und diesen als Standard festlegen.";
-        renderTaxSettings();
+        renderOperatingSettings();
         return;
       }
-      const numberError = receiptNumberValidation(yearPrefix, nextNumber);
-      if (numberError) {
-        state.taxSettingsNotice = numberError;
-        renderTaxSettings();
+      if (!activeBusinessAreas().some(area => area.id === defaultAreaId)) {
+        state.taxSettingsNotice = "Bitte einen aktiven Geschäftsbereich als Standard auswählen.";
+        renderOperatingSettings();
         return;
       }
+      if (footerText.length > 240 || thankYouText.length > 120) {
+        state.taxSettingsNotice = "Bitte die maximale Länge der Belegtexte beachten.";
+        renderOperatingSettings();
+        return;
+      }
+      const previousTaxSettings = cloneSettingsValue(data.taxSettings);
+      const previousReceiptSettings = cloneSettingsValue(data.receiptSettings);
+      const previousBusinessAreas = cloneSettingsValue(data.businessAreas);
+      const previousCompanyTaxRate = data.company.defaultTaxRate;
+      const previousCompanyUpdatedAt = data.company.updatedAt;
       data.taxSettings.status = ["vat", "small-business", "undecided"].includes(formData.get("taxStatus")) ? formData.get("taxStatus") : "undecided";
       data.taxSettings.rates.forEach(rate => { rate.active = activeRates.includes(rate.rate); });
       data.taxSettings.defaultRate = defaultRate;
@@ -6848,22 +6843,27 @@
         data.company.defaultTaxRate = defaultRate;
         data.company.updatedAt = new Date().toISOString();
       }
+      data.businessAreas.forEach(area => { area.isDefault = area.id === defaultAreaId; });
       Object.assign(data.receiptSettings, {
-        yearPrefix,
-        nextNumber,
-        footerText: String(formData.get("footerText") || "").trim(),
-        thankYouText: String(formData.get("thankYouText") || "").trim(),
+        footerText,
+        thankYouText,
         currency: "EUR",
         language: "Deutsch"
       });
-      state.receiptCounter = nextNumber - 1;
       try {
         await persistCurrentSettings();
-        state.taxSettingsNotice = "Steuer- und Belegangaben wurden lokal gespeichert. Bestehende Belege bleiben unverändert.";
+        state.taxSettingsNotice = "Betriebliche Vorgaben wurden lokal gespeichert. Bestehende Belege bleiben unverändert.";
       } catch (persistenceError) {
+        Object.keys(data.taxSettings).forEach(key => { delete data.taxSettings[key]; });
+        Object.assign(data.taxSettings, previousTaxSettings);
+        Object.keys(data.receiptSettings).forEach(key => { delete data.receiptSettings[key]; });
+        Object.assign(data.receiptSettings, previousReceiptSettings);
+        replaceSettingsArray(data.businessAreas, previousBusinessAreas);
+        data.company.defaultTaxRate = previousCompanyTaxRate;
+        data.company.updatedAt = previousCompanyUpdatedAt;
         state.taxSettingsNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(persistenceError)}`;
       }
-      renderTaxSettings();
+      renderOperatingSettings();
       return;
     }
 

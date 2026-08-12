@@ -1,6 +1,6 @@
 # FRECKA-Exportkern Version 1
 
-**Stand:** SETTINGS-001 auf Basis USER-001 und EXPORT-003
+**Stand:** SETTINGS-002 auf Basis SETTINGS-001, USER-001 und EXPORT-003
 **Datenbankschema:** unverändert Version 5  
 **Exportformat:** `FRECKA_EXPORT`, Version 1
 
@@ -58,6 +58,8 @@ USER-001 ergänzt ausschließlich den strukturierten Projektionskontext `activeU
 LICENSE-001 ergänzt entsprechend `license` nur für `Eigene Daten`. `Export-Info.txt` nennt dort Lizenz-ID, Geräte-ID, lokalen Aktivierungszeitpunkt und letzte lokale Prüfung. Im Steuerberaterexport ist `license` ausdrücklich `null`; CSV-Dateien, ZIP-Struktur und Beleg-PDFs enthalten keine Lizenz- oder Gerätedaten.
 
 SETTINGS-001 ergänzt nur für `Eigene Daten` die zentralen Unternehmensangaben in der Projektion und in `Export-Info.txt`: Ansprechpartner, getrennte Anschrift, Land, Kontaktwege, Website, optionale Steuerkennungen und eigener Änderungszeitpunkt. Zum Logo werden ausschließlich Dateiname, MIME-Type, Bytegröße und Änderungszeitpunkt projiziert, nicht die Bild-Data-URL. Der Steuerberaterexport erhält weder diese zusätzliche Stammdatenprojektion noch einen veränderten Datei- oder ZIP-Vertrag.
+
+SETTINGS-002 ergänzt ebenfalls nur für `Eigene Daten` den strukturierten Kontext `operatingSettings`: feste Währung und Sprache, Steuerstatus, aktive und Standard-Steuersätze, Standard-Geschäftsbereich, Zahlungsarten samt Reihenfolge und Aktivstatus, geschützter Belegnummernstand sowie die vorhandenen Belegtexte. `Export-Info.txt` weist diese Werte lesbar aus. Im Steuerberaterexport ist `operatingSettings` ausdrücklich `null`; CSV-Dateien, Übersicht, PDF-Inhalte und ZIP-Struktur bleiben unverändert.
 
 Alle Dateien entstehen im Arbeitsspeicher des Endgeräts. Die Anwendung überträgt weder Snapshot noch Exportdateien an FRECKA oder einen anderen Server. Ein Download ist eine bewusste Nutzeraktion; ab diesem Zeitpunkt ist der Nutzer für den gewählten Speicherort verantwortlich.
 

@@ -2,6 +2,15 @@
 
 Browserbasierte FRECKA-PWA 0.10.10 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Dieser Patchkandidat enthält RELEASE-AUTOMATION-001, RELEASE-AUTOMATION-002 und SERVICEWORKER-003; Fach-, Persistenz- und Dokumentlogik bleiben unverändert.
 
+## Neu in SETTINGS-002
+
+- eine kompakte Seite **Einstellungen → Betrieb** für die vorhandenen Zahlungsarten, Steuerstatus und Standard-MwSt., den Standard-Geschäftsbereich sowie Belegtexte
+- Währung EUR und Sprache Deutsch eindeutig nur lesbar; keine Mehrwährungs- oder neue Beleglogik
+- bestehende Beleg-, Storno- und Gutschriftnummernkreise nur lesbar, auch beim erneuten Durchlauf der Ersteinrichtung
+- Standard-MwSt. ausschließlich als Vorauswahl für neue Katalogeinträge; keine Änderung vorhandener Positions- oder Belegsteuern
+- automatische Aufnahme in Settings-Persistenz, verschlüsseltes Backup und Restore sowie betriebliche Metadaten ausschließlich im Exporttyp **Eigene Daten**
+- unveränderter Steuerberaterexport und keine neuen Zahlungsarten, Rechtstexte, Stores oder Schema-Versionen
+
 ## Neu in SETTINGS-001
 
 - eine zentrale Seite **Einstellungen → Unternehmen** für optionale Geschäftsbezeichnung, verpflichtende rechtliche Person, optionalen Ansprechpartner, getrennte Anschrift, Kontaktwege, Website und optionale Steuerkennungen

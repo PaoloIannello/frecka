@@ -152,6 +152,39 @@
     });
   }
 
+  function projectOwnOperatingSettings(settings) {
+    const activeAreas = (Array.isArray(settings?.businessAreas) ? settings.businessAreas : [])
+      .filter(area => area?.active !== false);
+    const defaultArea = activeAreas.find(area => area?.isDefault === true) || activeAreas[0] || null;
+    const taxSettings = isPlainObject(settings?.taxSettings) ? settings.taxSettings : {};
+    const receiptSettings = isPlainObject(settings?.receiptSettings) ? settings.receiptSettings : {};
+    const paymentChoices = (Array.isArray(settings?.paymentChoices) ? settings.paymentChoices : []).map((choice, index) => Object.freeze({
+      id: text(choice?.id),
+      title: text(choice?.title),
+      active: choice?.active !== false,
+      order: index + 1
+    }));
+    return Object.freeze({
+      currency: text(receiptSettings.currency) || "EUR",
+      language: text(receiptSettings.language) || "Deutsch",
+      taxStatus: text(taxSettings.status),
+      defaultTaxRate: finiteNumber(taxSettings.defaultRate),
+      activeTaxRates: Object.freeze((Array.isArray(taxSettings.rates) ? taxSettings.rates : [])
+        .filter(rate => rate?.active !== false)
+        .map(rate => finiteNumber(rate?.rate))),
+      defaultBusinessArea: defaultArea ? Object.freeze({ id: text(defaultArea.id), label: text(defaultArea.label) }) : null,
+      paymentChoices: Object.freeze(paymentChoices),
+      receiptNumbering: Object.freeze({
+        yearPrefix: text(receiptSettings.yearPrefix),
+        nextNumber: Number.isInteger(receiptSettings.nextNumber) ? receiptSettings.nextNumber : null
+      }),
+      receiptTexts: Object.freeze({
+        footerText: text(receiptSettings.footerText),
+        thankYouText: text(receiptSettings.thankYouText)
+      })
+    });
+  }
+
   function projectActiveUser(settings, tenantId) {
     const users = Array.isArray(settings?.users) ? settings.users : [];
     const activeUser = users.find(user => text(user?.id) === text(settings?.activeUserId) && user?.active === true);
@@ -734,6 +767,7 @@
       company: normalized.exportType === "own-data" ? projectOwnCompany(settings.company) : null,
       activeUser: normalized.exportType === "own-data" ? activeUser : null,
       license: normalized.exportType === "own-data" ? localLicense : null,
+      operatingSettings: normalized.exportType === "own-data" ? projectOwnOperatingSettings(settings) : null,
       range: Object.freeze(clone(normalized.range)),
       businessAreaId: normalized.businessAreaId,
       businessAreasLabel: normalized.businessAreaId === "all" ? "Alle" : text(selectedArea?.label) || normalized.businessAreaId,
@@ -771,6 +805,11 @@
   }
 
   function exportInfo(projection) {
+    const taxStatusLabels = Object.freeze({
+      vat: "Umsatzsteuer wird berechnet",
+      "small-business": "Kleinunternehmerregelung",
+      undecided: "Nicht festgelegt"
+    });
     const lines = [
       "FRECKA-Export",
       "",
@@ -798,6 +837,17 @@
         `Geräte-ID: ${projection.license.deviceId}`,
         `Lokal aktiviert: ${formatDateKey(projection.license.activatedAt)} • ${formatTime(projection.license.activatedAt)}`,
         `Letzte lokale Prüfung: ${formatDateKey(projection.license.lastValidation)} • ${formatTime(projection.license.lastValidation)}`
+      ] : []),
+      ...(projection.operatingSettings ? [
+        `Währung: ${projection.operatingSettings.currency}`,
+        `Sprache: ${projection.operatingSettings.language}`,
+        `Steuerstatus: ${taxStatusLabels[projection.operatingSettings.taxStatus] || "Nicht festgelegt"}`,
+        `Standard-MwSt.: ${germanDecimal(projection.operatingSettings.defaultTaxRate)} %`,
+        `Standard-Geschäftsbereich: ${projection.operatingSettings.defaultBusinessArea?.label || "Nicht festgelegt"}`,
+        `Aktive Zahlungsarten: ${projection.operatingSettings.paymentChoices.filter(choice => choice.active).map(choice => choice.title).join(", ") || "Keine"}`,
+        `Nächste Belegnummer: ${projection.operatingSettings.receiptNumbering.yearPrefix}-${String(projection.operatingSettings.receiptNumbering.nextNumber || 0).padStart(6, "0")}`,
+        `Beleg-Fußtext: ${projection.operatingSettings.receiptTexts.footerText || "Nicht hinterlegt"}`,
+        `Beleg-Dankestext: ${projection.operatingSettings.receiptTexts.thankYouText || "Nicht hinterlegt"}`
       ] : []),
       `Anzahl Belege: ${projection.receipts.length}`,
       `Anzahl Gutscheine: ${projection.vouchers.length}`,
