@@ -181,6 +181,13 @@ SUCCESS_COMMIT=$(git -C "$FIXTURE_REPO" rev-parse HEAD)
 SUCCESS_SHORT=$(printf '%.7s' "$SUCCESS_COMMIT")
 SUCCESS_ID="1.2.3-$SUCCESS_SHORT"
 SUCCESS_ARTIFACT="$FIXTURE_REPO/tmp/releases/$SUCCESS_ID"
+grep -Fqx 'Version: 1.2.3' "$SUCCESS_OUTPUT"
+grep -Fqx 'Tag: v1.2.3' "$SUCCESS_OUTPUT"
+grep -Fqx "Release-ID: $SUCCESS_ID" "$SUCCESS_OUTPUT"
+grep -Fqx "Web-Station-Pfad: /volume1/web/FRECKA/releases/$SUCCESS_ID/site" "$SUCCESS_OUTPUT"
+if grep -Fq 'Synology-Pfad:' "$SUCCESS_OUTPUT"; then
+  fail 'Die Erfolgsausgabe verwendet noch die alte, ungenaue Pfadbezeichnung.'
+fi
 [ "$(git -C "$FIXTURE_REPO" cat-file -t refs/tags/v1.2.3)" = 'tag' ]
 [ "$(git -C "$FIXTURE_REPO" rev-parse 'v1.2.3^{commit}')" = "$SUCCESS_COMMIT" ]
 [ "$(git -C "$FIXTURE_REPO" for-each-ref --format='%(contents:subject)' refs/tags/v1.2.3)" = 'FRECKA 1.2.3 - RELEASE-001' ]

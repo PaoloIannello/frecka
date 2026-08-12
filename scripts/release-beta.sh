@@ -288,14 +288,11 @@ printf '\nBeta-Upload\n'
 
 trap - 0
 
-printf '\nBETA-RELEASE BESTANDEN\n\n'
+WEB_STATION_PATH="/volume1/web/FRECKA/releases/$RELEASE_ID/site"
+
+printf '\nBETA-RELEASE BESTANDEN\n'
 printf 'Version: %s\n' "$PRODUCT_VERSION"
-printf 'Build: %s\n' "$BUILD_NAME"
-printf 'Commit: %s\n' "$HEAD_COMMIT"
 printf 'Tag: %s\n' "$RELEASE_TAG"
 printf 'Release-ID: %s\n' "$RELEASE_ID"
-printf 'Synology-Pfad: /volume1/web/FRECKA/releases/%s/site\n\n' "$RELEASE_ID"
-printf 'Nächster manueller Schritt:\n'
-printf 'Web Station → beta.frecka.app → Document Root auf den oben genannten Release-Pfad umstellen.\n\n'
-printf 'Danach:\n'
-printf 'Realer iPhone/Home-Screen-PWA-Smoke-Test.\n'
+printf 'Web-Station-Pfad: %s\n' "$WEB_STATION_PATH"
+printf '\nManuell: beta.frecka.app auf diesen Document Root umstellen und danach den iPhone/Home-Screen-PWA-Smoke-Test durchführen.\n'
