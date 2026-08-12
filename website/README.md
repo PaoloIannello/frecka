@@ -1,10 +1,10 @@
 # FRECKA Website
 
-Projektgrundlage für die offizielle FRECKA-Landingpage.
+Statische offizielle FRECKA-Landingpage und ihre konzeptionelle Grundlage.
 
 ## Status
 
-Dieses Verzeichnis enthält Konzeption, Dokumentation und das globale CSS-Fundament. Es gibt bewusst noch keine Landingpage, keine HTML-Dateien, keine Komponentenimplementierung, kein JavaScript, keine Bilder und keine Logoentwicklung.
+RC1 der Landingpage ist als statische HTML5-/CSS-/Vanilla-JavaScript-Seite umgesetzt. Echte Bilder und das finale Logo sind bewusst noch nicht enthalten; dimensionsstabile Media-Slots bereiten ihren späteren Austausch vor.
 
 ## Dokumente
 
@@ -21,6 +21,7 @@ Dieses Verzeichnis enthält Konzeption, Dokumentation und das globale CSS-Fundam
 - [components.md](components.md) definiert API, Semantik, Varianten und Zustände der späteren Komponenten.
 - [responsive.md](responsive.md) legt die vier verbindlichen Responsive-Modi und das Komponentenverhalten fest.
 - [accessibility.md](accessibility.md) beschreibt den WCAG-2.2-AA-Standard und die Abnahme.
+- [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) dokumentiert RC1, Austauschpunkte, offene Assets und Veröffentlichungsgates.
 
 ## Technisches Fundament
 
