@@ -4,7 +4,7 @@ Statische offizielle FRECKA-Landingpage und ihre konzeptionelle Grundlage.
 
 ## Status
 
-RC1 der Landingpage ist als statische HTML5-/CSS-/Vanilla-JavaScript-Seite umgesetzt. Echte Bilder und das finale Logo sind bewusst noch nicht enthalten; dimensionsstabile Media-Slots bereiten ihren späteren Austausch vor.
+RC2 der Landingpage ist als statische HTML5-/CSS-/Vanilla-JavaScript-Seite umgesetzt und durch einen vollständigen Design Review verfeinert. Echte Bilder und das finale Logo sind bewusst noch nicht enthalten; dimensionsstabile Media-Slots bereiten ihren späteren Austausch vor.
 
 ## Dokumente
 
@@ -21,7 +21,8 @@ RC1 der Landingpage ist als statische HTML5-/CSS-/Vanilla-JavaScript-Seite umges
 - [components.md](components.md) definiert API, Semantik, Varianten und Zustände der späteren Komponenten.
 - [responsive.md](responsive.md) legt die vier verbindlichen Responsive-Modi und das Komponentenverhalten fest.
 - [accessibility.md](accessibility.md) beschreibt den WCAG-2.2-AA-Standard und die Abnahme.
-- [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) dokumentiert RC1, Austauschpunkte, offene Assets und Veröffentlichungsgates.
+- [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) dokumentiert RC2, Austauschpunkte, offene Assets und Veröffentlichungsgates.
+- [RC2_REVIEW.md](RC2_REVIEW.md) dokumentiert Designentscheidungen, Verbesserungen und offene Punkte des Reviews.
 
 ## Technisches Fundament
 

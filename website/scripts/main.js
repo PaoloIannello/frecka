@@ -1,8 +1,26 @@
 (() => {
   "use strict";
 
+  const header = document.querySelector('[data-js="header"]');
   const menuButton = document.querySelector('[data-js="menu-button"]');
   const mobileNavigation = document.querySelector('[data-js="mobile-navigation"]');
+
+  if (header) {
+    let headerFrame = 0;
+
+    const updateHeaderState = () => {
+      header.dataset.state = window.scrollY > 12 ? "scrolled" : "top";
+      headerFrame = 0;
+    };
+
+    const requestHeaderUpdate = () => {
+      if (headerFrame) return;
+      headerFrame = window.requestAnimationFrame(updateHeaderState);
+    };
+
+    updateHeaderState();
+    window.addEventListener("scroll", requestHeaderUpdate, { passive: true });
+  }
 
   if (menuButton && mobileNavigation) {
     const setMenuState = (open, returnFocus = false) => {
@@ -81,4 +99,3 @@
     });
   }
 })();
-

@@ -1,10 +1,10 @@
-# FRECKA Landingpage RC1 – Implementation Notes
+# FRECKA Landingpage RC2 – Implementation Notes
 
 ## 1. Stand
 
-RC1 ist als vollständige statische Landingpage umgesetzt. Die Seite funktioniert ohne Framework, Build-Prozess und Laufzeitabhängigkeiten. Noch nicht vorhandene Marken- und Bildassets sind durch hochwertige, dimensionsstabile HTML/CSS-Flächen ersetzt.
+RC2 ist als vollständige statische Landingpage umgesetzt. Die Seite funktioniert ohne Framework, Build-Prozess und Laufzeitabhängigkeiten. Noch nicht vorhandene Marken- und Bildassets sind durch hochwertige, dimensionsstabile HTML/CSS-Flächen ersetzt.
 
-Der Stand ist als Release Candidate für Inhalt, Struktur und Gestaltung gedacht. Vor einer öffentlichen Veröffentlichung müssen die unter „Bekannte TODOs“ genannten fachlichen und rechtlichen Punkte abgeschlossen werden.
+Der Stand ist als Release Candidate für Inhalt, Struktur und Gestaltung gedacht. RC2 verfeinert Hierarchie, Raum, responsive Balance und Interaktionszustände, ohne Bereiche oder Produktfunktionen hinzuzufügen. Vor einer öffentlichen Veröffentlichung müssen die unter „Bekannte TODOs“ genannten fachlichen und rechtlichen Punkte abgeschlossen werden.
 
 ## 2. Dateistruktur
 
@@ -61,7 +61,7 @@ Die bestehenden Konzept- und Richtungsdokumente bleiben unverändert als fachlic
 ### `styles/main.css`
 
 - Reset und globale Seitengrundlage;
-- RC1-Komponentenlayout und visuelle Zustände;
+- RC2-Komponentenlayout und visuelle Zustände;
 - mobile-first Responsive-Regeln für Tablet, Desktop und große Monitore;
 - Forced-Colors-Grundlagen;
 - keine eigenen Keyframes und keine verspielten Bewegungen.
@@ -251,4 +251,3 @@ Vor öffentlicher Freigabe manuell prüfen:
 - kein App-Download oder externer Bestellprozess;
 - keine Bild-, Video- oder SVG-Produktion;
 - kein Deployment.
-
