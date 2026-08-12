@@ -50,6 +50,8 @@ Jeder Store enthält seinen bestehenden versionierten Datensatz einschließlich 
 
 USER-001 liegt innerhalb von `stores.settings` als `users` und `activeUserId`. Dadurch wird der lokale Benutzer ohne zusätzliche Sammlung oder Änderung des äußeren Backupformats vollständig mitgesichert.
 
+LICENSE-001 liegt innerhalb desselben `stores.settings`-Datensatzes als `license`. Lizenz- und Gerätekennung werden deshalb ohne zweite Sammlung, neuen Store oder neues Backupformat verschlüsselt mitgesichert und atomar wiederhergestellt.
+
 ## Äußeres Dateiformat
 
 Dateiendung: `.frecka-backup`
@@ -92,6 +94,7 @@ Vor jeder Schreibtransaktion werden mindestens geprüft:
 - vollständige Anwesenheit aller fünf Stores;
 - Übereinstimmung sämtlicher `tenantId`-Werte;
 - genau ein aktiver Settings-Benutzer mit derselben `tenantId` und passender `activeUserId`;
+- genau eine vollständige lokale Lizenz mit derselben `tenantId`, gültigen opaken Kennungen und Zeitpunkten;
 - gültige Store-Formatversionen und Datenstrukturen;
 - eindeutige Kunden-, Beleg- und Gutschein-IDs;
 - eindeutige Belegnummern, Gutscheinreferenzen und sichtbare Gutscheincodes;
@@ -106,7 +109,7 @@ Historische Referenzen auf Einlösungs- oder Korrekturbelege dürfen nach einem 
 
 PERSISTENCE-010 lockert diese Regel nicht. Eine ausdrücklich bestätigte lokale Reparatur darf ausschließlich die vier fest freigegebenen historischen Demo-Gutscheinverkaufsbelege aus dem kanonischen Seed ergänzen. Vor dem einzigen atomaren Receipt-Store-Schreibvorgang muss der daraus gebildete vollständige Tenant-Kandidat alle Snapshotregeln erfüllen; anschließend wird der gespeicherte Tenant erneut vollständig validiert. Erst dann können Backup und Export wieder verwendet werden. Beliebige fehlende Belege, reale Geschäftsdaten, Kollisionen oder mehrdeutige Referenzen werden niemals rekonstruiert.
 
-Unvollständige, beschädigte, manipulierte, mandantenfremde oder inkompatible Daten werden vollständig abgelehnt. Die einzige additive Kompatibilitätsregel ergänzt bei einem historischen gültigen Snapshot, dem sowohl `users` als auch `activeUserId` vollständig fehlen, deterministisch den USER-001-Primärbenutzer aus `Unternehmer/in` und der Snapshot-`tenantId`. Teilweise vorhandene oder widersprüchliche Benutzerdaten werden nicht repariert. Die Validierung schreibt selbst nichts in IndexedDB; erst der bestätigte Restore persistiert den vollständig geprüften Snapshot.
+Unvollständige, beschädigte, manipulierte, mandantenfremde oder inkompatible Daten werden vollständig abgelehnt. Additive Kompatibilitätsregeln bestehen ausschließlich für vollständig fehlende, historisch noch nicht vorhandene Modelle: USER-001 ergänzt den Primärbenutzer aus `Unternehmer/in` und der Snapshot-`tenantId`; LICENSE-001 erzeugt eine neue zufällige lokale Lizenz- und Gerätebindung für denselben Mandanten. Teilweise vorhandene oder widersprüchliche Benutzer- oder Lizenzdaten werden nicht repariert. Die Validierung schreibt selbst nichts in IndexedDB; erst der bestätigte Restore persistiert den vollständig geprüften Snapshot.
 
 ## Atomare Wiederherstellung
 

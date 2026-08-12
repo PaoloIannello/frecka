@@ -24,11 +24,13 @@ Für FRECKA V1.0 gilt:
 6. Geschäftsdaten werden nicht durch den Lizenzdienst übertragen. Der Nutzer überträgt sie getrennt über verschlüsseltes Backup und Restore.
 7. Der Lizenzdienst speichert ausschließlich die für Lizenzzuordnung, Aktivierungsstatus, Gerätebindung und Sicherheitsnachweis notwendigen Daten.
 8. Ausfall oder fehlende Verbindung zum Lizenzdienst darf vorhandene lokale Geschäftsdaten nicht verändern oder löschen.
+9. Die lokale V1.0-Vorbereitung verwendet eine zufällig erzeugte, opake `deviceId`. Sie wird lokal persistiert und nicht aus Hardware-, Browser- oder Personendaten abgeleitet.
+10. Das lokale Lizenzobjekt ist noch kein Aktivierungsnachweis und bewirkt ohne einen später ausdrücklich freigegebenen Aktivierungsdienst keine Nutzungssperre.
 
 Noch offen und vor Implementierung verbindlich zu entscheiden sind:
 
 - Dauer und Semantik einer Offline-Kulanz;
-- konkrete Geräteidentifikation ohne unnötiges Fingerprinting;
+- Zuordnung und Nachweis der lokal vorbereiteten opaken Gerätekennung im späteren Lizenzdienst;
 - Aktivierungs-, Deaktivierungs- und Übertragungsprotokoll;
 - Datenschutzinformationen und Löschfristen;
 - Missbrauchs-, Support- und Wiederherstellungsprozess;

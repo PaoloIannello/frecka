@@ -143,6 +143,28 @@
     });
   }
 
+  function projectLocalLicense(settings, tenantId) {
+    const license = settings?.license;
+    const validTimestamp = value => typeof value === "string" && Number.isFinite(Date.parse(value));
+    if (!isPlainObject(license)
+      || license.formatVersion !== 1
+      || !text(license.licenseId)
+      || text(license.tenantId) !== text(tenantId)
+      || !text(license.deviceId)
+      || !validTimestamp(license.activatedAt)
+      || !validTimestamp(license.lastValidation)) {
+      throw new ExportError("INVALID_SNAPSHOT", "Die lokale Lizenz des FRECKA-Datensnapshots ist nicht eindeutig.");
+    }
+    return Object.freeze({
+      formatVersion: license.formatVersion,
+      licenseId: text(license.licenseId),
+      tenantId: text(license.tenantId),
+      deviceId: text(license.deviceId),
+      activatedAt: text(license.activatedAt),
+      lastValidation: text(license.lastValidation)
+    });
+  }
+
   function clone(value) {
     if (typeof structuredClone === "function") return structuredClone(value);
     return JSON.parse(JSON.stringify(value));
@@ -672,6 +694,7 @@
     const selectedArea = settingsAreaById.get(normalized.businessAreaId);
     const company = snapshotCompanyIdentity(settings.company);
     const activeUser = projectActiveUser(settings, snapshot.tenantId);
+    const localLicense = projectLocalLicense(settings, snapshot.tenantId);
     const projection = {
       exportFormat: constants.exportFormat,
       exportFormatVersion: constants.exportFormatVersion,
@@ -683,6 +706,7 @@
       companyOwner: company.owner,
       companyDisplayName: company.displayName,
       activeUser: normalized.exportType === "own-data" ? activeUser : null,
+      license: normalized.exportType === "own-data" ? localLicense : null,
       range: Object.freeze(clone(normalized.range)),
       businessAreaId: normalized.businessAreaId,
       businessAreasLabel: normalized.businessAreaId === "all" ? "Alle" : text(selectedArea?.label) || normalized.businessAreaId,
@@ -730,6 +754,12 @@
       `Zeitraum: ${formatDateKey(projection.range.dateFrom)} bis ${formatDateKey(projection.range.dateTo)}`,
       `Exporttyp: ${projection.exportType === "own-data" ? "Eigene Daten" : "Steuerberatung"}`,
       ...(projection.activeUser ? [`Aktiver Benutzer: ${projection.activeUser.displayName}`] : []),
+      ...(projection.license ? [
+        `Lizenz-ID: ${projection.license.licenseId}`,
+        `Geräte-ID: ${projection.license.deviceId}`,
+        `Lokal aktiviert: ${formatDateKey(projection.license.activatedAt)} • ${formatTime(projection.license.activatedAt)}`,
+        `Letzte lokale Prüfung: ${formatDateKey(projection.license.lastValidation)} • ${formatTime(projection.license.lastValidation)}`
+      ] : []),
       `Anzahl Belege: ${projection.receipts.length}`,
       `Anzahl Gutscheine: ${projection.vouchers.length}`,
       `Geschäftsbereiche: ${projection.businessAreasLabel}`,

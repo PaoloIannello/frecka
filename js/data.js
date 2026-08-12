@@ -13,6 +13,7 @@ window.PROTOTYPE_DATA = Object.freeze({
     }
   ],
   userSettings: { activeUserId: "user-primary" },
+  license: {},
   company: {
     name: "Studio Beispiel",
     owner: "Angel Luzolo",

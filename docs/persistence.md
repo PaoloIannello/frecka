@@ -1,7 +1,7 @@
 # Lokale Settings-, Katalog-, Kunden-, Beleg- und Gutscheinpersistenz
 
-**Stand:** USER-001 auf Basis PERSISTENCE-007, PERSIST-005, BACKUP-001 und EXPORT-003
-**Geltungsbereich:** Vollständige FRECKA-Einstellungen einschließlich lokalem Benutzer, Katalog, Kundenstammdaten, abgeschlossene Belege, offene Zahlungen, Stornos, Gutschriften, Gutscheine und Gutschein-Historien
+**Stand:** LICENSE-001 und USER-002 auf Basis PERSISTENCE-007, PERSIST-005, BACKUP-001 und EXPORT-003
+**Geltungsbereich:** Vollständige FRECKA-Einstellungen einschließlich lokalem Benutzer und lokaler Gerätebindung, Katalog, Kundenstammdaten, abgeschlossene Belege, offene Zahlungen, Stornos, Gutschriften, Gutscheine und Gutschein-Historien
 **Nicht enthalten:** Entwürfe, QR-Grafiken, E-Mail-, Kamera- und Druckstatus, PDF-Dateien sowie eine dauerhafte Ablage von Backup-Dateien
 
 ## Ausgangsfluss vor PERSIST-001a
@@ -17,6 +17,7 @@ Zentrale Einstellungsbereiche:
 - `data.receiptSettings`: Nummernkreis, Belegtexte, Währung und Sprache;
 - `data.paymentChoices`: Zahlungsarten, Aktivstatus und Reihenfolge;
 - `data.users` und `data.userSettings.activeUserId`: genau ein aktiver mandantenbezogener Benutzer in V1.0;
+- `data.license`: genau eine lokale, mandantenbezogene Lizenz- und Gerätebindung in V1.0;
 - UI-State des Einrichtungsassistenten: bisher nicht dauerhaft gespeichert.
 
 Die Mutationen erfolgen insbesondere über `applyCompanyForm`, `applyServiceLocationForm`, `applyBusinessAreaForm`, `saveSetupStep`, den Steuerformular-Handler sowie die Zahlungsarten-Toggle- und Sortieraktionen. Leser sind die Einstellungsansichten, der Header, der Beleg- und Gutscheinabschluss, die Dokument-Snapshot-Erzeugung sowie der Einrichtungsassistent.
@@ -89,6 +90,7 @@ Der Settings-Datensatz enthält ausschließlich:
 
 - `formatVersion`, `tenantId`, `updatedAt`;
 - `users` mit genau einem aktiven, versionierten und mandantenbezogenen Benutzer sowie `activeUserId` als stabile Referenz;
+- `license` mit Lizenz-ID, opaker Geräte-ID, Mandant, Formatversion und lokalen Zeitpunkten;
 - `company` einschließlich Anschrift und `useAsServiceLocation`;
 - `serviceLocations` als Liste;
 - `businessAreas` einschließlich Aktivstatus, Standardbereich und Standard-Leistungsort;
@@ -100,6 +102,8 @@ Der Settings-Datensatz enthält ausschließlich:
 Simulierte Logoobjekte beziehungsweise Bilddaten werden nicht gespeichert. `logoMode` und die sichtbare Geschäftsbezeichnung bleiben normale Geschäftsbereichseinstellungen.
 
 USER-001 verändert weder Datenbankschema noch Store- oder Settings-Formatversion. Das Listenmodell bereitet spätere Mehrbenutzerfähigkeit vor, ohne sie in V1.0 freizuschalten. Historische Settings ohne Benutzer werden deterministisch aus `Unternehmer/in` und der aktuellen `tenantId` ergänzt; mehrere oder neuere Benutzerdaten werden von V1.0 nicht reduziert. Der vollständige Vertrag steht in `docs/users.md`.
+
+LICENSE-001 verändert Datenbankschema, Storeanzahl und Settings-Formatversion ebenfalls nicht. Die opaken Kennungen entstehen lokal ohne Personen- oder Hardwaremerkmale und werden anschließend ausschließlich über denselben Settings-Datensatz stabil gehalten. Der vollständige Vertrag steht in `docs/licensing.md`.
 
 Der Datensatz im Store `catalog` enthält ausschließlich:
 

@@ -1543,6 +1543,63 @@
         }
       },
       {
+        name: "LICENSE-001 erzeugt genau eine stabile lokale und datensparsame Gerätebindung",
+        run: async () => {
+          const tenantId = "test-license-model";
+          const runtime = runtimeFixture();
+          const first = api.snapshotSettings(runtime, "completed", tenantId);
+          const second = api.snapshotSettings(runtime, "completed", tenantId);
+          assertDeepEqual(
+            Object.keys(first.license).sort(),
+            ["activatedAt", "deviceId", "formatVersion", "lastValidation", "licenseId", "tenantId"].sort(),
+            "Lokales Lizenzmodell besitzt unerwartete Felder"
+          );
+          assertEqual(first.license.formatVersion, 1, "Falsche Lizenzformatversion");
+          assertEqual(first.license.tenantId, tenantId, "Lizenz gehört nicht zum Mandanten");
+          assert(/^license_[A-Za-z0-9._:-]+$/.test(first.license.licenseId), "Lizenz-ID ist nicht opak");
+          assert(/^device_[A-Za-z0-9._:-]+$/.test(first.license.deviceId), "Geräte-ID ist nicht opak");
+          assert(first.license.licenseId !== first.license.deviceId, "Lizenz- und Geräte-ID sind nicht getrennt");
+          assertEqual(second.license.licenseId, first.license.licenseId, "Lokale Lizenz-ID ist innerhalb der Installation nicht stabil");
+          assertEqual(second.license.deviceId, first.license.deviceId, "Lokale Geräte-ID ist innerhalb der Installation nicht stabil");
+          assertEqual(first.license.lastValidation, first.license.activatedAt, "Initiale lokale Prüfung ist nicht nachvollziehbar");
+          const serialized = JSON.stringify(first.license).toLocaleLowerCase("de-DE");
+          [runtime.company.owner, runtime.company.email, runtime.company.phone, runtime.company.street].forEach(personalValue => {
+            assert(!serialized.includes(String(personalValue).toLocaleLowerCase("de-DE")), "Gerätebindung enthält personenbezogene Unternehmensdaten");
+          });
+
+          const foreign = runtimeFixture();
+          foreign.license = { ...first.license, tenantId: "tenant-foreign" };
+          assertThrows(() => api.snapshotSettings(foreign, "completed", tenantId), "INVALID_DATA", "Mandantenfremde Lizenz");
+          const future = runtimeFixture();
+          future.license = { ...first.license, formatVersion: 2 };
+          assertThrows(() => api.snapshotSettings(future, "completed", tenantId), "UNSUPPORTED_FORMAT", "Künftiges Lizenzformat");
+          const incomplete = runtimeFixture();
+          incomplete.license = { licenseId: first.license.licenseId };
+          assertThrows(() => api.snapshotSettings(incomplete, "completed", tenantId), "INVALID_DATA", "Unvollständige Lizenz");
+          const empty = recordFixture(tenantId, "completed");
+          empty.license = {};
+          assertThrows(() => api.normalizeSettingsRecord(empty, first, tenantId), "INVALID_DATA", "Leeres Lizenzobjekt");
+        }
+      },
+      {
+        name: "LICENSE-001 ergänzt historische Settings lokal und schützt vorhandene Bindungen",
+        run: async () => {
+          const tenantId = "test-license-legacy";
+          const defaults = recordFixture(tenantId, "completed");
+          const legacy = clone(defaults);
+          delete legacy.license;
+          const normalized = api.normalizeSettingsRecord(legacy, defaults, tenantId);
+          assert(normalized.repairs.includes("LICENSE_MODEL_DEFAULTED"), "Historische Settings weisen die lokale Lizenzerweiterung nicht aus");
+          assertDeepEqual(normalized.record.license, defaults.license, "Historische Settings erhielten keine stabile lokale Standardbindung");
+
+          const preserved = api.normalizeSettingsRecord(defaults, defaults, tenantId);
+          assertDeepEqual(preserved.record.license, defaults.license, "Vorhandene Lizenzbindung wurde bei der Normalisierung verändert");
+          const newer = clone(defaults);
+          newer.license.formatVersion = 2;
+          assertThrows(() => api.normalizeSettingsRecord(newer, defaults, tenantId), "UNSUPPORTED_FORMAT", "Neuere Lizenzbindung");
+        }
+      },
+      {
         name: "Erststart liefert null und initialisiert Settings-, Katalog-, Kunden-, Beleg- und Gutscheinschema",
         run: async () => {
           const persistence = context.makeClient("first-start");
@@ -1554,6 +1611,7 @@
           assert(database.objectStoreNames.contains(api.constants.customersStoreName), "Kunden-Store fehlt");
           assert(database.objectStoreNames.contains(api.constants.receiptsStoreName), "Receipt-Store fehlt");
           assert(database.objectStoreNames.contains(api.constants.vouchersStoreName), "Voucher-Store fehlt");
+          assert(!database.objectStoreNames.contains("licenses"), "LICENSE-001 hat fälschlich einen Parallelstore angelegt");
           assertEqual(await persistence.readSettings(), null, "Leerer Tenant muss null liefern");
           assertEqual(await persistence.readCatalog(), null, "Leerer Katalog-Tenant muss null liefern");
           assertEqual(await persistence.readCustomers(), null, "Leerer Kunden-Tenant muss null liefern");
@@ -1578,6 +1636,9 @@
           assertEqual(stored.users.length, 1, "Lokaler Benutzer fehlt im Settings-Store");
           assertEqual(stored.users[0].tenantId, persistence.tenantId, "Persistierter Benutzer gehört zum falschen Mandanten");
           assertEqual(stored.activeUserId, stored.users[0].id, "Persistierter aktiver Benutzer ist nicht eindeutig");
+          assertEqual(stored.license.tenantId, persistence.tenantId, "Persistierte Lizenz gehört zum falschen Mandanten");
+          assertEqual(stored.license.licenseId, requested.license.licenseId, "Persistierte Lizenz-ID wurde verändert");
+          assertEqual(stored.license.deviceId, requested.license.deviceId, "Persistierte Geräte-ID wurde verändert");
           assert(!Number.isNaN(Date.parse(written.updatedAt)), "updatedAt ist kein gültiger Zeitstempel");
           assertEqual(stored.tenantId, persistence.tenantId, "Tenant-ID wurde verändert");
         }
@@ -3548,14 +3609,19 @@
           assert(!taxFiles.files.some(file => file.name === "Kunden.csv"), "Steuerberatungsexport enthält Kundenstammdaten");
           assertDeepEqual(taxFiles.files.map(file => file.name), ["Belege.csv", "Belegpositionen.csv", "Gutscheine.csv", "Gutschein-Historie.csv", "Export-Info.txt"], "Bestehende Steuerberater-Einzeldatei-API wurde verändert");
           assertEqual(taxFiles.projection.activeUser, null, "Steuerberatungsexport enthält Benutzerstammdaten");
+          assertEqual(taxFiles.projection.license, null, "Steuerberatungsexport enthält Lizenzdaten");
           assert(ownFiles.files.some(file => file.name === "Kunden.csv"), "Eigene Daten enthalten trotz Auswahl keine Kundendatei");
           assertDeepEqual(ownFiles.projection.customers.map(customer => customer.id), ["customer-anna"], "Nicht zugeordnete Kunden wurden exportiert");
           assertEqual(ownFiles.projection.activeUser?.displayName, "Testperson", "Eigene-Daten-Projektion enthält den aktiven Benutzer nicht");
           assertEqual(ownFiles.projection.activeUser?.tenantId, snapshot.tenantId, "Exportierter Benutzer gehört zum falschen Mandanten");
+          assertDeepEqual(ownFiles.projection.license, snapshot.stores.settings.license, "Eigene-Daten-Projektion enthält die lokale Lizenz nicht vollständig");
           const taxInfo = taxFiles.files.find(file => file.name === "Export-Info.txt")?.content || "";
           const ownInfo = ownFiles.files.find(file => file.name === "Export-Info.txt")?.content || "";
           assert(!taxInfo.includes("Aktiver Benutzer:"), "Steuerberatungsexport weist den internen Benutzer aus");
+          assert(!taxInfo.includes("Lizenz-ID:") && !taxInfo.includes("Geräte-ID:"), "Steuerberatungsexport weist Lizenz- oder Gerätedaten aus");
           assert(ownInfo.includes("Aktiver Benutzer: Testperson"), "Eigene-Daten-Export dokumentiert den aktiven Benutzer nicht");
+          assert(ownInfo.includes(`Lizenz-ID: ${snapshot.stores.settings.license.licenseId}`), "Eigene-Daten-Export dokumentiert die Lizenz-ID nicht");
+          assert(ownInfo.includes(`Geräte-ID: ${snapshot.stores.settings.license.deviceId}`), "Eigene-Daten-Export dokumentiert die Geräte-ID nicht");
         }
       },
       {
@@ -3740,7 +3806,8 @@
         name: "Vollständiger Tenant-Snapshot wird ohne Reparatur validiert",
         run: async () => {
           const tenantId = "test-backup-valid";
-          const validated = api.validateTenantSnapshot(completeTenantSnapshotFixture(tenantId), tenantId);
+          const snapshot = completeTenantSnapshotFixture(tenantId);
+          const validated = api.validateTenantSnapshot(snapshot, tenantId);
           assertEqual(validated.snapshot.backupFormatVersion, 1, "Falsche Backup-Formatversion");
           assertEqual(validated.summary.companyName, "Backup Teststudio", "Geschäftsbezeichnung fehlt in der Backup-Vorschau");
           assertEqual(validated.summary.companyOwner, "Testperson", "Unternehmer fehlt in der Backup-Vorschau");
@@ -3750,6 +3817,8 @@
           assertEqual(validated.summary.vouchers, 1, "Gutscheinzählung ist falsch");
           assertEqual(validated.snapshot.stores.settings.users.length, 1, "Benutzer fehlt im Backup-Snapshot");
           assertEqual(validated.snapshot.stores.settings.users[0].tenantId, tenantId, "Backup-Benutzer gehört zum falschen Mandanten");
+          assertEqual(validated.snapshot.stores.settings.license.tenantId, tenantId, "Backup-Lizenz gehört zum falschen Mandanten");
+          assertEqual(validated.snapshot.stores.settings.license.deviceId, snapshot.stores.settings.license.deviceId, "Backup veränderte die Gerätebindung");
         }
       },
       {
@@ -3767,10 +3836,38 @@
           const persistence = context.makeClient("backup-user-legacy-restore");
           legacy.tenantId = persistence.tenantId;
           Object.values(legacy.stores).forEach(store => { store.tenantId = persistence.tenantId; });
+          legacy.stores.settings.license.tenantId = persistence.tenantId;
           await persistence.restoreTenantSnapshot(legacy);
           const restored = await persistence.readSettings();
           assertEqual(restored.users.length, 1, "Restore persistierte den ergänzten Benutzer nicht");
           assertEqual(restored.users[0].tenantId, persistence.tenantId, "Restore persistierte einen mandantenfremden Benutzer");
+        }
+      },
+      {
+        name: "Historische Sicherung ohne LICENSE-001 erhält beim Restore eine stabile lokale Bindung",
+        run: async () => {
+          const tenantId = "test-backup-license-legacy";
+          const legacy = completeTenantSnapshotFixture(tenantId);
+          delete legacy.stores.settings.license;
+          let firstValidation;
+          try {
+            firstValidation = api.validateTenantSnapshot(legacy, tenantId).snapshot;
+          } catch (error) {
+            throw new Error(`Historische LICENSE-001-Migration wurde abgelehnt: ${error.code || error.name} ${JSON.stringify(error.diagnostic || {})}`);
+          }
+          const secondValidation = api.validateTenantSnapshot(legacy, tenantId).snapshot;
+          assertEqual(firstValidation.stores.settings.license.tenantId, tenantId, "Historische Sicherung erhielt eine mandantenfremde Lizenz");
+          assertEqual(firstValidation.stores.settings.license.licenseId, secondValidation.stores.settings.license.licenseId, "Lokale Lizenzmigration ist innerhalb der Installation nicht stabil");
+          assertEqual(firstValidation.stores.settings.license.deviceId, secondValidation.stores.settings.license.deviceId, "Lokale Gerätemigration ist innerhalb der Installation nicht stabil");
+
+          const persistence = context.makeClient("backup-license-legacy-restore");
+          legacy.tenantId = persistence.tenantId;
+          Object.values(legacy.stores).forEach(store => { store.tenantId = persistence.tenantId; });
+          legacy.stores.settings.users.forEach(user => { user.tenantId = persistence.tenantId; });
+          await persistence.restoreTenantSnapshot(legacy);
+          const restored = await persistence.readSettings();
+          assertEqual(restored.license.tenantId, persistence.tenantId, "Restore persistierte eine mandantenfremde Lizenz");
+          assert(restored.license.licenseId && restored.license.deviceId, "Restore persistierte die lokale Gerätebindung nicht");
         }
       },
       {
@@ -3965,7 +4062,9 @@
           assertEqual(await persistence.readVouchers(), null, "Testmandant enthielt bereits Gutscheine");
           const target = completeTenantSnapshotFixture(persistence.tenantId, { companyName: "Neu wiederhergestellt" });
           await persistence.restoreTenantSnapshot(target);
-          assertEqual((await persistence.readSettings()).company.name, "Neu wiederhergestellt", "Settings fehlen nach Leer-Restore");
+          const restoredSettings = await persistence.readSettings();
+          assertEqual(restoredSettings.company.name, "Neu wiederhergestellt", "Settings fehlen nach Leer-Restore");
+          assertDeepEqual(restoredSettings.license, target.stores.settings.license, "Lizenzbindung fehlt nach Leer-Restore");
           assertEqual((await persistence.readCatalog()).items.length, 2, "Katalog fehlt nach Leer-Restore");
           assertEqual((await persistence.readCustomers()).customers.length, 2, "Kunden fehlen nach Leer-Restore");
           assertEqual((await persistence.readReceipts()).receipts.length, 2, "Belege fehlen nach Leer-Restore");

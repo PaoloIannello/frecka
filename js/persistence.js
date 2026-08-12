@@ -13,6 +13,7 @@
     tenantId: "local-default",
     formatVersion: 1,
     userFormatVersion: 1,
+    licenseFormatVersion: 1,
     settingsFormatVersion: 1,
     catalogFormatVersion: 1,
     customersFormatVersion: 1,
@@ -29,13 +30,13 @@
     "company", "serviceLocations", "businessAreas", "taxSettings", "receiptSettings",
     "paymentChoices", "setup", "catalog", "businessTemplates", "templateImportStatus",
     "customers", "customerChoices", "receipts", "vouchers", "histories", "openReceipt",
-    "drafts", "cancellations", "credits", "images", "logos"
+    "drafts", "cancellations", "credits", "images", "logos", "license"
   ]);
   const customersForbiddenRootKeys = new Set([
     "company", "serviceLocations", "businessAreas", "taxSettings", "receiptSettings",
     "paymentChoices", "setup", "catalog", "categories", "businessTemplates",
     "templateImportStatus", "customerChoices", "receipts", "vouchers", "histories",
-    "openReceipt", "drafts", "cancellations", "credits", "emailStatus"
+    "openReceipt", "drafts", "cancellations", "credits", "emailStatus", "license"
   ]);
   const customerForbiddenKeys = new Set([
     "history", "histories", "receipts", "vouchers", "openPayments", "drafts",
@@ -46,7 +47,7 @@
     "company", "serviceLocations", "businessAreas", "taxSettings", "receiptSettings",
     "paymentChoices", "setup", "catalog", "categories", "businessTemplates",
     "templateImportStatus", "customers", "customerChoices", "vouchers", "histories",
-    "openReceipt", "drafts", "cancellations", "credits", "images", "logos"
+    "openReceipt", "drafts", "cancellations", "credits", "images", "logos", "license"
   ]);
   const receiptForbiddenKeys = new Set([
     "voucher", "voucherObject", "voucherHistory", "emailStatus", "emailHistory",
@@ -56,7 +57,7 @@
     "company", "serviceLocations", "businessAreas", "taxSettings", "receiptSettings",
     "paymentChoices", "setup", "catalog", "categories", "businessTemplates",
     "templateImportStatus", "customers", "customerChoices", "receipts", "histories",
-    "openReceipt", "drafts", "cancellations", "credits", "images", "logos"
+    "openReceipt", "drafts", "cancellations", "credits", "images", "logos", "license"
   ]);
   const voucherForbiddenKeys = new Set([
     "pdf", "pdfFile", "qrImage", "qrGraphic", "qrCells", "mailStatus", "emailStatus",
@@ -65,6 +66,9 @@
   const userForbiddenKeys = new Set([
     "pin", "password", "passphrase", "login", "roles", "roleids", "permissions", "rights",
     "session", "sessions", "sessiontoken", "token", "accesstoken", "refreshtoken"
+  ]);
+  const licenseAllowedKeys = new Set([
+    "formatVersion", "licenseId", "tenantId", "deviceId", "activatedAt", "lastValidation"
   ]);
   const dangerousKeys = new Set(["__proto__", "prototype", "constructor"]);
   const sensitiveKeyPattern = /(password|passphrase|credential|secret|access.?token|refresh.?token|private.?key)/i;
@@ -165,6 +169,78 @@
     return Number.isFinite(fallbackTimestamp) ? new Date(fallbackTimestamp).toISOString() : epochIso;
   }
 
+  const generatedLocalLicenses = new Map();
+
+  function createOpaqueLocalId(prefix) {
+    const webCrypto = globalThis.crypto;
+    if (typeof webCrypto?.randomUUID === "function") return `${prefix}_${webCrypto.randomUUID()}`;
+    if (typeof webCrypto?.getRandomValues === "function") {
+      const bytes = webCrypto.getRandomValues(new Uint8Array(16));
+      return `${prefix}_${[...bytes].map(value => value.toString(16).padStart(2, "0")).join("")}`;
+    }
+    return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
+  }
+
+  function generatedLocalLicense(expectedTenantId) {
+    const safeTenantId = nullableStringId(expectedTenantId) || constants.tenantId;
+    if (!generatedLocalLicenses.has(safeTenantId)) {
+      const createdAt = new Date().toISOString();
+      generatedLocalLicenses.set(safeTenantId, Object.freeze({
+        formatVersion: constants.licenseFormatVersion,
+        licenseId: createOpaqueLocalId("license"),
+        tenantId: safeTenantId,
+        deviceId: createOpaqueLocalId("device"),
+        activatedAt: createdAt,
+        lastValidation: createdAt
+      }));
+    }
+    return cloneSafe(generatedLocalLicenses.get(safeTenantId));
+  }
+
+  function hasLicenseModelFields(value) {
+    return isPlainObject(value) && [...licenseAllowedKeys].some(key => value[key] !== undefined);
+  }
+
+  function normalizeV1License(source, expectedTenantId, fallbackSource = null) {
+    const safeTenantId = nullableStringId(expectedTenantId) || constants.tenantId;
+    const sourceIsAbsent = source === undefined || source === null;
+    const candidate = sourceIsAbsent
+      ? hasLicenseModelFields(fallbackSource)
+        ? fallbackSource
+        : generatedLocalLicense(safeTenantId)
+      : source;
+    if (!isPlainObject(candidate)) {
+      throw new PersistenceError("INVALID_DATA", "Die lokale Lizenz ist unvollständig.");
+    }
+    if (!Number.isInteger(candidate.formatVersion) || candidate.formatVersion < 1) {
+      throw new PersistenceError("INVALID_DATA", "Die lokale Lizenz besitzt keine gültige Formatversion.");
+    }
+    if (candidate.formatVersion > constants.licenseFormatVersion) {
+      throw new PersistenceError("UNSUPPORTED_FORMAT", "Diese Lizenzdaten benötigen eine neuere FRECKA-Version und wurden nicht verändert.");
+    }
+    const validOpaqueId = value => typeof value === "string"
+      && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value);
+    if (!validOpaqueId(candidate.licenseId) || !validOpaqueId(candidate.deviceId)) {
+      throw new PersistenceError("INVALID_DATA", "Die lokale Lizenz- oder Gerätekennung ist ungültig.");
+    }
+    if (nullableStringId(candidate.tenantId) !== safeTenantId) {
+      throw new PersistenceError("INVALID_DATA", "Die lokale Lizenz gehört zu einem anderen Mandanten.");
+    }
+    const activatedAt = stableIso(candidate.activatedAt, "");
+    const lastValidation = stableIso(candidate.lastValidation, "");
+    if (activatedAt === epochIso || lastValidation === epochIso || Date.parse(lastValidation) < Date.parse(activatedAt)) {
+      throw new PersistenceError("INVALID_DATA", "Die lokalen Lizenzzeitpunkte sind ungültig.");
+    }
+    return {
+      formatVersion: constants.licenseFormatVersion,
+      licenseId: candidate.licenseId,
+      tenantId: safeTenantId,
+      deviceId: candidate.deviceId,
+      activatedAt,
+      lastValidation
+    };
+  }
+
   function normalizeV1User(source, expectedTenantId, fallbackDisplayName, fallbackTimestamp = epochIso) {
     const safeTenantId = nullableStringId(expectedTenantId) || constants.tenantId;
     const candidate = isPlainObject(source) ? source : {};
@@ -192,6 +268,13 @@
     const user = normalizeV1User(null, expectedTenantId, identity.owner, timestamp);
     migrated.users = [user];
     migrated.activeUserId = user.id;
+    return migrated;
+  }
+
+  function settingsWithLegacyLicenseModel(record, expectedTenantId) {
+    if (!isPlainObject(record) || Object.prototype.hasOwnProperty.call(record, "license")) return record;
+    const migrated = cloneSafe(record);
+    migrated.license = generatedLocalLicense(expectedTenantId);
     return migrated;
   }
 
@@ -251,6 +334,8 @@
     if (runtimeActiveUserId && runtimeActiveUserId !== user.id) {
       throw new PersistenceError("INVALID_DATA", "Der aktive lokale Benutzer ist nicht eindeutig.");
     }
+    const runtimeLicense = hasLicenseModelFields(runtimeData.license) ? runtimeData.license : null;
+    const license = normalizeV1License(runtimeLicense, safeTenantId);
     const taxSettings = runtimeData.taxSettings || {};
     const receiptSettings = runtimeData.receiptSettings || {};
     const snapshot = {
@@ -259,6 +344,7 @@
       updatedAt: new Date().toISOString(),
       users: [user],
       activeUserId: user.id,
+      license,
       company: {
         name: identity.name,
         owner: identity.owner,
@@ -1637,6 +1723,14 @@
     const activeUserId = user.id;
     if (nullableStringId(raw.activeUserId) !== user.id) repairs.add("ACTIVE_USER_REPAIRED");
 
+    const defaultLicense = normalizeV1License(defaults.license, safeTenantId);
+    const rawHasLicense = hasLicenseModelFields(raw.license);
+    const license = normalizeV1License(raw.license, safeTenantId, defaultLicense);
+    if (!rawHasLicense) repairs.add("LICENSE_MODEL_DEFAULTED");
+    else if (!sameSerializableValue(projectKnownFields(raw.license, license), license)) {
+      repairs.add("LICENSE_MODEL_REPAIRED");
+    }
+
     const defaultAreaById = new Map((defaults.businessAreas || []).map(area => [area.id, area]));
     let areaSource = Array.isArray(raw.businessAreas) ? raw.businessAreas : defaults.businessAreas || [];
     if (!Array.isArray(raw.businessAreas)) repairs.add("BUSINESS_AREAS_DEFAULTED");
@@ -1822,6 +1916,7 @@
         updatedAt: stringValue(raw.updatedAt),
         users: [user],
         activeUserId,
+        license,
         company,
         serviceLocations,
         taxSettings,
@@ -1956,7 +2051,8 @@
       }
     });
 
-    const settingsInput = settingsWithLegacyUserModel(snapshot.stores.settings, safeTenantId);
+    const userSettingsInput = settingsWithLegacyUserModel(snapshot.stores.settings, safeTenantId);
+    const settingsInput = settingsWithLegacyLicenseModel(userSettingsInput, safeTenantId);
     const settings = assertSnapshotRecord(
       normalizeSettingsRecord(settingsInput, settingsInput, safeTenantId),
       settingsInput,
@@ -2474,6 +2570,11 @@
         Object.keys(user).forEach(key => {
           if (userForbiddenKeys.has(key.toLowerCase())) delete user[key];
         });
+      });
+    }
+    if (isPlainObject(cleaned.license)) {
+      Object.keys(cleaned.license).forEach(key => {
+        if (!licenseAllowedKeys.has(key)) delete cleaned.license[key];
       });
     }
     return cleaned;
