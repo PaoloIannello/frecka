@@ -40,6 +40,12 @@ Vollständig oder teilweise widersprüchliche Lizenzobjekte, fremde Mandanten, u
 
 Der Exporttyp `Eigene Daten` enthält das vollständige lokale Lizenzobjekt in seiner zentralen Projektion. `Export-Info.txt` weist Lizenz-ID, Geräte-ID sowie die beiden Zeitpunkte aus. Der Steuerberaterexport erhält `license: null`; weder seine CSV-Dateien noch das ZIP-Paket enthalten Lizenz- oder Geräteinformationen.
 
+## Sichtbarkeit in den Einstellungen
+
+LICENSE-002 zeigt das vorhandene Objekt unter `Einstellungen → Lizenz & Gerät` ausschließlich lesbar an. Sichtbar sind Lizenz-ID, Geräte-ID, Mandant, lokaler Anlagezeitpunkt, letzte Prüfung und der Status `Aktiv`. Der lokale Anlagezeitpunkt wird ausdrücklich nicht als Onlineaktivierung bezeichnet.
+
+Die Ansicht schreibt keine Daten und bietet weder Aktivierung noch Gerätewechsel an. Eine spätere Übertragung, Aufhebung oder Notfallübernahme benötigt einen eigenen freigegebenen Ablauf und darf unterhalb derselben Einstellungsseite ergänzt werden, ohne eine zweite Lizenzdarstellung einzuführen.
+
 ## Zukunftsgrenze
 
 Eine spätere Onlineaktivierung darf auf `licenseId`, `deviceId`, `tenantId` und `formatVersion` aufbauen. Aktivierung, Deaktivierung, Geräteübertragung, Offline-Kulanz, Serverstatus, Signaturen und Fehlerbehandlung benötigen eigene versionierte Protokolle und eine ausdrückliche fachliche Freigabe. LICENSE-001 implementiert keinen dieser Abläufe und leitet aus dem lokalen Objekt keine Nutzungssperre ab.

@@ -183,7 +183,7 @@
   const appUpdateMessage = document.getElementById("appUpdateMessage");
   const appUpdateLater = document.getElementById("appUpdateLater");
   const appUpdateAction = document.getElementById("appUpdateAction");
-  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "qr-not-found", "settings-company", "settings-user", "settings-location", "settings-taxes", "settings-payments", "settings-business-areas", "settings-catalog", "settings-help", "settings-backup", "settings-export", "setup-wizard"]);
+  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "qr-not-found", "settings-company", "settings-user", "settings-license", "settings-location", "settings-taxes", "settings-payments", "settings-business-areas", "settings-catalog", "settings-help", "settings-backup", "settings-export", "setup-wizard"]);
   const validRoutes = new Set(["home", "receipts", "customers", "vouchers", "settings", ...flowRoutes]);
 
   const escapeHtml = value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -3466,6 +3466,7 @@
   const settingsSections = [
     { id: "settings-company", icon: "▣", title: "Unternehmensdaten", note: "Name, Anschrift und Kontaktdaten", available: true },
     { id: "settings-user", icon: "◎", title: "Benutzer", note: "Anzeigename und lokale Benutzerangaben", available: true },
+    { id: "settings-license", icon: "✓", title: "Lizenz & Gerät", note: "Lizenz und aktuell zugeordnetes Gerät", available: true },
     { id: "settings-location", icon: "⌖", title: "Leistungsorte", note: "Orte, Zuordnungen und Standards", available: true },
     { id: "settings-taxes", icon: "%", title: "Steuern und Belegangaben", note: "Steuerstatus, Nummern und Belegtexte", available: true },
     { id: "settings-payments", icon: "€", title: "Zahlungsarten", note: "Aktive Arten und Reihenfolge", available: true },
@@ -3974,6 +3975,36 @@
         <p class="page-copy">FRECKA V1.0 verwendet genau einen aktiven lokalen Benutzer.</p>
       </div>
       ${notice}
+      ${content}
+    </section>`;
+  }
+
+  function renderLicenseSettings() {
+    const license = data.license;
+    const available = license
+      && String(license.licenseId || "").trim()
+      && String(license.deviceId || "").trim()
+      && String(license.tenantId || "").trim();
+    const content = available ? `<div class="settings-form">
+        <section class="settings-form-card settings-single-column">
+          <h2>Lizenz & Gerät</h2>
+          <div class="settings-fixed-values user-fixed-values">
+            <div><span>Lizenz-ID</span><strong>${escapeHtml(license.licenseId)}</strong></div>
+            <div><span>Geräte-ID</span><strong>${escapeHtml(license.deviceId)}</strong></div>
+            <div><span>Mandant</span><strong>${escapeHtml(license.tenantId)}</strong></div>
+            <div><span>Lokal angelegt am</span><strong>${escapeHtml(formatGermanDateTime({ iso: license.activatedAt }) || "–")}</strong></div>
+            <div><span>Letzte Prüfung</span><strong>${escapeHtml(formatGermanDateTime({ iso: license.lastValidation }) || "–")}</strong></div>
+            <div><span>Status</span><strong>Aktiv</strong></div>
+          </div>
+        </section>
+      </div>` : `<div class="settings-save-notice is-error" role="alert">Die Lizenz- und Geräteinformationen sind derzeit nicht verfügbar.</div>`;
+    mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter">
+      <div class="flow-head compact-flow-head">
+        <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
+        <p class="eyebrow">Einstellungen</p>
+        <h1 class="flow-title">Lizenz & Gerät</h1>
+        <p class="page-copy">Hier siehst du die Lizenz und das aktuell zugeordnete Gerät.</p>
+      </div>
       ${content}
     </section>`;
   }
@@ -5011,6 +5042,7 @@
       "qr-not-found",
       "settings-company",
       "settings-user",
+      "settings-license",
       "settings-location",
       "settings-taxes",
       "settings-payments",
@@ -5044,6 +5076,7 @@
     else if (state.route === "settings") renderSettings();
     else if (state.route === "settings-company") renderCompanySettings();
     else if (state.route === "settings-user") renderUserSettings();
+    else if (state.route === "settings-license") renderLicenseSettings();
     else if (state.route === "settings-location") renderServiceLocationSettings();
     else if (state.route === "settings-taxes") renderTaxSettings();
     else if (state.route === "settings-payments") renderPaymentSettings();

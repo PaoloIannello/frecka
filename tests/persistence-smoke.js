@@ -1600,6 +1600,30 @@
         }
       },
       {
+        name: "LICENSE-002 zeigt die vorhandene Lizenz schreibgeschützt und ohne Gerätewechsel-Simulation",
+        run: async () => {
+          const response = await fetch("../js/app.js", { cache: "no-store" });
+          assert(response.ok, "App-Quelle für LICENSE-002 konnte nicht geladen werden");
+          const source = await response.text();
+          const renderStart = source.indexOf("function renderLicenseSettings()");
+          const renderEnd = source.indexOf("function backupFallbackRecords()", renderStart);
+          assert(renderStart > 0 && renderEnd > renderStart, "Lizenz- und Geräteseite fehlt");
+          const renderSource = source.slice(renderStart, renderEnd);
+          assert(source.includes('{ id: "settings-license", icon: "✓", title: "Lizenz & Gerät"'), "Einstellungsbereich Lizenz & Gerät fehlt");
+          assert(source.includes('else if (state.route === "settings-license") renderLicenseSettings()'), "Lizenzroute verwendet nicht die zentrale Ansicht");
+          ["Lizenz-ID", "Geräte-ID", "Mandant", "Lokal angelegt am", "Letzte Prüfung", "Status", "Aktiv"].forEach(label => {
+            assert(renderSource.includes(label), `Lizenzangabe fehlt: ${label}`);
+          });
+          ["licenseId", "deviceId", "tenantId", "activatedAt", "lastValidation"].forEach(field => {
+            assert(renderSource.includes(`license.${field}`), `Vorhandenes Lizenzfeld wird nicht angezeigt: ${field}`);
+          });
+          assert(!renderSource.includes("<form") && !renderSource.includes("<input"), "Lizenzdaten sind entgegen LICENSE-002 bearbeitbar");
+          assert(!/license\.(?:licenseId|deviceId|tenantId|activatedAt|lastValidation)\s*=/.test(renderSource), "Lizenzansicht verändert das LICENSE-001-Datenmodell");
+          assert(!/aktiviert am/i.test(renderSource), "Lokaler Anlagezeitpunkt wird irreführend als Aktivierung bezeichnet");
+          assert(!/Gerät wechseln|Gerätebindung aufheben|neues Gerät aktivieren|Notfallübernahme/i.test(renderSource), "LICENSE-002 täuscht bereits einen Gerätewechsel vor");
+        }
+      },
+      {
         name: "Erststart liefert null und initialisiert Settings-, Katalog-, Kunden-, Beleg- und Gutscheinschema",
         run: async () => {
           const persistence = context.makeClient("first-start");
