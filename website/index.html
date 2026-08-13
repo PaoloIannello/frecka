@@ -6,41 +6,37 @@
     <meta name="theme-color" content="#f5f7f6">
     <meta name="color-scheme" content="light">
     <meta name="robots" content="index,follow">
+    <link rel="canonical" href="https://frecka.app/">
 
-    <title>FRECKA – Einfach. Erledigt. Weiter.</title>
+    <title>FRECKA Beta – Digitale Belege für kleine Dienstleistungsbetriebe</title>
     <meta
       name="description"
-      content="FRECKA macht Belege und die dazugehörige Verwaltung für kleine Dienstleistungsbetriebe einfach, klar und mobil verständlich."
+      content="FRECKA hilft Friseuren, Kosmetik-, Nagel- und Fußpflegebetrieben sowie Einzelunternehmern, digitale Belege klar auf dem Smartphone zu erstellen."
     >
 
     <meta property="og:type" content="website">
+    <meta property="og:url" content="https://frecka.app/">
     <meta property="og:locale" content="de_DE">
     <meta property="og:site_name" content="FRECKA">
-    <meta property="og:title" content="FRECKA – Einfach. Erledigt. Weiter.">
+    <meta property="og:title" content="FRECKA Beta – Digitale Belege einfach erstellen">
     <meta
       property="og:description"
-      content="Die verständliche Software für Belege und den Arbeitsalltag kleiner Dienstleistungsbetriebe."
+      content="Digitale Belege für kleine Dienstleistungsbetriebe – klar auf dem Smartphone, Schritt für Schritt."
     >
-    <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="FRECKA – Einfach. Erledigt. Weiter.">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="FRECKA Beta – Digitale Belege einfach erstellen">
     <meta
       name="twitter:description"
-      content="Belege und Verwaltung einfach im eigenen Betrieb erledigen."
+      content="Digitale Belege für kleine Dienstleistungsbetriebe – klar und mobil."
     >
-    <meta property="og:image" content="assets/social/opengraph-1200x630.png">
+    <meta property="og:image" content="https://frecka.app/assets/social/opengraph-1200x630.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:image:alt" content="FRECKA – Einfach. Erledigt. Weiter.">
-    <meta name="twitter:image" content="assets/social/opengraph-1200x630.png">
+    <meta name="twitter:image" content="https://frecka.app/assets/social/opengraph-1200x630.png">
     <meta name="twitter:image:alt" content="FRECKA – Einfach. Erledigt. Weiter.">
     <link rel="icon" href="assets/logo/favicon/favicon.svg" type="image/svg+xml">
 
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap"
-    >
     <link rel="stylesheet" href="styles/design-tokens.css">
     <link rel="stylesheet" href="styles/animation.css">
     <link rel="stylesheet" href="styles/main.css">
@@ -51,10 +47,15 @@
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "FRECKA",
+        "url": "https://frecka.app/",
         "applicationCategory": "BusinessApplication",
-        "operatingSystem": "Web Browser",
+        "operatingSystem": "Webbrowser, installierbare Progressive Web App",
         "inLanguage": "de",
-        "description": "FRECKA unterstützt kleine Dienstleistungsbetriebe bei Belegen und der dazugehörigen Verwaltung."
+        "description": "FRECKA unterstützt kleine Dienstleistungsbetriebe und Einzelunternehmer dabei, digitale Belege auf dem Smartphone zu erstellen und lokal zu verwalten.",
+        "audience": {
+          "@type": "BusinessAudience",
+          "audienceType": "Friseur, Kosmetikstudio, Nagelstudio, Podologie, Fußpflege und kleine Dienstleistungsbetriebe"
+        }
       }
     </script>
   </head>
@@ -72,10 +73,11 @@
           <a href="#so-funktionierts">So funktioniert’s</a>
           <a href="#vorteile">Vorteile</a>
           <a href="#daten">Daten</a>
+          <a href="#lizenz">Lizenz</a>
         </nav>
 
-        <a class="c-button c-header__cta motion-hover motion-press" data-variant="primary" data-size="sm" href="#so-funktionierts">
-          FRECKA kennenlernen
+        <a class="c-button c-header__cta motion-hover motion-press" data-variant="primary" data-size="sm" href="#beta">
+          Beta testen
         </a>
 
         <button
@@ -101,8 +103,9 @@
           <a href="#so-funktionierts">So funktioniert’s</a>
           <a href="#vorteile">Vorteile</a>
           <a href="#daten">Daten &amp; Kontrolle</a>
+          <a href="#lizenz">Lizenz</a>
           <a href="#faq">Häufige Fragen</a>
-          <a class="c-button motion-press" data-variant="primary" href="#so-funktionierts">FRECKA kennenlernen</a>
+          <a class="c-button motion-press" data-variant="primary" href="#beta">Beta testen</a>
         </div>
       </nav>
     </header>
@@ -111,18 +114,18 @@
       <section class="c-hero" id="top" aria-labelledby="hero-title">
         <div class="l-container c-hero__layout" data-width="wide">
           <div class="c-hero__copy motion-reveal">
-            <p class="c-eyebrow">Für kleine Dienstleistungsbetriebe</p>
-            <h1 id="hero-title">Belege erledigen. Ohne Softwarestress.</h1>
+            <p class="c-eyebrow">Beta für kleine Dienstleistungsbetriebe</p>
+            <h1 id="hero-title">Digitale Belege. Schritt für Schritt.</h1>
             <p class="c-lead" data-size="hero">
-              FRECKA führt dich auf dem Smartphone Schritt für Schritt durch deinen Arbeitsablauf – klar, direkt und ohne unnötigen Ballast.
+              FRECKA führt dich auf dem Smartphone von der Leistung bis zum fertigen Beleg – klar, direkt und ohne unnötige Umwege.
             </p>
             <div class="c-cta-group">
-              <a class="c-button motion-hover motion-press" data-variant="primary" data-size="lg" href="#so-funktionierts">
-                FRECKA kennenlernen
+              <a class="c-button motion-hover motion-press" data-variant="primary" data-size="lg" href="#beta">
+                Beta testen
               </a>
-              <a class="c-text-link" href="#arbeitsalltag">Warum es sich einfach anfühlt <span aria-hidden="true">↓</span></a>
+              <a class="c-text-link" href="#so-funktionierts">So funktioniert’s <span aria-hidden="true">↓</span></a>
             </div>
-            <p class="c-hero__note">Mobil gedacht. Verständlich aufgebaut. Für deinen echten Arbeitsalltag.</p>
+            <p class="c-hero__note">Geplant: 14 Tage kostenlos testen. Während der Beta können sich einzelne Funktionen noch ändern.</p>
           </div>
 
           <figure class="c-product-stage motion-scale-in" aria-labelledby="hero-product-caption">
@@ -151,8 +154,8 @@
               </div>
             </div>
             <figcaption id="hero-product-caption">
-              <span>Vorgesehener App-Screenshot</span>
-              Der echte Produktstand ersetzt diese austauschbare Vorschau.
+              <span>FRECKA auf dem Smartphone</span>
+              Startansicht aus der aktuellen Beta.
             </figcaption>
           </figure>
         </div>
@@ -177,22 +180,22 @@
             <p class="c-eyebrow">Passt in deinen Tag</p>
             <h2 id="workday-title">Deine Arbeit steht im Mittelpunkt. Nicht die Software.</h2>
             <p class="c-lead">
-              Der Termin ist fertig. Jetzt soll auch der Beleg schnell fertig sein. FRECKA ordnet den nächsten Schritt so, wie du ihn brauchst: Leistung wählen, Zahlung erfassen, abschließen.
+              Der Termin ist fertig. Jetzt soll auch der Beleg schnell erledigt sein: Leistung wählen, Zahlungsart festhalten, abschließen.
             </p>
             <p>
-              Keine überladene Schaltzentrale. Keine Begriffe, die erst erklärt werden müssen. Nur ein klarer Weg zum Ergebnis.
+              FRECKA zeigt dir dafür einen klaren Ablauf statt einer überladenen Verwaltungsoberfläche.
             </p>
           </div>
 
           <figure class="c-photo-slot" data-reveal aria-labelledby="workday-caption">
-            <div class="c-photo-slot__surface" role="img" aria-label="Platzhalter für eine ruhige Arbeitssituation in einem kleinen Dienstleistungsbetrieb">
+            <div class="c-photo-slot__surface" role="img" aria-label="Abstrakte Darstellung eines ruhigen Arbeitsplatzes">
               <span class="c-photo-slot__light" aria-hidden="true"></span>
               <span class="c-photo-slot__worktop" aria-hidden="true"></span>
               <span class="c-photo-slot__tool c-photo-slot__tool--one" aria-hidden="true"></span>
               <span class="c-photo-slot__tool c-photo-slot__tool--two" aria-hidden="true"></span>
               <span class="c-photo-slot__label">Arbeitsalltag</span>
             </div>
-            <figcaption id="workday-caption">Austauschpunkt für ein später freigegebenes, authentisches Arbeitsfoto.</figcaption>
+            <figcaption id="workday-caption">Für den Einsatz direkt im Arbeitsalltag gedacht.</figcaption>
           </figure>
         </div>
       </section>
@@ -222,8 +225,8 @@
             <li class="c-step-item" data-reveal>
               <span class="c-step-item__number" aria-hidden="true">2</span>
               <div>
-                <h3>Zahlung erfassen</h3>
-                <p>Bar, Karte oder offen: Du wählst, was tatsächlich passiert ist.</p>
+                <h3>Zahlungsart festhalten</h3>
+                <p>Du dokumentierst, wie bezahlt wurde. FRECKA wickelt selbst keine Zahlung ab.</p>
               </div>
               <div class="c-mini-screen" aria-hidden="true">
                 <img class="c-asset-image c-asset-image--screen" src="assets/screenshots/workflow/step-2.png" width="960" height="540" alt="" loading="lazy" decoding="async" data-asset-image>
@@ -237,7 +240,7 @@
               <span class="c-step-item__number" aria-hidden="true">3</span>
               <div>
                 <h3>Beleg abschließen</h3>
-                <p>Das Ergebnis bleibt nachvollziehbar und lässt sich passend weitergeben.</p>
+                <p>Der Beleg wird lokal gespeichert und kann von dort weitergegeben werden.</p>
               </div>
               <div class="c-mini-screen c-mini-screen--receipt" aria-hidden="true">
                 <img class="c-asset-image c-asset-image--screen" src="assets/screenshots/workflow/step-3.png" width="960" height="540" alt="" loading="lazy" decoding="async" data-asset-image>
@@ -273,13 +276,13 @@
             </li>
             <li class="c-feature-card" data-reveal>
               <span class="c-feature-card__mark" aria-hidden="true">03</span>
-              <h3>Auch ohne Netz arbeitsfähig</h3>
-              <p>Nach dem Laden bleibt der lokale Kern für wichtige Abläufe verfügbar.</p>
+              <h3>Wichtige Abläufe auch offline</h3>
+              <p>Nach erfolgreicher Einrichtung bleiben der App-Kern und lokale Kernabläufe ohne Internet nutzbar.</p>
             </li>
             <li class="c-feature-card" data-reveal>
               <span class="c-feature-card__mark" aria-hidden="true">04</span>
               <h3>Nachvollziehbar statt versteckt</h3>
-              <p>Sichern, exportieren oder teilen geschieht bewusst – nicht unbemerkt im Hintergrund.</p>
+              <p>Sicherung, Export und Teilen startest du selbst. Es gibt keine automatische Cloud-Synchronisation.</p>
             </li>
           </ul>
         </div>
@@ -291,10 +294,10 @@
             <p class="c-eyebrow">Deine Daten. Deine Entscheidung.</p>
             <h2 id="data-title">Kontrolle fühlt sich besser an als ein Versprechen.</h2>
             <p class="c-lead">
-              Geschäftsdaten werden lokal auf deinem Gerät gehalten. Erst wenn du bewusst sicherst, exportierst oder teilst, bestimmst du den nächsten Weg.
+              Kunden-, Beleg- und Katalogdaten werden lokal auf deinem Gerät gespeichert. Sicherung, Export und Teilen startest du bewusst selbst.
             </p>
             <p class="c-data-section__note">
-              FRECKA legt nicht automatisch eine zentrale Kopie deiner Kunden-, Beleg- oder Katalogdaten an.
+              FRECKA legt keine automatische zentrale Kopie deiner Geschäftsdaten an. Eine Mehrgeräte-Synchronisation ist nicht Bestandteil der Beta.
             </p>
           </div>
 
@@ -335,6 +338,42 @@
         </div>
       </section>
 
+      <section class="c-section c-pricing-section" id="lizenz" aria-labelledby="pricing-title">
+        <div class="l-container c-pricing-layout" data-width="content">
+          <div class="c-heading-group" data-align="center" data-reveal>
+            <p class="c-eyebrow">Eine Lizenz. Klar geregelt.</p>
+            <h2 id="pricing-title">14 Tage ausprobieren. In Ruhe entscheiden.</h2>
+            <p class="c-lead">FRECKA bleibt bewusst einfach: eine Lizenz für einen Betrieb oder eine Filiale auf einem aktiven Gerät.</p>
+          </div>
+
+          <article class="c-pricing-card" data-reveal aria-labelledby="license-title">
+            <div class="c-pricing-card__header">
+              <div>
+                <p class="c-eyebrow">FRECKA Lizenz</p>
+                <h3 id="license-title">Eine Lizenz für deinen Betrieb.</h3>
+              </div>
+              <!-- PRICE_TODO: Finalen Verkaufspreis vor Veröffentlichung freigeben. Interner Arbeitswert: 12,90 € / Monat. -->
+              <p class="c-pricing-card__price" data-price-state="pending">Preis zur Markteinführung wird noch bekannt gegeben.</p>
+            </div>
+
+            <ul class="c-pricing-card__facts">
+              <li><strong>14 Tage kostenlos testen</strong><span>Zeitlich begrenzt, ohne Anspruch auf dauerhafte kostenlose Nutzung.</span></li>
+              <li><strong>Ein Betrieb oder eine Filiale</strong><span>Die Lizenz gehört zu einem Mandanten beziehungsweise einer Filiale.</span></li>
+              <li><strong>Ein aktives Gerät</strong><span>Mehrgerätebetrieb ist für die erste Version nicht vorgesehen.</span></li>
+            </ul>
+
+            <div class="c-pricing-card__transition" aria-label="Geplanter Ablauf">
+              <span>14 Tage testen</span>
+              <i aria-hidden="true">→</i>
+              <span>Weiter nutzen oder beenden</span>
+            </div>
+
+            <p class="c-pricing-card__note">Nach der Testphase entscheidest du, ob du FRECKA regulär weiter nutzen möchtest. Kauf und automatische Umstellung sind auf dieser Website noch nicht eingerichtet.</p>
+            <a class="c-button motion-hover motion-press" data-variant="primary" data-size="lg" href="#beta">Beta testen</a>
+          </article>
+        </div>
+      </section>
+
       <section class="c-section c-section--subtle" id="faq" aria-labelledby="faq-title">
         <div class="l-container c-faq-layout" data-width="content">
           <div class="c-faq-layout__intro" data-reveal>
@@ -345,6 +384,12 @@
 
           <div class="c-faq" data-reveal>
             <details class="c-faq-item">
+              <summary><span>Was ist FRECKA?</span><i aria-hidden="true"></i></summary>
+              <div class="c-faq-item__answer">
+                <p>FRECKA ist eine mobile Software für digitale Belege und die dazugehörige Verwaltung in kleinen Dienstleistungsbetrieben.</p>
+              </div>
+            </details>
+            <details class="c-faq-item">
               <summary><span>Für welche Betriebe ist FRECKA gedacht?</span><i aria-hidden="true"></i></summary>
               <div class="c-faq-item__answer">
                 <p>Für kleine Dienstleistungsbetriebe und Einzelunternehmer mit direktem Kundenkontakt – zum Beispiel Friseur, Kosmetik, Nagelstudio, Podologie oder Fußpflege.</p>
@@ -353,47 +398,136 @@
             <details class="c-faq-item">
               <summary><span>Brauche ich besondere technische Kenntnisse?</span><i aria-hidden="true"></i></summary>
               <div class="c-faq-item__answer">
-                <p>FRECKA ist für eine direkte Bedienung auf dem Smartphone aufgebaut. Kurze, geführte Schritte reduzieren die Einarbeitung auf das Wesentliche.</p>
+                <p>Nein. FRECKA führt dich in kurzen Schritten durch den Ablauf. Für die Ersteinrichtung solltest du den Anweisungen auf dem Smartphone folgen können.</p>
+              </div>
+            </details>
+            <details class="c-faq-item">
+              <summary><span>Funktioniert FRECKA auf dem Smartphone?</span><i aria-hidden="true"></i></summary>
+              <div class="c-faq-item__answer">
+                <p>Ja. FRECKA ist für die Nutzung im mobilen Browser und als installierte Web-App auf dem Smartphone aufgebaut.</p>
               </div>
             </details>
             <details class="c-faq-item">
               <summary><span>Funktioniert FRECKA auch ohne Internet?</span><i aria-hidden="true"></i></summary>
               <div class="c-faq-item__answer">
-                <p>Der geladene App-Kern und wichtige lokale Arbeitsabläufe sind offline nutzbar. Funktionen wie bestimmte externe Share-Ziele setzen je nach Gerät und Ziel eine Verbindung voraus.</p>
+                <p>Nach erfolgreicher Einrichtung sind der App-Kern und wichtige lokale Abläufe offline nutzbar. Teilen an externe Ziele, das Öffnen eines Kundenlinks auf einem zweiten Gerät und Updates können eine Verbindung benötigen.</p>
               </div>
             </details>
             <details class="c-faq-item">
               <summary><span>Wo liegen meine Geschäftsdaten?</span><i aria-hidden="true"></i></summary>
               <div class="c-faq-item__answer">
-                <p>Geschäftsdaten werden lokal auf deinem Gerät gespeichert. FRECKA legt nicht automatisch eine zentrale Kopie deiner Kunden-, Beleg- oder Katalogdaten an.</p>
+                <p>Kunden-, Beleg- und Katalogdaten werden lokal im Browser auf deinem Gerät gespeichert. FRECKA legt keine automatische zentrale Kopie an.</p>
               </div>
             </details>
             <details class="c-faq-item">
               <summary><span>Kann ich meine Daten sichern und exportieren?</span><i aria-hidden="true"></i></summary>
               <div class="c-faq-item__answer">
-                <p>Ja. Eine Sicherung wird bewusst ausgelöst und verschlüsselt erstellt. Auch Exporte entstehen lokal und erst nach deiner Auswahl.</p>
+                <p>Ja. Du kannst eine verschlüsselte Sicherungsdatei erstellen und deine Daten bewusst exportieren. FRECKA synchronisiert diese Dateien nicht automatisch mit anderen Geräten.</p>
+              </div>
+            </details>
+            <details class="c-faq-item">
+              <summary><span>Ist FRECKA bereits fertig?</span><i aria-hidden="true"></i></summary>
+              <div class="c-faq-item__answer">
+                <p>Nein. FRECKA befindet sich in der Beta. Der geprüfte Kern ist nutzbar, aber Funktionen, Texte und Abläufe können sich noch ändern.</p>
+              </div>
+            </details>
+            <details class="c-faq-item">
+              <summary><span>Was bedeutet Beta?</span><i aria-hidden="true"></i></summary>
+              <div class="c-faq-item__answer">
+                <p>Die Beta dient dem Praxistest in echten Arbeitsabläufen und dem Feedback der Testenden. Einzelne Funktionen können sich dabei noch ändern.</p>
+              </div>
+            </details>
+            <details class="c-faq-item">
+              <summary><span>Wie lange kann ich FRECKA testen?</span><i aria-hidden="true"></i></summary>
+              <div class="c-faq-item__answer">
+                <p>Die geplante Testphase dauert 14 Tage und ist kostenlos. Die technische Freischaltung ist noch nicht über diese Website automatisiert.</p>
+              </div>
+            </details>
+            <details class="c-faq-item">
+              <summary><span>Was passiert nach der Testphase?</span><i aria-hidden="true"></i></summary>
+              <div class="c-faq-item__answer">
+                <p>Nach 14 Tagen entscheidest du, ob du FRECKA regulär weiter nutzen möchtest. Es entsteht kein Anspruch auf dauerhafte kostenlose Nutzung. Eine automatische Umstellung oder Zahlungsabwicklung ist noch nicht eingerichtet.</p>
               </div>
             </details>
             <details class="c-faq-item">
               <summary><span>Was kostet FRECKA?</span><i aria-hidden="true"></i></summary>
               <div class="c-faq-item__answer">
-                <p>Das öffentliche Angebot und die Preisstruktur werden derzeit vorbereitet. Verbindliche Angaben erscheinen hier, sobald sie freigegeben sind.</p>
+                <p>Preis und reguläres Lizenzmodell sind noch nicht final festgelegt. Vor einer kostenpflichtigen Nutzung werden die Bedingungen klar mitgeteilt.</p>
+              </div>
+            </details>
+            <details class="c-faq-item">
+              <summary><span>Brauche ich mehrere Lizenzen für mehrere Filialen oder Geräte?</span><i aria-hidden="true"></i></summary>
+              <div class="c-faq-item__answer">
+                <p>Für die erste Version gilt: eine Lizenz für einen Betrieb beziehungsweise eine Filiale und ein aktives Gerät. Mehrere Filialen oder gleichzeitig aktive Geräte benötigen entsprechend eigene Lizenzen.</p>
               </div>
             </details>
           </div>
         </div>
       </section>
 
-      <section class="c-section c-cta-section" aria-labelledby="cta-title">
-        <div class="l-container c-cta-section__inner" data-width="content" data-reveal>
-          <div>
-            <p class="c-eyebrow">Einfach. Erledigt. Weiter.</p>
-            <h2 id="cta-title">Software darf sich leicht anfühlen.</h2>
-            <p>Sieh dir an, wie FRECKA den wichtigsten Ablauf Schritt für Schritt ordnet.</p>
+      <section class="c-section c-cta-section" id="beta" aria-labelledby="cta-title">
+        <div class="l-container c-beta-layout" data-width="content">
+          <div class="c-beta-copy" data-reveal>
+            <p class="c-eyebrow">FRECKA Beta</p>
+            <h2 id="cta-title">FRECKA 14 Tage kostenlos testen.</h2>
+            <p>Die Testphase ist zeitlich begrenzt. Danach entscheidest du in Ruhe, ob du FRECKA regulär weiter nutzen möchtest.</p>
+            <p class="c-beta-note" id="beta-hinweis">Die Beta dient dem Praxistest und deinem Feedback. Einzelne Funktionen können sich noch ändern. Aus der Testphase entsteht kein Anspruch auf dauerhafte kostenlose Nutzung.</p>
           </div>
-          <a class="c-button motion-hover motion-press" data-variant="primary" data-size="lg" href="#so-funktionierts">
-            FRECKA kennenlernen
-          </a>
+
+          <!-- BETA_BACKEND_TODO: Endpoint, Empfänger, Rechtsgrundlage, Speicherdauer und Auftragsverarbeitung vor Aktivierung freigeben. -->
+          <form class="c-beta-form" method="post" data-beta-form data-endpoint-state="pending" aria-describedby="beta-form-status" data-reveal>
+            <div class="c-beta-form__intro">
+              <h3>Beta-Zugang anfragen</h3>
+              <p>Das Anfrageformular ist vorbereitet. Die technische Übermittlung wird erst aktiviert, wenn der geschützte Empfänger und die Datenschutzangaben feststehen.</p>
+            </div>
+
+            <fieldset disabled>
+              <legend class="u-visually-hidden">Angaben für die Beta-Anfrage</legend>
+
+              <div class="c-form-field">
+                <label for="beta-name">Vorname oder Name</label>
+                <input id="beta-name" name="name" type="text" autocomplete="name" required aria-describedby="beta-name-hint beta-name-error">
+                <small id="beta-name-hint">So können wir dich persönlich ansprechen.</small>
+                <p class="c-form-error" id="beta-name-error" role="alert" hidden>Bitte gib deinen Namen ein.</p>
+              </div>
+
+              <div class="c-form-field">
+                <label for="beta-email">E-Mail-Adresse</label>
+                <input id="beta-email" name="email" type="email" inputmode="email" autocomplete="email" required aria-describedby="beta-email-hint beta-email-error">
+                <small id="beta-email-hint">Für die Antwort auf deine Beta-Anfrage.</small>
+                <p class="c-form-error" id="beta-email-error" role="alert" hidden>Bitte gib eine gültige E-Mail-Adresse ein.</p>
+              </div>
+
+              <div class="c-form-field">
+                <label for="beta-industry">Branche</label>
+                <select id="beta-industry" name="industry" required aria-describedby="beta-industry-error">
+                  <option value="">Bitte auswählen</option>
+                  <option>Friseur</option>
+                  <option>Kosmetik</option>
+                  <option>Nagelstudio</option>
+                  <option>Podologie</option>
+                  <option>Fußpflege</option>
+                  <option>Andere Dienstleistung</option>
+                </select>
+                <p class="c-form-error" id="beta-industry-error" role="alert" hidden>Bitte wähle deine Branche aus.</p>
+              </div>
+
+              <div class="c-form-field">
+                <label for="beta-business">Betriebsname <span>(optional)</span></label>
+                <input id="beta-business" name="business" type="text" autocomplete="organization">
+              </div>
+
+              <div class="c-form-consent">
+                <input id="beta-privacy" name="privacy_acknowledged" type="checkbox" value="accepted" required aria-describedby="beta-privacy-error">
+                <label for="beta-privacy">Ich habe die <a href="legal/datenschutz.html">Datenschutzerklärung</a> zur Kenntnis genommen.</label>
+                <p class="c-form-error" id="beta-privacy-error" role="alert" hidden>Bitte bestätige die Kenntnisnahme.</p>
+              </div>
+
+              <button class="c-button" data-variant="primary" data-size="lg" type="submit" disabled>Anfrage bald möglich</button>
+            </fieldset>
+
+            <p class="c-form-status" id="beta-form-status" role="status" aria-live="polite">Aktuell werden über dieses Formular keine Daten übermittelt oder gespeichert.</p>
+          </form>
         </div>
       </section>
     </main>
@@ -408,23 +542,16 @@
           <p>Die verständliche Software für den Arbeitsalltag kleiner Dienstleistungsbetriebe.</p>
         </div>
 
-        <nav class="c-footer__nav" aria-label="Produkt">
-          <h2>Produkt</h2>
-          <a href="#so-funktionierts">So funktioniert’s</a>
-          <a href="#vorteile">Vorteile</a>
-          <a href="#daten">Daten &amp; Kontrolle</a>
-          <a href="#faq">Häufige Fragen</a>
-        </nav>
-
-        <nav class="c-footer__nav" aria-label="Rechtliches">
-          <h2>Rechtliches</h2>
-          <span aria-disabled="true">Impressum folgt</span>
-          <span aria-disabled="true">Datenschutz folgt</span>
+        <nav class="c-footer__nav" aria-label="FRECKA und Rechtliches">
+          <h2>FRECKA</h2>
+          <a href="#beta">Beta testen</a>
+          <a href="legal/impressum.html">Impressum</a>
+          <a href="legal/datenschutz.html">Datenschutz</a>
         </nav>
       </div>
       <div class="l-container c-footer__meta" data-width="wide">
-        <p>© 2026 FRECKA</p>
-        <p>RC2 · Produktinformationen werden vor Veröffentlichung final geprüft.</p>
+        <p>© 2026 Paolo Iannello · FRECKA</p>
+        <p>Beta · Funktionen und Abläufe können sich noch ändern.</p>
       </div>
     </footer>
 

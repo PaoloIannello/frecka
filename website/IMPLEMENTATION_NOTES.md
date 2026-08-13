@@ -1,10 +1,10 @@
-# FRECKA Landingpage RC2 – Implementation Notes
+# FRECKA Landingpage Beta – Implementation Notes
 
 ## 1. Stand
 
-RC2 ist als vollständige statische Landingpage umgesetzt. Die Seite funktioniert ohne Framework, Build-Prozess und Laufzeitabhängigkeiten. Die finalen Produktionspfade sind eingebunden; bis die Dateien geliefert werden, bleiben die dimensionsstabilen HTML/CSS-Flächen sichtbar.
+Die Landingpage ist als vollständige statische Beta-Seite umgesetzt. Sie funktioniert ohne Framework, Build-Prozess, Tracking und externe Laufzeitabhängigkeiten. Markenassets, zentrale Produktscreens, Einzellizenz, geplante 14-Tage-Testphase und ein deaktiviertes Beta-Anfrageformular sind eingebunden; für noch fehlende Medien bleiben dimensionsstabile HTML/CSS-Flächen sichtbar.
 
-Der Stand ist als Release Candidate für Inhalt, Struktur und Gestaltung gedacht. RC2 verfeinert Hierarchie, Raum, responsive Balance und Interaktionszustände, ohne Bereiche oder Produktfunktionen hinzuzufügen. Vor einer öffentlichen Veröffentlichung müssen die unter „Bekannte TODOs“ genannten fachlichen und rechtlichen Punkte abgeschlossen werden.
+WEBSITE-010 schließt Inhalt, Struktur und Gestaltung der statischen Website ab. Die Website selbst ist mit `GO` bewertet; vor einer öffentlichen Aktivierung bleiben ausschließlich die in Abschnitt 10 benannten externen, technischen und rechtlichen Freigaben.
 
 ## 2. Dateistruktur
 
@@ -32,16 +32,16 @@ website/
     └── social/
 ```
 
-Die bestehenden Konzept- und Richtungsdokumente bleiben unverändert als fachliche Grundlage im Wurzelverzeichnis von `website/` erhalten.
+Die bestehenden Konzept- und Richtungsdokumente bleiben als fachliche Grundlage im Wurzelverzeichnis von `website/` erhalten.
 
 ## 3. Verantwortlichkeiten der Dateien
 
 ### `index.html`
 
 - vollständige semantische Seitenstruktur;
-- sichtbare RC2-Inhalte;
-- Header, Hero, Arbeitsalltag, Prozess, Vorteile, Datenkontrolle, Zielgruppen, FAQ, CTA und Footer;
-- SEO-Basismetadaten;
+- final redigierte Beta-Inhalte;
+- Header, Hero, Arbeitsalltag, Prozess, Vorteile, Datenkontrolle, Zielgruppen, Lizenz, FAQ, Beta-Anfrage und Footer;
+- vollständige SEO-Metadaten für `https://frecka.app`;
 - OpenGraph- und X/Twitter-Textmetadaten;
 - vorbereitete Schema.org-Auszeichnung als `SoftwareApplication`;
 - austauschbare Medien-Slots mit festen Produktionspfaden.
@@ -101,78 +101,48 @@ Die bestehenden Konzept- und Richtungsdokumente bleiben unverändert als fachlic
 - Feature Cards und Benefit List;
 - beschrifteter Data Flow;
 - Audience List;
+- einzelne Pricing-/Lizenzkarte ohne Tarifstaffel;
 - FAQ auf Basis von `details`/`summary`;
-- Final CTA;
+- vorbereitete, bis zur Backend-Freigabe deaktivierte Beta-Anfrage;
 - Footer mit Produkt- und Rechtsbereichen.
 
 Die API-Namen und Zustände folgen `components.md`. Wiederkehrende Gestaltung verwendet Tokens statt lokaler Zufallswerte.
 
-## 5. Spätere Austauschpunkte
+## 5. Asset- und Austauschpunkte
 
-### Text-Wordmark und D-TILE-Logo
+Bereits produktiv eingebunden sind:
 
-**Aktuell:** `.c-brand` enthält die Text-Wordmark „FRECKA“ und den Claim.
+- FRECKA-Logo in Header, Footer und Legal-Seiten;
+- D-TILE-Icon, Wortmarken-Master und Favicon in der dokumentierten Asset-Struktur;
+- Hero-Screen mit CSS/HTML-Device-Rahmen;
+- drei Workflow-Screens;
+- Social Preview mit 1200 × 630 px.
 
-**Später:** Die freigegebene Datei unter `assets/logo/svg/frecka-logo.svg` ablegen. Sie überlagert die Text-Wordmark automatisch. Der zugängliche Linkname bleibt „FRECKA Startseite“ und der Claim bleibt Live-Text.
+Die Produktionsdateien können unter ihren bestehenden Pfaden ausgetauscht werden, ohne die HTML-/CSS-Struktur anzupassen. Das optionale Arbeitsfoto `assets/photos/optimized/working-day.webp` fehlt weiterhin; die aktuelle CSS-Fläche ist vollständig, dimensionsstabil und fordert keinen nicht vorhandenen Pfad an.
 
-**Betroffene Stellen:** Header und Footer.
+## 6. Beta- und Lizenzzustand
 
-### Hero App-Screenshot
-
-**Aktuell:** `.c-product-stage` enthält eine CSS-basierte, nicht interaktive Produktvorschau in `.c-device`.
-
-**Später:** Den freigegebenen App-Screenshot unter `assets/screenshots/hero/home.png` ablegen. Er überlagert die bestehende CSS-Vorschau automatisch und behält deren Maße.
-
-**Integriertes Asset:** `home.png` mit 1206 × 2622 px, vollständig fiktiven Daten und bereinigten Metadaten. Die sichtbare Figure-Caption bleibt im HTML.
-
-### Drei Prozessansichten
-
-**Aktuell:** `.c-mini-screen` visualisiert die drei Schritte abstrakt.
-
-**Später:** Die drei freigegebenen Dateien unter den in `BRAND_INTEGRATION.md` dokumentierten Workflow-Namen ablegen. DOM-Reihenfolge, Titel und Beschreibung bleiben bestehen.
-
-### Arbeitsfoto
-
-**Aktuell:** `.c-photo-slot__surface` ist eine reine CSS-Komposition mit festem Raum und Caption.
-
-**Später:** Die optimierte Fassung als `assets/photos/optimized/working-day.webp` liefern und nach Freigabe in den vorhandenen Medienslot einsetzen. Bis dahin wird kein fehlender lokaler Pfad angefordert; Figure, Beschreibung, Maße und Caption bleiben erhalten.
-
-### Favicon
-
-**Aktuell:** keine provisorische Bildmarke; die finalen Pfade sind bereits im Dokumentkopf eingebunden.
-
-**Später:** `assets/logo/favicon/favicon.svg` unter exakt diesem Namen ablegen. Keine HTML-Anpassung nötig. Apple-Touch- und Social-Preview-Dateien sind nicht Teil des in WEBSITE-007 festgelegten Produktionsvertrags und werden daher noch nicht referenziert.
-
-## 6. Noch offene Assets
-
-- finale D-TILE-Bildmarke;
-- finale FRECKA-Wortmarke;
-- Favicon;
-- freigegebener Hero-Screenshot;
-- drei freigegebene Prozess-Screens bzw. Ausschnitte;
-- authentisches Arbeitsfoto mit Nutzungsrechten;
-- optional lokal gehostete Inter-Dateien, falls Google Fonts vor Veröffentlichung ersetzt werden soll;
-- finales konsistentes SVG-Iconset, falls funktionale Icons ergänzt werden.
+- zentrale 14-Tage-Testphase klar erklärt;
+- genau eine Lizenz für einen Betrieb beziehungsweise eine Filiale und ein aktives Gerät;
+- neutrale Preisankündigung auf der sichtbaren Seite;
+- interner Arbeitswert 12,90 € pro Monat nur im HTML-Kommentar und in `WEBSITE_010_FINALIZATION.md`;
+- Anfrageformular semantisch vollständig, aber mit deaktiviertem `fieldset`, deaktivierter Absendeaktion und ehrlichem Statushinweis;
+- kein Endpoint, keine Datenübertragung, keine Speicherung und keine Fake-Erfolgsmeldung.
 
 ## 7. SEO- und Metadatenstatus
 
-Vorbereitet:
+Umgesetzt:
 
 - eindeutiger Seitentitel;
 - Meta Description;
 - Robots-Anweisung;
-- OpenGraph- und X/Twitter-Texte;
+- Canonical, OpenGraph-URL und absolute Social-Bild-URL für `https://frecka.app`;
+- OpenGraph- und X/Twitter-Texte samt 1200-×-630-Preview;
 - `SoftwareApplication`-Schema ohne erfundene Preise oder Bewertungen;
 - genau eine H1 und logische Überschriftenstruktur;
 - beschreibende Anker und semantische Landmarken.
 
-Nach Domainfreigabe ergänzen:
-
-- kanonische absolute URL;
-- `og:url`;
-- absolute Social-Bild-URL;
-- Sitemap und gegebenenfalls `robots.txt`;
-- verifizierte Anbieter-/Organisationseinträge nur mit echten Daten.
+Vor dem echten Launch bleiben Domain, TLS und die identische Auslieferung der absoluten Pfade zu bestätigen. Sitemap und `robots.txt` sind optionale betriebliche Ergänzungen.
 
 ## 8. Performance-Entscheidungen
 
@@ -189,7 +159,7 @@ Nach Domainfreigabe ergänzen:
 - keine Video-, Parallax- oder Karusselllast;
 - reservierte Medienflächen und feste Seitenverhältnisse gegen Layout Shifts.
 
-Google Fonts ist die einzige externe Abhängigkeit. Für maximale Datenschutz-, Offline- und Ladezeitkontrolle sollte Inter vor Produktion lokal ausgeliefert oder vollständig durch den Systemschrift-Stack ersetzt werden.
+Die Website verwendet ausschließlich den lokalen Systemschrift-Stack und lädt keine Webfonts von Drittanbietern.
 
 ## 9. Accessibility-Status
 
@@ -210,7 +180,7 @@ Umgesetzt:
 - Forced-Colors-Grundlagen;
 - kein horizontaler Pflichtslider.
 
-Vor öffentlicher Freigabe manuell prüfen:
+Zusätzlich auf realen Geräten beziehungsweise mit assistiver Technik prüfen:
 
 - VoiceOver/Safari und eine weitere Screenreader-Kombination;
 - vollständige Tastaturreihenfolge;
@@ -220,40 +190,27 @@ Vor öffentlicher Freigabe manuell prüfen:
 - Fokus bei realem Hosting und Ankernavigation;
 - Alt-Texte der finalen Bilder.
 
-## 10. Bekannte TODOs vor Veröffentlichung
+## 10. Externe Launch-Voraussetzungen
 
-### Kritisch
+Die Website selbst ist vollständig. Vor der öffentlichen Aktivierung bleiben:
 
-- echtes Impressum einsetzen;
-- Datenschutzerklärung passend zu Hosting, Serverlogs und Google Fonts freigeben;
-- Preis-, Verfügbarkeits- und Angebotsstatus fachlich entscheiden;
-- verbindliches primäres CTA-Ziel mit echtem Folgeprozess festlegen;
-- alle Produkt-, Offline-, Backup-, Export- und Datenaussagen gegen den dann veröffentlichten App-Stand prüfen;
-- Produktionsdomain und kanonische URLs eintragen.
+- finalen Preis samt Vertragsangaben freigeben oder die neutrale Preisankündigung bestätigen;
+- Beta-Endpoint, Empfänger, Rechtsgrundlage, Speicherdauer, Auftragsverarbeiter und Löschprozess festlegen, bevor das Formular aktiviert wird;
+- Synology-/Web-Station-Logging tatsächlich prüfen und den Datenschutzhinweis gegebenenfalls konkretisieren;
+- Impressum und Datenschutz verantwortlich beziehungsweise rechtlich final abnehmen;
+- Domain, TLS und absolute SEO-/Social-Pfade im Produktionsbetrieb verifizieren;
+- Beta-Zugang, Trial- und spätere Lizenzlogik außerhalb der statischen Website bereitstellen.
 
-### Assets
+Die vollständige Trennung in Launch-Pflichten und spätere Ergänzungen steht in `WEBSITE_010_FINALIZATION.md`.
 
-- Logo, Screenshots, Foto, Favicons und Social Preview ersetzen;
-- Bildrechte, Einwilligungen und Metadaten prüfen;
-- intrinsische Bildmaße und responsive Quellen festlegen.
+## 11. Bewusste Ausschlüsse
 
-### Qualität
-
-- visuelle Abnahme in aktuellen Zielbrowsern und auf realen Mobilgeräten;
-- Lighthouse-Messung über den tatsächlichen Produktionsserver;
-- Accessibility-Abnahme nach `accessibility.md`;
-- Links und 404-Verhalten prüfen;
-- Content-Review mit der festgelegten Markenanrede;
-- Schriftstrategie Google Fonts versus lokales Hosting final entscheiden.
-
-## 11. Bewusste Ausschlüsse in RC1
-
-- kein Kontakt- oder Newsletterformular;
+- kein aktives Kontakt-, Newsletter- oder Beta-Backend;
 - kein Tracking und keine Analytics;
 - kein Consent-Banner ohne tatsächlichen Bedarf;
 - keine Cookies oder lokale Marketingpräferenzen;
 - kein Testimonial ohne belastbare Quelle;
 - keine Preisangabe ohne Freigabe;
-- kein App-Download oder externer Bestellprozess;
-- keine Bild-, Video- oder SVG-Produktion;
+- keine Lizenzserver-, Trial-, Geräteaktivierungs-, Benutzerkonto- oder Zahlungslogik;
+- kein Mailversand und kein externer Bestellprozess;
 - kein Deployment.

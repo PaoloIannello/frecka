@@ -4,7 +4,7 @@ Statische offizielle FRECKA-Landingpage und ihre konzeptionelle Grundlage.
 
 ## Status
 
-RC2 der Landingpage ist als statische HTML5-/CSS-/Vanilla-JavaScript-Seite umgesetzt und durch einen vollständigen Design Review verfeinert. Alle vereinbarten Produktionspfade sind eingebunden; fehlende finale Dateien können ohne HTML- oder CSS-Änderung eingesetzt werden.
+Die Landingpage ist als statische HTML5-/CSS-/Vanilla-JavaScript-Seite umgesetzt und auf das geplante Beta-Angebot vorbereitet. Markenassets, Produktscreens, 14-Tage-Testphase, Einzellizenz, Pricing-Platzhalter, Beta-Anfrage und FRECKA-spezifische Legal-Seiten sind integriert. Preis, Formular-Backend und Hostingprotokollierung bleiben vor der öffentlichen Aktivierung verpflichtende Freigabepunkte.
 
 ## Dokumente
 
@@ -27,17 +27,21 @@ RC2 der Landingpage ist als statische HTML5-/CSS-/Vanilla-JavaScript-Seite umges
 - [ASSET_CHECKLIST.md](ASSET_CHECKLIST.md) führt alle erforderlichen Marken-, Plattform-, Screenshot-, Foto- und Social-Assets.
 - [BRAND_INTEGRATION.md](BRAND_INTEGRATION.md) dokumentiert feste Dateinamen, Größen, Einsatzstellen und Austauschlogik.
 - [FINAL_ASSET_MAP.md](FINAL_ASSET_MAP.md) ist die abschließende Zuordnung aller Produktionsdateien samt Export- und Retina-Vorgaben.
+- [WEBSITE_009_CONTENT_LAUNCH.md](WEBSITE_009_CONTENT_LAUNCH.md) dokumentiert Content Review, Beta-Positionierung, Legal-Seiten und verbleibende Launch-Blocker.
+- [WEBSITE_010_FINALIZATION.md](WEBSITE_010_FINALIZATION.md) dokumentiert die finale Beta-, Pricing-, Formular-, Legal-, SEO- und Launch-Bewertung.
+- [legal/impressum.html](legal/impressum.html) enthält die anhand der öffentlichen Betreiberquelle verifizierte Anbieterkennzeichnung nach § 5 DDG.
+- [legal/datenschutz.html](legal/datenschutz.html) beschreibt den aktuellen technischen Datenschutzstand; unbekannte Hosting- und Backenddetails bleiben ausschließlich intern dokumentiert.
 
 ## Technisches Fundament
 
 - `styles/design-tokens.css`: globale Farben, Typografie, Abstände, Radien, Schatten, Container, Ebenen und Motion-Tokens.
 - `styles/animation.css`: ausschließlich globale, optionale Bewegungsprimitiven mit Reduced-Motion-Fallback.
 - `styles/brand-assets.css`: dimensionsstabile Darstellungs- und Austauschschicht für Logos, Screenshots und Fotos.
-- `components/`: reserviert für spätere, einzeln beauftragte Komponentenimplementierungen.
-- `scripts/`: reserviert für spätere progressive Verbesserungen in Vanilla JavaScript.
-- `assets/`: reserviert für später freigegebene Marken- und Medienassets.
+- `components/`: reserviert für eine mögliche spätere Modularisierung; die statische Seite benötigt sie nicht zur Laufzeit.
+- `scripts/main.js`: progressive Navigation, Scroll-Reveal und Asset-Fallbacks in Vanilla JavaScript.
+- `assets/`: freigegebene Logo-, Screenshot-, Favicon- und Social-Assets sowie reservierte Produktionspfade.
 
-## Vorgesehene Struktur
+## Aktuelle Struktur
 
 ```text
 website/
@@ -55,9 +59,9 @@ website/
 │   ├── screenshots/ # Hero, Workflow und Produktbereiche
 │   ├── photos/      # Originale und optimierte Webfassungen
 │   └── social/      # OpenGraph und Social Preview
-├── content/         # redaktionelle Quelldokumente und Textvarianten
-├── components/      # spätere Komponentenimplementierungen
-├── scripts/         # kleines, optionales Vanilla JavaScript
+├── components/      # für mögliche spätere Teilimplementierungen reserviert
+├── legal/           # Impressum und Datenschutz
+├── scripts/         # kleines, progressiv verbessertes Vanilla JavaScript
 └── styles/
     ├── design-tokens.css
     ├── animation.css
@@ -65,7 +69,7 @@ website/
     └── brand-assets.css
 ```
 
-Die Medien-, Inhalts-, Komponenten- und Skriptordner sind als spätere Zielstruktur vorgemerkt und werden erst in einer ausdrücklich beauftragten Umsetzungsphase befüllt. HTML-Seiten sollen später direkt unter `website/` liegen, damit die statische Veröffentlichung ohne Build-Schritt funktioniert.
+Die Landingpage liegt direkt unter `website/` und kann ohne Build-Schritt statisch ausgeliefert werden. Finale Produktionspfade sind so eingebunden, dass Logo- und Screenshotdateien ohne Änderung der HTML-/CSS-Struktur austauschbar bleiben.
 
 ## Verbindliche Grenzen
 
