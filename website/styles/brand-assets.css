@@ -1,9 +1,9 @@
 /**
  * FRECKA final brand asset contract
  *
- * Production paths live directly in index.html so native loading, decoding,
- * width and height attributes remain available. This stylesheet fixes every
- * media box and preserves the RC2 fallback when a future file is unavailable.
+ * Production paths live directly in the HTML. Logo assets use an object with
+ * native fallback content so SVG and text can never be rendered at the same
+ * time. Screenshot boxes preserve their dimensions and CSS fallbacks.
  */
 
 :root {
@@ -15,26 +15,36 @@
 
 .c-brand__wordmark {
   width: var(--asset-logo-header-width);
-  min-height: var(--asset-logo-header-height);
+  height: var(--asset-logo-header-height);
   position: relative;
-  display: inline-flex;
-  align-items: center;
+  display: block;
 }
 
 .c-brand__logo {
-  position: absolute;
-  z-index: 1;
-  inset: 0;
+  border: 0;
+  display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  object-position: left center;
   pointer-events: none;
+}
+
+.c-brand__fallback {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  color: var(--color-text);
+  font: inherit;
+  letter-spacing: inherit;
+}
+
+.c-brand__wordmark::after {
+  content: none;
 }
 
 .c-brand--footer .c-brand__wordmark {
   width: var(--asset-logo-footer-width);
-  min-height: var(--asset-logo-footer-height);
+  height: var(--asset-logo-footer-height);
 }
 
 .c-device__screen,
@@ -62,8 +72,18 @@
 }
 
 @media (forced-colors: active) {
-  .c-brand__logo,
   .c-asset-image {
     display: none;
+  }
+
+  .c-brand__logo {
+    display: none;
+  }
+
+  .c-brand__wordmark::after {
+    content: "FRECKA";
+    height: 100%;
+    display: flex;
+    align-items: center;
   }
 }

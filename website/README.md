@@ -29,6 +29,7 @@ Die Landingpage ist als statische HTML5-/CSS-/Vanilla-JavaScript-Seite umgesetzt
 - [FINAL_ASSET_MAP.md](FINAL_ASSET_MAP.md) ist die abschließende Zuordnung aller Produktionsdateien samt Export- und Retina-Vorgaben.
 - [WEBSITE_009_CONTENT_LAUNCH.md](WEBSITE_009_CONTENT_LAUNCH.md) dokumentiert Content Review, Beta-Positionierung, Legal-Seiten und verbleibende Launch-Blocker.
 - [WEBSITE_010_FINALIZATION.md](WEBSITE_010_FINALIZATION.md) dokumentiert die finale Beta-, Pricing-, Formular-, Legal-, SEO- und Launch-Bewertung.
+- [WEBSITE_011_VISUAL_REVIEW.md](WEBSITE_011_VISUAL_REVIEW.md) dokumentiert die finale Logo- und Datenbereich-Korrektur samt Responsive-Abnahme.
 - [legal/impressum.html](legal/impressum.html) enthält die anhand der öffentlichen Betreiberquelle verifizierte Anbieterkennzeichnung nach § 5 DDG.
 - [legal/datenschutz.html](legal/datenschutz.html) beschreibt den aktuellen technischen Datenschutzstand; unbekannte Hosting- und Backenddetails bleiben ausschließlich intern dokumentiert.
 

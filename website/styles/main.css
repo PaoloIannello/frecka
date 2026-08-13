@@ -1019,17 +1019,19 @@ a {
   border-radius: var(--radius-sm);
   background: rgb(223 240 235 / 14%);
   display: grid;
-  grid-template-columns: repeat(2, 0.55rem);
-  place-content: center;
-  gap: 0.2rem;
+  place-items: center;
+  color: rgb(255 255 255 / 82%);
 }
 
-.c-data-flow__symbol i {
-  width: 0.55rem;
-  height: 1rem;
-  border: 1px solid rgb(255 255 255 / 72%);
-  border-radius: 0.2rem;
+.c-data-flow__icon {
+  width: 1.65rem;
+  height: 1.65rem;
   display: block;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
 }
 
 .c-data-flow strong,
