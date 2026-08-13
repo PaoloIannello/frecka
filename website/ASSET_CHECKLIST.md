@@ -9,10 +9,10 @@ Nur die für WEBSITE-007 verbindlichen Produktionsdateien stehen in dieser Check
 
 ## 1. Logo und Browsericon
 
-- [ ] `assets/logo/svg/frecka-logo.svg`
-- [ ] `assets/logo/svg/frecka-wordmark.svg`
-- [ ] `assets/logo/svg/frecka-icon.svg`
-- [ ] `assets/logo/favicon/favicon.svg`
+- [x] `assets/logo/svg/frecka-logo.svg`
+- [x] `assets/logo/svg/frecka-wordmark.svg`
+- [x] `assets/logo/svg/frecka-icon.svg`
+- [x] `assets/logo/favicon/favicon.svg`
 - [ ] SVGs enthalten ausschließlich saubere Vektorpfade
 - [ ] keine eingebetteten Rasterbilder oder Schriften
 - [ ] `viewBox` und Schutzzone sind korrekt
@@ -21,8 +21,8 @@ Nur die für WEBSITE-007 verbindlichen Produktionsdateien stehen in dieser Check
 
 ## 2. Hero Screenshot
 
-- [ ] `assets/screenshots/hero/home.png`
-- [ ] empfohlen: 1240 × 2200 px
+- [x] `assets/screenshots/hero/home.png`
+- [x] 1206 × 2622 px
 - [ ] stabiler, freigegebener App-Release
 - [ ] vollständig fiktive Daten
 - [ ] ohne Browserchrome, Geräteframe oder transparente Außenfläche
@@ -31,10 +31,10 @@ Nur die für WEBSITE-007 verbindlichen Produktionsdateien stehen in dieser Check
 
 ## 3. Workflow Screens
 
-- [ ] `assets/screenshots/workflow/step-1.png`
-- [ ] `assets/screenshots/workflow/step-2.png`
-- [ ] `assets/screenshots/workflow/step-3.png`
-- [ ] empfohlen: jeweils 960 × 540 px
+- [x] `assets/screenshots/workflow/step-1.png`
+- [x] `assets/screenshots/workflow/step-2.png`
+- [x] `assets/screenshots/workflow/step-3.png`
+- [x] jeweils 960 × 540 px
 - [ ] einheitlicher App-Release und fiktiver Datensatz
 - [ ] Reihenfolge entspricht dem realen Ablauf
 - [ ] wichtiger UI-Zustand liegt in der sicheren Bildmitte
@@ -64,16 +64,15 @@ Nur die für WEBSITE-007 verbindlichen Produktionsdateien stehen in dieser Check
 
 ## 6. Performance und Integration
 
-- [ ] alle Dateien liegen exakt unter den dokumentierten Pfaden
+- [ ] alle Dateien liegen exakt unter den dokumentierten Pfaden; optionale Produkt- und Fotoassets fehlen noch
 - [ ] keine zusätzliche Suffix- oder Retina-Datei ist für die Website erforderlich
 - [ ] Rasterdateien enthalten bereits die empfohlene 2×-Exportauflösung
-- [ ] Hero lädt priorisiert und ohne Lazy Loading
-- [ ] Workflow-Screens und Arbeitsfoto laden lazy
-- [ ] alle Rasterbilder besitzen HTML-Attribute für Breite und Höhe
-- [ ] Logo und Medien erscheinen ohne HTML- oder CSS-Änderung
+- [x] Hero lädt priorisiert und ohne Lazy Loading
+- [x] Workflow-Screens laden lazy; das fehlende Arbeitsfoto wird nicht angefordert
+- [x] alle eingebundenen Rasterbilder besitzen HTML-Attribute für Breite und Höhe
+- [x] Logo und vorhandene Medien erscheinen ohne HTML- oder CSS-Änderung
 - [ ] bei fehlenden Dateien bleiben die RC2-Fallbacks sichtbar
-- [ ] keine Layout Shifts beim Laden
+- [x] intrinsische Maße und dimensionsstabile Medienrahmen gegen Layout Shifts vorhanden
 - [ ] Kompression und Dateigröße geprüft
 - [ ] Kontrast und Lesbarkeit nach Dateiaustausch geprüft
 - [ ] Browser-, Geräte- und Accessibility-Abnahme abgeschlossen
-

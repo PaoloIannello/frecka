@@ -123,7 +123,7 @@ Die API-Namen und Zustände folgen `components.md`. Wiederkehrende Gestaltung ve
 
 **Später:** Den freigegebenen App-Screenshot unter `assets/screenshots/hero/home.png` ablegen. Er überlagert die bestehende CSS-Vorschau automatisch und behält deren Maße.
 
-**Erwartetes Asset:** `home.png` mit 1240 × 2200 px als 2×-Export, vollständig fiktiven Daten und bereinigten Metadaten. Die sichtbare Figure-Caption bleibt im HTML.
+**Integriertes Asset:** `home.png` mit 1206 × 2622 px, vollständig fiktiven Daten und bereinigten Metadaten. Die sichtbare Figure-Caption bleibt im HTML.
 
 ### Drei Prozessansichten
 
@@ -135,7 +135,7 @@ Die API-Namen und Zustände folgen `components.md`. Wiederkehrende Gestaltung ve
 
 **Aktuell:** `.c-photo-slot__surface` ist eine reine CSS-Komposition mit festem Raum und Caption.
 
-**Später:** Die optimierte Fassung als `assets/photos/optimized/working-day.webp` ablegen. Die CSS-Fotofläche wird automatisch überlagert. Figure, Beschreibung, Maße und Caption bleiben erhalten.
+**Später:** Die optimierte Fassung als `assets/photos/optimized/working-day.webp` liefern und nach Freigabe in den vorhandenen Medienslot einsetzen. Bis dahin wird kein fehlender lokaler Pfad angefordert; Figure, Beschreibung, Maße und Caption bleiben erhalten.
 
 ### Favicon
 

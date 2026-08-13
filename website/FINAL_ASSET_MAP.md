@@ -10,7 +10,7 @@ Die Angaben unter „Darstellungsgröße“ beschreiben die vorgesehene maximale
 
 | Grafik | Speicherort | Verwendungsstelle | empfohlene Pixelgröße (Darstellung) | empfohlene Exportgröße | Retina-Version |
 | --- | --- | --- | --- | --- | --- |
-| Hauptlogo | `assets/logo/svg/frecka-logo.svg` | Header und Footer | Header 120 × 20 px; Footer 152 × 28 px | SVG mit engem ViewBox, Referenzformat 304 × 56 | nicht erforderlich; SVG skaliert verlustfrei |
+| Hauptlogo | `assets/logo/svg/frecka-logo.svg` | Header und Footer | Header 120 × 20 px; Footer 152 × 28 px | Original-SVG, ViewBox 1100 × 180 | nicht erforderlich; SVG skaliert verlustfrei |
 | Wortmarke | `assets/logo/svg/frecka-wordmark.svg` | reserviert für eigenständige Wortmarken-Anwendungen | bis 240 × 48 px | SVG mit engem ViewBox | nicht erforderlich; SVG skaliert verlustfrei |
 | D-TILE-Icon | `assets/logo/svg/frecka-icon.svg` | reserviert für kompakte Marken-Anwendungen | 32 × 32 bis 64 × 64 px | quadratisches SVG mit engem ViewBox | nicht erforderlich; SVG skaliert verlustfrei |
 | Browsericon | `assets/logo/favicon/favicon.svg` | Browser-Tab und Lesezeichen | 16 × 16 bis 32 × 32 px | quadratisches SVG, optisch für kleine Größen korrigiert | nicht erforderlich; SVG skaliert verlustfrei |
@@ -21,7 +21,7 @@ Das Hauptlogo ist bereits zweimal in `index.html` referenziert. Solange die Date
 
 | Grafik | Speicherort | Verwendungsstelle | empfohlene Pixelgröße (Darstellung) | empfohlene Exportgröße | Retina-Version |
 | --- | --- | --- | --- | --- | --- |
-| Startansicht | `assets/screenshots/hero/home.png` | Hero, im bestehenden Smartphone-Rahmen | ca. 620 × 1100 px | 1240 × 2200 px PNG | Produktionsdatei ist 2× |
+| Startansicht | `assets/screenshots/hero/home.png` | Hero, im bestehenden Smartphone-Rahmen | ca. 233 × 508 px | 1206 × 2622 px PNG | Originalauflösung, deutlich über 2× |
 | Workflow Schritt 1 | `assets/screenshots/workflow/step-1.png` | Karte „Leistung auswählen“ | bis 480 × 270 px | 960 × 540 px PNG | Produktionsdatei ist 2× |
 | Workflow Schritt 2 | `assets/screenshots/workflow/step-2.png` | Karte „Zahlung erfassen“ | bis 480 × 270 px | 960 × 540 px PNG | Produktionsdatei ist 2× |
 | Workflow Schritt 3 | `assets/screenshots/workflow/step-3.png` | Karte „Beleg abschließen“ | bis 480 × 270 px | 960 × 540 px PNG | Produktionsdatei ist 2× |
@@ -30,7 +30,7 @@ Das Hauptlogo ist bereits zweimal in `index.html` referenziert. Solange die Date
 | Belegansicht | `assets/screenshots/receipts/receipt.png` | für späteren Austausch innerhalb bestehender Produktmedien reserviert | bis 620 × 1100 px | 1240 × 2200 px PNG | Produktionsdatei ist 2× |
 | Einstellungen | `assets/screenshots/settings/settings.png` | für späteren Austausch innerhalb bestehender Produktmedien reserviert | bis 620 × 1100 px | 1240 × 2200 px PNG | Produktionsdatei ist 2× |
 
-Der Hero-Screenshot wird sofort mit hoher Priorität geladen. Die drei Workflow-Screens werden nativ per Lazy Loading geladen. Alle sichtbaren Screens besitzen feste intrinsische `width`- und `height`-Werte und liegen in dimensionsstabilen Rahmen. Die Screenshot-Daten müssen vollständig fiktiv und die Dateimetadaten bereinigt sein.
+Der Hero-Screenshot wird sofort mit hoher Priorität geladen. Die drei Workflow-Screens werden nativ per Lazy Loading geladen. Alle sichtbaren Screens besitzen feste intrinsische `width`- und `height`-Werte, verwenden `object-fit: contain` und liegen in dimensionsstabilen Rahmen. Damit bleiben die ausgewählten Bildinhalte auf allen Breakpoints vollständig sichtbar und unverzerrt.
 
 ## 4. Fotografie
 
@@ -54,6 +54,6 @@ Das Foto wird per Lazy Loading und asynchroner Dekodierung geladen. Der vorhande
 
 | Status | Dateien |
 | --- | --- |
-| direkt in der Landingpage referenziert | `frecka-logo.svg`, `favicon.svg`, `home.png`, `step-1.png`, `step-2.png`, `step-3.png`, `working-day.webp` |
+| vorhanden und direkt in der Landingpage referenziert | `frecka-logo.svg`, `favicon.svg`, `opengraph-1200x630.png`, `home.png`, `step-1.png`, `step-2.png`, `step-3.png` |
 | final benannt und für die unveränderte Seitenstruktur reserviert | `frecka-wordmark.svg`, `frecka-icon.svg`, `customers.png`, `vouchers.png`, `receipt.png`, `settings.png` |
-| noch zu liefern | alle oben genannten Produktionsdateien; WEBSITE-007 erzeugt bewusst keine Grafik- oder Logo-Platzhalter |
+| noch zu liefern und deshalb nicht angefordert | `working-day.webp` sowie die reservierten Kunden-, Gutschein-, Beleg- und Einstellungen-Screens |

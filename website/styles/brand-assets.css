@@ -55,9 +55,10 @@
   pointer-events: none;
 }
 
-.c-asset-image--hero {
-  object-fit: cover;
-  object-position: top center;
+.c-asset-image--hero,
+.c-asset-image--screen {
+  object-fit: contain;
+  object-position: center;
 }
 
 @media (forced-colors: active) {

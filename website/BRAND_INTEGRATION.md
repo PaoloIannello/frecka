@@ -19,8 +19,8 @@ Das Prinzip:
 
 | Stelle | Produktionsdatei | HTML-Maße | CSS-Darstellung | Ladeverhalten |
 | --- | --- | ---: | --- | --- |
-| Header | `assets/logo/svg/frecka-logo.svg` | 304 × 56 | 120 × 20 px, `contain` | sofort |
-| Footer | `assets/logo/svg/frecka-logo.svg` | 304 × 56 | 152 × 28 px, `contain` | lazy |
+| Header | `assets/logo/svg/frecka-logo.svg` | 1100 × 180 | 120 × 20 px, `contain` | sofort |
+| Footer | `assets/logo/svg/frecka-logo.svg` | 1100 × 180 | 152 × 28 px, `contain` | lazy |
 
 Die Datei enthält das vollständige horizontale D-TILE-/FRECKA-Lockup, aber nicht den Claim. Der Claim bleibt Live-Text. Bei fehlender Datei bleibt „FRECKA“ als Text-Wordmark sichtbar.
 
@@ -40,8 +40,8 @@ Wortmarke und Icon sind bewusst nicht zusätzlich in die Landingpage eingesetzt,
 | --- | --- |
 | Datei | `assets/screenshots/hero/home.png` |
 | Stelle | `.c-device__screen` im Hero |
-| HTML-Maße | 1240 × 2200 |
-| Darstellung | füllt ausschließlich den bestehenden neutralen Device-Screen |
+| HTML-Maße | 1206 × 2622 |
+| Darstellung | vollständig und unverzerrt mit `contain` im bestehenden neutralen Device-Screen |
 | Ladeverhalten | nicht lazy, `fetchpriority="high"`, asynchrones Decoding |
 | Fallback | vorhandene CSS-App-Vorschau |
 
@@ -55,7 +55,7 @@ Der Screenshot enthält keinen Geräteframe und keine Browserleiste. Der Device-
 | Zahlung erfassen | `assets/screenshots/workflow/step-2.png` | 960 × 540 | lazy, async |
 | Beleg abschließen | `assets/screenshots/workflow/step-3.png` | 960 × 540 | lazy, async |
 
-Alle drei Bilder liegen als absolute Bildebene innerhalb der bestehenden `.c-mini-screen`-Box. Titel, Nummerierung, Beschreibung und Fallbackvisualisierung bleiben unverändert.
+Alle drei Bilder liegen als absolute Bildebene innerhalb der bestehenden `.c-mini-screen`-Box und werden mit `contain` vollständig und unverzerrt dargestellt. Titel, Nummerierung, Beschreibung und Fallbackvisualisierung bleiben unverändert.
 
 ## 5. Arbeitsfoto
 
@@ -65,10 +65,10 @@ Alle drei Bilder liegen als absolute Bildebene innerhalb der bestehenden `.c-min
 | Stelle | `.c-photo-slot__surface` im Abschnitt Arbeitsalltag |
 | HTML-Maße | 1600 × 1200 |
 | Darstellung | `cover`, zentriert |
-| Ladeverhalten | lazy, asynchrones Decoding |
-| Fallback | vorhandene ruhige CSS-Fotofläche |
+| Ladeverhalten | erst nach Lieferung zu aktivieren |
+| Fallback | vorhandene ruhige CSS-Fotofläche; derzeit ohne fehlerhafte Netzwerkanfrage |
 
-Das finale Motiv muss zur vorhandenen zugänglichen Beschreibung passen: eine ruhige Arbeitssituation in einem kleinen Dienstleistungsbetrieb. So ist beim Assetaustausch keine Textänderung erforderlich.
+Das finale Motiv muss zur vorhandenen zugänglichen Beschreibung passen: eine ruhige Arbeitssituation in einem kleinen Dienstleistungsbetrieb. Bis zur Lieferung bleibt ausschließlich die bestehende CSS-Fläche aktiv, damit kein lokaler Assetpfad mit 404 angefordert wird.
 
 ## 6. Weitere Produktscreens
 
@@ -88,7 +88,7 @@ Sie können später in bereits geplanten Produktseiten verwendet werden, ohne ih
 - `width` und `height` stehen auf jedem Rasterbild.
 - CSS erhält die bestehenden stabilen Media-Boxen und Seitenverhältnisse.
 - Der Hero-Screen lädt priorisiert, weil er Teil des ersten Viewports ist.
-- Workflow-Screens, Arbeitsfoto und Footerlogo laden lazy.
+- Workflow-Screens und Footerlogo laden lazy; das fehlende Arbeitsfoto wird nicht angefordert.
 - `decoding="async"` verhindert unnötiges Blockieren beim Decoding.
 - Logos verwenden `object-fit: contain`; Screens und Foto verwenden die dokumentierten Objektanpassungen.
 - Fehlende Bilder werden nach einem Ladefehler verborgen; sie verdrängen keinen Fallback.
@@ -103,7 +103,6 @@ Sie können später in bereits geplanten Produktseiten verwendet werden, ohne ih
 5. Mobile, Tablet und Desktop abnehmen.
 6. `ASSET_CHECKLIST.md` nach erfolgreicher Prüfung aktualisieren.
 
-## 9. Aktuell fehlende Dateien
+## 9. Aktueller Integrationsstand
 
-Zum Abschluss von WEBSITE-007 wurden keine Grafiken erzeugt. Sämtliche in `FINAL_ASSET_MAP.md` aufgeführten Produktionsdateien fehlen daher, sofern sie nicht separat vom Auftraggeber bereitgestellt wurden.
-
+Logo, Wortmarke, D-TILE-Icon, Favicon, Social Preview, Hero-Screenshot und drei Workflow-Screens sind mit WEBSITE-008 integriert. Noch nicht vorhanden sind das authentische Arbeitsfoto und die reservierten Kunden-, Gutschein-, Beleg- und Einstellungen-Screens. Der technische Fallback für diese fehlenden Dateien bleibt bestehen.
