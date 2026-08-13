@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 180">
+<g transform="translate(20,20)">
+
+<path d="M 35.2 28.799999999999997 H 102.4 Q 128.0 28.799999999999997 128.0 54.400000000000006 V 99.2"
+ fill="none" stroke="#FFFFFF" stroke-width="10.4" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 32.0 54.400000000000006 V 102.4 Q 32.0 128.0 57.599999999999994 128.0 H 96.0"
+ fill="none" stroke="#FFFFFF" stroke-width="10.4" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 62.400000000000006 78.4 H 97.6 M 80.0 60.8 V 96.0"
+ fill="none" stroke="#FFFFFF" stroke-width="10.4" stroke-linecap="round"/>
+<circle cx="126.4" cy="126.4" r="9.6" fill="#FFFFFF"/>
+</g>
+<g transform="translate(210,20)">
+<text x="20" y="82" font-family="Arial, Helvetica, sans-serif" font-size="82" font-weight="700" letter-spacing="12" fill="#0F172A">FR</text>
+<g fill="#075F55">
+ <rect x="175" y="23" width="64" height="12" rx="6"/>
+ <rect x="175" y="49" width="52" height="12" rx="6"/>
+ <rect x="175" y="75" width="64" height="12" rx="6"/>
+</g>
+<text x="254" y="82" font-family="Arial, Helvetica, sans-serif" font-size="82" font-weight="700" letter-spacing="12" fill="#0F172A">CKA</text>
+
+</g>
+</svg>

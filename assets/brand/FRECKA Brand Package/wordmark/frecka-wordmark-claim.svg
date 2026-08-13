@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 190">
+<text x="20" y="82" font-family="Arial, Helvetica, sans-serif" font-size="82" font-weight="700" letter-spacing="12" fill="#0F172A">FR</text>
+<g fill="#075F55">
+ <rect x="175" y="23" width="64" height="12" rx="6"/>
+ <rect x="175" y="49" width="52" height="12" rx="6"/>
+ <rect x="175" y="75" width="64" height="12" rx="6"/>
+</g>
+<text x="254" y="82" font-family="Arial, Helvetica, sans-serif" font-size="82" font-weight="700" letter-spacing="12" fill="#0F172A">CKA</text>
+<text x="20" y="165" font-family="Arial, Helvetica, sans-serif" font-size="36" fill="#0F172A">Einfach. <tspan fill="#075F55">Erledigt.</tspan> Weiter.</text>
+</svg>
