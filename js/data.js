@@ -1,6 +1,6 @@
 window.PROTOTYPE_DATA = Object.freeze({
-  version: "0.10.10",
-  build: "SERVICEWORKER-003",
+  version: "0.11.0",
+  build: "TSE-002",
   users: [
     {
       formatVersion: 1,

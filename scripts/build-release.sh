@@ -13,7 +13,7 @@ Aufruf:
   $PROGRAM_NAME <annotierter-tag>
 
 Beispiel:
-  $PROGRAM_NAME v0.10.10
+  $PROGRAM_NAME v0.11.0
 EOF
 }
 

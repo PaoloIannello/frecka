@@ -1,6 +1,6 @@
-# FRECKA – SERVICEWORKER-003
+# FRECKA – 0.11.0 / TSE-002
 
-Browserbasierte FRECKA-PWA 0.10.10 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Dieser Patchkandidat enthält RELEASE-AUTOMATION-001, RELEASE-AUTOMATION-002 und SERVICEWORKER-003; Fach-, Persistenz- und Dokumentlogik bleiben unverändert.
+Browserbasierte FRECKA-PWA 0.11.0 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der Minor-Kandidat bündelt USER-001/002, LICENSE-001/002, SETTINGS-001/002, UX-011, UPDATE-002, BACKUP-003 und TSE-002. Die Release-Vorbereitung selbst ergänzt keine neue Fachlogik.
 
 UX-011 / UPDATE-002 / BACKUP-003 ergänzt darauf eine reale Seite **Einstellungen → Update**, bereinigt veraltete „Geplant“-Kennzeichnungen und erinnert nach sieben Tagen ohne bestätigte Sicherungsdatei nicht blockierend an ein neues lokales Backup. Die manuelle Suche verwendet den vorhandenen Updatecontroller; die Erinnerung bleibt im bestehenden Settings-Store und wird durch Restore nicht fälschlich zurückgesetzt.
 
@@ -54,7 +54,7 @@ UX-011 / UPDATE-002 / BACKUP-003 ergänzt darauf eine reale Seite **Einstellunge
 - **Einstellungen → Update** zeigt Version, Build und den letzten manuellen Prüfstatus; „Nach Updates suchen“ verwendet dieselbe Registration, Updatekarte, Aktivierungsnachricht und Einmal-Reload-Sperre
 - offene Belegentwürfe und laufende Schreibvorgänge blockieren die bewusste Aktivierung weiterhin; Offline-App-Shell, IndexedDB und sämtliche Geschäftsdaten bleiben unberührt
 
-Der reale iPhone/Home-Screen-PWA-Test von `0.10.8-6056e64` am 11. August 2026 bestätigte Updateerkennung und Offline-Kaltstart, blieb nach „Jetzt aktualisieren“ jedoch bei „Wird aktualisiert …“ ohne sichtbaren Reload stehen. Das korrigierte Release `0.10.9-5b180b6` bestand anschließend den realen Updatepfad, Offline-Kaltstart, Offline-Belegerstellung und den fortbestehenden lokalen Datenbestand nach Rückkehr ins Netz. 0.10.9 ist damit die aktuelle freigegebene Beta-Basis, jedoch noch keine Produktivfreigabe für `app.frecka.app`.
+Der reale iPhone/Home-Screen-PWA-Test von `0.10.8-6056e64` am 11. August 2026 bestätigte Updateerkennung und Offline-Kaltstart, blieb nach „Jetzt aktualisieren“ jedoch bei „Wird aktualisiert …“ ohne sichtbaren Reload stehen. Das korrigierte Release `0.10.9-5b180b6` bestand anschließend den realen Updatepfad, Offline-Kaltstart, Offline-Belegerstellung und den fortbestehenden lokalen Datenbestand nach Rückkehr ins Netz. `0.10.10-b3456bf` entfernte danach die bestätigte Legacy-Brücke und validierte den Ein-Befehl-Releaseprozess real. 0.10.10 ist die aktuelle freigegebene Beta-Basis, jedoch noch keine Produktivfreigabe für `app.frecka.app`.
 
 ## Grundlage aus PERSISTENCE-010
 

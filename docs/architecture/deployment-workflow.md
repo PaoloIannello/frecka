@@ -1,6 +1,6 @@
 # FRECKA: Vollständiger Deployment- und Release-Workflow
 
-Stand: 12. August 2026
+Stand: 13. August 2026
 
 Geltungsbereich: Entwicklung im einzigen Master-Repository, lokaler automatisierter Beta-Release und weiterhin manuelle Web-Station-/Produktivfreigabe
 
@@ -382,9 +382,9 @@ Es wird nicht minifiziert, kompiliert oder gebündelt. „Build“ bedeutet bei 
 
 Das Artefakt wird zunächst unter einem versteckten `.build-<release-id>.*`-Namen erstellt. Eine exklusive `.publish-<release-id>.lock` verhindert zwei gleichzeitige lokale Finalisierungen. Bei einem Fehler entfernt der Builder ausschließlich sein eigenes unvollständiges lokales Staging; ein finaler Release-Name entsteht erst nach vollständiger Inhalts-, Bytegleichheits-, Prüfsummen- und Rechteprüfung.
 
-Der annotierte Tag `v0.10.8` zeigt auf den vollständigen Versionsstand `6056e64`; sein unveränderliches Artefakt bleibt wegen des abgelehnten realen Updateabschlusses unverändert. Der korrigierte Tag `v0.10.9` zeigt auf `5b180b64ec75ab6f6c2ef53842ead45c6cc32b4a`; `0.10.9-5b180b6` hat den realen Update- und Offlinepfad bestanden und ist die aktuelle Beta-Basis. Historische Tags und Artefakte werden durch RELEASE-AUTOMATION-001 weder umbenannt noch neu erzeugt.
+Der annotierte Tag `v0.10.8` zeigt auf den vollständigen Versionsstand `6056e64`; sein unveränderliches Artefakt bleibt wegen des abgelehnten realen Updateabschlusses unverändert. Der korrigierte Tag `v0.10.9` zeigt auf `5b180b64ec75ab6f6c2ef53842ead45c6cc32b4a` und bestand den realen Update- und Offlinepfad. Der annotierte Tag `v0.10.10` zeigt auf `b3456bf1b5f4e6fff074e97acbaea994d064daac`; das unveränderliche Artefakt `0.10.10-b3456bf` validierte anschließend SERVICEWORKER-003 und den Ein-Befehl-Releaseprozess real und ist die aktuelle Beta-Basis. Historische Tags und Artefakte werden durch RELEASE-AUTOMATION-001 weder umbenannt noch neu erzeugt.
 
-Der vorbereitete Patchkandidat `0.10.10` / `SERVICEWORKER-003` dient der ersten realen Validierung dieses Ein-Befehl-Prozesses. Seine maschinenlesbare Freigabenotiz steht unter `docs/releases/0.10.10.md`. SERVICEWORKER-003 entfernt nach bestätigter Altclient-Übergangsabnahme die einmalige SERVICEWORKER-002-Legacy-Brücke; das zugehörige Preflight-Gate bleibt als Regressionsschutz erhalten und blockiert den vorbereiteten Stand nicht mehr.
+Der vorbereitete Minor-Kandidat `0.11.0` / `TSE-002` bündelt die seit 0.10.10 abgeschlossenen Blöcke USER-001/002, LICENSE-001/002, SETTINGS-001/002, UX-011, UPDATE-002, BACKUP-003 und TSE-002. Seine maschinenlesbare Freigabenotiz steht unter `docs/releases/0.11.0.md`. TSE bleibt optional vorbereitet und ist weder aktiviert noch verbunden oder fiskalisiert. Der SERVICEWORKER-003-Regressionsschutz gegen die entfernte Legacy-Brücke bleibt unverändert aktiv.
 
 ### 7.4 Unveränderlichkeit
 
@@ -474,7 +474,7 @@ Das Ergebnis wird ausdrücklich als freigegeben oder abgelehnt festgehalten. Bei
 
 Für `0.9.1-26dc63f` ist die reale iPhone-Abnahme einschließlich Online-Start, Offline-Kaltstart, lokaler Datennutzung, Offline-Belegerstellung, Neustart mit wieder aktiviertem Netz sowie PDF-/QR-/Belegansicht bestanden. Der releasebezogene Nachweis und die klare Abgrenzung zur noch ausstehenden Produktivfreigabe stehen in `docs/releases/0.9.1.md`.
 
-Die aktuelle Beta-Basis `0.10.9-5b180b6` hat auf einem echten iPhone als installierte Home-Screen-PWA zusätzlich den korrigierten UPDATE-001b-Wechsel bestanden. Offline-Kaltstart, Offline-Belegerstellung sowie vorhandene und offline neu erzeugte lokale Daten blieben nach vollständigem Beenden und Rückkehr ins Netz verfügbar. Damit ist 0.10.9 für Beta freigegeben und die Altclient-Übergangsabnahme bestätigt; eine Produktivfreigabe für `app.frecka.app` folgt daraus nicht. Offene Produkt-/UX-Beobachtungen werden zentral in `PROJECT.md` geführt und verändern die geprüften Artefakte nicht.
+`0.10.9-5b180b6` hat auf einem echten iPhone als installierte Home-Screen-PWA den korrigierten UPDATE-001b-Wechsel bestanden. Offline-Kaltstart, Offline-Belegerstellung sowie vorhandene und offline neu erzeugte lokale Daten blieben nach vollständigem Beenden und Rückkehr ins Netz verfügbar. Damit war die Altclient-Übergangsabnahme bestätigt. `0.10.10-b3456bf` entfernte anschließend die einmalige Legacy-Brücke und validierte SERVICEWORKER-003 sowie den lokalen Ein-Befehl-Releaseprozess real; es ist die aktuelle freigegebene Beta-Basis. Eine Produktivfreigabe für `app.frecka.app` folgt daraus nicht. Offene Produkt-/UX-Beobachtungen werden zentral in `PROJECT.md` geführt und verändern die geprüften Artefakte nicht.
 
 ## 9. Produktiv-Deployment
 
