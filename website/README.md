@@ -4,7 +4,7 @@ Statische offizielle FRECKA-Landingpage und ihre konzeptionelle Grundlage.
 
 ## Status
 
-RC2 der Landingpage ist als statische HTML5-/CSS-/Vanilla-JavaScript-Seite umgesetzt und durch einen vollständigen Design Review verfeinert. Echte Bilder und das finale Logo sind bewusst noch nicht enthalten; dimensionsstabile Media-Slots bereiten ihren späteren Austausch vor.
+RC2 der Landingpage ist als statische HTML5-/CSS-/Vanilla-JavaScript-Seite umgesetzt und durch einen vollständigen Design Review verfeinert. Alle vereinbarten Produktionspfade sind eingebunden; fehlende finale Dateien können ohne HTML- oder CSS-Änderung eingesetzt werden.
 
 ## Dokumente
 
@@ -26,12 +26,13 @@ RC2 der Landingpage ist als statische HTML5-/CSS-/Vanilla-JavaScript-Seite umges
 - [BRAND_GUIDELINES.md](BRAND_GUIDELINES.md) definiert die verbindliche Anwendung von D TILE, Wortmarke, Claim, Farben und Typografie.
 - [ASSET_CHECKLIST.md](ASSET_CHECKLIST.md) führt alle erforderlichen Marken-, Plattform-, Screenshot-, Foto- und Social-Assets.
 - [BRAND_INTEGRATION.md](BRAND_INTEGRATION.md) dokumentiert feste Dateinamen, Größen, Einsatzstellen und Austauschlogik.
+- [FINAL_ASSET_MAP.md](FINAL_ASSET_MAP.md) ist die abschließende Zuordnung aller Produktionsdateien samt Export- und Retina-Vorgaben.
 
 ## Technisches Fundament
 
 - `styles/design-tokens.css`: globale Farben, Typografie, Abstände, Radien, Schatten, Container, Ebenen und Motion-Tokens.
 - `styles/animation.css`: ausschließlich globale, optionale Bewegungsprimitiven mit Reduced-Motion-Fallback.
-- `styles/brand-assets.css`: finale Pfad- und Austauschschicht für Logos, Screenshots und Fotos.
+- `styles/brand-assets.css`: dimensionsstabile Darstellungs- und Austauschschicht für Logos, Screenshots und Fotos.
 - `components/`: reserviert für spätere, einzeln beauftragte Komponentenimplementierungen.
 - `scripts/`: reserviert für spätere progressive Verbesserungen in Vanilla JavaScript.
 - `assets/`: reserviert für später freigegebene Marken- und Medienassets.

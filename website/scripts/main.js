@@ -1,6 +1,18 @@
 (() => {
   "use strict";
 
+  document.querySelectorAll("[data-asset-image]").forEach((image) => {
+    const hideUnavailableAsset = () => {
+      image.hidden = true;
+    };
+
+    image.addEventListener("error", hideUnavailableAsset, { once: true });
+
+    if (image.complete && image.naturalWidth === 0) {
+      hideUnavailableAsset();
+    }
+  });
+
   const header = document.querySelector('[data-js="header"]');
   const menuButton = document.querySelector('[data-js="menu-button"]');
   const mobileNavigation = document.querySelector('[data-js="mobile-navigation"]');

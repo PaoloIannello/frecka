@@ -64,7 +64,7 @@ Vor Logoerstellung müssen Name, Schreibweise, Bildmarkenbedarf, Mindestgröße 
 - ein festgelegtes Referenzgerät bzw. Viewport;
 - einheitliche Pixeldichte;
 - verlustfreie Masterdatei;
-- optimierte Webausgabe, bevorzugt AVIF/WebP mit geeignetem Fallback;
+- formatspezifischer Produktionsexport nach `FINAL_ASSET_MAP.md`;
 - feste Breite und Höhe zur Vermeidung von Layoutverschiebungen;
 - sichtbare Caption und kontextbezogener Alternativtext;
 - Metadaten vor Veröffentlichung entfernen;

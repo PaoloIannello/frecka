@@ -82,31 +82,19 @@ Ein späteres Dark Theme benötigt eine vollständige Komponentenprüfung. Das V
 
 Die positive Fassung ist die Standarddatei für helle Hintergründe:
 
-- `frecka-logo-horizontal-positive.svg`
-- `frecka-wordmark-positive.svg`
-- `frecka-d-tile-positive.svg`
+- `frecka-logo.svg`
+- `frecka-wordmark.svg`
+- `frecka-icon.svg`
 
 Sie verwendet ausschließlich die verbindlichen Markenfarben und keine eingebetteten Rasterbilder, Filter oder Schlagschatten.
 
 ## 8. Negativ
 
-Die negative Fassung ist für dunkle Hintergründe bestimmt:
-
-- `frecka-logo-horizontal-negative.svg`
-- `frecka-wordmark-negative.svg`
-- `frecka-d-tile-negative.svg`
-
-Sie wird als eigenständige Masterdatei erstellt. Positivdateien werden nicht per CSS-Filter, Mischmodus oder Opacity in eine Negativfassung umgewandelt.
+Die negative Fassung ist für dunkle Hintergründe bestimmt. Sie wird innerhalb der finalen Marken-Masterdaten gepflegt; WEBSITE-007 definiert dafür keine zusätzliche Produktionsdatei. Die drei verbindlichen Website-SVGs werden nicht per CSS-Filter, Mischmodus oder Opacity automatisch invertiert.
 
 ## 9. Monochrom
 
-Monochrome Fassungen dienen technisch eingeschränkten Anwendungen, Prägung, Stempel, Lasergravur und einfarbigem Druck:
-
-- `frecka-logo-horizontal-monochrome.svg`
-- `frecka-wordmark-monochrome.svg`
-- `frecka-d-tile-monochrome.svg`
-
-Zulässige Farben sind 100 % FRECKA-Ink, 100 % Schwarz oder 100 % Weiß – abhängig vom Medium. Keine Grauverläufe, Konturlösungen oder halbtransparenten Bestandteile.
+Monochrome Fassungen dienen technisch eingeschränkten Anwendungen, Prägung, Stempel, Lasergravur und einfarbigem Druck. Sie werden innerhalb der Marken-Masterdaten gepflegt; WEBSITE-007 definiert dafür keine zusätzliche Website-Datei. Zulässige Farben sind 100 % FRECKA-Ink, 100 % Schwarz oder 100 % Weiß – abhängig vom Medium. Keine Grauverläufe, Konturlösungen oder halbtransparenten Bestandteile.
 
 ## 10. Einsatz auf Bildern
 
@@ -223,4 +211,3 @@ Vor Einsatz müssen alle Logo- und Icondateien geprüft sein auf:
 - passende Transparenz;
 - Rechte und Markenschutz;
 - visuelle Prüfung in Header, Footer, Favicon, App Icon und Social Preview.
-

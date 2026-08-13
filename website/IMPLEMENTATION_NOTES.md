@@ -2,7 +2,7 @@
 
 ## 1. Stand
 
-RC2 ist als vollständige statische Landingpage umgesetzt. Die Seite funktioniert ohne Framework, Build-Prozess und Laufzeitabhängigkeiten. Noch nicht vorhandene Marken- und Bildassets sind durch hochwertige, dimensionsstabile HTML/CSS-Flächen ersetzt.
+RC2 ist als vollständige statische Landingpage umgesetzt. Die Seite funktioniert ohne Framework, Build-Prozess und Laufzeitabhängigkeiten. Die finalen Produktionspfade sind eingebunden; bis die Dateien geliefert werden, bleiben die dimensionsstabilen HTML/CSS-Flächen sichtbar.
 
 Der Stand ist als Release Candidate für Inhalt, Struktur und Gestaltung gedacht. RC2 verfeinert Hierarchie, Raum, responsive Balance und Interaktionszustände, ohne Bereiche oder Produktfunktionen hinzuzufügen. Vor einer öffentlichen Veröffentlichung müssen die unter „Bekannte TODOs“ genannten fachlichen und rechtlichen Punkte abgeschlossen werden.
 
@@ -12,6 +12,7 @@ Der Stand ist als Release Candidate für Inhalt, Struktur und Gestaltung gedacht
 website/
 ├── index.html
 ├── IMPLEMENTATION_NOTES.md
+├── FINAL_ASSET_MAP.md
 ├── accessibility.md
 ├── components.md
 ├── responsive.md
@@ -38,12 +39,12 @@ Die bestehenden Konzept- und Richtungsdokumente bleiben unverändert als fachlic
 ### `index.html`
 
 - vollständige semantische Seitenstruktur;
-- sichtbare RC1-Inhalte;
+- sichtbare RC2-Inhalte;
 - Header, Hero, Arbeitsalltag, Prozess, Vorteile, Datenkontrolle, Zielgruppen, FAQ, CTA und Footer;
 - SEO-Basismetadaten;
 - OpenGraph- und X/Twitter-Textmetadaten;
 - vorbereitete Schema.org-Auszeichnung als `SoftwareApplication`;
-- austauschbare Medien-Slots ohne externe Bilder.
+- austauschbare Medien-Slots mit festen Produktionspfaden.
 
 ### `styles/design-tokens.css`
 
@@ -71,7 +72,7 @@ Die bestehenden Konzept- und Richtungsdokumente bleiben unverändert als fachlic
 
 ### `styles/brand-assets.css`
 
-- zentrale, dauerhafte Dateipfade für Logo, Screenshots und Foto;
+- dimensionsstabile Darstellung für Logo, Screenshots und Foto;
 - transparente Austauschschicht über den vorhandenen RC2-Fallbacks;
 - keine Layoutänderung beim späteren Dateiaustausch;
 - Forced-Colors-Fallback auf Text und CSS-Grundflächen.
@@ -82,6 +83,7 @@ Die bestehenden Konzept- und Richtungsdokumente bleiben unverändert als fachlic
 - Escape- und Fokus-Rückgabe beim Schließen;
 - Schließen bei Navigation, Außenklick und Desktopwechsel;
 - progressives Scroll Reveal per `IntersectionObserver`;
+- Ausblenden noch nicht gelieferter Dateien bei Ladefehler, sodass der vorhandene CSS-Fallback sichtbar bleibt;
 - vollständiger Fallback bei fehlendem JavaScript, fehlendem Observer oder Reduced Motion.
 
 ## 4. Umgesetzte Komponenten
@@ -111,7 +113,7 @@ Die API-Namen und Zustände folgen `components.md`. Wiederkehrende Gestaltung ve
 
 **Aktuell:** `.c-brand` enthält die Text-Wordmark „FRECKA“ und den Claim.
 
-**Später:** Die freigegebene Datei unter `assets/logo/svg/frecka-logo-horizontal-positive.svg` ablegen. Sie überlagert die Text-Wordmark automatisch. Der zugängliche Linkname bleibt „FRECKA Startseite“ und der Claim bleibt Live-Text.
+**Später:** Die freigegebene Datei unter `assets/logo/svg/frecka-logo.svg` ablegen. Sie überlagert die Text-Wordmark automatisch. Der zugängliche Linkname bleibt „FRECKA Startseite“ und der Claim bleibt Live-Text.
 
 **Betroffene Stellen:** Header und Footer.
 
@@ -119,9 +121,9 @@ Die API-Namen und Zustände folgen `components.md`. Wiederkehrende Gestaltung ve
 
 **Aktuell:** `.c-product-stage` enthält eine CSS-basierte, nicht interaktive Produktvorschau in `.c-device`.
 
-**Später:** Den freigegebenen App-Screenshot unter `assets/screenshots/hero/frecka-hero-receipt-flow.webp` ablegen. Er überlagert die bestehende CSS-Vorschau automatisch und behält deren Maße.
+**Später:** Den freigegebenen App-Screenshot unter `assets/screenshots/hero/home.png` ablegen. Er überlagert die bestehende CSS-Vorschau automatisch und behält deren Maße.
 
-**Erwartete Assets:** mobile AVIF-/WebP-Ausgaben plus Fallback, vollständige fiktive Daten, Alt-Text und sichtbare Caption.
+**Erwartetes Asset:** `home.png` mit 1240 × 2200 px als 2×-Export, vollständig fiktiven Daten und bereinigten Metadaten. Die sichtbare Figure-Caption bleibt im HTML.
 
 ### Drei Prozessansichten
 
@@ -133,29 +135,22 @@ Die API-Namen und Zustände folgen `components.md`. Wiederkehrende Gestaltung ve
 
 **Aktuell:** `.c-photo-slot__surface` ist eine reine CSS-Komposition mit festem Raum und Caption.
 
-**Später:** Die optimierte Fassung als `assets/photos/optimized/frecka-workday.webp` ablegen. Die CSS-Fotofläche wird automatisch überlagert. Figure, Beschreibung, Maße und Caption bleiben erhalten.
+**Später:** Die optimierte Fassung als `assets/photos/optimized/working-day.webp` ablegen. Die CSS-Fotofläche wird automatisch überlagert. Figure, Beschreibung, Maße und Caption bleiben erhalten.
 
-### OpenGraph-Bild
-
-**Aktuell:** OpenGraph- und X/Twitter-Textmetadaten sind vorhanden; es wird bewusst kein generisches Bild ausgeliefert.
-
-**Später:** Das finale Social-Preview-Bild als `assets/social/frecka-og-1200x630.png` ablegen. Die Metadaten referenzieren diesen Pfad bereits. Bei Domainfreigabe werden `og:image` und Canonical über das Hosting als absolute URLs ausgeliefert.
-
-### Favicon und Touch Icon
+### Favicon
 
 **Aktuell:** keine provisorische Bildmarke; die finalen Pfade sind bereits im Dokumentkopf eingebunden.
 
-**Später:** `assets/logo/favicon/favicon.svg`, `assets/logo/favicon/favicon-32.png` und `assets/app-icon/ios/apple-touch-icon-180.png` unter exakt diesen Namen ablegen. Keine HTML-Anpassung nötig.
+**Später:** `assets/logo/favicon/favicon.svg` unter exakt diesem Namen ablegen. Keine HTML-Anpassung nötig. Apple-Touch- und Social-Preview-Dateien sind nicht Teil des in WEBSITE-007 festgelegten Produktionsvertrags und werden daher noch nicht referenziert.
 
 ## 6. Noch offene Assets
 
 - finale D-TILE-Bildmarke;
 - finale FRECKA-Wortmarke;
-- Favicon und Apple Touch Icon;
+- Favicon;
 - freigegebener Hero-Screenshot;
 - drei freigegebene Prozess-Screens bzw. Ausschnitte;
 - authentisches Arbeitsfoto mit Nutzungsrechten;
-- OpenGraph-/Social-Preview-Bild;
 - optional lokal gehostete Inter-Dateien, falls Google Fonts vor Veröffentlichung ersetzt werden soll;
 - finales konsistentes SVG-Iconset, falls funktionale Icons ergänzt werden.
 
@@ -184,14 +179,15 @@ Nach Domainfreigabe ergänzen:
 - kein Framework und kein Hydration-Aufwand;
 - kein Build- oder Paketmanagercode;
 - sehr kleines Vanilla-JavaScript;
-- keine Bilddownloads im RC1;
+- Hero-Screenshot mit hoher Ladepriorität und ohne Lazy Loading;
+- Medien unterhalb des ersten Viewports mit `loading="lazy"` und asynchroner Dekodierung;
+- explizite intrinsische Breiten und Höhen für alle Bildreferenzen;
 - dimensionsstabile Medienflächen gegen Layout Shifts;
 - Systemschrift-Fallback vor Inter;
 - `defer` für das einzige Script;
 - Animationen verwenden Opacity und Transform;
 - keine Video-, Parallax- oder Karusselllast;
-- Screens außerhalb des ersten Viewports können später lazy geladen werden;
-- Hero-Medium bleibt von Lazy Loading ausgenommen.
+- reservierte Medienflächen und feste Seitenverhältnisse gegen Layout Shifts.
 
 Google Fonts ist die einzige externe Abhängigkeit. Für maximale Datenschutz-, Offline- und Ladezeitkontrolle sollte Inter vor Produktion lokal ausgeliefert oder vollständig durch den Systemschrift-Stack ersetzt werden.
 
