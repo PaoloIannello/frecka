@@ -1513,6 +1513,114 @@
         }
       },
       {
+        name: "TSE-002 speichert nur die deaktivierte fiskaly-Vorbereitung und hält Belege frei von TSE-Platzhaltern",
+        run: async () => {
+          const tenantId = "test-tse-settings";
+          const settings = recordFixture(tenantId, "completed");
+          assertDeepEqual(settings.tseSettings, {
+            formatVersion: 1,
+            provider: "fiskaly SIGN DE",
+            enabled: false,
+            setupStatus: "not-configured",
+            connectionStatus: "not-connected"
+          }, "Sichere TSE-Standardvorbereitung ist nicht eindeutig");
+          assertDeepEqual(
+            Object.keys(settings.tseSettings).sort(),
+            ["formatVersion", "provider", "enabled", "setupStatus", "connectionStatus"].sort(),
+            "TSE-Vorbereitung besitzt unerwartete Felder"
+          );
+
+          const legacy = clone(settings);
+          delete legacy.tseSettings;
+          const normalizedLegacy = api.normalizeSettingsRecord(legacy, settings, tenantId);
+          assert(normalizedLegacy.repairs.includes("TSE_SETTINGS_DEFAULTED"), "Historische Settings weisen die sichere TSE-Ergänzung nicht aus");
+          assertDeepEqual(normalizedLegacy.record.tseSettings, settings.tseSettings, "Historische Settings erhielten nicht den deaktivierten Standard");
+
+          const unsafe = clone(settings);
+          unsafe.tseSettings.apiKey = "secret-api-key";
+          const normalizedUnsafe = api.normalizeSettingsRecord(unsafe, settings, tenantId);
+          assert(normalizedUnsafe.repairs.includes("TSE_SETTINGS_REPAIRED"), "Nicht erlaubtes TSE-Feld wurde nicht ausgewiesen");
+          assert(!hasOwn(normalizedUnsafe.record.tseSettings, "apiKey"), "TSE-Zugangsdaten wurden im Settings-Modell behalten");
+          const future = clone(settings);
+          future.tseSettings.formatVersion = 2;
+          assertThrows(() => api.normalizeSettingsRecord(future, settings, tenantId), "UNSUPPORTED_FORMAT", "Künftige TSE-Einstellungen");
+
+          const receipt = receiptDraftFixture("receipt-tse-guard", {
+            number: "2030-000999",
+            tse: { transactionNumber: "fake" },
+            fiscalization: { signature: "fake" }
+          });
+          const storedReceipt = api.snapshotReceipts({ receipts: [receipt] }, tenantId).receipts[0];
+          assert(!hasOwn(storedReceipt, "tse") && !hasOwn(storedReceipt, "fiscalization"), "TSE-002 hat fingierte Fiskaldaten im Belegmodell zugelassen");
+        }
+      },
+      {
+        name: "TSE-002 bleibt über Legacy-Backup, Restore und getrennte Exporttypen kompatibel",
+        run: async () => {
+          const persistence = context.makeClient("tse002-roundtrip");
+          const snapshot = completeTenantSnapshotFixture(persistence.tenantId);
+          const legacySnapshot = clone(snapshot);
+          delete legacySnapshot.stores.settings.tseSettings;
+          const migrated = api.validateTenantSnapshot(legacySnapshot, persistence.tenantId).snapshot;
+          assertEqual(migrated.stores.settings.tseSettings.provider, "fiskaly SIGN DE", "Historisches Backup erhielt keinen Anbieter");
+          assertEqual(migrated.stores.settings.tseSettings.enabled, false, "Historisches Backup aktivierte die TSE");
+
+          await persistence.restoreTenantSnapshot(migrated);
+          const restored = await persistence.readSettings();
+          assertDeepEqual(restored.tseSettings, migrated.stores.settings.tseSettings, "Restore verlor die TSE-Vorbereitung");
+
+          const ownFiles = exportApi.createExportFiles(migrated, {
+            exportType: "own-data",
+            periodType: "custom",
+            dateFrom: "2030-01-01",
+            dateTo: "2030-01-31",
+            businessAreaId: "all",
+            includeCustomers: false
+          });
+          assertDeepEqual(ownFiles.projection.tseSettings, migrated.stores.settings.tseSettings, "Eigene-Daten-Export verlor TSE-Konfigurationsmetadaten");
+          const ownInfo = ownFiles.files.find(file => file.name === "Export-Info.txt")?.content || "";
+          assert(ownInfo.includes("TSE-Anbieter: fiskaly SIGN DE") && ownInfo.includes("TSE-Status: Nicht verbunden"), "Eigene-Daten-Export dokumentiert den TSE-Status nicht");
+
+          const taxFiles = exportApi.createExportFiles(migrated, {
+            exportType: "tax-advisor",
+            periodType: "custom",
+            dateFrom: "2030-01-01",
+            dateTo: "2030-01-31",
+            businessAreaId: "all",
+            includeCustomers: false
+          });
+          assertEqual(taxFiles.projection.tseSettings, null, "Steuerberaterexport enthält TSE-Konfigurationsdaten");
+          assert(!taxFiles.files.some(file => /TSE-|fiskaly|fiscalization|Signatur/i.test(file.content || "")), "Steuerberaterdateien enthalten fingierte TSE-Daten");
+
+          const unsafeBackup = clone(migrated);
+          unsafeBackup.stores.settings.tseSettings.token = "not-allowed";
+          assertThrows(() => api.validateTenantSnapshot(unsafeBackup, persistence.tenantId), "BACKUP_VALIDATION_FAILED", "Backup mit TSE-Zugangsdaten");
+        }
+      },
+      {
+        name: "TSE-002 zeigt eine reale rein lesende Statusseite ohne Aktivierung oder Anbieterkommunikation",
+        run: async () => {
+          const response = await fetch("../js/app.js", { cache: "no-store" });
+          assert(response.ok, "App-Quelle für TSE-002 konnte nicht geladen werden");
+          const source = await response.text();
+          const renderStart = source.indexOf("function renderTseSettings()");
+          const renderEnd = source.indexOf("function backupFallbackRecords()", renderStart);
+          assert(renderStart > 0 && renderEnd > renderStart, "TSE-Vorbereitungsseite fehlt");
+          const renderSource = source.slice(renderStart, renderEnd);
+          assert(source.includes('{ id: "settings-tse", icon: "T", title: "TSE-Vorbereitung"'), "TSE-Vorbereitung besitzt keine echte Einstellungsroute");
+          assert(source.includes('else if (state.route === "settings-tse") renderTseSettings()'), "TSE-Route verwendet nicht die zentrale Ansicht");
+          ["TSE-Anbindung", "Nicht eingerichtet", "Anbieter", "fiskaly SIGN DE", "Nutzung", "Optional", "Status", "Nicht verbunden"].forEach(label => {
+            assert(renderSource.includes(label), `TSE-Statusangabe fehlt: ${label}`);
+          });
+          assert(!renderSource.includes("<form") && !renderSource.includes("<input"), "TSE-Status ist entgegen TSE-002 bearbeitbar");
+          assert(!/fetch\(|XMLHttpRequest|WebSocket|EventSource|data-action=/.test(renderSource), "TSE-Seite enthält Aktivierung oder Anbieterkommunikation");
+          const setupStart = source.indexOf("function setupStepContent()");
+          const setupEnd = source.indexOf("function attachSetupStepBehavior()", setupStart);
+          const setupSource = source.slice(setupStart, setupEnd);
+          assert(setupSource.includes("TSE ist optional") && setupSource.includes("eine Verbindung oder Aktivierung findet noch nicht statt"), "Einrichtungsassistent erklärt den optionalen TSE-Status nicht");
+        }
+      },
+      {
         name: "USER-001 modelliert genau einen aktiven mandantenbezogenen Benutzer",
         run: async () => {
           const tenantId = "test-user-model";
@@ -1648,7 +1756,7 @@
           const updateSource = source.slice(updateStart, updateEnd);
           assert(menuSource.includes('title: "Benutzer", note: "Benutzerprofil und Grundeinstellungen verwalten", available: true'), "Benutzer bleibt veraltet als geplant gekennzeichnet");
           assert(menuSource.includes('{ id: "settings-update", icon: "↻", title: "Update"'), "Update besitzt keine echte Einstellungsroute");
-          assert(menuSource.includes('title: "TSE-Vorbereitung"') && menuSource.includes('note: "Für eine spätere Version vorbereitet"'), "TSE-Vorbereitung wurde fälschlich aktiviert");
+          assert(menuSource.includes('{ id: "settings-tse", icon: "T", title: "TSE-Vorbereitung"') && !menuSource.includes('note: "Für eine spätere Version vorbereitet"'), "TSE-Vorbereitung ist nicht als reale Seite aktiviert");
           assert(updateSource.includes("Aktuelle Version") && updateSource.includes("Build"), "Update-Seite zeigt Version oder Build nicht an");
           assert(updateSource.includes('data-action="update-check"') && updateSource.includes("Nach Updates suchen"), "Manuelle Update-Suche fehlt");
           assert(updateSource.includes('data-action="update-install"') && updateSource.includes('data-action="update-later"'), "Kontrollierter Aktivierungs- oder Später-Pfad fehlt");
@@ -1720,7 +1828,7 @@
           assert(response.ok, "App-Quelle für LICENSE-002 konnte nicht geladen werden");
           const source = await response.text();
           const renderStart = source.indexOf("function renderLicenseSettings()");
-          const renderEnd = source.indexOf("function backupFallbackRecords()", renderStart);
+          const renderEnd = source.indexOf("function renderTseSettings()", renderStart);
           assert(renderStart > 0 && renderEnd > renderStart, "Lizenz- und Geräteseite fehlt");
           const renderSource = source.slice(renderStart, renderEnd);
           assert(source.includes('{ id: "settings-license", icon: "✓", title: "Lizenz & Gerät"'), "Einstellungsbereich Lizenz & Gerät fehlt");

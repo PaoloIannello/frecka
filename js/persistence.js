@@ -16,6 +16,7 @@
     companyLogoMaxBytes: 1024 * 1024,
     userFormatVersion: 1,
     licenseFormatVersion: 1,
+    tseSettingsFormatVersion: 1,
     backupReminderFormatVersion: 1,
     backupReminderDelayMs: 7 * 24 * 60 * 60 * 1000,
     backupReminderSnoozeMs: 24 * 60 * 60 * 1000,
@@ -74,6 +75,9 @@
   ]);
   const licenseAllowedKeys = new Set([
     "formatVersion", "licenseId", "tenantId", "deviceId", "activatedAt", "lastValidation"
+  ]);
+  const tseSettingsAllowedKeys = new Set([
+    "formatVersion", "provider", "enabled", "setupStatus", "connectionStatus"
   ]);
   const companyLogoAllowedKeys = new Set([
     "formatVersion", "id", "name", "mimeType", "size", "dataUrl", "updatedAt"
@@ -378,6 +382,27 @@
     };
   }
 
+  function defaultTseSettings() {
+    return {
+      formatVersion: constants.tseSettingsFormatVersion,
+      provider: "fiskaly SIGN DE",
+      enabled: false,
+      setupStatus: "not-configured",
+      connectionStatus: "not-connected"
+    };
+  }
+
+  function normalizeTseSettings(source) {
+    const candidate = isPlainObject(source) ? source : {};
+    if (Number.isInteger(candidate.formatVersion) && candidate.formatVersion > constants.tseSettingsFormatVersion) {
+      throw new PersistenceError(
+        "UNSUPPORTED_FORMAT",
+        "Diese TSE-Einstellungen benötigen eine neuere FRECKA-Version und wurden nicht verändert."
+      );
+    }
+    return defaultTseSettings();
+  }
+
   function normalizeV1User(source, expectedTenantId, fallbackDisplayName, fallbackTimestamp = epochIso) {
     const safeTenantId = nullableStringId(expectedTenantId) || constants.tenantId;
     const candidate = isPlainObject(source) ? source : {};
@@ -412,6 +437,13 @@
     if (!isPlainObject(record) || Object.prototype.hasOwnProperty.call(record, "license")) return record;
     const migrated = cloneSafe(record);
     migrated.license = generatedLocalLicense(expectedTenantId);
+    return migrated;
+  }
+
+  function settingsWithLegacyTseSettingsModel(record) {
+    if (!isPlainObject(record) || Object.prototype.hasOwnProperty.call(record, "tseSettings")) return record;
+    const migrated = cloneSerializable(record);
+    migrated.tseSettings = defaultTseSettings();
     return migrated;
   }
 
@@ -473,6 +505,7 @@
     }
     const runtimeLicense = hasLicenseModelFields(runtimeData.license) ? runtimeData.license : null;
     const license = normalizeV1License(runtimeLicense, safeTenantId);
+    const tseSettings = normalizeTseSettings(runtimeData.tseSettings);
     const taxSettings = runtimeData.taxSettings || {};
     const receiptSettings = runtimeData.receiptSettings || {};
     const backupReminder = normalizeBackupReminder(runtimeData.backupReminder, null, new Date().toISOString());
@@ -483,6 +516,7 @@
       users: [user],
       activeUserId: user.id,
       license,
+      tseSettings,
       company: {
         name: identity.name,
         owner: identity.owner,
@@ -1880,6 +1914,14 @@
       repairs.add("LICENSE_MODEL_REPAIRED");
     }
 
+    const tseSettings = normalizeTseSettings(raw.tseSettings);
+    if (!isPlainObject(raw.tseSettings)) {
+      repairs.add("TSE_SETTINGS_DEFAULTED");
+    } else if (!sameSerializableValue(projectKnownFields(raw.tseSettings, tseSettings), tseSettings)
+      || Object.keys(raw.tseSettings).some(key => !tseSettingsAllowedKeys.has(key))) {
+      repairs.add("TSE_SETTINGS_REPAIRED");
+    }
+
     const defaultAreaById = new Map((defaults.businessAreas || []).map(area => [area.id, area]));
     let areaSource = Array.isArray(raw.businessAreas) ? raw.businessAreas : defaults.businessAreas || [];
     if (!Array.isArray(raw.businessAreas)) repairs.add("BUSINESS_AREAS_DEFAULTED");
@@ -2074,6 +2116,7 @@
         users: [user],
         activeUserId,
         license,
+        tseSettings,
         company,
         serviceLocations,
         taxSettings,
@@ -2210,7 +2253,8 @@
     });
 
     const userSettingsInput = settingsWithLegacyUserModel(snapshot.stores.settings, safeTenantId);
-    const settingsInput = settingsWithLegacyLicenseModel(userSettingsInput, safeTenantId);
+    const licenseSettingsInput = settingsWithLegacyLicenseModel(userSettingsInput, safeTenantId);
+    const settingsInput = settingsWithLegacyTseSettingsModel(licenseSettingsInput);
     const settings = assertSnapshotRecord(
       normalizeSettingsRecord(settingsInput, settingsInput, safeTenantId),
       settingsInput,
@@ -2738,6 +2782,11 @@
     if (isPlainObject(cleaned.license)) {
       Object.keys(cleaned.license).forEach(key => {
         if (!licenseAllowedKeys.has(key)) delete cleaned.license[key];
+      });
+    }
+    if (isPlainObject(cleaned.tseSettings)) {
+      Object.keys(cleaned.tseSettings).forEach(key => {
+        if (!tseSettingsAllowedKeys.has(key)) delete cleaned.tseSettings[key];
       });
     }
     return cleaned;
@@ -4732,6 +4781,7 @@
     createSettingsPersistence,
     snapshotSettings,
     normalizeSettingsRecord,
+    normalizeTseSettings,
     normalizeBackupReminder,
     backupReminderIsDue,
     snoozeBackupReminder,

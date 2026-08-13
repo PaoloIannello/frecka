@@ -1,6 +1,6 @@
 # Verschlüsselte Sicherung und Wiederherstellung
 
-**Stand:** SETTINGS-002 auf Basis SETTINGS-001, USER-001, BACKUP-002, BACKUP-001 und PERSISTENCE-007
+**Stand:** TSE-002 auf Basis SETTINGS-002, SETTINGS-001, USER-001, BACKUP-002, BACKUP-001 und PERSISTENCE-007
 **Datenbankschema:** 5
 **Backupformat:** 1
 **Geltungsbereich:** Vollständiger lokaler Datenstand eines Mandanten
@@ -52,6 +52,8 @@ USER-001 liegt innerhalb von `stores.settings` als `users` und `activeUserId`. D
 
 LICENSE-001 liegt innerhalb desselben `stores.settings`-Datensatzes als `license`. Lizenz- und Gerätekennung werden deshalb ohne zweite Sammlung, neuen Store oder neues Backupformat verschlüsselt mitgesichert und atomar wiederhergestellt.
 
+TSE-002 liegt als `tseSettings` ebenfalls innerhalb von `stores.settings`. Anbieter sowie deaktivierter Einrichtungs- und Verbindungsstatus werden dadurch verschlüsselt mitgesichert und atomar wiederhergestellt. Zugangsdaten, Tokens, Schlüssel und TSE-Transaktionen existieren in diesem Modell nicht.
+
 SETTINGS-002 verwendet ausschließlich die bereits enthaltenen `taxSettings`, `receiptSettings`, `paymentChoices` und `businessAreas`. Betriebliche Vorgaben, geschützter Nummernstand und Standard-Geschäftsbereich werden deshalb ohne neue Sammelroutine, Schemaerhöhung oder Backupformatänderung vollständig verschlüsselt gesichert und wiederhergestellt.
 
 ## Äußeres Dateiformat
@@ -97,6 +99,7 @@ Vor jeder Schreibtransaktion werden mindestens geprüft:
 - Übereinstimmung sämtlicher `tenantId`-Werte;
 - genau ein aktiver Settings-Benutzer mit derselben `tenantId` und passender `activeUserId`;
 - genau eine vollständige lokale Lizenz mit derselben `tenantId`, gültigen opaken Kennungen und Zeitpunkten;
+- ausschließlich die erlaubte TSE-002-Vorbereitung mit Anbieter `fiskaly SIGN DE`, deaktivierter Nutzung sowie nicht eingerichtetem und nicht verbundenem Status;
 - gültige Store-Formatversionen und Datenstrukturen;
 - eindeutige Kunden-, Beleg- und Gutschein-IDs;
 - eindeutige Belegnummern, Gutscheinreferenzen und sichtbare Gutscheincodes;
@@ -111,7 +114,7 @@ Historische Referenzen auf Einlösungs- oder Korrekturbelege dürfen nach einem 
 
 PERSISTENCE-010 lockert diese Regel nicht. Eine ausdrücklich bestätigte lokale Reparatur darf ausschließlich die vier fest freigegebenen historischen Demo-Gutscheinverkaufsbelege aus dem kanonischen Seed ergänzen. Vor dem einzigen atomaren Receipt-Store-Schreibvorgang muss der daraus gebildete vollständige Tenant-Kandidat alle Snapshotregeln erfüllen; anschließend wird der gespeicherte Tenant erneut vollständig validiert. Erst dann können Backup und Export wieder verwendet werden. Beliebige fehlende Belege, reale Geschäftsdaten, Kollisionen oder mehrdeutige Referenzen werden niemals rekonstruiert.
 
-Unvollständige, beschädigte, manipulierte, mandantenfremde oder inkompatible Daten werden vollständig abgelehnt. Additive Kompatibilitätsregeln bestehen ausschließlich für vollständig fehlende, historisch noch nicht vorhandene Modelle: USER-001 ergänzt den Primärbenutzer aus `Unternehmer/in` und der Snapshot-`tenantId`; LICENSE-001 erzeugt eine neue zufällige lokale Lizenz- und Gerätebindung für denselben Mandanten. Teilweise vorhandene oder widersprüchliche Benutzer- oder Lizenzdaten werden nicht repariert. Die Validierung schreibt selbst nichts in IndexedDB; erst der bestätigte Restore persistiert den vollständig geprüften Snapshot.
+Unvollständige, beschädigte, manipulierte, mandantenfremde oder inkompatible Daten werden vollständig abgelehnt. Additive Kompatibilitätsregeln bestehen ausschließlich für vollständig fehlende, historisch noch nicht vorhandene Modelle: USER-001 ergänzt den Primärbenutzer aus `Unternehmer/in` und der Snapshot-`tenantId`; LICENSE-001 erzeugt eine neue zufällige lokale Lizenz- und Gerätebindung für denselben Mandanten; TSE-002 ergänzt ausschließlich die sichere deaktivierte Standardvorbereitung. Teilweise vorhandene oder widersprüchliche Benutzer-, Lizenz- oder TSE-Daten werden nicht repariert. Die Validierung schreibt selbst nichts in IndexedDB; erst der bestätigte Restore persistiert den vollständig geprüften Snapshot.
 
 ## Atomare Wiederherstellung
 
@@ -171,7 +174,7 @@ Fehlerlogs enthalten nur Vorgang und Fehlercode. Passphrase, Schlüsselmaterial,
 
 ## Tests
 
-`tests/persistence-smoke.html` prüft ohne zusätzliches Testframework die gesamte bisherige Persistenz sowie BACKUP-001/002/003, HARDEN-001, EXPORT-001/003, PERSISTENCE-007/008/010, SETTINGS-001/002 und QR-001. Die BACKUP-003-Fälle decken Sieben-Tage-Frist, 24-Stunden-Snooze, bestätigte Ausgabe, Fehler/Abbruch ohne Rücksetzung, Erststart/Altbestand sowie den atomar erhaltenen lokalen Reminder-Status beim Restore ab. Die bisherigen Backup-Ergänzungen prüfen weiterhin die reine Vorbereitung ohne vorzeitige Ausgabe, den Stopp eines historisch inkonsistenten Bestands vor Verschlüsselung und Ausgabe, verspätete Promise-Abschlüsse nach Navigation, Verschlüsselungs- und Dateifehler ohne vorbereiteten Zustand, Share-Abbruch ohne Fallback oder zweite Ausgabe, erhaltene Kennwortfelder und gefilterte UI-Meldungen. SETTINGS-002 bestätigt zusätzlich den unveränderten zentralen Settings-Roundtrip für Steuer-, Zahlungs-, Standardbereichs-, Nummern- und Belegtextwerte. PERSISTENCE-010 ergänzt den erfolgreichen Backup- und Steuerberaterexport nach atomarer Reparatur sowie Stop- und Rollbackfälle ohne Store-Veränderung. Unverändert geprüft werden Format- und Mandantenprüfung, Vollständigkeit, Referenzen einschließlich der bidirektionalen Gutscheinverkaufsbeleg-Invariante, Nummernstand, Verschlüsselungs-Roundtrip, zufällige Ciphertexte, Klartextausschluss, falsches Kennwort, Payload- und Headermanipulation, abgeschnittene und unbekannte Formate, Export mit und ohne persistierte Stores, Restore in einen leeren Mandanten, vollständiges Überschreiben, atomarer Rollback, erneute Sicherung nach Restore, reversibler Kundenstatus sowie iOS-robuster Dateiname und Downloadtyp. Die fachlichen Export- und ZIP-Fälle sind in `docs/export.md`, die QR-Fälle in `docs/qr.md` beschrieben.
+`tests/persistence-smoke.html` prüft ohne zusätzliches Testframework die gesamte bisherige Persistenz sowie BACKUP-001/002/003, HARDEN-001, EXPORT-001/003, PERSISTENCE-007/008/010, SETTINGS-001/002, TSE-002 und QR-001. Die BACKUP-003-Fälle decken Sieben-Tage-Frist, 24-Stunden-Snooze, bestätigte Ausgabe, Fehler/Abbruch ohne Rücksetzung, Erststart/Altbestand sowie den atomar erhaltenen lokalen Reminder-Status beim Restore ab. Die bisherigen Backup-Ergänzungen prüfen weiterhin die reine Vorbereitung ohne vorzeitige Ausgabe, den Stopp eines historisch inkonsistenten Bestands vor Verschlüsselung und Ausgabe, verspätete Promise-Abschlüsse nach Navigation, Verschlüsselungs- und Dateifehler ohne vorbereiteten Zustand, Share-Abbruch ohne Fallback oder zweite Ausgabe, erhaltene Kennwortfelder und gefilterte UI-Meldungen. SETTINGS-002 bestätigt zusätzlich den unveränderten zentralen Settings-Roundtrip für Steuer-, Zahlungs-, Standardbereichs-, Nummern- und Belegtextwerte. TSE-002 prüft sichere Standardwerte, historische Settings und Backups, verschlüsselten Restore, Eigene-Daten-Export, ausgeschlossene Steuerberaterdaten sowie die Ablehnung unerlaubter Zugangsdaten. PERSISTENCE-010 ergänzt den erfolgreichen Backup- und Steuerberaterexport nach atomarer Reparatur sowie Stop- und Rollbackfälle ohne Store-Veränderung. Unverändert geprüft werden Format- und Mandantenprüfung, Vollständigkeit, Referenzen einschließlich der bidirektionalen Gutscheinverkaufsbeleg-Invariante, Nummernstand, Verschlüsselungs-Roundtrip, zufällige Ciphertexte, Klartextausschluss, falsches Kennwort, Payload- und Headermanipulation, abgeschnittene und unbekannte Formate, Export mit und ohne persistierte Stores, Restore in einen leeren Mandanten, vollständiges Überschreiben, atomarer Rollback, erneute Sicherung nach Restore, reversibler Kundenstatus sowie iOS-robuster Dateiname und Downloadtyp. Die fachlichen Export- und ZIP-Fälle sind in `docs/export.md`, die QR-Fälle in `docs/qr.md` beschrieben.
 
 Jeder Lauf verwendet ausschließlich eine zufällig benannte Testdatenbank mit Guard gegen `frecka` und löscht diese anschließend. Ein simulierter Restore-Abbruch ist nur für eindeutig benannte Testdatenbanken freigeschaltet.
 

@@ -4,6 +4,14 @@ Browserbasierte FRECKA-PWA 0.10.10 mit lokaler IndexedDB-Persistenz, verschlüss
 
 UX-011 / UPDATE-002 / BACKUP-003 ergänzt darauf eine reale Seite **Einstellungen → Update**, bereinigt veraltete „Geplant“-Kennzeichnungen und erinnert nach sieben Tagen ohne bestätigte Sicherungsdatei nicht blockierend an ein neues lokales Backup. Die manuelle Suche verwendet den vorhandenen Updatecontroller; die Erinnerung bleibt im bestehenden Settings-Store und wird durch Restore nicht fälschlich zurückgesetzt.
 
+## Neu in TSE-002
+
+- eine reale, rein lesende Seite **Einstellungen → TSE-Vorbereitung** mit dem verbindlichen Anbieter `fiskaly SIGN DE`
+- optionale Nutzung; standardmäßig weder eingerichtet noch aktiviert oder verbunden
+- ausschließlich lokale Konfigurationsmetadaten im bestehenden Settings-Datensatz sowie in Backup, Restore und dem Exporttyp **Eigene Daten**
+- keine Zugangsdaten, Anbieterkommunikation, TSE-Transaktionen, Belegfelder, Signaturen oder simulierte Fiskalisierung
+- unveränderter Steuerberaterexport; TSE-003 und Folgeblöcke bleiben für Aktivierung, Verbindung und echte Fiskaldaten zuständig
+
 ## Neu in SETTINGS-002
 
 - eine kompakte Seite **Einstellungen → Betrieb** für die vorhandenen Zahlungsarten, Steuerstatus und Standard-MwSt., den Standard-Geschäftsbereich sowie Belegtexte
@@ -221,7 +229,7 @@ Der vollständige Exportvertrag steht in `docs/export.md`.
 
 ## Nicht umgesetzt
 
-Noch keine Persistenz für Belegentwürfe. Keine Cloudablage, Synchronisation, automatische Backups, Zahlungsanbieteranbindung, automatische E-Mail oder Versandbestätigung, Synology-Export, Kamera-QR-Scanner, TSE, Fiskalisierung oder eigener Druckworkflow. Der Steuerberaterexport erzeugt sein ZIP ausschließlich lokal und führt weder Serverübertragung noch neue Gutscheinsteuerlogik ein.
+Noch keine Persistenz für Belegentwürfe. Keine Cloudablage, Synchronisation, automatische Backups, Zahlungsanbieteranbindung, automatische E-Mail oder Versandbestätigung, Synology-Export, Kamera-QR-Scanner, aktive TSE-Anbindung, Fiskalisierung oder eigener Druckworkflow. Der Steuerberaterexport erzeugt sein ZIP ausschließlich lokal und führt weder Serverübertragung noch neue Gutscheinsteuerlogik ein.
 
 Web Share bleibt vollständig feature-basiert: Ein vorhandener Button ist keine Zusage, dass ein bestimmtes Betriebssystem, ein bestimmtes Share-Ziel oder Multiple-File-Sharing verfügbar ist. Die reale Abnahme auf iPhone/iPad, Android und Desktop sowie Scanversuche mit echten Gerätekameras sind vor einer Produktfreigabe weiterhin ein offenes Release-Gate.
 

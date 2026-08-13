@@ -224,6 +224,25 @@
     });
   }
 
+  function projectTseSettings(settings) {
+    const tseSettings = settings?.tseSettings;
+    if (!isPlainObject(tseSettings)
+      || tseSettings.formatVersion !== 1
+      || text(tseSettings.provider) !== "fiskaly SIGN DE"
+      || tseSettings.enabled !== false
+      || text(tseSettings.setupStatus) !== "not-configured"
+      || text(tseSettings.connectionStatus) !== "not-connected") {
+      throw new ExportError("INVALID_SNAPSHOT", "Die lokale TSE-Vorbereitung des FRECKA-Datensnapshots ist nicht eindeutig.");
+    }
+    return Object.freeze({
+      formatVersion: tseSettings.formatVersion,
+      provider: tseSettings.provider,
+      enabled: false,
+      setupStatus: tseSettings.setupStatus,
+      connectionStatus: tseSettings.connectionStatus
+    });
+  }
+
   function clone(value) {
     if (typeof structuredClone === "function") return structuredClone(value);
     return JSON.parse(JSON.stringify(value));
@@ -754,6 +773,7 @@
     const company = snapshotCompanyIdentity(settings.company);
     const activeUser = projectActiveUser(settings, snapshot.tenantId);
     const localLicense = projectLocalLicense(settings, snapshot.tenantId);
+    const tseSettings = normalized.exportType === "own-data" ? projectTseSettings(settings) : null;
     const projection = {
       exportFormat: constants.exportFormat,
       exportFormatVersion: constants.exportFormatVersion,
@@ -767,6 +787,7 @@
       company: normalized.exportType === "own-data" ? projectOwnCompany(settings.company) : null,
       activeUser: normalized.exportType === "own-data" ? activeUser : null,
       license: normalized.exportType === "own-data" ? localLicense : null,
+      tseSettings,
       operatingSettings: normalized.exportType === "own-data" ? projectOwnOperatingSettings(settings) : null,
       range: Object.freeze(clone(normalized.range)),
       businessAreaId: normalized.businessAreaId,
@@ -837,6 +858,12 @@
         `Geräte-ID: ${projection.license.deviceId}`,
         `Lokal aktiviert: ${formatDateKey(projection.license.activatedAt)} • ${formatTime(projection.license.activatedAt)}`,
         `Letzte lokale Prüfung: ${formatDateKey(projection.license.lastValidation)} • ${formatTime(projection.license.lastValidation)}`
+      ] : []),
+      ...(projection.tseSettings ? [
+        `TSE-Anbieter: ${projection.tseSettings.provider}`,
+        "TSE-Nutzung: Optional",
+        "TSE-Anbindung: Nicht eingerichtet",
+        "TSE-Status: Nicht verbunden"
       ] : []),
       ...(projection.operatingSettings ? [
         `Währung: ${projection.operatingSettings.currency}`,

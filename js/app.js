@@ -185,7 +185,7 @@
   const appUpdateMessage = document.getElementById("appUpdateMessage");
   const appUpdateLater = document.getElementById("appUpdateLater");
   const appUpdateAction = document.getElementById("appUpdateAction");
-  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "qr-not-found", "settings-company", "settings-user", "settings-license", "settings-location", "settings-operations", "settings-taxes", "settings-payments", "settings-business-areas", "settings-catalog", "settings-help", "settings-backup", "settings-export", "settings-update", "setup-wizard"]);
+  const flowRoutes = new Set(["catalog", "edit-cart", "checkout", "customer-picker", "customer-new", "customer-edit", "customer-detail", "receipt-success", "receipt-preview", "receipt-detail", "receipt-credit", "voucher-detail", "voucher-preview", "voucher-sale", "voucher-sale-success", "qr-not-found", "settings-company", "settings-user", "settings-license", "settings-location", "settings-operations", "settings-taxes", "settings-payments", "settings-business-areas", "settings-catalog", "settings-help", "settings-backup", "settings-export", "settings-update", "settings-tse", "setup-wizard"]);
   const validRoutes = new Set(["home", "receipts", "customers", "vouchers", "settings", ...flowRoutes]);
 
   const escapeHtml = value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -687,6 +687,8 @@
     data.userSettings.activeUserId = record.activeUserId;
     Object.keys(data.license).forEach(key => { delete data.license[key]; });
     Object.assign(data.license, cloneSettingsValue(record.license));
+    Object.keys(data.tseSettings).forEach(key => { delete data.tseSettings[key]; });
+    Object.assign(data.tseSettings, cloneSettingsValue(record.tseSettings));
     Object.assign(data.company, cloneSettingsValue(record.company));
     replaceSettingsArray(data.serviceLocations, record.serviceLocations);
     replaceSettingsArray(data.businessAreas, record.businessAreas.map(area => ({
@@ -963,7 +965,7 @@
     await persistence.openDatabase();
     const savedRecord = await persistence.readSettings();
     const normalized = persistence.normalizeSettingsRecord(savedRecord, defaultSettingsRecord, persistence.tenantId);
-    if (savedRecord === null || normalized.repairs.some(repair => repair.startsWith("USER_") || repair === "ACTIVE_USER_REPAIRED" || repair.startsWith("LICENSE_") || repair.startsWith("BACKUP_REMINDER_"))) {
+    if (savedRecord === null || normalized.repairs.some(repair => repair.startsWith("USER_") || repair === "ACTIVE_USER_REPAIRED" || repair.startsWith("LICENSE_") || repair.startsWith("TSE_SETTINGS_") || repair.startsWith("BACKUP_REMINDER_"))) {
       await persistence.writeSettings(normalized.record);
     }
     applySettingsRecord(normalized.record);
@@ -3266,7 +3268,7 @@
     backup: ["Sicherung & Wiederherstellung", ["Die Sicherungsdatei enthält alle lokalen FRECKA-Daten dieses Betriebs.", "Sie wird vor dem Speichern mit deinem Sicherungskennwort verschlüsselt.", "Ohne dieses Kennwort kann die Sicherung nicht wiederhergestellt werden.", "FRECKA speichert weder Datei noch Sicherungskennwort zentral."]],
     export: ["Export", ["Der Export wird ausschließlich aus dem geprüften lokalen FRECKA-Snapshot erzeugt.", "Zeitraum und Geschäftsbereich begrenzen die enthaltenen Belege und Gutscheine.", "Kundendaten sind nur im Exporttyp „Eigene Daten“ optional enthalten.", "Die Dateien werden auf diesem Gerät erstellt und nicht an FRECKA übertragen."]],
     update: ["Update", ["Updates ersetzen ausschließlich Programmcode.", "Geschäftsdaten bleiben lokal auf dem Endgerät.", "Die Synology ist nur als späterer Update-Server vorgesehen."]],
-    tse: ["TSE", ["Dieser Prototyp besitzt keine TSE-Anbindung.", "Ob eine TSE erforderlich ist, wird nicht automatisch beurteilt.", "Vor produktiver Nutzung muss die konkrete Pflicht fachlich geprüft werden.", "Die spätere Einrichtung erhält einen eigenen Assistenten."]]
+    tse: ["TSE", ["Die TSE-Nutzung ist optional und derzeit nicht eingerichtet.", "Als vorgesehener Anbieter ist fiskaly SIGN DE hinterlegt.", "FRECKA stellt in diesem Stand keine Verbindung her.", "Aktivierung und Anbieterkommunikation folgen in einem eigenen Produktblock."]]
   };
 
   const businessTemplateEntries = () => Object.entries(data.businessTemplates);
@@ -3508,7 +3510,7 @@
     { id: "settings-backup", icon: "↥", title: "Sicherung & Wiederherstellung", note: "Verschlüsselte Gesamtsicherung erstellen oder einspielen", available: true },
     { id: "settings-export", icon: "⇥", title: "Export", note: "Steuerberater-ZIP und eigene Daten", available: true },
     { id: "settings-update", icon: "↻", title: "Update", note: "Version prüfen und kontrolliert installieren", available: true },
-    { icon: "T", title: "TSE-Vorbereitung", note: "Für eine spätere Version vorbereitet", help: "tse" }
+    { id: "settings-tse", icon: "T", title: "TSE-Vorbereitung", note: "Optional · fiskaly SIGN DE · nicht verbunden", available: true }
   ];
 
   const setupSteps = [
@@ -3876,7 +3878,7 @@
       case 6: return `<div class="payment-settings-list">${data.paymentChoices.map(choice => `<article class="payment-setting-row"><span class="payment-setting-icon" aria-hidden="true">${escapeHtml(choice.icon)}</span><span class="payment-setting-name"><strong>${escapeHtml(choice.title)}</strong><small>${choice.id === "voucher" ? "Gutscheinsystem" : "Normale Zahlungsart"}</small></span><label class="payment-setting-toggle"><input type="checkbox" data-payment-toggle="${escapeHtml(choice.id)}" ${choice.active !== false ? "checked" : ""}><span>${choice.active !== false ? "Aktiv" : "Deaktiviert"}</span></label></article>`).join("")}</div><p class="prototype-note">Mindestens eine normale Zahlungsart muss aktiv bleiben. Offene Zahlungen werden getrennt im Checkout erfasst.</p>${setupActions()}`;
       case 7: return `<div class="business-model-note"><strong>Eine Instanz entspricht einer Filiale.</strong><span>Hier legst du nur fachliche Geschäftsbereiche fest.</span></div><div class="business-area-list">${setupBusinessAreaRows()}</div><button class="button button-secondary business-area-add" type="button" data-action="business-area-add">＋ Geschäftsbereich</button>${setupActions()}`;
       case 8: return `<section class="settings-form-card settings-single-column"><h2>Optionale Belegtexte</h2><label class="setting-field full"><span>Dankestext <small>optional</small></span><input name="thankYouText" maxlength="120" placeholder="z. B. Vielen Dank für deinen Besuch." value="${escapeHtml(receipt.thankYouText || "")}"></label><label class="setting-field full"><span>Fußtext <small>optional</small></span><textarea name="footerText" rows="3" maxlength="240" placeholder="z. B. Termine bitte 24 Stunden vorher absagen.">${escapeHtml(receipt.footerText || "")}</textarea></label></section>${setupActions("Weiter oder überspringen")}`;
-      case 9: return `<div class="setup-info-card"><div class="setup-info-symbol" aria-hidden="true">T</div><h2>TSE kommt später</h2><p>FRECKA hat in diesem Prototyp noch keine TSE-Anbindung. Ob eine TSE erforderlich ist, wird hier nicht automatisch beurteilt.</p><p>Vor produktiver Nutzung als elektronisches Aufzeichnungssystem muss die konkrete Pflicht fachlich geprüft werden. Die spätere TSE-Einrichtung erhält einen eigenen Assistenten.</p><button class="button button-primary" type="button" data-setup-tse>Verstanden</button><button class="button button-secondary" type="button" data-setup-tse>Später in Einstellungen prüfen</button></div><div class="setup-actions"><button class="button button-secondary" type="button" data-setup-back>Zurück</button><button class="setup-cancel" type="button" data-setup-cancel>Assistent abbrechen</button></div>`;
+      case 9: return `<div class="setup-info-card"><div class="setup-info-symbol" aria-hidden="true">T</div><h2>TSE ist optional</h2><p>FRECKA ist ohne TSE vollständig nutzbar. Als vorgesehener Anbieter ist fiskaly SIGN DE hinterlegt; eine Verbindung oder Aktivierung findet noch nicht statt.</p><p>Den aktuellen Vorbereitungsstatus findest du jederzeit in den Einstellungen. Die tatsächliche Anbindung folgt in einem eigenen Produktblock.</p><button class="button button-primary" type="button" data-setup-tse>Verstanden</button><button class="button button-secondary" type="button" data-setup-tse>Später in Einstellungen prüfen</button></div><div class="setup-actions"><button class="button button-secondary" type="button" data-setup-back>Zurück</button><button class="setup-cancel" type="button" data-setup-cancel>Assistent abbrechen</button></div>`;
       case 10: return `${setupSummary()}${setupActions("Weiter zum Testbeleg")}`;
       case 11: return `<div class="setup-info-card"><h2>Jetzt einen Testbeleg erstellen</h2><p>Die Vorschau verwendet deine aktuellen Angaben, erzeugt aber keinen echten Beleg.</p><button class="button button-secondary" type="button" data-setup-test>${state.setupTestPreviewVisible ? "Vorschau aktualisieren" : "Testbeleg-Vorschau anzeigen"}</button></div>${state.setupTestPreviewVisible ? setupTestReceipt() : ""}${setupActions(state.setupTestPreviewVisible ? "Einrichtung abschließen" : "Testbeleg überspringen")}`;
       case 12: return `<div class="setup-finished"><div class="setup-welcome-symbol" aria-hidden="true">✓</div><h2>FRECKA ist startklar.</h2><p>Du kannst jetzt direkt deinen ersten Beleg erstellen.</p><small>Deine Einstellungen sind lokal auf diesem Gerät gespeichert.</small><button class="button button-primary" type="button" data-action="new-receipt">Jetzt ersten Beleg erstellen</button><button class="button button-secondary" type="button" data-route="settings">Einstellungen öffnen</button></div>`;
@@ -4131,6 +4133,32 @@
         <p class="page-copy">Hier siehst du die Lizenz und das aktuell zugeordnete Gerät.</p>
       </div>
       ${content}
+    </section>`;
+  }
+
+  function renderTseSettings() {
+    const tseSettings = data.tseSettings || {};
+    const configured = tseSettings.setupStatus === "configured";
+    const connected = tseSettings.connectionStatus === "connected";
+    mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter">
+      <div class="flow-head compact-flow-head">
+        <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
+        <p class="eyebrow">Einstellungen</p>
+        <h1 class="flow-title">TSE-Vorbereitung</h1>
+        <p class="page-copy">FRECKA bleibt ohne TSE vollständig nutzbar. Die tatsächliche Anbindung wird erst in einem späteren Produktblock eingerichtet.</p>
+      </div>
+      <div class="settings-form">
+        <section class="settings-form-card settings-single-column">
+          ${cardTitle("TSE-Status", "tse")}
+          <div class="settings-fixed-values user-fixed-values">
+            <div><span>TSE-Anbindung</span><strong>${configured ? "Eingerichtet" : "Nicht eingerichtet"}</strong></div>
+            <div><span>Anbieter</span><strong>${escapeHtml(tseSettings.provider || "fiskaly SIGN DE")}</strong></div>
+            <div><span>Nutzung</span><strong>Optional</strong></div>
+            <div><span>Status</span><strong>${connected ? "Verbunden" : "Nicht verbunden"}</strong></div>
+          </div>
+          <p class="settings-neutral-note">In diesem Stand werden keine Zugangsdaten gespeichert, keine Verbindung zu fiskaly hergestellt und keine TSE-Transaktionen erzeugt.</p>
+        </section>
+      </div>
     </section>`;
   }
 
@@ -5293,6 +5321,7 @@
       "settings-backup",
       "settings-export",
       "settings-update",
+      "settings-tse",
       "setup-wizard"
     ].includes(state.route));
     if (state.route === "home") renderHome();
@@ -5327,6 +5356,7 @@
     else if (state.route === "settings-backup") renderSettingsBackup();
     else if (state.route === "settings-export") renderSettingsExport();
     else if (state.route === "settings-update") renderSettingsUpdate();
+    else if (state.route === "settings-tse") renderTseSettings();
     else if (state.route === "setup-wizard") renderSetupWizard();
     else renderPlaceholder(state.route);
     if (state.settingsStorageNotice && !["home", "settings"].includes(state.route)) {
