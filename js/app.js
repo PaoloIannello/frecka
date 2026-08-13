@@ -682,7 +682,6 @@
   }
 
   function applySettingsRecord(record) {
-    const existingAreaLogos = new Map(data.businessAreas.map(area => [area.id, area.logo ?? null]));
     replaceSettingsArray(data.users, record.users);
     data.userSettings.activeUserId = record.activeUserId;
     Object.keys(data.license).forEach(key => { delete data.license[key]; });
@@ -691,10 +690,7 @@
     Object.assign(data.tseSettings, cloneSettingsValue(record.tseSettings));
     Object.assign(data.company, cloneSettingsValue(record.company));
     replaceSettingsArray(data.serviceLocations, record.serviceLocations);
-    replaceSettingsArray(data.businessAreas, record.businessAreas.map(area => ({
-      ...area,
-      logo: existingAreaLogos.get(area.id) ?? null
-    })));
+    replaceSettingsArray(data.businessAreas, record.businessAreas);
     data.businessAreas.forEach(area => {
       if (!Array.isArray(data.catalog[area.id])) data.catalog[area.id] = [];
     });
@@ -2492,6 +2488,20 @@
     return [parts[0], "••••", parts.at(-1)].join("-");
   };
 
+  function brandLogoSnapshotReference(logo, source) {
+    if (!logo?.id) return null;
+    return {
+      id: logo.id,
+      name: logo.name || "",
+      mimeType: logo.mimeType || "",
+      size: Number.isInteger(logo.size) ? logo.size : 0,
+      updatedAt: logo.updatedAt || "",
+      source,
+      label: source === "business-area" ? "Geschäftsbereichslogo" : "Unternehmenslogo",
+      simulated: false
+    };
+  }
+
   function companyContextSnapshot() {
     const identity = companyIdentityValue(data.company);
     return {
@@ -2507,11 +2517,7 @@
       email: data.company.email || "",
       taxNumber: data.company.taxNumber || "",
       vatId: data.company.vatId || "",
-      logo: data.company.logo ? {
-        id: data.company.logo.id || "company-logo",
-        label: "Unternehmenslogo",
-        simulated: true
-      } : null
+      logo: brandLogoSnapshotReference(data.company.logo, "company")
     };
   }
 
@@ -2576,27 +2582,22 @@
       label: area?.label || "Geschäftsbereich",
       visibleName: area?.visibleName || "",
       logoMode: ["company", "custom", "none"].includes(area?.logoMode) ? area.logoMode : "company",
-      logo: area?.logo ? { ...area.logo } : null
+      logo: brandLogoSnapshotReference(area?.logo, "business-area")
     };
   }
 
   function brandingContextSnapshot(areaId = state.activeBusinessArea) {
     const businessArea = businessAreaContextSnapshot(areaId);
-    const logoSource = businessArea.logoMode === "none"
+    const effectiveLogo = businessArea.logoMode === "none"
       ? null
       : businessArea.logoMode === "custom" && businessArea.logo
-        ? "business-area"
-        : data.company.logo
-          ? "company"
-          : null;
+        ? businessArea.logo
+        : data.company.logo;
+    const logoSource = effectiveLogo === businessArea.logo ? "business-area" : effectiveLogo ? "company" : null;
     return {
       visibleName: businessArea.visibleName,
       logoMode: businessArea.logoMode,
-      logo: logoSource ? {
-        source: logoSource,
-        label: logoSource === "business-area" ? "Geschäftsbereichslogo" : "Unternehmenslogo",
-        simulated: true
-      } : null
+      logo: logoSource ? brandLogoSnapshotReference(effectiveLogo, logoSource) : null
     };
   }
 
@@ -3721,6 +3722,7 @@
     const branding = brandingContextSnapshot(area.id);
     const location = serviceLocationForBusinessArea(area.id);
     const logoSource = branding.logo?.source || "none";
+    const areaLogo = area.logo?.dataUrl ? area.logo : null;
     const brandingName = distinctBrandingName(branding, data.company);
     return `<section class="business-branding-card" data-business-branding="${escapeHtml(area.id)}">
       <div class="business-branding-title"><div><h3>Branding auf Dokumenten</h3><p>Gilt für neue Belege und Gutscheine dieses Geschäftsbereichs.</p></div><span>Live-Vorschau</span></div>
@@ -3730,7 +3732,18 @@
         <label><input type="radio" name="areaLogoMode:${escapeHtml(area.id)}" value="custom" ${area.logoMode === "custom" ? "checked" : ""}><span><strong>Eigenes Logo verwenden</strong><small>Überschreibt das Unternehmenslogo</small></span></label>
         <label><input type="radio" name="areaLogoMode:${escapeHtml(area.id)}" value="none" ${area.logoMode === "none" ? "checked" : ""}><span><strong>Kein Logo anzeigen</strong><small>Dokumente bleiben ohne Logo</small></span></label>
       </fieldset>
-      <div class="business-logo-simulation" data-business-logo-upload ${area.logoMode === "custom" ? "" : "hidden"}><button class="button button-secondary" type="button" data-action="business-logo-simulation">Logo auswählen (Simulation)</button><small data-business-logo-status>${area.logo ? "Simuliertes Logo ausgewählt. Keine Datei wird gespeichert." : "Noch kein eigenes Logo ausgewählt. Bis dahin gilt das Unternehmenslogo."}</small></div>
+      <div class="business-logo-upload" data-business-logo-upload ${area.logoMode === "custom" ? "" : "hidden"}>
+        <div class="business-logo-thumbnail" data-business-logo-thumbnail>${areaLogo ? `<img src="${escapeHtml(areaLogo.dataUrl)}" alt="Aktuelles Logo für ${escapeHtml(area.label)}">` : `<span aria-hidden="true">Logo</span>`}</div>
+        <div class="business-logo-upload-copy">
+          <div class="business-logo-actions">
+            <button class="button button-secondary" type="button" data-business-logo-select>${areaLogo ? "Logo ersetzen" : "Logo auswählen"}</button>
+            <input class="logo-file-input" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" data-business-logo-input aria-label="Logo für ${escapeHtml(area.label)} auswählen">
+            <button class="button button-ghost" type="button" data-business-logo-remove ${areaLogo ? "" : "hidden"}>Logo entfernen</button>
+          </div>
+          <small data-business-logo-status>${areaLogo ? `${escapeHtml(areaLogo.name)} · ${Math.max(1, Math.round(areaLogo.size / 1024))} KB` : data.company.logo ? "Kein eigenes Logo hinterlegt. Das Unternehmenslogo wird verwendet." : "Kein eigenes Logo hinterlegt. Dokumente verwenden die textbasierte Unternehmensdarstellung."}</small>
+          <small>PNG oder JPEG, max. 1 MB</small>
+        </div>
+      </div>
       <article class="branding-live-preview" data-branding-preview="${escapeHtml(area.id)}" aria-label="Dokumentvorschau für ${escapeHtml(area.label)}">
         <span class="branding-preview-label">Dokumentvorschau</span>
         <div class="branding-preview-head">
@@ -3755,6 +3768,10 @@
       const previewArea = card.querySelector("[data-preview-area]");
       const previewLocation = card.querySelector("[data-preview-location]");
       const uploadStatus = card.querySelector("[data-business-logo-status]");
+      const uploadInput = card.querySelector("[data-business-logo-input]");
+      const selectLogo = card.querySelector("[data-business-logo-select]");
+      const removeLogo = card.querySelector("[data-business-logo-remove]");
+      const logoThumbnail = card.querySelector("[data-business-logo-thumbnail]");
       const update = () => {
         const logoMode = logoOptions.find(option => option.checked)?.value || "company";
         const area = data.businessAreas.find(entry => entry.id === areaId);
@@ -3767,8 +3784,17 @@
               : "none";
         if (upload) upload.hidden = logoMode !== "custom";
         if (uploadStatus) uploadStatus.textContent = area?.logo
-          ? "Simuliertes Logo ausgewählt. Keine Datei wird gespeichert."
-          : "Noch kein eigenes Logo ausgewählt. Bis dahin gilt das Unternehmenslogo.";
+          ? `${area.logo.name} · ${Math.max(1, Math.round(area.logo.size / 1024))} KB`
+          : data.company.logo
+            ? "Kein eigenes Logo hinterlegt. Das Unternehmenslogo wird verwendet."
+            : "Kein eigenes Logo hinterlegt. Dokumente verwenden die textbasierte Unternehmensdarstellung.";
+        if (selectLogo) selectLogo.textContent = area?.logo ? "Logo ersetzen" : "Logo auswählen";
+        if (removeLogo) removeLogo.hidden = !area?.logo;
+        if (logoThumbnail) {
+          logoThumbnail.innerHTML = area?.logo?.dataUrl
+            ? `<img src="${escapeHtml(area.logo.dataUrl)}" alt="Aktuelles Logo für ${escapeHtml(area.label)}">`
+            : `<span aria-hidden="true">Logo</span>`;
+        }
         if (previewLogo) {
           previewLogo.hidden = effectiveLogoSource === "none";
           const isCustom = effectiveLogoSource === "business-area";
@@ -3789,6 +3815,36 @@
       areaName?.addEventListener("input", update);
       serviceLocation?.addEventListener("change", update);
       logoOptions.forEach(option => option.addEventListener("change", update));
+      selectLogo?.addEventListener("click", () => uploadInput?.click());
+      uploadInput?.addEventListener("change", async () => {
+        const file = uploadInput.files?.[0];
+        if (!file) return;
+        uploadInput.disabled = true;
+        try {
+          const currentArea = data.businessAreas.find(entry => entry.id === areaId);
+          if (!currentArea) throw new Error("Business area unavailable");
+          const logo = await prepareBusinessAreaLogo(file);
+          const saved = await saveBusinessAreaLogo(currentArea, logo);
+          if (saved) {
+            logoOptions.find(option => option.value === "custom")?.click();
+            update();
+          }
+        } catch (error) {
+          showBusinessAreaSettingsNotice(error?.userMessage || "Das Geschäftsbereichslogo konnte nicht verarbeitet werden.", true);
+        } finally {
+          uploadInput.disabled = false;
+          uploadInput.value = "";
+        }
+      });
+      removeLogo?.addEventListener("click", async () => {
+        const currentArea = data.businessAreas.find(entry => entry.id === areaId);
+        if (!currentArea?.logo) return;
+        const saved = await saveBusinessAreaLogo(currentArea, null);
+        if (saved) {
+          logoOptions.find(option => option.value === "company")?.click();
+          update();
+        }
+      });
       card.addEventListener("branding-preview-change", update);
       update();
     });
@@ -4675,9 +4731,10 @@
     const logo = data.company.logo?.dataUrl ? data.company.logo : null;
     return `<section class="settings-form-card settings-logo-card" data-company-logo-card>
       <div class="settings-logo-placeholder">${logo ? `<img src="${escapeHtml(logo.dataUrl)}" alt="Aktuelles Unternehmenslogo">` : `<span aria-hidden="true">Logo</span>`}</div>
-      <div class="settings-logo-copy"><h2>Unternehmenslogo</h2><p>${logo ? `${escapeHtml(logo.name)} · ${Math.max(1, Math.round(logo.size / 1024))} KB` : "Noch kein Logo gespeichert."}</p>
+      <div class="settings-logo-copy"><h2>Unternehmenslogo</h2><p>${logo ? `${escapeHtml(logo.name)} · ${Math.max(1, Math.round(logo.size / 1024))} KB` : "Kein Logo hinterlegt"}</p>
         <div class="settings-logo-actions">
-          <label class="button button-secondary logo-file-button">${logo ? "Logo ersetzen" : "Logo auswählen"}<input type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" data-company-logo-input></label>
+          <button class="button button-secondary" type="button" data-company-logo-select>${logo ? "Logo ersetzen" : "Logo auswählen"}</button>
+          <input class="logo-file-input" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" data-company-logo-input aria-label="Unternehmenslogo auswählen">
           ${logo ? `<button class="button button-ghost" type="button" data-action="company-logo-remove">Logo entfernen</button>` : ""}
         </div>
       </div>
@@ -4697,7 +4754,7 @@
     notice.textContent = message;
   }
 
-  function detectCompanyLogoMime(bytes) {
+  function detectBrandLogoMime(bytes) {
     const isPng = bytes.length >= 20
       && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((value, index) => bytes[index] === value)
       && [0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82].every((value, index) => bytes[bytes.length - 8 + index] === value);
@@ -4716,33 +4773,66 @@
     return `data:${mimeType};base64,${btoa(binary)}`;
   }
 
-  async function prepareCompanyLogo(file) {
+  function readLogoFileBytes(file) {
+    if (typeof file?.arrayBuffer === "function") {
+      return file.arrayBuffer().then(buffer => new Uint8Array(buffer));
+    }
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.addEventListener("load", () => resolve(new Uint8Array(reader.result)));
+      reader.addEventListener("error", () => reject(reader.error || new Error("Logo file read failed")));
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  function createBrandLogoId(prefix) {
+    const suffix = crypto.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    return `${prefix}-${suffix}`.slice(0, 128);
+  }
+
+  async function prepareBrandLogo(file, { subject, idPrefix, fallbackName }) {
     const maxBytes = persistence?.constants?.companyLogoMaxBytes || 1024 * 1024;
-    if (!(file instanceof File) || file.size < 1) {
+    if (!file || typeof file.size !== "number" || file.size < 1) {
       throw Object.assign(new Error("Empty logo file"), { userMessage: "Bitte eine PNG- oder JPEG-Datei auswählen." });
     }
     if (file.size > maxBytes) {
-      throw Object.assign(new Error("Logo file too large"), { userMessage: "Das Unternehmenslogo darf maximal 1 MB groß sein." });
+      throw Object.assign(new Error("Logo file too large"), { userMessage: `Das ${subject} darf maximal 1 MB groß sein.` });
     }
     const declaredType = String(file.type || "").toLowerCase();
-    if (declaredType && !["image/png", "image/jpeg"].includes(declaredType)) {
-      throw Object.assign(new Error("Unsupported logo MIME type"), { userMessage: "Als Unternehmenslogo sind ausschließlich PNG- und JPEG-Dateien zulässig." });
+    if (!["image/png", "image/jpeg"].includes(declaredType)) {
+      throw Object.assign(new Error("Unsupported logo MIME type"), { userMessage: `Als ${subject} sind ausschließlich PNG- und JPEG-Dateien zulässig.` });
     }
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const mimeType = detectCompanyLogoMime(bytes);
-    if (!mimeType || (declaredType && declaredType !== mimeType)) {
+    const bytes = await readLogoFileBytes(file);
+    const mimeType = detectBrandLogoMime(bytes);
+    if (!mimeType || declaredType !== mimeType) {
       throw Object.assign(new Error("Logo signature mismatch"), { userMessage: "Die ausgewählte Datei ist kein gültiges PNG- oder JPEG-Bild." });
     }
     const updatedAt = new Date().toISOString();
     return {
       formatVersion: persistence?.constants?.companyLogoFormatVersion || 1,
-      id: "company-logo",
-      name: String(file.name || (mimeType === "image/png" ? "Unternehmenslogo.png" : "Unternehmenslogo.jpg")).trim().slice(0, 120),
+      id: createBrandLogoId(idPrefix),
+      name: String(file.name || `${fallbackName}.${mimeType === "image/png" ? "png" : "jpg"}`).trim().slice(0, 120),
       mimeType,
       size: bytes.length,
       dataUrl: logoBytesDataUrl(bytes, mimeType),
       updatedAt
     };
+  }
+
+  function prepareCompanyLogo(file) {
+    return prepareBrandLogo(file, {
+      subject: "Unternehmenslogo",
+      idPrefix: "company-logo",
+      fallbackName: "Unternehmenslogo"
+    });
+  }
+
+  function prepareBusinessAreaLogo(file) {
+    return prepareBrandLogo(file, {
+      subject: "Geschäftsbereichslogo",
+      idPrefix: "business-logo",
+      fallbackName: "Geschäftsbereichslogo"
+    });
   }
 
   async function saveCompanyLogo(nextLogo) {
@@ -4765,8 +4855,44 @@
     }
   }
 
+  function showBusinessAreaSettingsNotice(message, isError = false) {
+    state.businessAreaSettingsNotice = message;
+    const notice = document.getElementById("businessAreaSettingsNotice");
+    if (!notice) return;
+    notice.hidden = !message;
+    notice.classList.toggle("is-error", isError);
+    notice.setAttribute("role", isError ? "alert" : "status");
+    notice.textContent = message;
+  }
+
+  async function saveBusinessAreaLogo(area, nextLogo) {
+    const previousLogo = cloneSettingsValue(area.logo);
+    const previousMode = area.logoMode;
+    area.logo = nextLogo;
+    area.logoMode = nextLogo ? "custom" : "company";
+    try {
+      await persistCurrentSettings();
+      showBusinessAreaSettingsNotice(nextLogo
+        ? `Das Logo für ${area.label} wurde lokal gespeichert.`
+        : data.company.logo
+          ? `Das eigene Logo für ${area.label} wurde entfernt. Das Unternehmenslogo wird verwendet.`
+          : `Das eigene Logo für ${area.label} wurde entfernt. Dokumente verwenden die textbasierte Unternehmensdarstellung.`);
+      return true;
+    } catch (error) {
+      const currentArea = data.businessAreas.find(entry => entry.id === area.id);
+      if (currentArea) {
+        currentArea.logo = previousLogo;
+        currentArea.logoMode = previousMode;
+      }
+      showBusinessAreaSettingsNotice(`Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`, true);
+      return false;
+    }
+  }
+
   function attachCompanyLogoBehavior() {
     const input = mainContent.querySelector("[data-company-logo-input]");
+    const selectButton = mainContent.querySelector("[data-company-logo-select]");
+    selectButton?.addEventListener("click", () => input?.click());
     input?.addEventListener("change", async () => {
       const file = input.files?.[0];
       if (!file) return;
@@ -4985,7 +5111,7 @@
         <h1 class="flow-title">Geschäftsbereiche</h1>
         <p class="page-copy">Fachliche Bereiche innerhalb dieser gebuchten Instanz verwalten.</p>
       </div>
-      ${state.businessAreaSettingsNotice ? `<div class="settings-save-notice ${state.businessAreaSettingsNotice.startsWith("Bitte") || state.businessAreaSettingsNotice.startsWith("Mindestens") || state.businessAreaSettingsNotice.startsWith("Lokales") ? "is-error" : ""}" role="status">${escapeHtml(state.businessAreaSettingsNotice)}</div>` : ""}
+      <div id="businessAreaSettingsNotice" class="settings-save-notice ${state.businessAreaSettingsNotice.startsWith("Bitte") || state.businessAreaSettingsNotice.startsWith("Mindestens") || state.businessAreaSettingsNotice.startsWith("Lokales") ? "is-error" : ""}" role="${state.businessAreaSettingsNotice.startsWith("Bitte") || state.businessAreaSettingsNotice.startsWith("Mindestens") || state.businessAreaSettingsNotice.startsWith("Lokales") ? "alert" : "status"}" ${state.businessAreaSettingsNotice ? "" : "hidden"}>${escapeHtml(state.businessAreaSettingsNotice)}</div>
       <div class="settings-standalone-title">${cardTitle("Geschäftsbereiche", "business")}</div>
       <div class="business-model-note"><strong>Eine Instanz entspricht einer Filiale.</strong><span>Friseur, Podologie oder weitere Angebote sind Geschäftsbereiche – keine Filialen.</span></div>
       <form id="businessAreaSettingsForm" class="settings-form">
@@ -5775,16 +5901,6 @@
     }
     if (sheetAction === "company-logo-remove") {
       if (data.company.logo?.dataUrl) await saveCompanyLogo(null);
-      return;
-    }
-    if (sheetAction === "business-logo-simulation") {
-      const brandingCard = event.target.closest("[data-business-branding]");
-      const area = data.businessAreas.find(entry => entry.id === brandingCard?.dataset.businessBranding);
-      if (area) {
-        area.logo = { id: `business-logo-${area.id}-${Date.now()}`, label: "Geschäftsbereichslogo", simulated: true };
-        brandingCard.dispatchEvent(new Event("branding-preview-change"));
-      }
-      openBottomSheet("Geschäftsbereichslogo", `<div class="context-help-copy"><p>Das Geschäftsbereichslogo wurde für diese Sitzung als Platzhalter ausgewählt.</p><p>Es wird keine Datei geöffnet, übertragen oder gespeichert.</p><p>Die Dokumentvorschau wurde sofort aktualisiert.</p></div>`);
       return;
     }
     const category = event.target.closest("[data-category]");
@@ -7029,6 +7145,7 @@
     if (businessAreaSettingsForm) {
       event.preventDefault();
       const formData = new FormData(businessAreaSettingsForm);
+      const previousBusinessAreas = cloneSettingsValue(data.businessAreas);
       const businessError = applyBusinessAreaForm(formData);
       if (businessError) {
         state.businessAreaSettingsNotice = businessError;
@@ -7039,6 +7156,7 @@
         await persistCurrentSettings();
         state.businessAreaSettingsNotice = "Geschäftsbereiche wurden lokal gespeichert. Leistungen und Belege wurden nicht verschoben.";
       } catch (persistenceError) {
+        replaceSettingsArray(data.businessAreas, previousBusinessAreas);
         state.businessAreaSettingsNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(persistenceError)}`;
       }
       renderBusinessAreaSettings();

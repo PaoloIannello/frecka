@@ -12,7 +12,7 @@ Zentrale Einstellungsbereiche:
 
 - `data.company`: optionale Geschäftsbezeichnung, verpflichtende rechtliche Person, optionaler Ansprechpartner, Unternehmensanschrift, Kontakt- und Steuerangaben, Website, Unternehmenslogo, eigener Änderungszeitpunkt und `useAsServiceLocation`;
 - `data.serviceLocations`: Liste aller Leistungsorte einschließlich n:m-Zuordnungen über `businessAreaIds`;
-- `data.businessAreas`: Geschäftsbereiche einschließlich Aktivstatus, Standardbereich und `defaultServiceLocationId`;
+- `data.businessAreas`: Geschäftsbereiche einschließlich Aktivstatus, Standardbereich, `defaultServiceLocationId`, Logo-Modus und optionalem validiertem Bereichslogo;
 - `data.taxSettings`: Steuerstatus, Steuersätze und Standardsteuersatz;
 - `data.receiptSettings`: Nummernkreis, Belegtexte, Währung und Sprache;
 - `data.paymentChoices`: Zahlungsarten, Aktivstatus und Reihenfolge;
@@ -104,7 +104,7 @@ Der Settings-Datensatz enthält ausschließlich:
 
 BACKUP-003 verändert weder Datenbankschema noch Settings-Formatversion. Fehlen die Reminder-Metadaten bei Erstinstallation oder historischem Bestand, wird lokal der Zeitpunkt der ersten kompatiblen Initialisierung als Fristbeginn gespeichert; dadurch erscheint keine sofortige Erinnerung. Der Status enthält keine personenbezogenen Daten. Beim atomaren Restore werden Unternehmen und alle fachlichen Stores aus der Sicherung übernommen, `backupReminder` bleibt jedoch vom aktuellen Gerät erhalten. Eine alte Sicherungsdatei kann damit weder die Wochenfrist fälschlich zurücksetzen noch einen lokalen Snooze überschreiben.
 
-SETTINGS-001 speichert genau ein optionales Unternehmenslogo im bestehenden Settings-Datensatz. Zulässig sind ausschließlich anhand ihrer Dateisignatur geprüfte PNG- und JPEG-Daten bis 1 MiB; Formatversion, stabiler Logo-Schlüssel, Dateiname, MIME-Type, Bytegröße, Data-URL und Änderungszeitpunkt werden strikt normalisiert. Historische simulierte Unternehmenslogos werden als `null` übernommen. Simulierte Geschäftsbereichslogos und nicht freigegebene Logo-Nebenfelder bleiben ausgeschlossen. `logoMode` und die sichtbare Geschäftsbezeichnung bleiben normale Geschäftsbereichseinstellungen.
+SETTINGS-001 speichert genau ein optionales Unternehmenslogo im bestehenden Settings-Datensatz. BRANDING-001 verwendet dasselbe normalisierte Format zusätzlich für optionale Geschäftsbereichslogos. Zulässig sind ausschließlich anhand MIME-Type und Dateisignatur geprüfte PNG- und JPEG-Daten bis 1 MiB; Formatversion, stabiler Logo-Schlüssel, Dateiname, MIME-Type, Bytegröße, Data-URL und Änderungszeitpunkt werden strikt normalisiert. Historische simulierte oder fehlende Logos werden als `null` übernommen. Nicht freigegebene Logo-Nebenfelder bleiben ausgeschlossen. `logoMode` und die sichtbare Geschäftsbezeichnung bleiben normale Geschäftsbereichseinstellungen.
 
 SETTINGS-002 führt keinen neuen Store, kein neues Feld und keine Schema- oder Formatversion ein. Die Seite **Betrieb** bearbeitet direkt `taxSettings`, `receiptSettings`, `paymentChoices` und den eindeutigen Eintrag `businessAreas[].isDefault`. EUR und Deutsch bleiben feste V1.0-Werte. `receiptSettings.yearPrefix` und `receiptSettings.nextNumber` werden nur angezeigt; Storno- und Gutschriftnummern bleiben wie bisher ausschließlich aus den vorhandenen Korrekturbelegen abgeleitet. Auch ein erneut gestarteter Einrichtungsassistent darf diese Nummern nicht zurücksetzen. Bei einem fehlgeschlagenen Speichervorgang werden die in der Betriebsseite versuchten Laufzeitänderungen auf den zuletzt bestätigten Stand zurückgesetzt.
 
@@ -208,7 +208,7 @@ Die Reparatur läuft niemals beim App-Start. Sie wird unter **Einstellungen → 
 
 Der frühere Sabine-Keller-Demoeintrag `2026-000124`, 59,00 Euro, „Strähnen“ wird nicht aus IndexedDB entfernt: Kundenhistorien sind ausdrücklich vom gespeicherten Kundenformat ausgeschlossen und werden aus Belegen abgeleitet beziehungsweise als nicht persistierte Laufzeitmetadaten behandelt. Der widersprüchliche Eintrag wurde bereits im aktuellen Seed entfernt; PERSISTENCE-010 erfindet keine Ersatznummer und verändert keinen Kunden.
 
-Unternehmens-, Branding-, Geschäftsbereichs-, Leistungsort- und Kundensnapshot werden beim Verkauf in den Gutschein kopiert. Spätere Änderungen an Einstellungen oder Kundenstammdaten verändern diese Snapshots nicht. Persistiert werden nur QR-Referenz und App-Link; die dargestellte QR-Grafik wird jederzeit aus der Referenz erzeugt.
+Unternehmens-, Branding-, Geschäftsbereichs-, Leistungsort- und Kundensnapshot werden beim Verkauf in den Gutschein kopiert. Branding-Snapshots enthalten nur die zum Abschlusszeitpunkt wirksame Logo-ID, Quelle und neutrale Metadaten, keine Bild-Data-URL. Spätere Änderungen an Einstellungen, Logos oder Kundenstammdaten verändern diese Snapshots nicht. Persistiert werden nur QR-Referenz und App-Link; die dargestellte QR-Grafik wird jederzeit aus der Referenz erzeugt.
 
 ## Katalogmodell und Normalisierung
 

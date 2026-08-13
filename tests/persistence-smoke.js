@@ -21,6 +21,7 @@
   const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
   const clone = value => JSON.parse(JSON.stringify(value));
   const tinyPngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+  const tinyJpegBase64 = "/9j/2Q==";
 
   function companyLogoFixture(overrides = {}) {
     return {
@@ -31,6 +32,19 @@
       size: atob(tinyPngBase64).length,
       dataUrl: `data:image/png;base64,${tinyPngBase64}`,
       updatedAt: "2030-01-02T10:00:00.000Z",
+      ...overrides
+    };
+  }
+
+  function businessAreaLogoFixture(overrides = {}) {
+    return {
+      formatVersion: 1,
+      id: "business-logo-hair",
+      name: "Bereichslogo.jpg",
+      mimeType: "image/jpeg",
+      size: atob(tinyJpegBase64).length,
+      dataUrl: `data:image/jpeg;base64,${tinyJpegBase64}`,
+      updatedAt: "2030-01-03T10:00:00.000Z",
       ...overrides
     };
   }
@@ -162,7 +176,7 @@
           label: "Friseur",
           visibleName: "Test-Haarstudio",
           logoMode: "custom",
-          logo: { id: "simulated-area-logo", simulated: true },
+          logo: businessAreaLogoFixture(),
           active: true,
           isDefault: true,
           defaultServiceLocationId: "location-company"
@@ -171,8 +185,14 @@
           id: "coaching",
           label: "Coaching",
           visibleName: "Test-Coaching",
-          logoMode: "none",
-          logo: null,
+          logoMode: "custom",
+          logo: businessAreaLogoFixture({
+            id: "business-logo-coaching",
+            name: "Coachinglogo.png",
+            mimeType: "image/png",
+            size: atob(tinyPngBase64).length,
+            dataUrl: `data:image/png;base64,${tinyPngBase64}`
+          }),
           active: true,
           isDefault: false,
           defaultServiceLocationId: "location-mobile"
@@ -1326,6 +1346,10 @@
           assertEqual(model.issuer.owner, "Alex Beispiel", "Pflichtangabe Unternehmer fehlt");
           assertEqual(model.branding.visibleName, "Salon Licht", "Sichtbare Geschäftsbezeichnung fehlt");
           assertEqual(model.branding.logo.initials, "GB", "Geschäftsbereichslogo verlor seine Priorität");
+          const companyFallback = documentApi.createReceiptDocumentModel(receiptDocumentFixture({
+            brandingSnapshot: { logoMode: "company", visibleName: "Salon Licht", logo: { id: "company-logo", source: "company", label: "Unternehmenslogo", simulated: false } }
+          }), documentOptions());
+          assertEqual(companyFallback.branding.logo.initials, "UN", "Fallback auf das Unternehmenslogo fehlt");
           const withoutLogo = documentApi.createReceiptDocumentModel(receiptDocumentFixture({
             brandingSnapshot: { logoMode: "none", visibleName: "Salon Licht", logo: { id: "stale-logo", source: "business-area" } }
           }), documentOptions());
@@ -1395,9 +1419,11 @@
           receipt.companySnapshot.name = "Nachträglich geändert";
           receipt.customerSnapshot.name = "Andere Person";
           receipt.serviceLocationSnapshot.name = "Anderer Ort";
+          receipt.brandingSnapshot = { logoMode: "company", logo: { id: "new-logo", source: "company" } };
           assertEqual(model.issuer.displayName, "Teststudio Nord", "Dokumentmodell änderte den Aussteller rückwirkend");
           assertEqual(model.customer.name, "Anna Muster", "Dokumentmodell änderte den Kunden rückwirkend");
           assert(!JSON.stringify(model).includes("Anderer Ort"), "Dokumentmodell änderte den Leistungsort rückwirkend");
+          assert(!JSON.stringify(model).includes("new-logo"), "Dokumentmodell änderte das Logo rückwirkend");
         }
       },
       {
@@ -1474,9 +1500,12 @@
           assert(logoSource.includes('accept="image/png,image/jpeg,.png,.jpg,.jpeg"'), "Logoauswahl ist nicht auf PNG/JPEG begrenzt");
           assert(!logoSource.includes(".svg") && !logoSource.includes("image/svg"), "Logoauswahl lässt SVG zu");
           assert(source.includes("companyLogoMaxBytes || 1024 * 1024"), "1-MB-Grenze des Logos fehlt");
+          assert(logoSource.includes("data-company-logo-select") && source.includes("selectButton?.addEventListener(\"click\", () => input?.click())"), "iOS-robuste explizite Logoauswahl fehlt");
           assert(source.includes("await persistCurrentSettings()") && source.includes("async function saveCompanyLogo"), "Logo verwendet nicht den zentralen Settings-Writer");
           assert(!snapshotSource.includes("dataUrl"), "Echte Logo-Bilddaten werden in Geschäftsvorgang-Snapshots kopiert");
           assert(source.includes("company: { ...data.company, street: companyStreetLine(data.company)"), "PDF-/Beleg-Fallback kombiniert getrennte Adressfelder nicht verlustfrei");
+          assert(source.includes("async function saveBusinessAreaLogo") && source.includes("data-business-logo-input"), "Persistenter Geschäftsbereichslogo-Upload fehlt");
+          assert(!source.includes("business-logo-simulation"), "Alte Geschäftsbereichslogo-Simulation ist noch aktiv");
         }
       },
       {
@@ -1883,6 +1912,7 @@
           assertDeepEqual(stored.paymentChoices.map(choice => choice.id), ["cash", "ec", "voucher"], "Zahlungsarten oder Reihenfolge fehlen");
           assertEqual(stored.businessAreas.length, 2, "Geschäftsbereiche fehlen");
           assertEqual(stored.businessAreas.find(area => area.isDefault)?.id, "hair", "Standard-Geschäftsbereich fehlt");
+          assertDeepEqual(stored.businessAreas.find(area => area.id === "hair")?.logo, businessAreaLogoFixture(), "Geschäftsbereichslogo fehlt");
           assertEqual(stored.setup.status, "started", "Einrichtungsstatus fehlt");
           assertEqual(stored.users.length, 1, "Lokaler Benutzer fehlt im Settings-Store");
           assertEqual(stored.users[0].tenantId, persistence.tenantId, "Persistierter Benutzer gehört zum falschen Mandanten");
@@ -1948,6 +1978,7 @@
           assert(normalized.record.paymentChoices.some(choice => choice.id !== "voucher" && choice.active), "Keine normale Zahlungsart wiederhergestellt");
           assertEqual(normalized.record.receiptSettings.yearPrefix, "2030", "Fehlende Belegeinstellungen nicht ergänzt");
           assertEqual(normalized.record.setup.status, "not-started", "Fehlender Setupstatus nicht sicher ergänzt");
+          assertEqual(hair.logo, null, "Historischer Geschäftsbereich ohne Logo wurde nicht kompatibel normalisiert");
           assert(normalized.repairs.length > 0, "Reparaturen wurden nicht dokumentiert");
         }
       },
@@ -1976,7 +2007,7 @@
         }
       },
       {
-        name: "Unternehmenslogo bleibt zentral, ausgeschlossene Geschäftsdaten und Logo-Nebenfelder nicht",
+        name: "Unternehmens- und Bereichslogos bleiben zentral, ausgeschlossene Geschäftsdaten und Logo-Nebenfelder nicht",
         run: async () => {
           const persistence = context.makeClient("scope-exclusions");
           const record = recordFixture(persistence.tenantId);
@@ -1993,7 +2024,7 @@
           });
           record.company.logo = companyLogoFixture({ privateMetadata: "forbidden" });
           record.company.logoData = "forbidden";
-          record.businessAreas[0].logo = { id: "forbidden-area-logo" };
+          record.businessAreas[0].logo = businessAreaLogoFixture({ privateMetadata: "forbidden" });
           record.businessAreas[0].logoFile = "forbidden";
           record.businessAreas[0].logoMode = "custom";
 
@@ -2004,7 +2035,8 @@
           assertDeepEqual(stored.company.logo, companyLogoFixture(), "Validiertes Unternehmenslogo wurde nicht verlustfrei gespeichert");
           assert(!hasOwn(stored.company.logo, "privateMetadata"), "Unbekanntes Logo-Nebenfeld wurde gespeichert");
           assert(!hasOwn(stored.company, "logoData"), "Nicht freigegebenes Logo-Nebenfeld wurde gespeichert");
-          assert(!hasOwn(stored.businessAreas[0], "logo") && !hasOwn(stored.businessAreas[0], "logoFile"), "Simuliertes Geschäftsbereichslogo gespeichert");
+          assertDeepEqual(stored.businessAreas[0].logo, businessAreaLogoFixture(), "Validiertes Geschäftsbereichslogo wurde nicht verlustfrei gespeichert");
+          assert(!hasOwn(stored.businessAreas[0].logo, "privateMetadata") && !hasOwn(stored.businessAreas[0], "logoFile"), "Nicht freigegebenes Bereichslogo-Nebenfeld wurde gespeichert");
           assertEqual(stored.businessAreas[0].logoMode, "custom", "Zulässige Branding-Einstellung wurde entfernt");
         }
       },
@@ -2043,6 +2075,7 @@
           assertEqual(stored.company.website, "https://test.invalid/", "Website ging beim Reload verloren");
           assertEqual(stored.company.updatedAt, "2030-02-03T04:05:00.000Z", "Unternehmens-Änderungszeitpunkt wurde überschrieben");
           assertDeepEqual(stored.company.logo, companyLogoFixture(), "Unternehmenslogo ging beim Reload verloren");
+          assertDeepEqual(stored.businessAreas.find(area => area.id === "hair")?.logo, businessAreaLogoFixture(), "Geschäftsbereichslogo ging beim Reload verloren");
         }
       },
       {
@@ -2059,9 +2092,12 @@
         }
       },
       {
-        name: "Unternehmenslogo akzeptiert nur vollständige PNG-/JPEG-Daten bis 1 MB",
+        name: "Unternehmens- und Geschäftsbereichslogos akzeptieren nur vollständige PNG-/JPEG-Daten bis 1 MB",
         run: async () => {
           assertDeepEqual(api.normalizeCompanyLogo(companyLogoFixture()), companyLogoFixture(), "Gültiges PNG-Logo wurde verändert");
+          const companyJpeg = businessAreaLogoFixture({ id: "company-logo-jpeg", name: "Unternehmenslogo.jpg" });
+          assertDeepEqual(api.normalizeCompanyLogo(companyJpeg), companyJpeg, "Gültiges JPEG-Unternehmenslogo wurde verändert");
+          assertDeepEqual(api.normalizeBusinessAreaLogo(businessAreaLogoFixture()), businessAreaLogoFixture(), "Gültiges JPEG-Bereichslogo wurde verändert");
           assertThrows(
             () => api.normalizeCompanyLogo(companyLogoFixture({ mimeType: "image/svg+xml", dataUrl: "data:image/svg+xml;base64,PHN2Zy8+" })),
             "INVALID_DATA",
@@ -2086,6 +2122,16 @@
             () => api.normalizeCompanyLogo(companyLogoFixture({ formatVersion: 2 })),
             "UNSUPPORTED_FORMAT",
             "Zukünftiges Logoformat"
+          );
+          assertThrows(
+            () => api.normalizeBusinessAreaLogo(businessAreaLogoFixture({ mimeType: "image/png", dataUrl: `data:image/png;base64,${tinyJpegBase64}` })),
+            "INVALID_DATA",
+            "Falsche Bereichslogo-Dateisignatur"
+          );
+          assertThrows(
+            () => api.normalizeBusinessAreaLogo(businessAreaLogoFixture({ size: api.constants.companyLogoMaxBytes + 1 })),
+            "INVALID_DATA",
+            "Geschäftsbereichslogo über 1 MB"
           );
         }
       },
@@ -3996,6 +4042,8 @@
           assertEqual(ownFiles.projection.operatingSettings?.currency, "EUR", "Eigene-Daten-Projektion enthält die Währung nicht");
           assertEqual(ownFiles.projection.operatingSettings?.defaultTaxRate, 19, "Eigene-Daten-Projektion enthält die Standard-MwSt. nicht");
           assertEqual(ownFiles.projection.operatingSettings?.defaultBusinessArea?.id, "hair", "Eigene-Daten-Projektion enthält den Standard-Geschäftsbereich nicht");
+          assertEqual(ownFiles.projection.operatingSettings?.businessAreas[0]?.logo?.name, "Bereichslogo.jpg", "Eigene-Daten-Projektion enthält keine Bereichslogo-Metadaten");
+          assert(!hasOwn(ownFiles.projection.operatingSettings?.businessAreas[0]?.logo || {}, "dataUrl"), "Eigene-Daten-Projektion enthält Bereichslogo-Bilddaten");
           assertDeepEqual(ownFiles.projection.operatingSettings?.paymentChoices.map(choice => choice.id), ["cash", "ec", "voucher"], "Eigene-Daten-Projektion verändert die Zahlungsartenreihenfolge");
           assertEqual(ownFiles.projection.operatingSettings?.receiptNumbering.nextNumber, 77, "Eigene-Daten-Projektion enthält den Nummernstand nicht");
           assertEqual(ownFiles.projection.operatingSettings?.receiptTexts.footerText, "Test-Fußtext", "Eigene-Daten-Projektion enthält den Beleg-Fußtext nicht");
@@ -4544,6 +4592,7 @@
           assertEqual(validated.snapshot.stores.settings.users.length, 1, "Restore-Export-Rundlauf verlor den Benutzer");
           assertEqual(validated.snapshot.stores.settings.activeUserId, validated.snapshot.stores.settings.users[0].id, "Restore-Export-Rundlauf verlor den aktiven Benutzer");
           assertDeepEqual(validated.snapshot.stores.settings.company.logo, companyLogoFixture(), "Restore-Export-Rundlauf verlor das verschlüsselt gesicherte Unternehmenslogo");
+          assertDeepEqual(validated.snapshot.stores.settings.businessAreas.map(area => area.logo), target.stores.settings.businessAreas.map(area => area.logo), "Restore-Export-Rundlauf verlor Geschäftsbereichslogos");
           assertEqual(validated.snapshot.stores.settings.company.contactPerson, "Test Kontakt", "Restore-Export-Rundlauf verlor den Ansprechpartner");
           assertEqual(validated.snapshot.stores.vouchers.vouchers[0].history.length, 1, "Gutscheinhistorie ging im Rundlauf verloren");
           assertEqual(validated.snapshot.stores.receipts.receipts[0].companySnapshot.name, "Teststudio Nord", "Belegsnapshot ging im Rundlauf verloren");

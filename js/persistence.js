@@ -79,7 +79,7 @@
   const tseSettingsAllowedKeys = new Set([
     "formatVersion", "provider", "enabled", "setupStatus", "connectionStatus"
   ]);
-  const companyLogoAllowedKeys = new Set([
+  const brandLogoAllowedKeys = new Set([
     "formatVersion", "id", "name", "mimeType", "size", "dataUrl", "updatedAt"
   ]);
   const dangerousKeys = new Set(["__proto__", "prototype", "constructor"]);
@@ -238,48 +238,48 @@
     };
   }
 
-  function decodeBase64Bytes(encoded) {
+  function decodeBase64Bytes(encoded, subject = "Logo") {
     if (typeof encoded !== "string"
       || !encoded.length
       || encoded.length % 4 !== 0
       || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
-      throw new PersistenceError("INVALID_DATA", "Das gespeicherte Unternehmenslogo ist ungültig.");
+      throw new PersistenceError("INVALID_DATA", `Das gespeicherte ${subject} ist ungültig.`);
     }
     try {
       const binary = globalThis.atob(encoded);
       return Uint8Array.from(binary, character => character.charCodeAt(0));
     } catch (cause) {
-      throw new PersistenceError("INVALID_DATA", "Das gespeicherte Unternehmenslogo ist ungültig.", cause);
+      throw new PersistenceError("INVALID_DATA", `Das gespeicherte ${subject} ist ungültig.`, cause);
     }
   }
 
-  function normalizeCompanyLogo(source) {
+  function normalizeBrandLogo(source, subject = "Logo") {
     if (source === undefined || source === null || source?.simulated === true) return null;
     if (!isPlainObject(source)) {
-      throw new PersistenceError("INVALID_DATA", "Das gespeicherte Unternehmenslogo ist ungültig.");
+      throw new PersistenceError("INVALID_DATA", `Das gespeicherte ${subject} ist ungültig.`);
     }
     if (!Number.isInteger(source.formatVersion) || source.formatVersion < 1) {
-      throw new PersistenceError("INVALID_DATA", "Das gespeicherte Unternehmenslogo besitzt keine gültige Formatversion.");
+      throw new PersistenceError("INVALID_DATA", `Das gespeicherte ${subject} besitzt keine gültige Formatversion.`);
     }
     if (source.formatVersion > constants.companyLogoFormatVersion) {
-      throw new PersistenceError("UNSUPPORTED_FORMAT", "Dieses Unternehmenslogo benötigt eine neuere FRECKA-Version und wurde nicht verändert.");
+      throw new PersistenceError("UNSUPPORTED_FORMAT", `Dieses ${subject} benötigt eine neuere FRECKA-Version und wurde nicht verändert.`);
     }
     const mimeType = trimmedString(source.mimeType).toLowerCase();
     if (!new Set(["image/png", "image/jpeg"]).has(mimeType)) {
-      throw new PersistenceError("INVALID_DATA", "Als Unternehmenslogo sind ausschließlich PNG- und JPEG-Dateien zulässig.");
+      throw new PersistenceError("INVALID_DATA", `Als ${subject} sind ausschließlich PNG- und JPEG-Dateien zulässig.`);
     }
     if (!Number.isInteger(source.size) || source.size < 1 || source.size > constants.companyLogoMaxBytes) {
-      throw new PersistenceError("INVALID_DATA", "Das Unternehmenslogo darf maximal 1 MB groß sein.");
+      throw new PersistenceError("INVALID_DATA", `Das ${subject} darf maximal 1 MB groß sein.`);
     }
     const prefix = `data:${mimeType};base64,`;
     if (typeof source.dataUrl !== "string"
       || !source.dataUrl.startsWith(prefix)
       || source.dataUrl.length > prefix.length + Math.ceil(constants.companyLogoMaxBytes / 3) * 4) {
-      throw new PersistenceError("INVALID_DATA", "Das gespeicherte Unternehmenslogo ist ungültig.");
+      throw new PersistenceError("INVALID_DATA", `Das gespeicherte ${subject} ist ungültig.`);
     }
-    const bytes = decodeBase64Bytes(source.dataUrl.slice(prefix.length));
+    const bytes = decodeBase64Bytes(source.dataUrl.slice(prefix.length), subject);
     if (bytes.length !== source.size || bytes.length > constants.companyLogoMaxBytes) {
-      throw new PersistenceError("INVALID_DATA", "Die Größe des gespeicherten Unternehmenslogos ist ungültig.");
+      throw new PersistenceError("INVALID_DATA", `Die Größe des gespeicherten ${subject} ist ungültig.`);
     }
     const isPng = bytes.length >= 20
       && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((value, index) => bytes[index] === value)
@@ -288,16 +288,16 @@
       && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
       && bytes[bytes.length - 2] === 0xff && bytes[bytes.length - 1] === 0xd9;
     if ((mimeType === "image/png" && !isPng) || (mimeType === "image/jpeg" && !isJpeg)) {
-      throw new PersistenceError("INVALID_DATA", "Dateityp und Inhalt des Unternehmenslogos stimmen nicht überein.");
+      throw new PersistenceError("INVALID_DATA", `Dateityp und Inhalt des ${subject} stimmen nicht überein.`);
     }
     const id = trimmedString(source.id);
     const name = trimmedString(source.name);
     if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(id) || !name || name.length > 120) {
-      throw new PersistenceError("INVALID_DATA", "Die Angaben zum gespeicherten Unternehmenslogo sind ungültig.");
+      throw new PersistenceError("INVALID_DATA", `Die Angaben zum gespeicherten ${subject} sind ungültig.`);
     }
     const updatedAt = stableIso(source.updatedAt, "");
     if (updatedAt === epochIso) {
-      throw new PersistenceError("INVALID_DATA", "Der Änderungszeitpunkt des Unternehmenslogos ist ungültig.");
+      throw new PersistenceError("INVALID_DATA", `Der Änderungszeitpunkt des ${subject} ist ungültig.`);
     }
     return {
       formatVersion: constants.companyLogoFormatVersion,
@@ -308,6 +308,14 @@
       dataUrl: source.dataUrl,
       updatedAt
     };
+  }
+
+  function normalizeCompanyLogo(source) {
+    return normalizeBrandLogo(source, "Unternehmenslogo");
+  }
+
+  function normalizeBusinessAreaLogo(source) {
+    return normalizeBrandLogo(source, "Geschäftsbereichslogo");
   }
 
   const generatedLocalLicenses = new Map();
@@ -577,6 +585,7 @@
         label: stringValue(area.label, "Geschäftsbereich"),
         visibleName: stringValue(area.visibleName),
         logoMode: validLogoMode(area.logoMode),
+        logo: normalizeBusinessAreaLogo(area.logo),
         active: area.active !== false,
         isDefault: area.isDefault === true,
         defaultServiceLocationId: nullableStringId(area.defaultServiceLocationId)
@@ -1938,6 +1947,7 @@
         label: stringValue(entry.label, stringValue(fallback.label, "Geschäftsbereich")),
         visibleName: stringValue(entry.visibleName, stringValue(fallback.visibleName)),
         logoMode: ["company", "custom", "none"].includes(entry.logoMode) ? entry.logoMode : validLogoMode(fallback.logoMode),
+        logo: normalizeBusinessAreaLogo(Object.prototype.hasOwnProperty.call(entry, "logo") ? entry.logo : null),
         active: booleanValue(entry.active, fallback.active !== false),
         isDefault: booleanValue(entry.isDefault, fallback.isDefault === true),
         defaultServiceLocationId: nullableStringId(entry.defaultServiceLocationId)
@@ -2759,7 +2769,7 @@
       });
       if (isPlainObject(cleaned.company.logo)) {
         Object.keys(cleaned.company.logo).forEach(key => {
-          if (!companyLogoAllowedKeys.has(key)) delete cleaned.company.logo[key];
+          if (!brandLogoAllowedKeys.has(key)) delete cleaned.company.logo[key];
         });
       } else if (cleaned.company.logo !== null) delete cleaned.company.logo;
     }
@@ -2767,8 +2777,13 @@
       cleaned.businessAreas.forEach(area => {
         if (!isPlainObject(area)) return;
         Object.keys(area).forEach(key => {
-          if (key !== "logoMode" && key.toLowerCase().startsWith("logo")) delete area[key];
+          if (!new Set(["logo", "logoMode"]).has(key) && key.toLowerCase().startsWith("logo")) delete area[key];
         });
+        if (isPlainObject(area.logo)) {
+          Object.keys(area.logo).forEach(key => {
+            if (!brandLogoAllowedKeys.has(key)) delete area.logo[key];
+          });
+        } else if (area.logo !== null) delete area.logo;
       });
     }
     if (Array.isArray(cleaned.users)) {
@@ -4787,6 +4802,7 @@
     snoozeBackupReminder,
     completeBackupReminder,
     normalizeCompanyLogo,
+    normalizeBusinessAreaLogo,
     companyIdentity,
     snapshotCatalog,
     normalizeCatalogRecord,

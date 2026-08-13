@@ -2208,23 +2208,53 @@ body.work-mode:not(.catalog-mode) .flow-page {
   line-height: 1.35;
 }
 .business-logo-options small,
-.business-logo-simulation small {
+.business-logo-upload small {
   color: var(--muted);
   font-size: .62rem;
   line-height: 1.35;
 }
-.business-logo-simulation {
+.business-logo-upload {
   min-width: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
   gap: 10px;
   align-items: center;
 }
-.business-logo-simulation[hidden] {
+.business-logo-upload[hidden] {
   display: none;
 }
-.business-logo-simulation .button {
+.business-logo-upload .button {
   min-width: 0;
   min-height: 46px;
+}
+.business-logo-thumbnail {
+  width: 58px;
+  height: 58px;
+  border: 1px dashed var(--primary);
+  border-radius: 15px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  font-size: .65rem;
+  font-weight: 900;
+}
+.business-logo-thumbnail img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+.business-logo-upload-copy {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+.business-logo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
 }
 .branding-live-preview {
   min-width: 0;
@@ -2357,11 +2387,11 @@ body.work-mode:not(.catalog-mode) .flow-page {
     padding: 12px;
   }
   .business-branding-title,
-  .business-logo-simulation {
+  .business-logo-upload {
     align-items: stretch;
-    flex-direction: column;
+    grid-template-columns: 1fr;
   }
-  .business-logo-simulation .button {
+  .business-logo-upload .button {
     width: 100%;
   }
 }
@@ -2891,17 +2921,14 @@ body.work-mode:not(.catalog-mode) .flow-page {
 .settings-logo-actions .button {
   min-height: 44px;
 }
-.logo-file-button {
-  position: relative;
-  overflow: hidden;
-  cursor: pointer;
-}
-.logo-file-button input {
+.logo-file-input {
   position: absolute;
   width: 1px;
   height: 1px;
   opacity: 0;
-  pointer-events: none;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .logo-recommendations {
   grid-column: 1 / -1;

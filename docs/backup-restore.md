@@ -9,7 +9,7 @@
 
 FRECKA erstellt eine manuell ausgelöste, verschlüsselte Gesamtsicherung aller dauerhaft gespeicherten Geschäftsdaten. Verschlüsselung und Entschlüsselung erfolgen ausschließlich im Browser auf dem Endgerät. Die Datei wird weder an FRECKA noch an einen Server übertragen; Ziel und weitere Aufbewahrung bestimmt allein der Nutzer.
 
-BACKUP-001 enthält keine Cloudanbindung, Synchronisation, Automatik, Zeitplanung oder inkrementelle Sicherung. Die Anwendung speichert weder Sicherungsdatei noch Passphrase oder abgeleiteten Schlüssel. Das validierte Unternehmenslogo aus dem zentralen Settings-Datensatz ist als Unternehmensstammdatum Bestandteil von Sicherung und Restore. Erzeugte PDF-, QR-Bild-, Mail-, Kamera- und Druckdaten sind weiterhin kein Bestandteil des Backups.
+BACKUP-001 enthält keine Cloudanbindung, Synchronisation, Automatik, Zeitplanung oder inkrementelle Sicherung. Die Anwendung speichert weder Sicherungsdatei noch Passphrase oder abgeleiteten Schlüssel. Validierte Unternehmens- und Geschäftsbereichslogos aus dem zentralen Settings-Datensatz sind Bestandteil von Sicherung und Restore. Erzeugte PDF-, QR-Bild-, Mail-, Kamera- und Druckdaten sind weiterhin kein Bestandteil des Backups.
 
 ## Zentrale APIs
 

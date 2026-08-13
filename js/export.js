@@ -173,6 +173,18 @@
         .filter(rate => rate?.active !== false)
         .map(rate => finiteNumber(rate?.rate))),
       defaultBusinessArea: defaultArea ? Object.freeze({ id: text(defaultArea.id), label: text(defaultArea.label) }) : null,
+      businessAreas: Object.freeze(activeAreas.map(area => Object.freeze({
+        id: text(area.id),
+        label: text(area.label),
+        visibleName: text(area.visibleName),
+        logoMode: ["company", "custom", "none"].includes(area.logoMode) ? area.logoMode : "company",
+        logo: isPlainObject(area.logo) ? Object.freeze({
+          name: text(area.logo.name),
+          mimeType: text(area.logo.mimeType),
+          size: finiteNumber(area.logo.size),
+          updatedAt: text(area.logo.updatedAt)
+        }) : null
+      }))),
       paymentChoices: Object.freeze(paymentChoices),
       receiptNumbering: Object.freeze({
         yearPrefix: text(receiptSettings.yearPrefix),
