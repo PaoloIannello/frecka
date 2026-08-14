@@ -26,10 +26,10 @@ UX-011 / UPDATE-002 / BACKUP-003 ergänzt darauf eine reale Seite **Einstellunge
 - eine zentrale Seite **Einstellungen → Unternehmen** für optionale Geschäftsbezeichnung, verpflichtende rechtliche Person, optionalen Ansprechpartner, getrennte Anschrift, Kontaktwege, Website und optionale Steuerkennungen
 - verlustfreie Kompatibilität für bestehende kombinierte Straßenwerte ohne automatische oder mutmaßliche Zerlegung
 - ein eigener Unternehmens-Änderungszeitpunkt, der nur bei tatsächlichen Änderungen fortgeschrieben wird
-- ausschließlich lokal gespeicherte, inhaltlich geprüfte PNG-/JPEG-Logos bis 1 MB für Unternehmen und Geschäftsbereiche im vorhandenen Settings-Datensatz sowie in verschlüsseltem Backup und Restore
-- klare Branding-Priorität: Geschäftsbereichslogo, sonst Unternehmenslogo, sonst textbasierter Fallback; historische Belege behalten ihre gespeicherte Logo-Referenz
+- ausschließlich lokal gespeicherte, inhaltlich geprüfte PNG-/JPEG-Logos bis 1 MB in einem versionierten, unveränderlichen Asset-Register des vorhandenen Settings-Datensatzes sowie in verschlüsseltem Backup und Restore
+- klare Branding-Priorität: Geschäftsbereichslogo, sonst Unternehmenslogo, sonst textbasierter Fallback; historische Belege und Gutscheine lösen ihre gespeicherte Asset-ID weiterhin zur damaligen Bildversion auf
 - zusätzliche Unternehmensangaben nur im Exporttyp **Eigene Daten**; unveränderter Steuerberaterexport und unveränderte Public-Viewer-Whitelist
-- keine echte Logo-Bildausgabe in PDF oder Public Viewer; dieser Darstellungsblock bleibt bewusst separat und Bildrohdaten bleiben aus öffentlichen QR-Payloads ausgeschlossen
+- proportionale Logo-Bildausgabe in interner Ansicht sowie Beleg-, Gutschein-, Storno-, Gutschrift- und Steuerberater-PDF; Public Viewer und öffentliche QR-Payloads bleiben frei von Bildrohdaten
 
 ## Neu in RELEASE-AUTOMATION-001/002
 

@@ -13,6 +13,8 @@
     tenantId: "local-default",
     formatVersion: 1,
     companyLogoFormatVersion: 1,
+    logoAssetFormatVersion: 1,
+    logoReferenceFormatVersion: 1,
     companyLogoMaxBytes: 1024 * 1024,
     userFormatVersion: 1,
     licenseFormatVersion: 1,
@@ -79,8 +81,11 @@
   const tseSettingsAllowedKeys = new Set([
     "formatVersion", "provider", "enabled", "setupStatus", "connectionStatus"
   ]);
-  const brandLogoAllowedKeys = new Set([
-    "formatVersion", "id", "name", "mimeType", "size", "dataUrl", "updatedAt"
+  const logoAssetAllowedKeys = new Set([
+    "formatVersion", "assetId", "mimeType", "fileName", "size", "createdAt", "dataUrl"
+  ]);
+  const logoReferenceAllowedKeys = new Set([
+    "formatVersion", "assetId", "name", "mimeType", "size", "updatedAt"
   ]);
   const dangerousKeys = new Set(["__proto__", "prototype", "constructor"]);
   const sensitiveKeyPattern = /(password|passphrase|credential|secret|access.?token|refresh.?token|private.?key)/i;
@@ -318,6 +323,136 @@
     return normalizeBrandLogo(source, "Geschäftsbereichslogo");
   }
 
+  function logoAssetFromBrandLogo(source, subject = "Logo") {
+    const logo = normalizeBrandLogo(source, subject);
+    if (!logo) return null;
+    return {
+      formatVersion: constants.logoAssetFormatVersion,
+      assetId: logo.id,
+      mimeType: logo.mimeType,
+      fileName: logo.name,
+      size: logo.size,
+      createdAt: logo.updatedAt,
+      dataUrl: logo.dataUrl
+    };
+  }
+
+  function normalizeLogoAsset(source) {
+    if (!isPlainObject(source)) {
+      throw new PersistenceError("INVALID_DATA", "Ein gespeichertes Logoasset ist ungültig.");
+    }
+    if (!Number.isInteger(source.formatVersion) || source.formatVersion < 1) {
+      throw new PersistenceError("INVALID_DATA", "Ein gespeichertes Logoasset besitzt keine gültige Formatversion.");
+    }
+    if (source.formatVersion > constants.logoAssetFormatVersion) {
+      throw new PersistenceError("UNSUPPORTED_FORMAT", "Dieses Logoasset benötigt eine neuere FRECKA-Version und wurde nicht verändert.");
+    }
+    return logoAssetFromBrandLogo({
+      formatVersion: constants.companyLogoFormatVersion,
+      id: source.assetId,
+      name: source.fileName,
+      mimeType: source.mimeType,
+      size: source.size,
+      dataUrl: source.dataUrl,
+      updatedAt: source.createdAt
+    }, "Logoasset");
+  }
+
+  function sameLogoAsset(left, right) {
+    return left.assetId === right.assetId
+      && left.mimeType === right.mimeType
+      && left.fileName === right.fileName
+      && left.size === right.size
+      && left.createdAt === right.createdAt
+      && left.dataUrl === right.dataUrl;
+  }
+
+  function logoReferenceFromAsset(asset) {
+    if (!asset) return null;
+    return {
+      formatVersion: constants.logoReferenceFormatVersion,
+      assetId: asset.assetId,
+      name: asset.fileName,
+      mimeType: asset.mimeType,
+      size: asset.size,
+      updatedAt: asset.createdAt
+    };
+  }
+
+  function normalizeLogoAssetRegister(source, legacyLogos = []) {
+    if (source !== undefined && source !== null && !Array.isArray(source)) {
+      throw new PersistenceError("INVALID_DATA", "Das gespeicherte Logo-Asset-Register ist ungültig.");
+    }
+    const assets = [];
+    const assetsById = new Map();
+    const add = candidate => {
+      if (!candidate) return;
+      const existing = assetsById.get(candidate.assetId);
+      if (existing) {
+        if (!sameLogoAsset(existing, candidate)) {
+          throw new PersistenceError("INVALID_DATA", "Eine Logo-Asset-ID ist mehrdeutig belegt.");
+        }
+        return;
+      }
+      assetsById.set(candidate.assetId, candidate);
+      assets.push(candidate);
+    };
+    (source || []).forEach(entry => add(normalizeLogoAsset(entry)));
+    (Array.isArray(legacyLogos) ? legacyLogos : []).forEach(entry => {
+      if (isPlainObject(entry) && typeof entry.dataUrl === "string") {
+        add(logoAssetFromBrandLogo(entry, "Logo"));
+      }
+    });
+    return assets;
+  }
+
+  function normalizeLogoReference(source, logoAssets, subject = "Logo") {
+    if (source === undefined || source === null || source?.simulated === true) return null;
+    if (!isPlainObject(source)) {
+      throw new PersistenceError("INVALID_DATA", `Die gespeicherte ${subject}-Zuordnung ist ungültig.`);
+    }
+    if (Number.isInteger(source.formatVersion) && source.formatVersion > constants.logoReferenceFormatVersion) {
+      throw new PersistenceError("UNSUPPORTED_FORMAT", `Diese ${subject}-Zuordnung benötigt eine neuere FRECKA-Version und wurde nicht verändert.`);
+    }
+    const assetId = nullableStringId(source.assetId) || nullableStringId(source.id);
+    if (!assetId) {
+      throw new PersistenceError("INVALID_DATA", `Die gespeicherte ${subject}-Zuordnung besitzt keine gültige Asset-ID.`);
+    }
+    const asset = (Array.isArray(logoAssets) ? logoAssets : []).find(entry => entry.assetId === assetId);
+    return asset ? logoReferenceFromAsset(asset) : null;
+  }
+
+  function resolveLogoAsset(assetId, logoAssets = []) {
+    const normalizedId = nullableStringId(assetId);
+    if (!normalizedId || !Array.isArray(logoAssets)) return null;
+    try {
+      const source = logoAssets.find(entry => entry?.assetId === normalizedId);
+      return source ? cloneSafe(normalizeLogoAsset(source)) : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function registerLogoAsset(logoAssets, sourceLogo) {
+    const assets = normalizeLogoAssetRegister(logoAssets);
+    const candidate = logoAssetFromBrandLogo(sourceLogo, "Logo");
+    if (!candidate) return { assets, asset: null, reference: null, added: false };
+    const identical = assets.find(asset => (
+      asset.mimeType === candidate.mimeType
+      && asset.size === candidate.size
+      && asset.dataUrl === candidate.dataUrl
+    ));
+    if (identical) {
+      return { assets, asset: cloneSafe(identical), reference: logoReferenceFromAsset(identical), added: false };
+    }
+    const collision = assets.find(asset => asset.assetId === candidate.assetId);
+    if (collision) {
+      throw new PersistenceError("INVALID_DATA", "Die neue Logo-Asset-ID ist bereits vergeben.");
+    }
+    const nextAssets = [...assets, candidate];
+    return { assets: nextAssets, asset: cloneSafe(candidate), reference: logoReferenceFromAsset(candidate), added: true };
+  }
+
   const generatedLocalLicenses = new Map();
 
   function createOpaqueLocalId(prefix) {
@@ -517,6 +652,11 @@
     const taxSettings = runtimeData.taxSettings || {};
     const receiptSettings = runtimeData.receiptSettings || {};
     const backupReminder = normalizeBackupReminder(runtimeData.backupReminder, null, new Date().toISOString());
+    const runtimeBusinessAreas = Array.isArray(runtimeData.businessAreas) ? runtimeData.businessAreas : [];
+    const logoAssets = normalizeLogoAssetRegister(runtimeData.logoAssets, [
+      company.logo,
+      ...runtimeBusinessAreas.map(area => area?.logo)
+    ]);
     const snapshot = {
       formatVersion: constants.formatVersion,
       tenantId: safeTenantId,
@@ -525,6 +665,7 @@
       activeUserId: user.id,
       license,
       tseSettings,
+      logoAssets,
       company: {
         name: identity.name,
         owner: identity.owner,
@@ -539,7 +680,7 @@
         website: stringValue(company.website),
         taxNumber: stringValue(company.taxNumber),
         vatId: stringValue(company.vatId),
-        logo: normalizeCompanyLogo(company.logo),
+        logo: normalizeLogoReference(company.logo, logoAssets, "Unternehmenslogo"),
         updatedAt: stableIso(company.updatedAt, epochIso),
         defaultTaxRate: finiteNumber(company.defaultTaxRate, finiteNumber(taxSettings.defaultRate, 19)),
         useAsServiceLocation: company.useAsServiceLocation !== false
@@ -580,12 +721,12 @@
         icon: stringValue(choice.icon),
         active: choice.active !== false
       })).filter(choice => nullableStringId(choice.id)),
-      businessAreas: (Array.isArray(runtimeData.businessAreas) ? runtimeData.businessAreas : []).map(area => ({
+      businessAreas: runtimeBusinessAreas.map(area => ({
         id: area.id,
         label: stringValue(area.label, "Geschäftsbereich"),
         visibleName: stringValue(area.visibleName),
         logoMode: validLogoMode(area.logoMode),
-        logo: normalizeBusinessAreaLogo(area.logo),
+        logo: normalizeLogoReference(area.logo, logoAssets, "Geschäftsbereichslogo"),
         active: area.active !== false,
         isDefault: area.isDefault === true,
         defaultServiceLocationId: nullableStringId(area.defaultServiceLocationId)
@@ -1858,6 +1999,16 @@
     const defaultCompany = defaults.company || {};
     const rawCompany = isPlainObject(raw.company) ? raw.company : {};
     if (!isPlainObject(raw.company)) repairs.add("COMPANY_DEFAULTED");
+    const logoAreaSource = Array.isArray(raw.businessAreas) ? raw.businessAreas : defaults.businessAreas || [];
+    const logoRegisterSource = Array.isArray(raw.logoAssets) ? raw.logoAssets : defaults.logoAssets || [];
+    const logoAssets = normalizeLogoAssetRegister(logoRegisterSource, [
+      Object.prototype.hasOwnProperty.call(rawCompany, "logo") ? rawCompany.logo : defaultCompany.logo,
+      ...logoAreaSource.map(area => area?.logo)
+    ]);
+    if (!Array.isArray(raw.logoAssets)) repairs.add("LOGO_ASSET_REGISTER_DEFAULTED");
+    if ([rawCompany.logo, ...logoAreaSource.map(area => area?.logo)].some(logo => isPlainObject(logo) && typeof logo.dataUrl === "string")) {
+      repairs.add("LEGACY_LOGO_ASSET_REGISTERED");
+    }
     const submittedCompanyName = stringValue(rawCompany.name, stringValue(defaultCompany.name)).trim();
     const submittedCompanyOwner = stringValue(rawCompany.owner).trim();
     const fallbackCompanyOwner = stringValue(defaultCompany.owner).trim();
@@ -1881,7 +2032,11 @@
       website: stringValue(rawCompany.website, stringValue(defaultCompany.website)),
       taxNumber: stringValue(rawCompany.taxNumber, stringValue(defaultCompany.taxNumber)),
       vatId: stringValue(rawCompany.vatId, stringValue(defaultCompany.vatId)),
-      logo: normalizeCompanyLogo(Object.prototype.hasOwnProperty.call(rawCompany, "logo") ? rawCompany.logo : defaultCompany.logo),
+      logo: normalizeLogoReference(
+        Object.prototype.hasOwnProperty.call(rawCompany, "logo") ? rawCompany.logo : defaultCompany.logo,
+        logoAssets,
+        "Unternehmenslogo"
+      ),
       updatedAt: stableIso(rawCompany.updatedAt, raw.updatedAt || defaultCompany.updatedAt || defaults.updatedAt),
       defaultTaxRate: finiteNumber(rawCompany.defaultTaxRate, finiteNumber(defaultCompany.defaultTaxRate, 19)),
       useAsServiceLocation: booleanValue(rawCompany.useAsServiceLocation, defaultCompany.useAsServiceLocation !== false)
@@ -1947,7 +2102,11 @@
         label: stringValue(entry.label, stringValue(fallback.label, "Geschäftsbereich")),
         visibleName: stringValue(entry.visibleName, stringValue(fallback.visibleName)),
         logoMode: ["company", "custom", "none"].includes(entry.logoMode) ? entry.logoMode : validLogoMode(fallback.logoMode),
-        logo: normalizeBusinessAreaLogo(Object.prototype.hasOwnProperty.call(entry, "logo") ? entry.logo : null),
+        logo: normalizeLogoReference(
+          Object.prototype.hasOwnProperty.call(entry, "logo") ? entry.logo : null,
+          logoAssets,
+          "Geschäftsbereichslogo"
+        ),
         active: booleanValue(entry.active, fallback.active !== false),
         isDefault: booleanValue(entry.isDefault, fallback.isDefault === true),
         defaultServiceLocationId: nullableStringId(entry.defaultServiceLocationId)
@@ -2127,6 +2286,7 @@
         activeUserId,
         license,
         tseSettings,
+        logoAssets,
         company,
         serviceLocations,
         taxSettings,
@@ -2763,13 +2923,23 @@
   function stripExcludedData(record) {
     const cleaned = cloneSafe(record) || {};
     forbiddenRootKeys.forEach(key => { delete cleaned[key]; });
+    if (Array.isArray(cleaned.logoAssets)) {
+      cleaned.logoAssets.forEach(asset => {
+        if (!isPlainObject(asset)) return;
+        Object.keys(asset).forEach(key => {
+          if (!logoAssetAllowedKeys.has(key)) delete asset[key];
+        });
+      });
+    } else {
+      cleaned.logoAssets = [];
+    }
     if (isPlainObject(cleaned.company)) {
       Object.keys(cleaned.company).forEach(key => {
         if (key.toLowerCase().startsWith("logo") && key !== "logo") delete cleaned.company[key];
       });
       if (isPlainObject(cleaned.company.logo)) {
         Object.keys(cleaned.company.logo).forEach(key => {
-          if (!brandLogoAllowedKeys.has(key)) delete cleaned.company.logo[key];
+          if (!logoReferenceAllowedKeys.has(key)) delete cleaned.company.logo[key];
         });
       } else if (cleaned.company.logo !== null) delete cleaned.company.logo;
     }
@@ -2781,7 +2951,7 @@
         });
         if (isPlainObject(area.logo)) {
           Object.keys(area.logo).forEach(key => {
-            if (!brandLogoAllowedKeys.has(key)) delete area.logo[key];
+            if (!logoReferenceAllowedKeys.has(key)) delete area.logo[key];
           });
         } else if (area.logo !== null) delete area.logo;
       });
@@ -3025,6 +3195,10 @@
                 if (existing?.formatVersion != null && existing.formatVersion < constants.formatVersion) {
                   throw new PersistenceError("UNSUPPORTED_FORMAT", "Für diese ältere Einstellungsformatversion ist noch keine Migration verfügbar.");
                 }
+                requestedSnapshot.logoAssets = normalizeLogoAssetRegister([
+                  ...(Array.isArray(existing?.logoAssets) ? existing.logoAssets : []),
+                  ...(Array.isArray(requestedSnapshot.logoAssets) ? requestedSnapshot.logoAssets : [])
+                ]);
                 writtenRecord = stripExcludedData(mergePreservingUnknown(existing, requestedSnapshot));
                 writtenRecord.formatVersion = constants.formatVersion;
                 writtenRecord.tenantId = tenantId;
@@ -4803,6 +4977,11 @@
     completeBackupReminder,
     normalizeCompanyLogo,
     normalizeBusinessAreaLogo,
+    normalizeLogoAsset,
+    normalizeLogoAssetRegister,
+    normalizeLogoReference,
+    registerLogoAsset,
+    resolveLogoAsset,
     companyIdentity,
     snapshotCatalog,
     normalizeCatalogRecord,

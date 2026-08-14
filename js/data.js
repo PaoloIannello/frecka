@@ -16,6 +16,7 @@ window.PROTOTYPE_DATA = Object.freeze({
   license: {},
   tseSettings: {},
   backupReminder: {},
+  logoAssets: [],
   company: {
     name: "Studio Beispiel",
     owner: "Angel Luzolo",

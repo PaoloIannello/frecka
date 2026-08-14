@@ -144,6 +144,8 @@
       vatId: text(company?.vatId),
       updatedAt: text(company?.updatedAt),
       logo: isPlainObject(company?.logo) ? Object.freeze({
+        formatVersion: finiteNumber(company.logo.formatVersion, 1),
+        assetId: text(company.logo.assetId),
         name: text(company.logo.name),
         mimeType: text(company.logo.mimeType),
         size: finiteNumber(company.logo.size),
@@ -165,6 +167,14 @@
       order: index + 1
     }));
     return Object.freeze({
+      logoAssets: Object.freeze((Array.isArray(settings?.logoAssets) ? settings.logoAssets : []).map(asset => Object.freeze({
+        formatVersion: finiteNumber(asset?.formatVersion, 1),
+        assetId: text(asset?.assetId),
+        fileName: text(asset?.fileName),
+        mimeType: text(asset?.mimeType),
+        size: finiteNumber(asset?.size),
+        createdAt: text(asset?.createdAt)
+      }))),
       currency: text(receiptSettings.currency) || "EUR",
       language: text(receiptSettings.language) || "Deutsch",
       taxStatus: text(taxSettings.status),
@@ -179,6 +189,8 @@
         visibleName: text(area.visibleName),
         logoMode: ["company", "custom", "none"].includes(area.logoMode) ? area.logoMode : "company",
         logo: isPlainObject(area.logo) ? Object.freeze({
+          formatVersion: finiteNumber(area.logo.formatVersion, 1),
+          assetId: text(area.logo.assetId),
           name: text(area.logo.name),
           mimeType: text(area.logo.mimeType),
           size: finiteNumber(area.logo.size),

@@ -212,7 +212,7 @@ Schlägt diese Zielgeräteprüfung fehl, muss die zulässige QR-Version abgesenk
 - Besitzer des Links können den sichtbaren Dokumentinhalt lesen und weitergeben.
 - SHA-256 erkennt Beschädigung, beweist aber weder Herausgeber noch Unverändertheit gegen einen aktiven Manipulator.
 - Alte Browser ohne `DecompressionStream` können Deflate-Links nicht öffnen.
-- Reale Logo-Bilddateien werden nicht in den QR eingebettet; QR-002 transportiert nur den sichtbaren Logo-Modus der aktuellen Dokumentdarstellung.
+- Reale Logo-Bilddateien und lokale Asset-IDs werden nicht in den QR eingebettet; QR-002 transportiert nur den sichtbaren Logo-Modus der historischen Dokumentdarstellung. BRANDING-002 löst Bilddaten ausschließlich für interne Ansicht und lokale PDFs auf.
 - Dokumente außerhalb der Grenzen besitzen weiterhin PDF- und Share-Ausgabe, aber keinen behaupteten geräteübergreifenden Kunden-QR.
 - Es gibt keine zentrale Wiederauffindbarkeit, Sperrung oder nachträgliche Aktualisierung eines einmal ausgegebenen Fragmentlinks.
 - QR-002 enthält keine Signatur-, TSE-, Benutzer-, Sitzungs-, Mail-, Cloud- oder Serverarchitektur.

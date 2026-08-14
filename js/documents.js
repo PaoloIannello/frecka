@@ -101,7 +101,41 @@
     };
   }
 
-  function normalizeBranding(source, issuer) {
+  function normalizeResolvedLogoAsset(asset, expectedAssetId) {
+    if (!asset || typeof asset !== "object") return null;
+    const assetId = trimmed(asset.assetId);
+    const mimeType = trimmed(asset.mimeType).toLowerCase();
+    const dataUrl = typeof asset.dataUrl === "string" ? asset.dataUrl : "";
+    const size = Number(asset.size);
+    if (!assetId || assetId !== expectedAssetId
+      || !["image/png", "image/jpeg"].includes(mimeType)
+      || !Number.isInteger(size) || size < 1 || size > 1024 * 1024
+      || !dataUrl.startsWith(`data:${mimeType};base64,`)) return null;
+    try {
+      const encoded = dataUrl.slice(dataUrl.indexOf(",") + 1);
+      const binary = globalThis.atob(encoded);
+      if (binary.length !== size) return null;
+      const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+      const isPng = bytes.length >= 20
+        && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((value, index) => bytes[index] === value)
+        && [0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82].every((value, index) => bytes[bytes.length - 8 + index] === value);
+      const isJpeg = bytes.length >= 4
+        && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+        && bytes[bytes.length - 2] === 0xff && bytes[bytes.length - 1] === 0xd9;
+      if ((mimeType === "image/png" && !isPng) || (mimeType === "image/jpeg" && !isJpeg)) return null;
+    } catch (error) {
+      return null;
+    }
+    return {
+      assetId,
+      fileName: trimmed(asset.fileName),
+      mimeType,
+      size,
+      dataUrl
+    };
+  }
+
+  function normalizeBranding(source, issuer, resolveLogoAsset) {
     const branding = source && typeof source === "object" ? source : {};
     const visibleName = trimmed(branding.visibleName);
     const distinctVisibleName = visibleName
@@ -112,15 +146,25 @@
     const sourceLogo = branding.logo && typeof branding.logo === "object" ? branding.logo : null;
     const logoMode = ["company", "custom", "none"].includes(branding.logoMode) ? branding.logoMode : sourceLogo ? "company" : "none";
     const logo = logoMode === "none" ? null : sourceLogo;
+    const assetId = trimmed(logo?.assetId || logo?.id);
+    let image = null;
+    if (assetId && typeof resolveLogoAsset === "function") {
+      try {
+        image = normalizeResolvedLogoAsset(resolveLogoAsset(assetId), assetId);
+      } catch (error) {
+        image = null;
+      }
+    }
     return {
       visibleName: distinctVisibleName,
       logoMode,
       logo: logo ? {
-        id: trimmed(logo.id),
+        assetId,
         label: trimmed(logo.label) || "Logo",
         source: trimmed(logo.source),
         simulated: logo.simulated !== false,
-        initials: logo.source === "business-area" ? "GB" : "UN"
+        initials: logo.source === "business-area" ? "GB" : "UN",
+        image
       } : null
     };
   }
@@ -219,7 +263,11 @@
     const issuerSource = receipt.companySnapshot || receipt.contextSnapshot?.company || receipt.presentationSnapshot?.issuer || options.company;
     const issuer = normalizeCompany(issuerSource, options.companyIdentity);
     if (!issuer.owner) throw new DocumentError("DOCUMENT_ISSUER_INVALID", "Für das Dokument fehlt die verpflichtende Unternehmerangabe.");
-    const branding = normalizeBranding(receipt.brandingSnapshot || receipt.contextSnapshot?.branding || receipt.presentationSnapshot?.branding, issuer);
+    const branding = normalizeBranding(
+      receipt.brandingSnapshot || receipt.contextSnapshot?.branding || receipt.presentationSnapshot?.branding,
+      issuer,
+      options.resolveLogoAsset
+    );
     const sourcePositions = Array.isArray(receipt.positions) ? receipt.positions : Array.isArray(receipt.items) ? receipt.items : [];
     if (!sourcePositions.length) throw new DocumentError("DOCUMENT_RECEIPT_EMPTY", "Der Beleg enthält keine darstellbaren Positionen.");
     const positions = sourcePositions.map((position, index) => ({
@@ -307,7 +355,11 @@
     if (!issuer.owner) throw new DocumentError("DOCUMENT_ISSUER_INVALID", "Für das Dokument fehlt die verpflichtende Unternehmerangabe.");
     const locationSource = voucher.serviceLocationSnapshot || voucher.presentationSnapshot?.redemptionLocation || voucher.contextSnapshot?.serviceLocation;
     const redemptionLocation = normalizeLocation(locationSource);
-    const branding = normalizeBranding(voucher.brandingSnapshot || voucher.presentationSnapshot?.branding || voucher.contextSnapshot?.branding, issuer);
+    const branding = normalizeBranding(
+      voucher.brandingSnapshot || voucher.presentationSnapshot?.branding || voucher.contextSnapshot?.branding,
+      issuer,
+      options.resolveLogoAsset
+    );
     const issuedValueCents = centsFrom(voucher.issuedValueCents, voucher.issuedValue);
     const currentValueCents = centsFrom(voucher.currentValueCents, voucher.currentValue);
     if (issuedValueCents <= 0 || currentValueCents < 0 || currentValueCents > issuedValueCents) {
@@ -411,11 +463,44 @@
     page.drawLine({ start: { x: left, y }, end: { x: right, y }, thickness, color });
   }
 
-  function drawLogoPlaceholder(page, model, fonts, colors, centerX, y) {
+  async function embedLogoImage(pdf, model) {
+    const image = model.branding?.logo?.image;
+    if (!image?.dataUrl || !["image/png", "image/jpeg"].includes(image.mimeType)) return null;
+    try {
+      const encoded = image.dataUrl.slice(image.dataUrl.indexOf(",") + 1);
+      const bytes = Uint8Array.from(globalThis.atob(encoded), character => character.charCodeAt(0));
+      return image.mimeType === "image/png" ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function fitLogoDimensions(width, height, maxWidth, maxHeight) {
+    const safeWidth = Number(width);
+    const safeHeight = Number(height);
+    const safeMaxWidth = Number(maxWidth);
+    const safeMaxHeight = Number(maxHeight);
+    if (![safeWidth, safeHeight, safeMaxWidth, safeMaxHeight].every(value => Number.isFinite(value) && value > 0)) return null;
+    const scale = Math.min(safeMaxWidth / safeWidth, safeMaxHeight / safeHeight);
+    return Object.freeze({ width: safeWidth * scale, height: safeHeight * scale });
+  }
+
+  function drawDocumentLogo(page, model, fonts, colors, centerX, y, embeddedImage, maxWidth, maxHeight) {
     if (!model.branding.logo || model.branding.logoMode === "none") return y;
+    if (embeddedImage && embeddedImage.width > 0 && embeddedImage.height > 0) {
+      const fitted = fitLogoDimensions(embeddedImage.width, embeddedImage.height, maxWidth, maxHeight);
+      const { width, height } = fitted;
+      page.drawImage(embeddedImage, {
+        x: centerX - width / 2,
+        y: y - height,
+        width,
+        height
+      });
+      return y - maxHeight - 8;
+    }
     page.drawRectangle({ x: centerX - 20, y: y - 40, width: 40, height: 40, borderColor: colors.ink, borderWidth: 1, color: colors.paper });
     drawCentered(page, fonts.bold, model.branding.logo.initials, 10, y - 22, colors.ink, centerX * 2);
-    return y - 48;
+    return y - maxHeight - 8;
   }
 
   function drawQrMatrix(page, qr, x, y, size, colors) {
@@ -437,7 +522,7 @@
 
   function estimateReceiptHeight(model, fonts) {
     const contentWidth = RECEIPT_WIDTH - 32;
-    let height = 32 + (model.branding.logo && model.branding.logoMode !== "none" ? 50 : 0) + 88;
+    let height = 32 + (model.branding.logo && model.branding.logoMode !== "none" ? 58 : 0) + 88;
     height += model.positions.reduce((sum, item) => sum + 30 + Math.max(0, wrapText(fonts.bold, item.title, 8.5, contentWidth - 62).length - 1) * 10, 0);
     if (model.customer) height += 45;
     height += 65;
@@ -485,6 +570,7 @@
   async function renderReceiptPdf(model, library) {
     const context = await pdfContext(library);
     const { pdf, fonts, colors } = context;
+    const embeddedLogo = await embedLogoImage(pdf, model);
     setMetadata(pdf, model);
     const margin = 16;
     const right = RECEIPT_WIDTH - margin;
@@ -518,7 +604,7 @@
       });
     };
 
-    y = drawLogoPlaceholder(page, model, fonts, colors, RECEIPT_WIDTH / 2, y);
+    y = drawDocumentLogo(page, model, fonts, colors, RECEIPT_WIDTH / 2, y, embeddedLogo, 124, 46);
     if (model.branding.visibleName) {
       drawCentered(page, fonts.oblique, model.branding.visibleName, 9, y, colors.ink, RECEIPT_WIDTH);
       y -= 14;
@@ -616,13 +702,14 @@
   async function renderVoucherPdf(model, library) {
     const context = await pdfContext(library);
     const { pdf, fonts, colors } = context;
+    const embeddedLogo = await embedLogoImage(pdf, model);
     setMetadata(pdf, model);
     const [pageWidth, pageHeight] = VOUCHER_SIZE;
     const page = pdf.addPage([pageWidth, pageHeight]);
     const margin = 34;
     const right = pageWidth - margin;
     let y = pageHeight - 42;
-    y = drawLogoPlaceholder(page, model, fonts, colors, pageWidth / 2, y);
+    y = drawDocumentLogo(page, model, fonts, colors, pageWidth / 2, y, embeddedLogo, 160, 48);
     if (model.branding.logo && model.branding.logoMode !== "none") y -= 12;
     drawCentered(page, fonts.bold, "GUTSCHEIN", 20, y, colors.ink, pageWidth);
     y -= 28;
@@ -704,6 +791,7 @@
     createVoucherDocumentModel,
     createPdfBytes,
     createPdfBlob,
+    fitLogoDimensions,
     formatGermanDateTime,
     formatMoney,
     safeFilenamePart

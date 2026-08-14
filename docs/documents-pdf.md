@@ -31,6 +31,9 @@ Die beiden Projektionsfunktionen verändern ihre Eingabe nicht. Ihr Ergebnis und
 - `companyIdentity`: bestehende zentrale Unternehmensdarstellung aus der Persistenzschicht;
 - `baseUrl`: nur für kontrollierte Tests oder eine ausdrücklich gesetzte App-Basis des internen Verwaltungslinks;
 - `linkedVoucher`: optionales bereits aufgelöstes Gutscheinobjekt für den sichtbaren Code eines Gutscheinverkaufsbelegs.
+- `resolveLogoAsset`: zentraler, lokaler BRANDING-002-Resolver für die im Snapshot gespeicherte Asset-ID.
+
+BRANDING-002 löst Bilddaten ausschließlich für das flüchtige Dokumentmodell auf. Der Geschäftsvorgang enthält nur die historische `assetId` samt neutralen Metadaten. Der Resolver liest das validierte, unveränderliche PNG-/JPEG-Asset aus `settings.logoAssets`; die Data-URL wird weder in Beleg noch Gutschein zurückgeschrieben. Fehlt das Asset oder ist es beschädigt, bleibt die historische Dokumentidentität erhalten und die Ausgabe verwendet den textbasierten Logo-Fallback.
 
 ## Belegmodell
 
@@ -80,6 +83,8 @@ Weder QR-Grafiken noch PDF-Dateien werden in IndexedDB oder Backup gespeichert. 
 ## PDF-Technik
 
 FRECKA liefert `pdf-lib` 1.17.1 lokal unter `vendor/` aus. Die Bibliothek ist MIT-lizenziert und benötigt weder CDN noch Server. Sie wurde gewählt, weil Browser selbst keine verlässliche API zur programmgesteuerten PDF-Erzeugung bereitstellen. Die Anwendung verwendet Standard-PDF-Schriften, durchsuchbaren Text und vektorielle QR-Module; sie erzeugt keine Screenshot-PDFs.
+
+PNG und JPEG werden über dieselbe vorhandene `pdf-lib`-Instanz eingebettet. Die Maße werden proportional in einen festen Headerbereich eingepasst; das Seitenverhältnis bleibt erhalten und Unternehmensdaten sowie Beleginhalt beginnen darunter. Dieselbe Routine gilt für normale Belege, Gutscheinverkaufsbelege, Storno, Gutschrift und Gutschein. Mehrseitige Belege erhalten das Logo nur im Dokumentkopf der ersten Seite. Interne HTML-Ansicht und PDF verwenden dieselbe aufgelöste historische Asset-Version.
 
 Die Produktoberfläche ruft für Anzeige und Teilen dieselbe Funktion `createPdfBlob()` auf. Für den nativen Teilen-Dialog wird der Blob, soweit der Browser es unterstützt, als echtes `File` mit `application/pdf` und dem dokumentierten Dateinamen bereitgestellt. Ist ein `File` nicht konstruierbar oder nicht teilbar, bleibt der PDF-Blob für Anzeige beziehungsweise lokalen Download verwendbar. Die Anwendung erzeugt deshalb kein zweites PDF für COMM-001.
 

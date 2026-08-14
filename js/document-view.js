@@ -19,6 +19,10 @@
 
   function brandingLogoMarkup(branding) {
     if (!branding?.logo || branding.logoMode === "none") return "";
+    const image = branding.logo.image;
+    if (image?.dataUrl && ["image/png", "image/jpeg"].includes(image.mimeType)) {
+      return `<span class="document-brand-logo has-image"><img src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(branding.logo.label || "Logo")}"></span>`;
+    }
     const initials = String(branding.logo.initials || (branding.logo.source === "business-area" ? "GB" : "UN")).slice(0, 8);
     const caption = initials === "GB" ? "Bereich" : "Firma";
     return `<span class="document-brand-logo" aria-label="${escapeHtml(branding.logo.label || "Logo")}"><strong>${escapeHtml(initials)}</strong><small>${caption}</small></span>`;

@@ -12,6 +12,13 @@ const require = createRequire(import.meta.url);
 globalThis.PDFLib = require(join(projectDirectory, "vendor", "pdf-lib-v1.17.1.min.js"));
 globalThis.location = new URL("https://app.example.invalid/frecka/");
 
+const qaPngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAIAAAASFvFNAAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAA6ADAAQAAAABAAAAAgAAAABqvnfpAAAAGUlEQVQIHWOULEq2VdU8fOc6EwMQMDICCQA2ZAP112/IsQAAAABJRU5ErkJggg==";
+const qaJpegBase64 = "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAA6ADAAQAAAABAAAAAgAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAAgADAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMAAgICAgICAwICAwUDAwMFBgUFBQUGCAYGBgYGCAoICAgICAgKCgoKCgoKCgwMDAwMDA4ODg4ODw8PDw8PDw8PD//bAEMBAgICBAQEBwQEBxALCQsQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEP/dAAQAAf/aAAwDAQACEQMRAD8A+bda/wCPyP8A69rX/wBER1k1r61/x+R/9e1r/wCiErIr3D+U6vxM/9k=";
+const logoAssets = [
+  { assetId: "qa-logo-png", mimeType: "image/png", fileName: "qa-logo.png", size: Buffer.from(qaPngBase64, "base64").length, dataUrl: `data:image/png;base64,${qaPngBase64}` },
+  { assetId: "qa-logo-jpeg", mimeType: "image/jpeg", fileName: "qa-logo.jpg", size: Buffer.from(qaJpegBase64, "base64").length, dataUrl: `data:image/jpeg;base64,${qaJpegBase64}` }
+];
+
 for (const relativePath of [
   "vendor/qrcodegen-v1.8.0-es6.js",
   "js/config.js",
@@ -25,7 +32,8 @@ for (const relativePath of [
 
 const options = {
   qrService: globalThis.FRECKA_QR,
-  baseUrl: "https://app.example.invalid/frecka/"
+  baseUrl: "https://app.example.invalid/frecka/",
+  resolveLogoAsset: assetId => logoAssets.find(asset => asset.assetId === assetId) || null
 };
 
 const companySnapshot = {
@@ -37,10 +45,16 @@ const companySnapshot = {
   taxNumber: "123/456/78901"
 };
 
-const brandingSnapshot = {
+const receiptBrandingSnapshot = {
   logoMode: "custom",
   visibleName: "Haarwerk Änne",
-  logo: { id: "qa-logo", label: "Geschäftsbereichslogo", source: "business-area", simulated: true }
+  logo: { assetId: "qa-logo-png", label: "Geschäftsbereichslogo", source: "business-area" }
+};
+
+const voucherBrandingSnapshot = {
+  logoMode: "custom",
+  visibleName: "Haarwerk Änne",
+  logo: { assetId: "qa-logo-jpeg", label: "Geschäftsbereichslogo", source: "business-area" }
 };
 
 const receipt = {
@@ -51,7 +65,7 @@ const receipt = {
   date: "05.01.2030",
   time: "13:34",
   companySnapshot,
-  brandingSnapshot,
+  brandingSnapshot: receiptBrandingSnapshot,
   customerSnapshot: {
     id: "customer-qa",
     name: "Anna Muster",
@@ -88,7 +102,7 @@ const voucher = {
   soldAt: "05.01.2030",
   soldTime: "13:34",
   companySnapshot,
-  brandingSnapshot,
+  brandingSnapshot: voucherBrandingSnapshot,
   serviceLocationSnapshot: {
     id: "location-qa",
     name: "Haarwerk Innenstadt",
@@ -110,14 +124,16 @@ const [publicReceipt, publicVoucher] = await Promise.all([
 ]);
 
 await mkdir(outputDirectory, { recursive: true });
+const receiptOutputModel = Object.freeze({ ...receiptModel, qr: publicReceipt.model.qr });
+const voucherOutputModel = Object.freeze({ ...voucherModel, qr: publicVoucher.model.qr });
 await Promise.all([
-  writeFile(join(outputDirectory, publicReceipt.model.filename), await globalThis.FRECKA_DOCUMENTS.createPdfBytes(publicReceipt.model)),
-  writeFile(join(outputDirectory, publicVoucher.model.filename), await globalThis.FRECKA_DOCUMENTS.createPdfBytes(publicVoucher.model))
+  writeFile(join(outputDirectory, receiptOutputModel.filename), await globalThis.FRECKA_DOCUMENTS.createPdfBytes(receiptOutputModel)),
+  writeFile(join(outputDirectory, voucherOutputModel.filename), await globalThis.FRECKA_DOCUMENTS.createPdfBytes(voucherOutputModel))
 ]);
 
 console.log(JSON.stringify({
   outputDirectory,
-  files: [publicReceipt.model.filename, publicVoucher.model.filename],
+  files: [receiptOutputModel.filename, voucherOutputModel.filename],
   links: [publicReceipt.link, publicVoucher.link],
   qrVersions: [publicReceipt.qrVersion, publicVoucher.qrVersion]
 }, null, 2));

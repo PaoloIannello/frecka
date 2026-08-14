@@ -9,7 +9,7 @@
 
 FRECKA erstellt eine manuell ausgelöste, verschlüsselte Gesamtsicherung aller dauerhaft gespeicherten Geschäftsdaten. Verschlüsselung und Entschlüsselung erfolgen ausschließlich im Browser auf dem Endgerät. Die Datei wird weder an FRECKA noch an einen Server übertragen; Ziel und weitere Aufbewahrung bestimmt allein der Nutzer.
 
-BACKUP-001 enthält keine Cloudanbindung, Synchronisation, Automatik, Zeitplanung oder inkrementelle Sicherung. Die Anwendung speichert weder Sicherungsdatei noch Passphrase oder abgeleiteten Schlüssel. Validierte Unternehmens- und Geschäftsbereichslogos aus dem zentralen Settings-Datensatz sind Bestandteil von Sicherung und Restore. Erzeugte PDF-, QR-Bild-, Mail-, Kamera- und Druckdaten sind weiterhin kein Bestandteil des Backups.
+BACKUP-001 enthält keine Cloudanbindung, Synchronisation, Automatik, Zeitplanung oder inkrementelle Sicherung. Die Anwendung speichert weder Sicherungsdatei noch Passphrase oder abgeleiteten Schlüssel. Das vollständige BRANDING-002-Register `settings.logoAssets` einschließlich aller aktuellen und historischen PNG-/JPEG-Versionen sowie die aktiven Logo-Referenzen sind Bestandteil von Sicherung und Restore. Erzeugte PDF-, QR-Bild-, Mail-, Kamera- und Druckdaten sind weiterhin kein Bestandteil des Backups.
 
 ## Zentrale APIs
 
@@ -55,6 +55,8 @@ LICENSE-001 liegt innerhalb desselben `stores.settings`-Datensatzes als `license
 TSE-002 liegt als `tseSettings` ebenfalls innerhalb von `stores.settings`. Anbieter sowie deaktivierter Einrichtungs- und Verbindungsstatus werden dadurch verschlüsselt mitgesichert und atomar wiederhergestellt. Zugangsdaten, Tokens, Schlüssel und TSE-Transaktionen existieren in diesem Modell nicht.
 
 SETTINGS-002 verwendet ausschließlich die bereits enthaltenen `taxSettings`, `receiptSettings`, `paymentChoices` und `businessAreas`. Betriebliche Vorgaben, geschützter Nummernstand und Standard-Geschäftsbereich werden deshalb ohne neue Sammelroutine, Schemaerhöhung oder Backupformatänderung vollständig verschlüsselt gesichert und wiederhergestellt.
+
+BRANDING-002 liegt ebenfalls vollständig innerhalb von `stores.settings`. Der Restore erhält mehrere Asset-Versionen verlustfrei und macht historische Beleg-/Gutscheinreferenzen danach wieder über denselben zentralen Resolver für Ansicht und PDF auflösbar. Er führt keine Bildmigration in Geschäftsvorgängen durch und bereinigt keine unreferenzierten Assets automatisch.
 
 ## Äußeres Dateiformat
 

@@ -346,7 +346,8 @@
     return documentService.createReceiptDocumentModel(receipt, {
       qrService,
       companyIdentity: persistence?.companyIdentity,
-      company: { ...data.company, street: companyStreetLine(data.company), logo: data.company.logo ? { id: data.company.logo.id, simulated: true } : null },
+      company: { ...data.company, street: companyStreetLine(data.company) },
+      resolveLogoAsset,
       linkedVoucher
     });
   }
@@ -360,7 +361,8 @@
     return documentService.createVoucherDocumentModel(voucher, {
       qrService,
       companyIdentity: persistence?.companyIdentity,
-      company: { ...data.company, street: companyStreetLine(data.company), logo: data.company.logo ? { id: data.company.logo.id, simulated: true } : null }
+      company: { ...data.company, street: companyStreetLine(data.company) },
+      resolveLogoAsset
     });
   }
 
@@ -391,15 +393,24 @@
     const key = publicDocumentKey(kind, record);
     let entry = publicDocumentCache.get(key);
     if (!entry) {
-      entry = { key, kind, record, bundle: null, error: null, promise: null };
+      entry = { key, kind, record, bundle: null, model: null, error: null, promise: null };
       entry.promise = Promise.resolve()
         .then(() => {
           if (!publicDocumentService?.createPublicBundle) {
             throw Object.assign(new Error("Public document service unavailable"), { userMessage: "Der öffentliche Dokumentlink ist momentan nicht verfügbar." });
           }
-          return publicDocumentService.createPublicBundle(baseDocumentModel(kind, record), { qrService });
+          const localModel = baseDocumentModel(kind, record);
+          return publicDocumentService.createPublicBundle(localModel, { qrService })
+            .then(bundle => ({
+              bundle,
+              model: Object.freeze({ ...localModel, qr: bundle.model.qr })
+            }));
         })
-        .then(bundle => { entry.bundle = bundle; return bundle; })
+        .then(result => {
+          entry.bundle = result.bundle;
+          entry.model = result.model;
+          return result;
+        })
         .catch(error => { entry.error = error; throw error; });
       publicDocumentCache.set(key, entry);
     }
@@ -408,7 +419,8 @@
 
   async function ensurePublicDocument(kind, reference) {
     const entry = publicDocumentEntry(kind, reference);
-    return { key: entry.key, bundle: entry.bundle || await entry.promise, record: entry.record };
+    const prepared = entry.model ? { bundle: entry.bundle, model: entry.model } : await entry.promise;
+    return { key: entry.key, bundle: prepared.bundle, model: prepared.model, record: entry.record };
   }
 
   function modelWithoutCustomerQr(kind, record) {
@@ -419,8 +431,8 @@
   async function documentPdfSource(kind, reference) {
     const entry = publicDocumentEntry(kind, reference);
     try {
-      const bundle = entry.bundle || await entry.promise;
-      return { key: entry.key, model: bundle.model, bundle };
+      const prepared = entry.model ? { bundle: entry.bundle, model: entry.model } : await entry.promise;
+      return { key: entry.key, model: prepared.model, bundle: prepared.bundle };
     } catch (error) {
       return { key: `${entry.key}:no-public-qr`, model: modelWithoutCustomerQr(kind, entry.record), bundle: null, publicError: error };
     }
@@ -449,7 +461,7 @@
     let entry;
     try { entry = publicDocumentEntry(kind, reference); } catch (error) { return; }
     entry.promise
-      .then(bundle => createDocumentPdfFile(bundle.model, entry.key))
+      .then(prepared => createDocumentPdfFile(prepared.model, entry.key))
       .catch(() => createDocumentPdfFile(modelWithoutCustomerQr(kind, entry.record), `${entry.key}:no-public-qr`).catch(() => {}));
   }
 
@@ -688,6 +700,7 @@
     Object.assign(data.license, cloneSettingsValue(record.license));
     Object.keys(data.tseSettings).forEach(key => { delete data.tseSettings[key]; });
     Object.assign(data.tseSettings, cloneSettingsValue(record.tseSettings));
+    replaceSettingsArray(data.logoAssets, record.logoAssets || []);
     Object.assign(data.company, cloneSettingsValue(record.company));
     replaceSettingsArray(data.serviceLocations, record.serviceLocations);
     replaceSettingsArray(data.businessAreas, record.businessAreas);
@@ -1729,7 +1742,7 @@
     try {
       const prepared = await ensurePublicDocument("receipt", receipt.id || receipt.number);
       if (!previewIsCurrent()) return;
-      model = prepared.bundle.model;
+      model = prepared.model;
       publicKey = prepared.key;
     } catch (error) {
       if (!previewIsCurrent()) return;
@@ -2488,10 +2501,23 @@
     return [parts[0], "••••", parts.at(-1)].join("-");
   };
 
+  function logoAssetId(logo) {
+    return String(logo?.assetId || logo?.id || "").trim();
+  }
+
+  function resolveLogoAsset(assetId) {
+    return persistence?.resolveLogoAsset?.(assetId, data.logoAssets) || null;
+  }
+
+  function resolvedLogoForReference(logo) {
+    return resolveLogoAsset(logoAssetId(logo));
+  }
+
   function brandLogoSnapshotReference(logo, source) {
-    if (!logo?.id) return null;
+    const assetId = logoAssetId(logo);
+    if (!assetId) return null;
     return {
-      id: logo.id,
+      assetId,
       name: logo.name || "",
       mimeType: logo.mimeType || "",
       size: Number.isInteger(logo.size) ? logo.size : 0,
@@ -2588,11 +2614,13 @@
 
   function brandingContextSnapshot(areaId = state.activeBusinessArea) {
     const businessArea = businessAreaContextSnapshot(areaId);
+    const areaLogoAvailable = Boolean(resolvedLogoForReference(businessArea.logo));
+    const companyLogoAvailable = Boolean(resolvedLogoForReference(data.company.logo));
     const effectiveLogo = businessArea.logoMode === "none"
       ? null
-      : businessArea.logoMode === "custom" && businessArea.logo
+      : businessArea.logoMode === "custom" && businessArea.logo && areaLogoAvailable
         ? businessArea.logo
-        : data.company.logo;
+        : companyLogoAvailable ? data.company.logo : null;
     const logoSource = effectiveLogo === businessArea.logo ? "business-area" : effectiveLogo ? "company" : null;
     return {
       visibleName: businessArea.visibleName,
@@ -2612,6 +2640,10 @@
 
   function brandingLogoMarkup(branding, compact = false) {
     if (!branding?.logo) return "";
+    const image = resolveLogoAsset(logoAssetId(branding.logo));
+    if (image?.dataUrl) {
+      return `<span class="document-brand-logo has-image ${compact ? "is-compact" : ""}"><img src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(branding.logo.label || "Logo")}"></span>`;
+    }
     const isAreaLogo = branding.logo.source === "business-area";
     return `<span class="document-brand-logo ${compact ? "is-compact" : ""}" aria-label="${escapeHtml(branding.logo.label || "Logo")}"><strong>${isAreaLogo ? "GB" : "UN"}</strong><small>${isAreaLogo ? "Bereich" : "Firma"}</small></span>`;
   }
@@ -3225,7 +3257,7 @@
     try {
       const prepared = await ensurePublicDocument("voucher", voucher.reference);
       if (!previewIsCurrent()) return;
-      model = prepared.bundle.model;
+      model = prepared.model;
       publicKey = prepared.key;
     } catch (error) {
       if (!previewIsCurrent()) return;
@@ -3722,7 +3754,7 @@
     const branding = brandingContextSnapshot(area.id);
     const location = serviceLocationForBusinessArea(area.id);
     const logoSource = branding.logo?.source || "none";
-    const areaLogo = area.logo?.dataUrl ? area.logo : null;
+    const areaLogo = resolvedLogoForReference(area.logo);
     const brandingName = distinctBrandingName(branding, data.company);
     return `<section class="business-branding-card" data-business-branding="${escapeHtml(area.id)}">
       <div class="business-branding-title"><div><h3>Branding auf Dokumenten</h3><p>Gilt für neue Belege und Gutscheine dieses Geschäftsbereichs.</p></div><span>Live-Vorschau</span></div>
@@ -3740,7 +3772,7 @@
             <input class="logo-file-input" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" data-business-logo-input aria-label="Logo für ${escapeHtml(area.label)} auswählen">
             <button class="button button-ghost" type="button" data-business-logo-remove ${areaLogo ? "" : "hidden"}>Logo entfernen</button>
           </div>
-          <small data-business-logo-status>${areaLogo ? `${escapeHtml(areaLogo.name)} · ${Math.max(1, Math.round(areaLogo.size / 1024))} KB` : data.company.logo ? "Kein eigenes Logo hinterlegt. Das Unternehmenslogo wird verwendet." : "Kein eigenes Logo hinterlegt. Dokumente verwenden die textbasierte Unternehmensdarstellung."}</small>
+          <small data-business-logo-status>${areaLogo ? `${escapeHtml(areaLogo.fileName)} · ${Math.max(1, Math.round(areaLogo.size / 1024))} KB` : resolvedLogoForReference(data.company.logo) ? "Kein eigenes Logo hinterlegt. Das Unternehmenslogo wird verwendet." : "Kein eigenes Logo hinterlegt. Dokumente verwenden die textbasierte Unternehmensdarstellung."}</small>
           <small>PNG oder JPEG, max. 1 MB</small>
         </div>
       </div>
@@ -3775,24 +3807,26 @@
       const update = () => {
         const logoMode = logoOptions.find(option => option.checked)?.value || "company";
         const area = data.businessAreas.find(entry => entry.id === areaId);
+        const resolvedAreaLogo = resolvedLogoForReference(area?.logo);
+        const resolvedCompanyLogo = resolvedLogoForReference(data.company.logo);
         const effectiveLogoSource = logoMode === "none"
           ? "none"
-          : logoMode === "custom" && area?.logo
+          : logoMode === "custom" && resolvedAreaLogo
             ? "business-area"
-            : data.company.logo
+            : resolvedCompanyLogo
               ? "company"
               : "none";
         if (upload) upload.hidden = logoMode !== "custom";
-        if (uploadStatus) uploadStatus.textContent = area?.logo
-          ? `${area.logo.name} · ${Math.max(1, Math.round(area.logo.size / 1024))} KB`
-          : data.company.logo
+        if (uploadStatus) uploadStatus.textContent = resolvedAreaLogo
+          ? `${resolvedAreaLogo.fileName} · ${Math.max(1, Math.round(resolvedAreaLogo.size / 1024))} KB`
+          : resolvedCompanyLogo
             ? "Kein eigenes Logo hinterlegt. Das Unternehmenslogo wird verwendet."
             : "Kein eigenes Logo hinterlegt. Dokumente verwenden die textbasierte Unternehmensdarstellung.";
-        if (selectLogo) selectLogo.textContent = area?.logo ? "Logo ersetzen" : "Logo auswählen";
-        if (removeLogo) removeLogo.hidden = !area?.logo;
+        if (selectLogo) selectLogo.textContent = resolvedAreaLogo ? "Logo ersetzen" : "Logo auswählen";
+        if (removeLogo) removeLogo.hidden = !resolvedAreaLogo;
         if (logoThumbnail) {
-          logoThumbnail.innerHTML = area?.logo?.dataUrl
-            ? `<img src="${escapeHtml(area.logo.dataUrl)}" alt="Aktuelles Logo für ${escapeHtml(area.label)}">`
+          logoThumbnail.innerHTML = resolvedAreaLogo?.dataUrl
+            ? `<img src="${escapeHtml(resolvedAreaLogo.dataUrl)}" alt="Aktuelles Logo für ${escapeHtml(area.label)}">`
             : `<span aria-hidden="true">Logo</span>`;
         }
         if (previewLogo) {
@@ -4728,10 +4762,10 @@
   }
 
   function companyLogoCardMarkup() {
-    const logo = data.company.logo?.dataUrl ? data.company.logo : null;
+    const logo = resolvedLogoForReference(data.company.logo);
     return `<section class="settings-form-card settings-logo-card" data-company-logo-card>
       <div class="settings-logo-placeholder">${logo ? `<img src="${escapeHtml(logo.dataUrl)}" alt="Aktuelles Unternehmenslogo">` : `<span aria-hidden="true">Logo</span>`}</div>
-      <div class="settings-logo-copy"><h2>Unternehmenslogo</h2><p>${logo ? `${escapeHtml(logo.name)} · ${Math.max(1, Math.round(logo.size / 1024))} KB` : "Kein Logo hinterlegt"}</p>
+      <div class="settings-logo-copy"><h2>Unternehmenslogo</h2><p>${logo ? `${escapeHtml(logo.fileName)} · ${Math.max(1, Math.round(logo.size / 1024))} KB` : "Kein Logo hinterlegt"}</p>
         <div class="settings-logo-actions">
           <button class="button button-secondary" type="button" data-company-logo-select>${logo ? "Logo ersetzen" : "Logo auswählen"}</button>
           <input class="logo-file-input" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" data-company-logo-input aria-label="Unternehmenslogo auswählen">
@@ -4837,8 +4871,16 @@
 
   async function saveCompanyLogo(nextLogo) {
     const previousCompany = cloneSettingsValue(data.company);
-    const changedAt = nextLogo?.updatedAt || new Date().toISOString();
-    data.company.logo = nextLogo;
+    const previousLogoAssets = cloneSettingsValue(data.logoAssets);
+    const registration = nextLogo
+      ? persistence.registerLogoAsset(data.logoAssets, nextLogo)
+      : { assets: data.logoAssets, reference: null };
+    const assignmentChanged = logoAssetId(previousCompany.logo) !== logoAssetId(registration.reference);
+    const changedAt = assignmentChanged
+      ? registration.reference?.updatedAt || new Date().toISOString()
+      : previousCompany.updatedAt;
+    replaceSettingsArray(data.logoAssets, registration.assets);
+    data.company.logo = registration.reference;
     data.company.updatedAt = changedAt;
     try {
       await persistCurrentSettings();
@@ -4846,6 +4888,7 @@
     } catch (error) {
       Object.keys(data.company).forEach(key => { delete data.company[key]; });
       Object.assign(data.company, previousCompany);
+      replaceSettingsArray(data.logoAssets, previousLogoAssets);
       showCompanySettingsNotice(`Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`, true);
     }
     const card = mainContent.querySelector("[data-company-logo-card]");
@@ -4868,7 +4911,12 @@
   async function saveBusinessAreaLogo(area, nextLogo) {
     const previousLogo = cloneSettingsValue(area.logo);
     const previousMode = area.logoMode;
-    area.logo = nextLogo;
+    const previousLogoAssets = cloneSettingsValue(data.logoAssets);
+    const registration = nextLogo
+      ? persistence.registerLogoAsset(data.logoAssets, nextLogo)
+      : { assets: data.logoAssets, reference: null };
+    replaceSettingsArray(data.logoAssets, registration.assets);
+    area.logo = registration.reference;
     area.logoMode = nextLogo ? "custom" : "company";
     try {
       await persistCurrentSettings();
@@ -4884,6 +4932,7 @@
         currentArea.logo = previousLogo;
         currentArea.logoMode = previousMode;
       }
+      replaceSettingsArray(data.logoAssets, previousLogoAssets);
       showBusinessAreaSettingsNotice(`Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`, true);
       return false;
     }
@@ -5900,7 +5949,7 @@
       return;
     }
     if (sheetAction === "company-logo-remove") {
-      if (data.company.logo?.dataUrl) await saveCompanyLogo(null);
+      if (logoAssetId(data.company.logo)) await saveCompanyLogo(null);
       return;
     }
     const category = event.target.closest("[data-category]");

@@ -20,8 +20,9 @@
 
   const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
   const clone = value => JSON.parse(JSON.stringify(value));
-  const tinyPngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
-  const tinyJpegBase64 = "/9j/2Q==";
+  const tinyPngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAIAAAASFvFNAAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAA6ADAAQAAAABAAAAAgAAAABqvnfpAAAAGUlEQVQIHWOULEq2VdU8fOc6EwMQMDICCQA2ZAP112/IsQAAAABJRU5ErkJggg==";
+  const alternatePngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAQAAAACCAIAAADwyuo0AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAABKADAAQAAAABAAAAAgAAAABKLAuiAAAAHUlEQVQIHWPkz4lxUNdhYGA4cPMqC5BiYAQRQAAARMsD33P5iogAAAAASUVORK5CYII=";
+  const tinyJpegBase64 = "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAA6ADAAQAAAABAAAAAgAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAAgADAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMAAgICAgICAwICAwUDAwMFBgUFBQUGCAYGBgYGCAoICAgICAgKCgoKCgoKCgwMDAwMDA4ODg4ODw8PDw8PDw8PD//bAEMBAgICBAQEBwQEBxALCQsQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEP/dAAQAAf/aAAwDAQACEQMRAD8A+bda/wCPyP8A69rX/wBER1k1r61/x+R/9e1r/wCiErIr3D+U6vxM/9k=";
 
   function companyLogoFixture(overrides = {}) {
     return {
@@ -45,6 +46,31 @@
       size: atob(tinyJpegBase64).length,
       dataUrl: `data:image/jpeg;base64,${tinyJpegBase64}`,
       updatedAt: "2030-01-03T10:00:00.000Z",
+      ...overrides
+    };
+  }
+
+  function logoAssetFixture(logo = companyLogoFixture(), overrides = {}) {
+    return {
+      formatVersion: 1,
+      assetId: logo.id,
+      mimeType: logo.mimeType,
+      fileName: logo.name,
+      size: logo.size,
+      createdAt: logo.updatedAt,
+      dataUrl: logo.dataUrl,
+      ...overrides
+    };
+  }
+
+  function logoReferenceFixture(logo = companyLogoFixture(), overrides = {}) {
+    return {
+      formatVersion: 1,
+      assetId: logo.id,
+      name: logo.name,
+      mimeType: logo.mimeType,
+      size: logo.size,
+      updatedAt: logo.updatedAt,
       ...overrides
     };
   }
@@ -646,9 +672,15 @@
     return receipt;
   }
 
-  const documentOptions = () => ({
+  const documentLogoAssets = () => [
+    logoAssetFixture(),
+    logoAssetFixture(businessAreaLogoFixture())
+  ];
+
+  const documentOptions = (logoAssets = documentLogoAssets()) => ({
     qrService: qrApi,
     companyIdentity: api.companyIdentity,
+    resolveLogoAsset: assetId => api.resolveLogoAsset(assetId, logoAssets),
     baseUrl: "https://app.example.invalid/frecka/"
   });
 
@@ -1262,6 +1294,7 @@
         run: async () => {
           const correction = receiptDocumentFixture({
             id: "receipt-credit-document", number: "2030-000100", type: "credit", status: "credited", reference: "2030-000099",
+            brandingSnapshot: { logoMode: "company", visibleName: "", logo: { assetId: "company-logo", source: "company", label: "Unternehmenslogo" } },
             items: [{ title: "Gutschrift Testhaarschnitt", quantity: 1, originalUnitPrice: -39, unitPrice: -39, total: -39, netTotal: -32.77, taxAmount: -6.23, taxRate: 19 }],
             originalTotal: -39, netTotal: -32.77, taxTotal: -6.23, total: -39,
             taxGroups: [{ rate: 19, net: -32.77, tax: -6.23, gross: -39 }]
@@ -1272,6 +1305,8 @@
           assertEqual(cancellation.kind.label, "Stornobeleg", "Stornobelegart fehlt");
           assertEqual(credit.totals.grossCents, -3900, "Negativer Korrekturbetrag wurde umgedeutet");
           assertEqual(credit.correctionReference, "2030-000099", "Korrekturbezug fehlt");
+          assert((await documentApi.createPdfBytes(credit)).length > 4000, "Gutschrift-PDF mit Logo wurde nicht erzeugt");
+          assert((await documentApi.createPdfBytes(cancellation)).length > 4000, "Storno-PDF mit Logo wurde nicht erzeugt");
         }
       },
       {
@@ -1279,10 +1314,12 @@
         run: async () => {
           const voucher = voucherDraftFixture("voucher-document-sale", { reference: "vch_document_sale", code: "FRKA-DOCU-0001" });
           const receipt = { ...voucherSaleReceiptFixture(voucher), number: "2030-000102" };
+          receipt.brandingSnapshot = { logoMode: "company", visibleName: "", logo: { assetId: "company-logo", source: "company", label: "Unternehmenslogo" } };
           const model = documentApi.createReceiptDocumentModel(receipt, { ...documentOptions(), linkedVoucher: voucher });
           assertEqual(model.kind.code, "voucher-sale", "Gutscheinverkauf wurde normalem Beleg gleichgesetzt");
           assertEqual(model.taxes.length, 0, "Gutscheinverkauf erhielt erfundene Steuerzeilen");
           assertEqual(model.linkedVoucher.code, "FRKA-DOCU-0001", "Verknüpfter Gutscheincode fehlt");
+          assert((await documentApi.createPdfBytes(model)).length > 4000, "Gutscheinverkaufsbeleg-PDF mit Logo wurde nicht erzeugt");
         }
       },
       {
@@ -1340,20 +1377,28 @@
         run: async () => {
           const model = documentApi.createReceiptDocumentModel(receiptDocumentFixture({
             companySnapshot: { name: "", owner: "Alex Beispiel", street: "Testweg 1", zip: "12345", city: "Teststadt" },
-            brandingSnapshot: { logoMode: "custom", visibleName: "Salon Licht", logo: { id: "area-logo", source: "business-area", label: "Bereichslogo", simulated: true } }
+            brandingSnapshot: { logoMode: "custom", visibleName: "Salon Licht", logo: { assetId: "business-logo-hair", source: "business-area", label: "Bereichslogo", simulated: false } }
           }), documentOptions());
           assertEqual(model.issuer.name, "", "Leere Geschäftsbezeichnung wurde ausgegeben");
           assertEqual(model.issuer.owner, "Alex Beispiel", "Pflichtangabe Unternehmer fehlt");
           assertEqual(model.branding.visibleName, "Salon Licht", "Sichtbare Geschäftsbezeichnung fehlt");
           assertEqual(model.branding.logo.initials, "GB", "Geschäftsbereichslogo verlor seine Priorität");
+          assertEqual(model.branding.logo.image?.mimeType, "image/jpeg", "Geschäftsbereichslogo wurde nicht aus dem Asset-Register aufgelöst");
           const companyFallback = documentApi.createReceiptDocumentModel(receiptDocumentFixture({
-            brandingSnapshot: { logoMode: "company", visibleName: "Salon Licht", logo: { id: "company-logo", source: "company", label: "Unternehmenslogo", simulated: false } }
+            brandingSnapshot: { logoMode: "company", visibleName: "Salon Licht", logo: { assetId: "company-logo", source: "company", label: "Unternehmenslogo", simulated: false } }
           }), documentOptions());
           assertEqual(companyFallback.branding.logo.initials, "UN", "Fallback auf das Unternehmenslogo fehlt");
+          assertEqual(companyFallback.branding.logo.image?.mimeType, "image/png", "Unternehmenslogo wurde nicht aus dem Asset-Register aufgelöst");
           const withoutLogo = documentApi.createReceiptDocumentModel(receiptDocumentFixture({
-            brandingSnapshot: { logoMode: "none", visibleName: "Salon Licht", logo: { id: "stale-logo", source: "business-area" } }
+            brandingSnapshot: { logoMode: "none", visibleName: "Salon Licht", logo: { assetId: "stale-logo", source: "business-area" } }
           }), documentOptions());
           assertEqual(withoutLogo.branding.logo, null, "Logo-Modus ‚kein Logo‘ ließ ein altes Logo sichtbar");
+          const missingAsset = documentApi.createReceiptDocumentModel(receiptDocumentFixture({
+            brandingSnapshot: { logoMode: "custom", visibleName: "Salon Licht", logo: { assetId: "missing-logo", source: "business-area", label: "Bereichslogo" } }
+          }), documentOptions());
+          assertEqual(missingAsset.branding.logo.image, null, "Fehlendes Logoasset wurde als Bild ausgegeben");
+          assert(!documentViewApi.renderReceipt(missingAsset, { interactiveQr: false }).includes("<img"), "Fehlendes Logoasset erzeugt ein defektes Bild in der internen Ansicht");
+          assert(documentViewApi.renderReceipt(model, { interactiveQr: false }).includes("<img"), "Aufgelöstes Logo fehlt in der internen Dokumentansicht");
         }
       },
       {
@@ -1366,6 +1411,35 @@
           const parsed = await globalThis.PDFLib.PDFDocument.load(bytes);
           assertEqual(parsed.getTitle(), `FRECKA Beleg ${model.number}`, "PDF-Titel ist falsch");
           assertEqual(parsed.getPageCount(), 1, "Normaler Beleg wurde unnötig auf mehrere Seiten verteilt");
+        }
+      },
+      {
+        name: "PNG- und JPEG-Logoassets erscheinen proportional in interner Ansicht und PDF",
+        run: async () => {
+          const imageCount = pdf => [...pdf.context.enumerateIndirectObjects()].filter(([, object]) => (
+            (object?.dict?.get?.(globalThis.PDFLib.PDFName.of("Subtype"))
+              || object?.get?.(globalThis.PDFLib.PDFName.of("Subtype")))?.toString() === "/Image"
+          )).length;
+          const receipt = receiptDocumentFixture({
+            brandingSnapshot: { logoMode: "company", visibleName: "", logo: { assetId: "company-logo", source: "company", label: "Unternehmenslogo" } }
+          });
+          const receiptModel = documentApi.createReceiptDocumentModel(receipt, documentOptions());
+          assert(documentViewApi.renderReceipt(receiptModel, { interactiveQr: false }).includes(`src="data:image/png;base64,`), "PNG fehlt in der internen Belegansicht");
+          const receiptPdf = await globalThis.PDFLib.PDFDocument.load(await documentApi.createPdfBytes(receiptModel));
+          assert(imageCount(receiptPdf) > 0, "PNG wurde nicht in das Beleg-PDF eingebettet");
+
+          const voucher = voucherDraftFixture("voucher-logo-pdf");
+          voucher.contextSnapshot.branding = { logoMode: "custom", visibleName: "", logo: { assetId: "business-logo-hair", source: "business-area", label: "Geschäftsbereichslogo" } };
+          const voucherModel = documentApi.createVoucherDocumentModel(voucher, documentOptions());
+          assert(documentViewApi.renderVoucher(voucherModel, { interactiveQr: false }).includes(`src="data:image/jpeg;base64,`), "JPEG fehlt in der internen Gutscheinansicht");
+          const voucherPdf = await globalThis.PDFLib.PDFDocument.load(await documentApi.createPdfBytes(voucherModel));
+          assert(imageCount(voucherPdf) > 0, "JPEG wurde nicht in das Gutschein-PDF eingebettet");
+
+          const wide = documentApi.fitLogoDimensions(1200, 300, 124, 46);
+          const tall = documentApi.fitLogoDimensions(200, 900, 124, 46);
+          assert(Math.abs(wide.width / wide.height - 4) < 0.0001, "Breites Logo wurde verzerrt");
+          assert(Math.abs(tall.width / tall.height - (200 / 900)) < 0.0001, "Hohes Logo wurde verzerrt");
+          assert(wide.width <= 124 && wide.height <= 46 && tall.width <= 124 && tall.height <= 46, "Logo überschreitet den definierten PDF-Headerbereich");
         }
       },
       {
@@ -1386,7 +1460,15 @@
             id: `long-${index}`, title: `Ausführliche Leistung mit Umlaut ÄÖÜ Nummer ${index + 1}`, quantity: 1,
             originalUnitPrice: 10, unitPrice: 10, total: 10, netTotal: 8.4, taxAmount: 1.6, taxRate: 19
           }));
-          const model = documentApi.createReceiptDocumentModel(receiptDocumentFixture({ items, total: 350, originalTotal: 350, netTotal: 294, taxTotal: 56, taxGroups: [{ rate: 19, net: 294, tax: 56, gross: 350 }] }), documentOptions());
+          const model = documentApi.createReceiptDocumentModel(receiptDocumentFixture({
+            items,
+            total: 350,
+            originalTotal: 350,
+            netTotal: 294,
+            taxTotal: 56,
+            taxGroups: [{ rate: 19, net: 294, tax: 56, gross: 350 }],
+            brandingSnapshot: { logoMode: "company", visibleName: "Sehr lange sichtbare Geschäftsbezeichnung für den mehrseitigen Dokumenttest", logo: { assetId: "company-logo", source: "company", label: "Unternehmenslogo" } }
+          }), documentOptions());
           const bytes = await documentApi.createPdfBytes(model);
           const parsed = await globalThis.PDFLib.PDFDocument.load(bytes);
           assert(parsed.getPageCount() > 1, "Langer Beleg wurde abgeschnitten statt umgebrochen");
@@ -1419,11 +1501,50 @@
           receipt.companySnapshot.name = "Nachträglich geändert";
           receipt.customerSnapshot.name = "Andere Person";
           receipt.serviceLocationSnapshot.name = "Anderer Ort";
-          receipt.brandingSnapshot = { logoMode: "company", logo: { id: "new-logo", source: "company" } };
+          receipt.brandingSnapshot = { logoMode: "company", logo: { assetId: "new-logo", source: "company" } };
           assertEqual(model.issuer.displayName, "Teststudio Nord", "Dokumentmodell änderte den Aussteller rückwirkend");
           assertEqual(model.customer.name, "Anna Muster", "Dokumentmodell änderte den Kunden rückwirkend");
           assert(!JSON.stringify(model).includes("Anderer Ort"), "Dokumentmodell änderte den Leistungsort rückwirkend");
           assert(!JSON.stringify(model).includes("new-logo"), "Dokumentmodell änderte das Logo rückwirkend");
+        }
+      },
+      {
+        name: "Historische Belege behalten ihre Logo-Version nach Ersetzen und Entfernen",
+        run: async () => {
+          const logoV1 = logoAssetFixture();
+          const logoV2Source = companyLogoFixture({
+            id: "company-logo-v2",
+            name: "Unternehmenslogo-v2.png",
+            size: atob(alternatePngBase64).length,
+            dataUrl: `data:image/png;base64,${alternatePngBase64}`,
+            updatedAt: "2030-02-01T10:00:00.000Z"
+          });
+          const assets = [logoV1, logoAssetFixture(logoV2Source)];
+          const options = documentOptions(assets);
+          const receiptA = receiptDocumentFixture({
+            id: "receipt-logo-history-a",
+            number: "2030-000201",
+            brandingSnapshot: { logoMode: "company", logo: { assetId: "company-logo", source: "company", label: "Unternehmenslogo" } }
+          });
+          const modelA = documentApi.createReceiptDocumentModel(receiptA, options);
+          const receiptB = receiptDocumentFixture({
+            id: "receipt-logo-history-b",
+            number: "2030-000202",
+            brandingSnapshot: { logoMode: "company", logo: { assetId: "company-logo-v2", source: "company", label: "Unternehmenslogo" } }
+          });
+          const modelB = documentApi.createReceiptDocumentModel(receiptB, options);
+          assertEqual(modelA.branding.logo.image.dataUrl, logoV1.dataUrl, "Beleg A verlor Logo-Version 1 nach dem Ersetzen");
+          assertEqual(modelB.branding.logo.image.dataUrl, logoV2Source.dataUrl, "Beleg B erhielt nicht Logo-Version 2");
+          assert(modelA.branding.logo.image.dataUrl !== modelB.branding.logo.image.dataUrl, "Zwei Belegversionen zeigen dasselbe Logoasset");
+
+          const afterActiveRemoval = documentApi.createReceiptDocumentModel(receiptA, options);
+          const fallbackReceipt = documentApi.createReceiptDocumentModel(receiptDocumentFixture({
+            id: "receipt-logo-history-c",
+            number: "2030-000203",
+            brandingSnapshot: { logoMode: "company", logo: null }
+          }), options);
+          assertEqual(afterActiveRemoval.branding.logo.image.dataUrl, logoV1.dataUrl, "Entfernen der aktiven Zuordnung änderte Beleg A");
+          assertEqual(fallbackReceipt.branding.logo, null, "Neuer Beleg nach Logoentfernung erhielt ein historisches Asset");
         }
       },
       {
@@ -1502,6 +1623,8 @@
           assert(source.includes("companyLogoMaxBytes || 1024 * 1024"), "1-MB-Grenze des Logos fehlt");
           assert(logoSource.includes("data-company-logo-select") && source.includes("selectButton?.addEventListener(\"click\", () => input?.click())"), "iOS-robuste explizite Logoauswahl fehlt");
           assert(source.includes("await persistCurrentSettings()") && source.includes("async function saveCompanyLogo"), "Logo verwendet nicht den zentralen Settings-Writer");
+          assert(source.includes("persistence.registerLogoAsset(data.logoAssets, nextLogo)"), "Logo wird nicht über das zentrale Asset-Register versioniert");
+          assert(source.includes("persistence?.resolveLogoAsset?.(assetId, data.logoAssets)"), "Zentraler Logoasset-Resolver fehlt in der App");
           assert(!snapshotSource.includes("dataUrl"), "Echte Logo-Bilddaten werden in Geschäftsvorgang-Snapshots kopiert");
           assert(source.includes("company: { ...data.company, street: companyStreetLine(data.company)"), "PDF-/Beleg-Fallback kombiniert getrennte Adressfelder nicht verlustfrei");
           assert(source.includes("async function saveBusinessAreaLogo") && source.includes("data-business-logo-input"), "Persistenter Geschäftsbereichslogo-Upload fehlt");
@@ -1912,7 +2035,8 @@
           assertDeepEqual(stored.paymentChoices.map(choice => choice.id), ["cash", "ec", "voucher"], "Zahlungsarten oder Reihenfolge fehlen");
           assertEqual(stored.businessAreas.length, 2, "Geschäftsbereiche fehlen");
           assertEqual(stored.businessAreas.find(area => area.isDefault)?.id, "hair", "Standard-Geschäftsbereich fehlt");
-          assertDeepEqual(stored.businessAreas.find(area => area.id === "hair")?.logo, businessAreaLogoFixture(), "Geschäftsbereichslogo fehlt");
+          assertDeepEqual(stored.businessAreas.find(area => area.id === "hair")?.logo, logoReferenceFixture(businessAreaLogoFixture()), "Geschäftsbereichslogo-Referenz fehlt");
+          assertDeepEqual(stored.logoAssets.find(asset => asset.assetId === "business-logo-hair"), logoAssetFixture(businessAreaLogoFixture()), "Geschäftsbereichslogo-Asset fehlt");
           assertEqual(stored.setup.status, "started", "Einrichtungsstatus fehlt");
           assertEqual(stored.users.length, 1, "Lokaler Benutzer fehlt im Settings-Store");
           assertEqual(stored.users[0].tenantId, persistence.tenantId, "Persistierter Benutzer gehört zum falschen Mandanten");
@@ -2022,9 +2146,10 @@
             cancellations: [{ id: "forbidden-cancellation" }],
             credits: [{ id: "forbidden-credit" }]
           });
-          record.company.logo = companyLogoFixture({ privateMetadata: "forbidden" });
+          record.company.logo.privateMetadata = "forbidden";
           record.company.logoData = "forbidden";
-          record.businessAreas[0].logo = businessAreaLogoFixture({ privateMetadata: "forbidden" });
+          record.businessAreas[0].logo.privateMetadata = "forbidden";
+          record.logoAssets[0].privateMetadata = "forbidden";
           record.businessAreas[0].logoFile = "forbidden";
           record.businessAreas[0].logoMode = "custom";
 
@@ -2032,11 +2157,12 @@
           const stored = await persistence.readSettings();
           const forbiddenKeys = ["catalog", "categories", "customers", "receipts", "vouchers", "histories", "drafts", "cancellations", "credits"];
           forbiddenKeys.forEach(key => assert(!hasOwn(stored, key), `Ausgeschlossenes Root-Feld gespeichert: ${key}`));
-          assertDeepEqual(stored.company.logo, companyLogoFixture(), "Validiertes Unternehmenslogo wurde nicht verlustfrei gespeichert");
+          assertDeepEqual(stored.company.logo, logoReferenceFixture(), "Unternehmenslogo-Referenz wurde nicht verlustfrei gespeichert");
           assert(!hasOwn(stored.company.logo, "privateMetadata"), "Unbekanntes Logo-Nebenfeld wurde gespeichert");
           assert(!hasOwn(stored.company, "logoData"), "Nicht freigegebenes Logo-Nebenfeld wurde gespeichert");
-          assertDeepEqual(stored.businessAreas[0].logo, businessAreaLogoFixture(), "Validiertes Geschäftsbereichslogo wurde nicht verlustfrei gespeichert");
+          assertDeepEqual(stored.businessAreas[0].logo, logoReferenceFixture(businessAreaLogoFixture()), "Geschäftsbereichslogo-Referenz wurde nicht verlustfrei gespeichert");
           assert(!hasOwn(stored.businessAreas[0].logo, "privateMetadata") && !hasOwn(stored.businessAreas[0], "logoFile"), "Nicht freigegebenes Bereichslogo-Nebenfeld wurde gespeichert");
+          assert(!hasOwn(stored.logoAssets[0], "privateMetadata"), "Nicht freigegebenes Asset-Nebenfeld wurde gespeichert");
           assertEqual(stored.businessAreas[0].logoMode, "custom", "Zulässige Branding-Einstellung wurde entfernt");
         }
       },
@@ -2074,8 +2200,9 @@
           assertEqual(stored.company.houseNumber, "17 a", "Hausnummer ging beim Reload verloren");
           assertEqual(stored.company.website, "https://test.invalid/", "Website ging beim Reload verloren");
           assertEqual(stored.company.updatedAt, "2030-02-03T04:05:00.000Z", "Unternehmens-Änderungszeitpunkt wurde überschrieben");
-          assertDeepEqual(stored.company.logo, companyLogoFixture(), "Unternehmenslogo ging beim Reload verloren");
-          assertDeepEqual(stored.businessAreas.find(area => area.id === "hair")?.logo, businessAreaLogoFixture(), "Geschäftsbereichslogo ging beim Reload verloren");
+          assertDeepEqual(stored.company.logo, logoReferenceFixture(), "Unternehmenslogo-Referenz ging beim Reload verloren");
+          assertDeepEqual(stored.businessAreas.find(area => area.id === "hair")?.logo, logoReferenceFixture(businessAreaLogoFixture()), "Geschäftsbereichslogo-Referenz ging beim Reload verloren");
+          assertDeepEqual(api.resolveLogoAsset("company-logo", stored.logoAssets), logoAssetFixture(), "Unternehmenslogo-Asset ging beim Reload verloren");
         }
       },
       {
@@ -2133,6 +2260,60 @@
             "INVALID_DATA",
             "Geschäftsbereichslogo über 1 MB"
           );
+        }
+      },
+      {
+        name: "Logo-Asset-Register versioniert, dedupliziert und erhält historische Versionen",
+        run: async () => {
+          const migrated = api.snapshotSettings(runtimeFixture(), "completed", "test-logo-assets");
+          assertEqual(migrated.logoAssets.length, 3, "Bestehende BRANDING-001-Logos wurden nicht in das Register übernommen");
+          assertDeepEqual(migrated.company.logo, logoReferenceFixture(), "Unternehmenslogo blieb als Rohbild statt Referenz gespeichert");
+          assert(!hasOwn(migrated.company.logo, "dataUrl"), "Aktive Unternehmenszuordnung enthält Bildrohdaten");
+          assert(api.resolveLogoAsset(migrated.company.logo.assetId, migrated.logoAssets)?.dataUrl, "Unternehmenslogo ist nicht zentral auflösbar");
+
+          const replacement = companyLogoFixture({
+            id: "company-logo-v2",
+            name: "Logo-neu.png",
+            size: atob(alternatePngBase64).length,
+            dataUrl: `data:image/png;base64,${alternatePngBase64}`,
+            updatedAt: "2030-02-01T10:00:00.000Z"
+          });
+          const registered = api.registerLogoAsset(migrated.logoAssets, replacement);
+          assert(registered.added, "Ersetztes Logo erzeugte keine neue Asset-Version");
+          assertEqual(registered.assets.length, 4, "Historische Asset-Version wurde beim Ersetzen gelöscht");
+          assert(api.resolveLogoAsset("company-logo", registered.assets)?.dataUrl, "Altes Unternehmenslogo ist nach Ersetzen nicht mehr auflösbar");
+          assert(api.resolveLogoAsset("company-logo-v2", registered.assets)?.dataUrl, "Neues Unternehmenslogo ist nicht auflösbar");
+
+          const duplicate = api.registerLogoAsset(registered.assets, companyLogoFixture({ id: "unused-duplicate-id", updatedAt: "2030-03-01T10:00:00.000Z" }));
+          assert(!duplicate.added, "Identischer Bildinhalt wurde unnötig dupliziert");
+          assertEqual(duplicate.reference.assetId, "company-logo", "Identisches Logo verwendete nicht die bestehende Asset-ID");
+          assertEqual(duplicate.assets.length, registered.assets.length, "Identisches Logo vergrößerte das Register");
+
+          const afterRemoval = clone(registered.assets);
+          assert(api.resolveLogoAsset("company-logo", afterRemoval), "Entfernen der aktiven Zuordnung würde das historische Asset verlieren");
+          assertEqual(api.resolveLogoAsset("missing-logo", afterRemoval), null, "Fehlende Asset-ID liefert keinen sicheren Fallback");
+          const corrupt = clone(afterRemoval);
+          corrupt[0].dataUrl = "data:image/png;base64,AAAA";
+          assertEqual(api.resolveLogoAsset(corrupt[0].assetId, corrupt), null, "Defektes Asset liefert keinen sicheren Fallback");
+
+          const emptyRuntime = runtimeFixture();
+          emptyRuntime.company.logo = null;
+          emptyRuntime.businessAreas.forEach(area => { area.logo = null; area.logoMode = "company"; });
+          delete emptyRuntime.logoAssets;
+          const historicalWithoutRegister = api.snapshotSettings(emptyRuntime, "completed", "test-logo-assets-empty");
+          assertDeepEqual(historicalWithoutRegister.logoAssets, [], "Historische Einstellungen ohne Logos erhielten künstliche Assets");
+
+          const persistence = context.makeClient("logo-assets-immutable");
+          const tenantRecord = api.snapshotSettings(runtimeFixture(), "completed", persistence.tenantId);
+          await persistence.writeSettings(tenantRecord);
+          const withoutHistoricalAsset = clone(tenantRecord);
+          withoutHistoricalAsset.logoAssets = withoutHistoricalAsset.logoAssets.slice(1);
+          const retained = await persistence.writeSettings(withoutHistoricalAsset);
+          assert(api.resolveLogoAsset("company-logo", retained.logoAssets), "Normaler Settings-Write löschte eine historische Asset-Version");
+          const conflicting = clone(retained);
+          conflicting.logoAssets[0].dataUrl = `data:image/png;base64,${alternatePngBase64}`;
+          conflicting.logoAssets[0].size = atob(alternatePngBase64).length;
+          await assertRejects(() => persistence.writeSettings(conflicting), "INVALID_DATA", "Überschreiben einer bestehenden Asset-ID");
         }
       },
       {
@@ -4042,8 +4223,13 @@
           assertEqual(ownFiles.projection.operatingSettings?.currency, "EUR", "Eigene-Daten-Projektion enthält die Währung nicht");
           assertEqual(ownFiles.projection.operatingSettings?.defaultTaxRate, 19, "Eigene-Daten-Projektion enthält die Standard-MwSt. nicht");
           assertEqual(ownFiles.projection.operatingSettings?.defaultBusinessArea?.id, "hair", "Eigene-Daten-Projektion enthält den Standard-Geschäftsbereich nicht");
+          assertEqual(ownFiles.projection.company.logo?.assetId, "company-logo", "Eigene-Daten-Projektion kann das aktive Unternehmenslogo nicht den Asset-Metadaten zuordnen");
+          assertEqual(ownFiles.projection.operatingSettings?.businessAreas[0]?.logo?.assetId, "business-logo-hair", "Eigene-Daten-Projektion kann das aktive Bereichslogo nicht den Asset-Metadaten zuordnen");
           assertEqual(ownFiles.projection.operatingSettings?.businessAreas[0]?.logo?.name, "Bereichslogo.jpg", "Eigene-Daten-Projektion enthält keine Bereichslogo-Metadaten");
           assert(!hasOwn(ownFiles.projection.operatingSettings?.businessAreas[0]?.logo || {}, "dataUrl"), "Eigene-Daten-Projektion enthält Bereichslogo-Bilddaten");
+          assertEqual(ownFiles.projection.operatingSettings?.logoAssets.length, snapshot.stores.settings.logoAssets.length, "Eigene-Daten-Projektion enthält nicht alle Logoasset-Metadaten");
+          assert(ownFiles.projection.operatingSettings.logoAssets.every(asset => !hasOwn(asset, "dataUrl")), "Eigene-Daten-Projektion enthält Logoasset-Bildrohdaten");
+          assertEqual(taxFiles.projection.operatingSettings, null, "Steuerberatungsexport enthält Logoasset-Metadaten");
           assertDeepEqual(ownFiles.projection.operatingSettings?.paymentChoices.map(choice => choice.id), ["cash", "ec", "voucher"], "Eigene-Daten-Projektion verändert die Zahlungsartenreihenfolge");
           assertEqual(ownFiles.projection.operatingSettings?.receiptNumbering.nextNumber, 77, "Eigene-Daten-Projektion enthält den Nummernstand nicht");
           assertEqual(ownFiles.projection.operatingSettings?.receiptTexts.footerText, "Test-Fußtext", "Eigene-Daten-Projektion enthält den Beleg-Fußtext nicht");
@@ -4206,6 +4392,38 @@
             assert(pdfHeader(bytes).startsWith("%PDF-"), `ZIP-Eintrag ${path} ist kein echtes PDF`);
           }
           assertDeepEqual(snapshot, before, "Paketexport hat den zentralen Snapshot verändert");
+        }
+      },
+      {
+        name: "Steuerberaterpaket löst PDF-Logos zentral auf und exportiert keine Bildrohdaten",
+        run: async () => {
+          const snapshot = completeExportSnapshotFixture("test-export-package-branding");
+          const brandedReceipt = snapshot.stores.receipts.receipts[0];
+          brandedReceipt.brandingSnapshot = {
+            logoMode: "company",
+            visibleName: "",
+            logo: { assetId: "company-logo", source: "company", label: "Unternehmenslogo" }
+          };
+          const packageResult = await exportPackageApi.createTaxAdvisorPackage(snapshot, {
+            periodType: "custom",
+            dateFrom: "2030-01-01",
+            dateTo: "2030-01-31",
+            businessAreaId: "hair",
+            generatedAt: "2030-02-01T12:34:00.000Z"
+          });
+          const archive = await globalThis.JSZip.loadAsync(await packageResult.packageFile.content.arrayBuffer(), { checkCRC32: true });
+          const pdfPath = Object.keys(archive.files).find(path => path.endsWith(`/${brandedReceipt.number}.pdf`));
+          const pdf = await globalThis.PDFLib.PDFDocument.load(await archive.file(pdfPath).async("uint8array"));
+          const imageCount = [...pdf.context.enumerateIndirectObjects()].filter(([, object]) => (
+            (object?.dict?.get?.(globalThis.PDFLib.PDFName.of("Subtype"))
+              || object?.get?.(globalThis.PDFLib.PDFName.of("Subtype")))?.toString() === "/Image"
+          )).length;
+          assert(imageCount > 0, "Steuerberater-PDF enthält das historische Logoasset nicht");
+          const textEntries = packageResult.entries.filter(entry => entry.kind === "data");
+          for (const entry of textEntries) {
+            const content = await archive.file(entry.path).async("string");
+            assert(!content.includes("data:image/") && !content.includes(tinyPngBase64), `Exportdatei ${entry.name} enthält Logo-Bildrohdaten`);
+          }
         }
       },
       {
@@ -4591,8 +4809,16 @@
           assertEqual(validated.snapshot.stores.settings.company.name, "Rundlauf Betrieb", "Restore-Export-Rundlauf verlor Einstellungen");
           assertEqual(validated.snapshot.stores.settings.users.length, 1, "Restore-Export-Rundlauf verlor den Benutzer");
           assertEqual(validated.snapshot.stores.settings.activeUserId, validated.snapshot.stores.settings.users[0].id, "Restore-Export-Rundlauf verlor den aktiven Benutzer");
-          assertDeepEqual(validated.snapshot.stores.settings.company.logo, companyLogoFixture(), "Restore-Export-Rundlauf verlor das verschlüsselt gesicherte Unternehmenslogo");
+          assertDeepEqual(validated.snapshot.stores.settings.company.logo, logoReferenceFixture(), "Restore-Export-Rundlauf verlor die Unternehmenslogo-Referenz");
+          assertDeepEqual(validated.snapshot.stores.settings.logoAssets, target.stores.settings.logoAssets, "Restore-Export-Rundlauf verlor historische Logoassets");
           assertDeepEqual(validated.snapshot.stores.settings.businessAreas.map(area => area.logo), target.stores.settings.businessAreas.map(area => area.logo), "Restore-Export-Rundlauf verlor Geschäftsbereichslogos");
+          const restoredLogoModel = documentApi.createReceiptDocumentModel(receiptDocumentFixture({
+            brandingSnapshot: { logoMode: "company", logo: { assetId: "company-logo", source: "company", label: "Unternehmenslogo" } }
+          }), {
+            ...documentOptions(validated.snapshot.stores.settings.logoAssets),
+            resolveLogoAsset: assetId => api.resolveLogoAsset(assetId, validated.snapshot.stores.settings.logoAssets)
+          });
+          assert((await documentApi.createPdfBytes(restoredLogoModel)).length > 4000, "Nach Restore konnte kein PDF mit historischem Logoasset erzeugt werden");
           assertEqual(validated.snapshot.stores.settings.company.contactPerson, "Test Kontakt", "Restore-Export-Rundlauf verlor den Ansprechpartner");
           assertEqual(validated.snapshot.stores.vouchers.vouchers[0].history.length, 1, "Gutscheinhistorie ging im Rundlauf verloren");
           assertEqual(validated.snapshot.stores.receipts.receipts[0].companySnapshot.name, "Teststudio Nord", "Belegsnapshot ging im Rundlauf verloren");

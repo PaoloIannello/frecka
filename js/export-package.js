@@ -100,16 +100,22 @@
       "Die Beleg-PDF-Engine ist für den Export nicht verfügbar."
     );
     const qrService = dependencies.qrService || globalThis.FRECKA_QR;
+    const logoAssets = Array.isArray(dependencies.logoAssets) ? dependencies.logoAssets : [];
+    const resolveLogoAsset = typeof dependencies.resolveLogoAsset === "function"
+      ? dependencies.resolveLogoAsset
+      : assetId => globalThis.FRECKA_PERSISTENCE?.resolveLogoAsset?.(assetId, logoAssets) || null;
     const model = documents.createReceiptDocumentModel(receipt, {
       qrService,
       companyIdentity: dependencies.companyIdentity || globalThis.FRECKA_PERSISTENCE?.companyIdentity,
+      resolveLogoAsset,
       linkedVoucher: linkedVoucherFor(receipt, projection)
     });
     let outputModel = model;
     const publicDocuments = dependencies.publicDocumentService || globalThis.FRECKA_PUBLIC_DOCUMENTS;
     if (typeof publicDocuments?.createPublicBundle === "function") {
       try {
-        outputModel = (await publicDocuments.createPublicBundle(model, { qrService })).model;
+        const publicBundle = await publicDocuments.createPublicBundle(model, { qrService });
+        outputModel = Object.freeze({ ...model, qr: publicBundle.model.qr });
       } catch (error) {
         outputModel = Object.freeze({ ...model, qr: null });
       }
@@ -147,6 +153,14 @@
       includeCustomers: false
     });
     const projection = exported.projection;
+    const packageDependencies = {
+      ...dependencies,
+      logoAssets: Array.isArray(dependencies.logoAssets)
+        ? dependencies.logoAssets
+        : Array.isArray(snapshotOrProjection?.stores?.settings?.logoAssets)
+          ? snapshotOrProjection.stores.settings.logoAssets
+          : []
+    };
     if (!Array.isArray(projection.receiptRecords) || !Array.isArray(projection.voucherRecords)) {
       throw new ExportPackageError("PACKAGE_PROJECTION_INVALID", "Die zentrale Exportprojektion enthält keine Belegdokumente.");
     }
@@ -168,7 +182,7 @@
       entries.push({ path, name: file.name, type: file.mimeType, kind: "data", size: new Blob([file.content]).size });
     });
 
-    const pdfFactory = dependencies.createReceiptPdf || ((receipt, currentProjection) => defaultReceiptPdf(receipt, currentProjection, dependencies));
+    const pdfFactory = dependencies.createReceiptPdf || ((receipt, currentProjection) => defaultReceiptPdf(receipt, currentProjection, packageDependencies));
     const usedPdfNames = new Set();
     for (const receipt of projection.receiptRecords) {
       const number = text(receipt?.receiptNumber) || text(receipt?.number);

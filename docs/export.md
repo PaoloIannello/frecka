@@ -57,7 +57,7 @@ USER-001 ergänzt ausschließlich den strukturierten Projektionskontext `activeU
 
 LICENSE-001 ergänzt entsprechend `license` nur für `Eigene Daten`. `Export-Info.txt` nennt dort Lizenz-ID, Geräte-ID, lokalen Aktivierungszeitpunkt und letzte lokale Prüfung. Im Steuerberaterexport ist `license` ausdrücklich `null`; CSV-Dateien, ZIP-Struktur und Beleg-PDFs enthalten keine Lizenz- oder Gerätedaten.
 
-SETTINGS-001 ergänzt nur für `Eigene Daten` die zentralen Unternehmensangaben in der Projektion und in `Export-Info.txt`: Ansprechpartner, getrennte Anschrift, Land, Kontaktwege, Website, optionale Steuerkennungen und eigener Änderungszeitpunkt. BRANDING-001 ergänzt dort je Geschäftsbereich Logo-Modus und ausschließlich Dateiname, MIME-Type, Bytegröße und Änderungszeitpunkt. Unternehmens- und Bereichslogo-Data-URLs werden nicht projiziert. Der Steuerberaterexport erhält weder diese zusätzliche Stammdatenprojektion noch einen veränderten Datei- oder ZIP-Vertrag.
+SETTINGS-001 ergänzt nur für `Eigene Daten` die zentralen Unternehmensangaben in der Projektion und in `Export-Info.txt`: Ansprechpartner, getrennte Anschrift, Land, Kontaktwege, Website, optionale Steuerkennungen und eigener Änderungszeitpunkt. BRANDING-002 ergänzt dort je aktiver Zuordnung und Registereintrag ausschließlich Asset-ID, Dateiname, MIME-Type, Bytegröße, Format- und Zeitmetadaten. Data-URLs und andere Bildrohdaten werden nicht projiziert. Der Steuerberaterexport erhält weder diese Stammdatenprojektion noch Bildrohdaten oder einen veränderten Datei-/ZIP-Vertrag.
 
 SETTINGS-002 ergänzt ebenfalls nur für `Eigene Daten` den strukturierten Kontext `operatingSettings`: feste Währung und Sprache, Steuerstatus, aktive und Standard-Steuersätze, Standard-Geschäftsbereich, Zahlungsarten samt Reihenfolge und Aktivstatus, geschützter Belegnummernstand sowie die vorhandenen Belegtexte. `Export-Info.txt` weist diese Werte lesbar aus. Im Steuerberaterexport ist `operatingSettings` ausdrücklich `null`; CSV-Dateien, Übersicht, PDF-Inhalte und ZIP-Struktur bleiben unverändert.
 
@@ -86,7 +86,7 @@ FRECKA-Steuerberatung-2030-01.zip
 
 Eigene oder bereichsübergreifende Zeiträume verwenden `YYYY-MM-DD_bis_YYYY-MM-DD`; ein einzelner Geschäftsbereich wird zusätzlich als sicherer Dateinamensbestandteil ausgewiesen. Jedes Beleg-PDF wird aus der unveränderten gespeicherten Belegnummer benannt. Doppelte resultierende Dateinamen führen zu einem klaren Fehler, nicht zu einem Überschreiben.
 
-Normale Belege, offene Belege, Stornos, Gutschriften und Gutscheinverkaufsbelege werden durch `FRECKA_DOCUMENTS` als echte PDFs erzeugt. Sie verwenden denselben gespeicherten Snapshot und dieselbe PDF-Engine wie die Belegansicht. PDF-Dateien werden weder in IndexedDB noch dauerhaft im Exportmodul gespeichert.
+Normale Belege, offene Belege, Stornos, Gutschriften und Gutscheinverkaufsbelege werden durch `FRECKA_DOCUMENTS` als echte PDFs erzeugt. Sie verwenden denselben gespeicherten Snapshot und dieselbe PDF-Engine wie die Belegansicht. BRANDING-002 reicht dem Dokumentmodell zusätzlich ausschließlich den zentralen Resolver und das Register aus demselben Tenant-Snapshot; dadurch enthält jedes PDF genau die historisch referenzierte Logo-Version. Die Rohbilder werden nicht als eigene ZIP-Dateien oder CSV-/TXT-Inhalte exportiert. PDF-Dateien werden weder in IndexedDB noch dauerhaft im Exportmodul gespeichert.
 
 ## Dateien der Version 1
 
