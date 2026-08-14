@@ -1,116 +1,107 @@
 # WEBSITE-012 – Logo Scaling & Final Polish
 
 Stand: 13. August 2026  
+Nachkorrektur: Logo-Präsenz nach realem iPhone-Test
 Ergebnis: **GO**
 
 ## Änderungsumfang
 
-WEBSITE-012 verändert ausschließlich die responsive Darstellung der bereits eingebundenen FRECKA-Logos in `styles/brand-assets.css`. HTML, Seitenstruktur, Texte, Navigation, Funktionen und Brand-Master bleiben unverändert.
+Die Nachkorrektur verändert ausschließlich die Darstellung der bestehenden FRECKA-Marke in Header und Footer. Betroffen sind `styles/brand-assets.css` und diese Dokumentation. Logo-SVG, Brand-Master, HTML, Seitenstruktur und JavaScript bleiben unverändert.
 
-## Alte Logo-Größen
+## Ursache der zu geringen sichtbaren Größe
 
-Vor WEBSITE-012 galten über alle Breakpoints dieselben deklarierten Wrappergrößen:
+Die erste WEBSITE-012-Korrektur skalierte den vollständigen SVG-Viewport korrekt, nicht aber die darin deutlich kleinere sichtbare Grafikfläche.
 
-| Einsatz | Breite | Höhe |
+- SVG-ViewBox: `0 0 1100 180`
+- gemessene sichtbare Grafikgrenze: ungefähr `x=52–677,65` und `y=27,66–156`
+- sichtbare Grafikfläche: ungefähr `625,65 × 128,34` SVG-Einheiten
+- sichtbarer horizontaler Anteil an der ViewBox: nur rund 56,9 %
+- transparente Restfläche rechts: rund 422 SVG-Einheiten beziehungsweise 38,4 % der gesamten ViewBox
+
+Dadurch erzeugte die mobile Header-Breite von 140 CSS-Pixeln real nur ungefähr 79,63 sichtbare Marken-Pixel. Im Footer ergaben 178 CSS-Pixel nur ungefähr 101,24 sichtbare Marken-Pixel.
+
+| Zwischenstand vor der Nachkorrektur | Äußerer SVG-Viewport | Tatsächlich sichtbarer Inhalt |
 | --- | ---: | ---: |
-| Header | `7.5rem` / 120 px | `1.25rem` / 20 px |
-| Footer | `9.5rem` / 152 px | `1.75rem` / 28 px |
+| Header Mobile | 140 × 22,91 px | ca. 79,63 × 16,33 px |
+| Footer Mobile | 178 × 29,13 px | ca. 101,24 × 20,77 px |
 
-Die getrennt gesetzten Breiten und Höhen entsprachen nicht exakt dem Seitenverhältnis des Produktions-SVGs.
+## Technische Lösung ohne Änderung des Brand-Masters
 
-## Neue Logo-Größen
+Der vollständige SVG-Inhalt bleibt unverändert. Ein CSS-Sichtfenster blendet ausschließlich transparente ViewBox-Ränder aus:
 
-Die Breite wird nun responsiv gesetzt. Die Höhe ergibt sich automatisch aus dem verbindlichen SVG-Seitenverhältnis `1100 / 180`.
+- Sichtfenster innerhalb der ViewBox: `x=32–700`, `y=16–168`
+- Sichtfenstergröße und Seitenverhältnis: `668 × 152`
+- Sicherheitsraum um den gemessenen Inhalt: links 20, rechts 22,35, oben 11,66 und unten 12 SVG-Einheiten
+- das Original-SVG bleibt intern im Verhältnis `1100 / 180`
+- das SVG-Objekt wird proportional auf `164,670659 %` der Sichtfensterbreite skaliert
+- Positionierung: `left: -4,790419 %`, `top: -10,526316 %`
+- `overflow: hidden` entfernt nur transparente Außenfläche; Symbol und Wortmarke bleiben vollständig sichtbar
 
-| Bereich | Breakpoint | Header | Änderung | Footer | Änderung |
-| --- | --- | ---: | ---: | ---: | ---: |
-| Mobile | unter 700 px | `8.75rem` / 140 px | +16,7 % | `11.125rem` / 178 px | +17,1 % |
-| Tablet | ab 700 px | `8.625rem` / 138 px | +15,0 % | `10.875rem` / 174 px | +14,5 % |
-| Desktop | ab 1024 px | `8.5rem` / 136 px | +13,3 % | `10.75rem` / 172 px | +13,2 % |
+Damit wird weder die SVG-Geometrie verändert noch die Marke gestreckt. Das Seitenverhältnis des Originals bleibt erhalten.
 
-Die daraus resultierenden Logo-Höhen betragen gerundet:
+## Neue sichtbare Markenpräsenz
 
-- Mobile: Header 22,91 px, Footer 29,13 px
-- Tablet: Header 22,58 px, Footer 28,47 px
-- Desktop: Header 22,25 px, Footer 28,14 px
+| Bereich | Sichtfenster | Internes SVG-Objekt | Sichtbarer Markeninhalt | Zuwachs zum Zwischenstand |
+| --- | ---: | ---: | ---: | ---: |
+| Header Mobile | 113 × 25,71 px | 186,07 × 30,45 px | 105,83 × 21,71 px | +32,9 % |
+| Footer Mobile | 144 × 32,77 px | 237,13 × 38,80 px | 134,87 × 27,67 px | +33,2 % |
+| Header Tablet | 112 × 25,48 px | 184,43 × 30,17 px | 104,90 × 21,52 px | +33,6 % |
+| Footer Tablet | 142 × 32,30 px | 233,83 × 38,26 px | 133,00 × 27,27 px | +34,4 % |
+| Header Desktop | 111 × 25,25 px | 182,78 × 29,91 px | 103,96 × 21,33 px | +34,4 % |
+| Footer Desktop | 138 × 31,40 px | 227,24 × 37,18 px | 129,25 × 26,51 px | +32,1 % |
 
-Die leichte Abstufung verhindert, dass das Logo auf größeren Flächen unverhältnismäßig dominant wirkt. Mobile erhält bewusst die stärkste optische Präsenz.
+Die kleinere äußere CSS-Breite ist beabsichtigt: Sie beschreibt nun das transparente Sichtfenster und nicht mehr die vollständige, weitgehend leere SVG-ViewBox. Entscheidend ist der gemessene sichtbare Markeninhalt.
 
-## Proportionen und Einbindung
+## Claim und Header-Höhe
 
-- Das Produktions-SVG behält unverändert die `viewBox="0 0 1100 180"`.
-- Der Logo-Wrapper verwendet `aspect-ratio: 1100 / 180` und `height: auto`.
-- SVG-Objekt und Wrapper sind in jeder Messung deckungsgleich; das Objekt bleibt bei `width: 100%` und `height: 100%`.
-- `max-width: 100%` schützt Wrapper und SVG-Objekt in engen Flex- und Grid-Kontexten.
-- Ein zusätzliches `object-fit` ist für das eingebettete SVG nicht erforderlich. Das exakte Wrapperformat und die SVG-ViewBox sichern das Seitenverhältnis ohne Streckung oder Zuschnitt.
-- Der Abstand zum Claim bleibt unverändert bei `0.3rem` beziehungsweise 4,8 px.
-- Die deklarierte Header-Mindesthöhe bleibt unverändert: `4.25rem` auf Mobile/Tablet und `4.75rem` auf Desktop.
-- Der Menübutton wurde weder in Größe noch Position oder Verhalten verändert.
+- Mobile und Tablet: Claim von 12 auf 12,5 px angehoben (+4,2 %)
+- Desktop: Claim bleibt bei 12 px
+- Farbe, Gewicht und Abstand von 4,8 px bleiben unverändert
+- der Claim bleibt dadurch sichtbar untergeordnet
+- Header-Gesamthöhe inklusive Border bleibt bei 69 px auf Mobile und 77 px auf Desktop
+- eine zusätzliche Header-Erhöhung war nach dem Realtest nicht erforderlich
+- Menübutton bleibt vollständig unverändert
 
-## Mobile-Anpassung
+## Desktop-Entscheidung
 
-Geprüft wurden 320, 375, 390 und 430 px Viewportbreite.
-
-- Header-Logo: 140 × 22,91 px
-- Footer-Logo: 178 × 29,13 px
-- Header-Gesamthöhe inklusive Border: 69 px, unverändert durch den Eingriff in die Header-Regeln
-- Claim jeweils sauber unterhalb des Logos
-- keine Überlagerung mit Menübutton, Claim oder Viewportrand
-- Mobile Navigation öffnet und schließt weiterhin korrekt; `Escape` schließt und gibt den Fokus an den Menübutton zurück
-
-## Tablet- und Desktop-Anpassung
-
-Geprüft wurden 768, 1024, 1280, 1440 und 1600 px Viewportbreite.
-
-- 768 px: Header 138 × 22,58 px, Footer 174 × 28,47 px
-- ab 1024 px: Header 136 × 22,25 px, Footer 172 × 28,14 px
-- Desktop-Header-Gesamthöhe inklusive Border: 77 px
-- keine Kollision zwischen Marke, Hauptnavigation und Header-CTA
-- keine Kollision zwischen Footer-Marke und Footer-Navigation
-- Logo bleibt auf großen Monitoren präsent, ohne die ruhige Header- oder Footer-Balance zu dominieren
+Desktop wurde ebenfalls korrigiert, weil die sichtbare Header-Marke dort trotz 136 px äußerer SVG-Breite nur rund 77,35 px breit war. Die neue sichtbare Breite von rund 103,96 px bleibt zurückhaltend, ist aber als Marke klarer wahrnehmbar.
 
 ## Bewusst nicht geändert
 
-- Hero und CTA-Hierarchie
-- App-Screens, Device-Rahmen und Bildabmessungen
-- Drei-Schritte-Bereich und Datenbereich
-- Icons
-- Beta-Bereich und Formular
-- Pricing/Lizenz
-- FAQ
-- Impressum und Datenschutz
-- Navigation und Sticky-Header-Logik
-- Footer-Struktur, Footer-Navigation, Beschreibung, Copyright und Beta-Hinweis
-- Accessibility-, Performance- und SEO-Inhalte
-- HTML und JavaScript
 - Logo-SVG und Brand-Master
+- HTML und JavaScript
+- Menübutton, Navigation und Sticky-Header-Logik
+- Footer-Struktur, Beschreibung, Navigation, Copyright und Beta-Hinweis
+- Hero, App-Screens und Device-Rahmen
+- Drei-Schritte- und Datenbereich
+- Icons
+- Beta, Pricing/Lizenz und FAQ
+- Impressum und Datenschutz
+- Accessibility-, Performance- und SEO-Inhalte
 
 ## Testergebnisse
 
 | Prüfung | Ergebnis |
 | --- | --- |
 | Header und Footer bei 320/375/390/430 px | bestanden |
-| Header und Footer bei 768/1024 px | bestanden |
-| Header und Footer bei 1280/1440/1600 px | bestanden |
-| Kein horizontaler Überlauf | bestanden, alle neun Viewports |
-| Keine Überlagerung | bestanden |
-| Keine abgeschnittenen oder verzerrten Logos | bestanden |
-| Wrapper und SVG-Objekt deckungsgleich | bestanden |
-| Claim-Abstand | bestanden, konstant 4,8 px |
-| Sticky Header | bestanden, Mobile und Desktop |
-| Mobile Menü und Escape-Fokusführung | bestanden |
-| Impressum und Datenschutz | bestanden bei 320–1600 px, kein Überlauf oder Header-Konflikt |
-| Lokale Assetpfade | 39 Referenzen geprüft, vollständig vorhanden |
-| Laufzeit-Assetrequests | Logo, Favicon, CSS, JavaScript und Screens mit HTTP 200 |
+| Tablet/Desktop bei 768/1024/1440/1600 px | bestanden |
+| Sichtbare mobile Logo-Präsenz | Header +32,9 %, Footer +33,2 % |
+| Sichtbarer Markeninhalt vollständig innerhalb des Sichtfensters | bestanden |
+| Mobiler Sicherheitsraum Header | links 3,39 px, rechts 3,78 px, oben 1,98 px, unten 2,03 px |
+| Mobiler Sicherheitsraum Footer | links 4,32 px, rechts 4,81 px, oben 2,52 px, unten 2,58 px |
+| Original-Seitenverhältnis | bestanden, gemessen 6,1116:1 |
+| Kein horizontaler Überlauf | bestanden, alle geprüften Viewports |
+| Keine Header-, Claim-, Menü- oder Footer-Überlagerung | bestanden |
+| Header-Höhe Mobile | 69 px |
+| Claim-Abstand | konstant 4,8 px |
+| Impressum und Datenschutz bei 320/430 px | kein Überlauf, keine Header-Kollision |
+| Lokale Assetrequests | HTTP 200 |
 | Browser-Konsole | 0 Fehler und 0 Warnungen |
-| HTML-Struktur | je Seite genau eine H1, keine doppelten IDs |
-| JSON-LD | valide parsebar |
 | JavaScript-Syntax | bestanden |
-| CSS-Struktur | ausgeglichene Blockklammern in allen Stylesheets |
-| SVG-XML und ViewBox | valide, unverändert |
-| Brand-Master/Produktions-SVG verändert | nein |
+| CSS-Struktur | bestanden |
+| SVG-XML und ViewBox | valide und unverändert |
 | `git diff --check` | bestanden |
 
 ## Abschluss
 
-**GO** – Die Logo-Skalierung ist responsiv verbessert. Es bestehen keine bekannten Restfehler oder Regressionen aus WEBSITE-012.
+**GO** – Die FRECKA-Marke besitzt nun im realen mobilen Layout rund ein Drittel mehr tatsächlich sichtbare Präsenz. Es bestehen keine bekannten Restfehler oder Regressionen aus der Nachkorrektur.

@@ -7,26 +7,36 @@
  */
 
 :root {
-  --asset-logo-header-width: 8.75rem;
-  --asset-logo-footer-width: 11.125rem;
+  --asset-logo-header-width: 7.0625rem;
+  --asset-logo-footer-width: 9rem;
+  --asset-logo-claim-size: 0.78125rem;
 }
 
 .c-brand__wordmark {
   width: var(--asset-logo-header-width);
   max-width: 100%;
   height: auto;
-  aspect-ratio: 1100 / 180;
+  aspect-ratio: 668 / 152;
   position: relative;
   display: block;
+  overflow: hidden;
 }
 
 .c-brand__logo {
+  position: absolute;
+  top: -10.526316%;
+  left: -4.790419%;
   border: 0;
   display: block;
-  width: 100%;
-  max-width: 100%;
-  height: 100%;
+  width: 164.670659%;
+  max-width: none;
+  height: auto;
+  aspect-ratio: 1100 / 180;
   pointer-events: none;
+}
+
+.c-brand .c-brand__claim {
+  font-size: var(--asset-logo-claim-size);
 }
 
 .c-brand__fallback {
@@ -49,15 +59,16 @@
 
 @media (min-width: 43.75rem) {
   :root {
-    --asset-logo-header-width: 8.625rem;
-    --asset-logo-footer-width: 10.875rem;
+    --asset-logo-header-width: 7rem;
+    --asset-logo-footer-width: 8.875rem;
   }
 }
 
 @media (min-width: 64rem) {
   :root {
-    --asset-logo-header-width: 8.5rem;
-    --asset-logo-footer-width: 10.75rem;
+    --asset-logo-header-width: 6.9375rem;
+    --asset-logo-footer-width: 8.625rem;
+    --asset-logo-claim-size: 0.75rem;
   }
 }
 
