@@ -999,7 +999,7 @@
     if (!persistence?.readCustomers || !persistence?.normalizeCustomersRecord || !defaultCustomersRecord) {
       const error = new Error("Die Kundenpersistenz wurde nicht geladen.");
       error.code = "PERSISTENCE_UNAVAILABLE";
-      error.userMessage = "Die lokalen Kundendaten konnten nicht geladen werden. FRECKA verwendet sichere Demodaten.";
+      error.userMessage = "Die lokalen Kundendaten konnten nicht geladen werden. FRECKA verwendet einen leeren Standardbestand.";
       throw error;
     }
     const savedRecord = await persistence.readCustomers();
@@ -1013,7 +1013,7 @@
     if (!persistence?.readReceipts || !persistence?.normalizeReceiptsRecord || !defaultReceiptsRecord) {
       const error = new Error("Die Belegpersistenz wurde nicht geladen.");
       error.code = "PERSISTENCE_UNAVAILABLE";
-      error.userMessage = "Die lokalen Belege konnten nicht geladen werden. FRECKA zeigt sichere Demodaten; neue Nummern werden bis zur Klärung nicht vergeben.";
+      error.userMessage = "Die lokalen Belege konnten nicht geladen werden. FRECKA zeigt einen leeren Standardbestand; neue Nummern werden bis zur Klärung nicht vergeben.";
       throw error;
     }
     const savedRecord = await persistence.readReceipts();
@@ -1027,7 +1027,7 @@
     if (!persistence?.readVouchers || !persistence?.normalizeVouchersRecord || !defaultVouchersRecord) {
       const error = new Error("Die Gutscheinpersistenz wurde nicht geladen.");
       error.code = "PERSISTENCE_UNAVAILABLE";
-      error.userMessage = "Die lokalen Gutscheine konnten nicht geladen werden. FRECKA zeigt sichere Demodaten; Gutscheinverkäufe und -einlösungen bleiben bis zur Klärung gesperrt.";
+      error.userMessage = "Die lokalen Gutscheine konnten nicht geladen werden. FRECKA zeigt einen leeren Standardbestand; Gutscheinverkäufe und -einlösungen bleiben bis zur Klärung gesperrt.";
       throw error;
     }
     const savedRecord = await persistence.readVouchers();
@@ -1867,7 +1867,7 @@
         ${state.checkoutOpenPaymentConfirm ? `<div class="checkout-open-confirm"><p>Beleg abschließen und Zahlung als offen markieren?</p><button class="button button-secondary" type="button" data-action="open-payment-cancel">Zurück</button><button class="button button-primary" type="button" data-action="open-payment-confirm">Als offen abschließen</button></div>` : `<button class="button button-secondary" type="button" data-action="open-payment-request">Zahlung offen lassen</button>`}
       </section>
       <p class="prototype-note">Zahlungsanbieter, QR-Scan, Steuerautomatik und Fiskalisierung sind nicht verbunden. Der abgeschlossene Beleg wird lokal gespeichert.</p>
-      <div class="checkout-action"><button class="button button-primary" type="button" data-action="finish-demo" ${state.checkoutSubmitting ? "disabled" : ""}>${state.checkoutSubmitting ? "Wird abgeschlossen …" : "Demo abschließen"}</button></div>
+      <div class="checkout-action"><button class="button button-primary" type="button" data-action="finish-demo" ${state.checkoutSubmitting ? "disabled" : ""}>${state.checkoutSubmitting ? "Wird abgeschlossen …" : "Beleg abschließen"}</button></div>
     </section>`;
 
     document.getElementById("checkoutVoucherCode")?.addEventListener("input", event => {
@@ -2832,7 +2832,7 @@
       </label>
       ${state.voucherSearch.trim() ? `<p class="voucher-search-note">Die Suche umfasst alle Gutscheine – unabhängig vom gewählten Filter.</p>` : ""}
 
-      <div class="voucher-list" aria-label="Demo-Gutscheine">
+      <div class="voucher-list" aria-label="Gutscheine">
         ${vouchers.length ? vouchers.map(voucher => `<button class="voucher-list-item" type="button" data-open-voucher="${escapeHtml(voucher.reference)}">
           <span class="voucher-list-symbol" aria-hidden="true">◇</span>
           <span class="voucher-list-main">
@@ -3153,7 +3153,7 @@
           <div><strong>QR-Code</strong><small>Öffnet diesen Gutschein auf einem zweiten Gerät.</small></div>
         </div>
         <div class="voucher-sale-result-meta"><span>Status</span><strong class="voucher-status is-active">Aktiv</strong></div>
-        <div class="voucher-sale-result-meta"><span>Verkaufsbeleg</span><strong>${escapeHtml(saleReceipt?.number || "Demo-Bezug fehlt")}</strong></div>
+        <div class="voucher-sale-result-meta"><span>Verkaufsbeleg</span><strong>${escapeHtml(saleReceipt?.number || "Belegbezug fehlt")}</strong></div>
         ${voucher.customer ? `<div class="voucher-sale-result-meta"><span>Kunde</span><strong>${escapeHtml(voucher.customer.name)}</strong></div>` : ""}
         ${voucher.displayName ? `<div class="voucher-sale-result-meta"><span>Name auf Gutschein</span><strong>${escapeHtml(voucher.displayName)}</strong></div>` : ""}
       </section>
@@ -4270,15 +4270,22 @@
   }
 
   function historicalDemoRepairCanonicalRecords() {
-    if (!defaultReceiptsRecord || !defaultVouchersRecord) {
+    const allowedCases = persistence?.historicalDemoVoucherReceiptRepairConstants?.cases || [];
+    const receiptIds = new Set(allowedCases.map(entry => entry.receiptId));
+    const voucherReferences = new Set(allowedCases.map(entry => entry.voucherReference));
+    const receipts = (Array.isArray(data.historicalDemoRepairReceipts) ? data.historicalDemoRepairReceipts : [])
+      .filter(receipt => receiptIds.has(receipt?.id));
+    const vouchers = (Array.isArray(data.historicalDemoRepairVouchers) ? data.historicalDemoRepairVouchers : [])
+      .filter(voucher => voucherReferences.has(voucher?.reference));
+    if (allowedCases.length !== 4 || receipts.length !== 4 || vouchers.length !== 4) {
       throw Object.assign(new Error("Die kanonischen historischen Testdaten wurden nicht geladen."), {
         code: "HISTORICAL_DEMO_REPAIR_CANONICAL_INPUT_INCOMPLETE",
         userMessage: "Die historischen Testdaten können derzeit nicht eindeutig geprüft werden. Es wurden keine Daten verändert."
       });
     }
     return {
-      receipts: defaultReceiptsRecord,
-      vouchers: defaultVouchersRecord
+      receipts: persistence.snapshotReceipts({ receipts }, persistence.tenantId),
+      vouchers: persistence.snapshotVouchers({ vouchers }, persistence.tenantId)
     };
   }
 
@@ -6529,7 +6536,7 @@
     if (action === "catalog-reset") {
       openConfirmDialog({
         title: "Gespeicherten Katalog zurücksetzen?",
-        text: "Kategorien, Leistungen, Produkte und Vorlagenimportstatus werden auf sichere Standarddaten zurückgesetzt. Einstellungen, Kunden, Belege und Gutscheine bleiben unverändert.",
+        text: "Kategorien, Leistungen, Produkte und Vorlagenimportstatus werden auf einen leeren Standardbestand zurückgesetzt. Einstellungen, Kunden, Belege und Gutscheine bleiben unverändert.",
         confirmLabel: "Katalog zurücksetzen",
         action: "reset-saved-catalog"
       });
@@ -6538,7 +6545,7 @@
     if (action === "customers-reset") {
       openConfirmDialog({
         title: "Gespeicherte Kunden zurücksetzen?",
-        text: "Kundenstammdaten werden auf sichere Demodaten zurückgesetzt. Einstellungen, Katalog, Belege und Gutscheine bleiben unverändert.",
+        text: "Kundenstammdaten werden auf einen leeren Standardbestand zurückgesetzt. Einstellungen, Katalog, Belege und Gutscheine bleiben unverändert.",
         confirmLabel: "Kunden zurücksetzen",
         action: "reset-saved-customers"
       });
@@ -6556,7 +6563,7 @@
     if (action === "vouchers-reset") {
       openConfirmDialog({
         title: "Gespeicherte Gutscheine zurücksetzen?",
-        text: "Nur der lokale Voucher-Store dieses Mandanten wird gelöscht. Einstellungen, Nummernstand, Katalog, Kunden und Belege bleiben unverändert; sichere Demo-Gutscheine werden wieder angezeigt.",
+        text: "Nur der lokale Voucher-Store dieses Mandanten wird gelöscht. Einstellungen, Nummernstand, Katalog, Kunden und Belege bleiben unverändert; der Gutscheinbestand ist danach leer.",
         confirmLabel: "Gutscheine zurücksetzen",
         action: "reset-saved-vouchers"
       });
@@ -7462,7 +7469,7 @@
         state.voucherSearch = "";
         state.vouchersReadyForWrites = true;
         closeDiscardDialog();
-        state.settingsStorageNotice = "Gespeicherte Gutscheine wurden zurückgesetzt. Sichere Demo-Gutscheine sind wieder aktiv; alle anderen Stores blieben unverändert.";
+        state.settingsStorageNotice = "Gespeicherte Gutscheine wurden zurückgesetzt. Der Gutscheinbestand ist jetzt leer; alle anderen Stores blieben unverändert.";
         state.settingsStorageNoticeIsError = false;
         renderSettings();
       } catch (error) {
@@ -7497,7 +7504,7 @@
         state.receiptsReadyForWrites = true;
         refreshSettingsDerivedState();
         closeDiscardDialog();
-        state.settingsStorageNotice = "Gespeicherte Belege wurden zurückgesetzt. Die gekennzeichneten Demodaten sind wieder aktiv; der Nummernstand blieb unverändert.";
+        state.settingsStorageNotice = "Gespeicherte Belege wurden zurückgesetzt. Der Belegbestand ist jetzt leer; der Nummernstand blieb unverändert.";
         state.settingsStorageNoticeIsError = false;
         renderSettings();
       } catch (error) {
@@ -7535,7 +7542,7 @@
         state.customerNotice = "";
         state.customerNoticeIsError = false;
         closeDiscardDialog();
-        state.settingsStorageNotice = "Die gespeicherten Kundendaten wurden zurückgesetzt. Sichere Demodaten sind jetzt aktiv.";
+        state.settingsStorageNotice = "Die gespeicherten Kundendaten wurden zurückgesetzt. Der Kundenbestand ist jetzt leer.";
         state.settingsStorageNoticeIsError = false;
         renderSettings();
       } catch (error) {
@@ -7568,7 +7575,7 @@
         state.catalogEditingCategoryId = null;
         state.catalogSettingsNotice = "";
         closeDiscardDialog();
-        state.settingsStorageNotice = "Der gespeicherte Katalog wurde zurückgesetzt. Sichere Standarddaten sind jetzt aktiv.";
+        state.settingsStorageNotice = "Der gespeicherte Katalog wurde zurückgesetzt. Der Katalogbestand ist jetzt leer.";
         state.settingsStorageNoticeIsError = false;
         renderSettings();
       } catch (error) {
@@ -7819,7 +7826,7 @@
     await loadCustomersForStart();
   } catch (error) {
     logPersistenceError("Kundendaten laden fehlgeschlagen", error);
-    const message = persistenceErrorMessage(error, "Die lokalen Kundendaten konnten nicht geladen werden. FRECKA verwendet sichere Demodaten.");
+    const message = persistenceErrorMessage(error, "Die lokalen Kundendaten konnten nicht geladen werden. FRECKA verwendet einen leeren Standardbestand.");
     state.settingsStorageNotice = state.settingsStorageNotice ? `${state.settingsStorageNotice} ${message}` : message;
     state.settingsStorageNoticeIsError = true;
   }

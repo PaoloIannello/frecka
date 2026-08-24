@@ -2,6 +2,8 @@
 
 Browserbasierte FRECKA-PWA 0.11.0 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der Minor-Kandidat bündelt USER-001/002, LICENSE-001/002, SETTINGS-001/002, UX-011, UPDATE-002, BACKUP-003 und TSE-002. Die Release-Vorbereitung selbst ergänzt keine neue Fachlogik.
 
+Ein vollständig neuer Mandant startet ohne Kunden, Katalogpositionen, Belege, offene Zahlungen, Korrekturen, Gutscheine, Umsätze oder Logoassets. Neutrale technische Defaults, optionale Vorlagen und die ausschließlich für PERSISTENCE-010 erlaubte historische Vierer-Reparaturquelle sind strikt getrennt. Die verbindliche Erststartinventur und die 15-Punkte-Übergabecheckliste stehen in [`docs/beta-handoff.md`](docs/beta-handoff.md).
+
 UX-011 / UPDATE-002 / BACKUP-003 ergänzt darauf eine reale Seite **Einstellungen → Update**, bereinigt veraltete „Geplant“-Kennzeichnungen und erinnert nach sieben Tagen ohne bestätigte Sicherungsdatei nicht blockierend an ein neues lokales Backup. Die manuelle Suche verwendet den vorhandenen Updatecontroller; die Erinnerung bleibt im bestehenden Settings-Store und wird durch Restore nicht fälschlich zurückgesetzt.
 
 ## Neu in TSE-002

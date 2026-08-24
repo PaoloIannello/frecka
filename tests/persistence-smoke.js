@@ -231,6 +231,12 @@
     return api.snapshotSettings(runtimeFixture(), setupStatus, tenantId);
   }
 
+  function freshRuntimeFixture(tenantId = "local-default") {
+    const runtime = clone(globalThis.PROTOTYPE_DATA);
+    runtime.users.forEach(user => { user.tenantId = tenantId; });
+    return runtime;
+  }
+
   function catalogRuntimeFixture() {
     return {
       businessAreas: runtimeFixture().businessAreas,
@@ -441,8 +447,21 @@
     return snapshot;
   }
 
-  function historicalDemoRepairCanonicalRecords(tenantId) {
+  function historicalDemoRepairSeed() {
     const seed = clone(globalThis.PROTOTYPE_DATA);
+    const cases = api.historicalDemoVoucherReceiptRepairConstants?.cases || [];
+    const receiptNumbers = new Set(cases.map(entry => entry.receiptNumber));
+    const voucherReferences = new Set(cases.map(entry => entry.voucherReference));
+    seed.receipts = (seed.historicalDemoRepairReceipts || []).filter(receipt => receiptNumbers.has(receipt.number));
+    seed.vouchers = (seed.historicalDemoRepairVouchers || []).filter(voucher => voucherReferences.has(voucher.reference));
+    assertEqual(cases.length, 4, "Historische Reparatur-Allowlist ist nicht exakt begrenzt");
+    assertEqual(seed.receipts.length, 4, "Historische Reparaturquelle enthält nicht exakt vier Belege");
+    assertEqual(seed.vouchers.length, 4, "Historische Reparaturquelle enthält nicht exakt vier Gutscheine");
+    return seed;
+  }
+
+  function historicalDemoRepairCanonicalRecords(tenantId) {
+    const seed = historicalDemoRepairSeed();
     return {
       receipts: api.snapshotReceipts(seed, tenantId),
       vouchers: api.snapshotVouchers(seed, tenantId)
@@ -450,8 +469,13 @@
   }
 
   function historicalDemoRepairSnapshotFixture(tenantId, missingNumbers = []) {
-    const seed = clone(globalThis.PROTOTYPE_DATA);
+    const seed = historicalDemoRepairSeed();
     seed.users.forEach(user => { user.tenantId = tenantId; });
+    // Die Reparaturfixture bildet ausschließlich den bekannten historischen
+    // Beta-Bestand ab. Der produktive Erststart bleibt bei aktuellem Jahr/1.
+    seed.company.owner = "Angel Luzolo";
+    seed.receiptSettings.yearPrefix = "2026";
+    seed.receiptSettings.nextNumber = 132;
     const settings = api.snapshotSettings(seed, "completed", tenantId);
     const catalog = api.snapshotCatalog(seed, tenantId);
     const customers = api.snapshotCustomers(seed, tenantId);
@@ -2018,6 +2042,162 @@
         }
       },
       {
+        name: "Produktiver Erststart enthält ausschließlich neutrale technische Defaults und keine Geschäftsdaten",
+        run: async () => {
+          const runtime = freshRuntimeFixture("test-fresh-defaults");
+          assertEqual(runtime.businessAreas.length, 1, "Erststart benötigt genau einen neutralen Geschäftsbereich");
+          assertEqual(runtime.businessAreas[0].id, "general", "Erststart verwendet keinen neutralen Geschäftsbereich");
+          assertEqual(runtime.serviceLocations.length, 1, "Erststart benötigt genau einen neutralen Leistungsort");
+          assertEqual(runtime.categories.length, 0, "Erststart enthält Kategorien");
+          assertEqual(Object.values(runtime.catalog).flat().length, 0, "Erststart enthält Leistungen oder Produkte");
+          assertEqual(runtime.customers.length, 0, "Erststart enthält Kunden");
+          assertEqual(runtime.receipts.length, 0, "Erststart enthält Belege, Stornos oder Gutschriften");
+          assertEqual(runtime.vouchers.length, 0, "Erststart enthält Gutscheine");
+          assertEqual(runtime.logoAssets.length, 0, "Erststart enthält Logoassets");
+          assertEqual(runtime.company.name, "", "Erststart enthält eine Geschäftsbezeichnung");
+          assertEqual(runtime.company.owner, "", "Erststart enthält eine Unternehmerangabe");
+          assertEqual(runtime.company.contactPerson, "", "Erststart enthält einen Ansprechpartner");
+          assertEqual(runtime.company.logo, null, "Erststart enthält ein Unternehmenslogo");
+          assertEqual(runtime.receiptSettings.nextNumber, 1, "Erststart beginnt nicht mit der ersten Belegnummer");
+          assertEqual(runtime.receiptSettings.yearPrefix, String(new Date().getFullYear()), "Erststart verwendet nicht das aktuelle Belegjahr");
+          assertEqual(runtime.taxSettings.status, "undecided", "Steuerstatus wurde ohne Nutzerentscheidung vorbelegt");
+          assertDeepEqual(runtime.paymentChoices.filter(choice => choice.active).map(choice => choice.id), ["cash", "ec", "voucher"], "Produktive Standard-Zahlungsarten sind inkonsistent");
+          assertEqual(runtime.tseSettings.setupStatus, undefined, "Erststart täuscht eine eingerichtete TSE vor");
+          assertEqual(runtime.historicalDemoRepairReceipts.length, 4, "Historische Reparaturquelle ist nicht exakt begrenzt");
+          assertEqual(runtime.historicalDemoRepairVouchers.length, 4, "Historische Gutschein-Reparaturquelle ist nicht exakt begrenzt");
+        }
+      },
+      {
+        name: "Produktiver Erststart projiziert leere Fachstores ohne historische Reparaturdaten",
+        run: async () => {
+          const tenantId = "test-fresh-projection";
+          const runtime = freshRuntimeFixture(tenantId);
+          const settings = api.snapshotSettings(runtime, "not-started", tenantId);
+          const catalog = api.snapshotCatalog(runtime, tenantId);
+          const customers = api.snapshotCustomers(runtime, tenantId);
+          const receipts = api.snapshotReceipts(runtime, tenantId);
+          const vouchers = api.snapshotVouchers(runtime, tenantId);
+          assertEqual(settings.setup.status, "not-started", "Ersteinrichtung wurde ohne Nutzeraktion abgeschlossen");
+          assertEqual(settings.users.length, 1, "Technischer Erststartbenutzer fehlt");
+          assertEqual(settings.users[0].tenantId, tenantId, "Erststartbenutzer gehört zum falschen Mandanten");
+          assertEqual(settings.license.tenantId, tenantId, "Lokale Lizenzgrundlage gehört zum falschen Mandanten");
+          assertEqual(settings.tseSettings.enabled, false, "TSE ist beim Erststart aktiv");
+          assertEqual(settings.tseSettings.setupStatus, "not-configured", "TSE ist beim Erststart als eingerichtet markiert");
+          assertEqual(settings.logoAssets.length, 0, "Settings-Snapshot enthält Logoassets");
+          assertEqual(catalog.categories.length, 0, "Katalog-Snapshot enthält Kategorien");
+          assertEqual(catalog.items.length, 0, "Katalog-Snapshot enthält Positionen");
+          assertEqual(customers.customers.length, 0, "Kunden-Snapshot enthält Datensätze");
+          assertEqual(receipts.receipts.length, 0, "Beleg-Snapshot enthält Datensätze");
+          assertEqual(vouchers.vouchers.length, 0, "Gutschein-Snapshot enthält Datensätze");
+        }
+      },
+      {
+        name: "Erste Beleg-, Storno-, Gutschrift- und Gutscheinverkaufsnummer starten kollisionsfrei",
+        run: async () => {
+          const year = String(new Date().getFullYear());
+          const receiptClient = context.makeClient("fresh-number-receipt");
+          const receiptRuntime = freshRuntimeFixture(receiptClient.tenantId);
+          const receiptSettings = api.snapshotSettings(receiptRuntime, "completed", receiptClient.tenantId);
+          const emptyReceipts = api.snapshotReceipts(receiptRuntime, receiptClient.tenantId);
+          const normal = await receiptClient.commitReceipt(receiptDraftFixture("fresh-receipt", {
+            businessAreaId: "general",
+            businessAreaSnapshot: { id: "general", label: "Geschäftsbereich", visibleName: "" },
+            serviceLocationId: "location-default",
+            serviceLocationSnapshot: { id: "location-default", name: "Leistungsort", street: "", zip: "", city: "" },
+            companySnapshot: { name: "", owner: "", street: "", zip: "", city: "" },
+            customerId: null,
+            customerSnapshot: null
+          }), receiptSettings, emptyReceipts);
+          assertEqual(normal.receipt.number, `${year}-000001`, "Erster normaler Beleg erhielt nicht Nummer 000001");
+          assertEqual(normal.settingsRecord.receiptSettings.nextNumber, 2, "Nummernstand wurde nach erstem Beleg nicht fortgeschrieben");
+
+          const cancellation = await receiptClient.commitReceiptCorrection(normal.receipt.number, {
+            id: "fresh-cancellation",
+            type: "cancellation",
+            total: -39,
+            items: normal.receipt.items.map(item => ({ ...item, unitPrice: -39, total: -39 })),
+            completedAt: new Date().toISOString(),
+            sourceActivityDate: "14.08.2026 · 12:00",
+            activity: []
+          }, normal.receiptsRecord);
+          assertEqual(cancellation.receipt.number, `ST-${year}-000101`, "Erstes Storno erhielt nicht Nummer 000101");
+
+          const creditClient = context.makeClient("fresh-number-credit");
+          const creditRuntime = freshRuntimeFixture(creditClient.tenantId);
+          const creditSettings = api.snapshotSettings(creditRuntime, "completed", creditClient.tenantId);
+          const creditSource = await creditClient.commitReceipt(receiptDraftFixture("fresh-credit-source", {
+            businessAreaId: "general",
+            customerId: null,
+            customerSnapshot: null
+          }), creditSettings, api.snapshotReceipts(creditRuntime, creditClient.tenantId));
+          const credit = await creditClient.commitReceiptCorrection(creditSource.receipt.number, {
+            id: "fresh-credit",
+            type: "credit",
+            total: -10,
+            items: [{ title: "Gutschrift", quantity: 1, unitPrice: -10, total: -10 }],
+            completedAt: new Date().toISOString(),
+            sourceActivityDate: "14.08.2026 · 12:05",
+            isFull: false
+          }, creditSource.receiptsRecord);
+          assertEqual(credit.receipt.number, `GS-${year}-000101`, "Erste Gutschrift erhielt nicht Nummer 000101");
+
+          const voucherClient = context.makeClient("fresh-number-voucher");
+          const voucherRuntime = freshRuntimeFixture(voucherClient.tenantId);
+          const voucherSettings = api.snapshotSettings(voucherRuntime, "completed", voucherClient.tenantId);
+          const voucherRecord = api.snapshotVouchers(voucherRuntime, voucherClient.tenantId);
+          const voucher = voucherDraftFixture("fresh-voucher", {
+            reference: "vch_fresh_start",
+            code: "FRKA-FRESH-001",
+            customer: null,
+            customerId: null,
+            customerSnapshot: null
+          });
+          const voucherReceipt = voucherSaleReceiptFixture(voucher);
+          voucherReceipt.businessAreaId = "general";
+          voucherReceipt.customerId = null;
+          voucherReceipt.customerSnapshot = null;
+          const voucherSale = await voucherClient.commitVoucherSale(
+            voucherReceipt,
+            voucher,
+            voucherSettings,
+            api.snapshotReceipts(voucherRuntime, voucherClient.tenantId),
+            voucherRecord
+          );
+          assertEqual(voucherSale.receipt.number, `${year}-000001`, "Erster Gutscheinverkaufsbeleg erhielt nicht Nummer 000001");
+          assertEqual(voucherSale.voucher.saleReceipt.number, `${year}-000001`, "Gutschein und Verkaufsbeleg sind nicht identisch nummeriert verknüpft");
+        }
+      },
+      {
+        name: "Bestehende Mandantendaten haben Vorrang vor neutralen Erststartdefaults",
+        run: async () => {
+          const tenantId = "test-existing-tenant-preserved";
+          const runtime = freshRuntimeFixture(tenantId);
+          const defaultsSettings = api.snapshotSettings(runtime, "not-started", tenantId);
+          const defaultsCatalog = api.snapshotCatalog(runtime, tenantId);
+          const defaultsCustomers = api.snapshotCustomers(runtime, tenantId);
+          const defaultsReceipts = api.snapshotReceipts(runtime, tenantId);
+          const defaultsVouchers = api.snapshotVouchers(runtime, tenantId);
+          const existingSettings = recordFixture(tenantId, "completed");
+          const existingCatalog = catalogRecordFixture(tenantId);
+          const existingCustomers = customersRecordFixture(tenantId);
+          const existingReceipts = receiptsRecordFixture(tenantId);
+          const existingVouchers = vouchersRecordFixture(tenantId);
+
+          const settings = api.normalizeSettingsRecord(existingSettings, defaultsSettings, tenantId).record;
+          const catalog = api.normalizeCatalogRecord(existingCatalog, defaultsCatalog, settings.businessAreas, tenantId).record;
+          const customers = api.normalizeCustomersRecord(existingCustomers, defaultsCustomers, tenantId).record;
+          const receipts = api.normalizeReceiptsRecord(existingReceipts, defaultsReceipts, tenantId).record;
+          const vouchers = api.normalizeVouchersRecord(existingVouchers, defaultsVouchers, tenantId).record;
+          assertEqual(settings.company.name, "Teststudio Nord", "Bestehende Unternehmensdaten wurden durch Erststartdefaults ersetzt");
+          assertEqual(settings.receiptSettings.nextNumber, 77, "Bestehender Nummernstand wurde durch Erststartdefaults ersetzt");
+          assertEqual(settings.setup.status, "completed", "Bestehender Einrichtungsstatus wurde zurückgesetzt");
+          assertEqual(catalog.items.length, 2, "Bestehender Katalog wurde geleert");
+          assertEqual(customers.customers.length, 2, "Bestehende Kunden wurden geleert");
+          assertEqual(receipts.receipts.length, 1, "Bestehende Belege wurden geleert");
+          assertEqual(vouchers.vouchers.length, 1, "Bestehende Gutscheine wurden geleert");
+        }
+      },
+      {
         name: "Vollständiger Settings-Roundtrip",
         run: async () => {
           const persistence = context.makeClient("roundtrip");
@@ -3052,9 +3232,9 @@
         }
       },
       {
-        name: "Demo-Gutscheinverkäufe besitzen vier eindeutige kanonische Verkaufsbelege",
+        name: "Historische Reparaturquelle besitzt exakt vier eindeutige kanonische Gutscheinverkaufsbelege",
         run: async () => {
-          const seed = clone(globalThis.PROTOTYPE_DATA);
+          const seed = historicalDemoRepairSeed();
           const receipts = api.snapshotReceipts(seed, "test-demo-invariant");
           const vouchers = api.snapshotVouchers(seed, "test-demo-invariant");
           const result = api.validateVoucherReceiptInvariant(receipts, vouchers);
@@ -3075,8 +3255,8 @@
             assertEqual(receipt.paymentMethod, paymentMethod, `${number} besitzt die falsche Zahlungsart`);
             assertEqual(receipt.customerId, customerId, `${number} besitzt den falschen Kundenbezug`);
           });
-          const sabine = seed.customers.find(customer => customer.id === "c-sabine");
-          assert(!sabine.history.some(entry => entry.number === "2026-000124" && entry.total === 59), "Widersprüchlicher Strähnen-Historieneintrag wurde nicht entfernt");
+          assertEqual(globalThis.PROTOTYPE_DATA.receipts.length, 0, "Reparaturbelege sind im aktiven Erststartbestand sichtbar");
+          assertEqual(globalThis.PROTOTYPE_DATA.vouchers.length, 0, "Reparaturgutscheine sind im aktiven Erststartbestand sichtbar");
         }
       },
       {
@@ -3096,7 +3276,7 @@
               historicalDemoRepairCanonicalRecords(snapshot.tenantId),
               snapshot.tenantId
             );
-            assertEqual(plan.status, "repairable", `Reparierbarer Teilbestand ${index + 1} wurde blockiert`);
+            assertEqual(plan.status, "repairable", `Reparierbarer Teilbestand ${index + 1} wurde blockiert: ${JSON.stringify(plan.findings)}`);
             assertEqual(plan.additions.length, missingNumbers.length, `Teilbestand ${index + 1} enthält falsche Ergänzungsanzahl`);
             assertEqual(plan.invariantFindings.length, missingNumbers.length, `Vorprüfung ${index + 1} brach vor dem letzten fehlenden Beleg ab`);
             assertDeepEqual(snapshot, before, `Read-only-Reparaturplanung ${index + 1} veränderte den Snapshot`);
@@ -3112,7 +3292,7 @@
             historicalDemoRepairCanonicalRecords(snapshot.tenantId),
             snapshot.tenantId
           );
-          assertEqual(plan.status, "no-op", "Konsistenter Demo-Bestand wurde nicht als NO-OP erkannt");
+          assertEqual(plan.status, "no-op", `Konsistenter Demo-Bestand wurde nicht als NO-OP erkannt: ${JSON.stringify(plan.findings)}`);
           assertEqual(plan.additions.length, 0, "NO-OP plant dennoch Ergänzungen");
           assertEqual(plan.receiptSequence.changed, false, "NO-OP verändert die Belegnummernfolge");
           assertEqual(plan.customerHistory.persisted, false, "Nicht persistierte Kundenhistorie wurde als IndexedDB-Datum behandelt");
