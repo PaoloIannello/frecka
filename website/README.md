@@ -4,7 +4,7 @@ Statische offizielle FRECKA-Landingpage und ihre konzeptionelle Grundlage.
 
 ## Status
 
-Die Landingpage ist als statische HTML5-/CSS-/Vanilla-JavaScript-Seite umgesetzt und auf das geplante Beta-Angebot vorbereitet. Markenassets, Produktscreens, 14-Tage-Testphase, Einzellizenz, Pricing-Platzhalter, Beta-Anfrage und FRECKA-spezifische Legal-Seiten sind integriert. Preis, Formular-Backend und Hostingprotokollierung bleiben vor der öffentlichen Aktivierung verpflichtende Freigabepunkte.
+Die Landingpage ist als statische HTML5-/CSS-/Vanilla-JavaScript-Seite umgesetzt und auf das geplante Beta-Angebot vorbereitet. Markenassets, Produktscreens, vollständige 14-Tage-Testphase, das finale Preismodell von einmalig 59 € für FRECKA V1, die Einzellizenz, Beta-Anfrage und FRECKA-spezifische Legal-Seiten sind integriert. Formular-Backend, technische Trial-/Lizenzfreischaltung, Zahlungsabwicklung und Hostingprotokollierung bleiben vor ihrer jeweiligen Aktivierung verpflichtende Freigabepunkte.
 
 ## Dokumente
 
@@ -30,6 +30,8 @@ Die Landingpage ist als statische HTML5-/CSS-/Vanilla-JavaScript-Seite umgesetzt
 - [WEBSITE_009_CONTENT_LAUNCH.md](WEBSITE_009_CONTENT_LAUNCH.md) dokumentiert Content Review, Beta-Positionierung, Legal-Seiten und verbleibende Launch-Blocker.
 - [WEBSITE_010_FINALIZATION.md](WEBSITE_010_FINALIZATION.md) dokumentiert die finale Beta-, Pricing-, Formular-, Legal-, SEO- und Launch-Bewertung.
 - [WEBSITE_011_VISUAL_REVIEW.md](WEBSITE_011_VISUAL_REVIEW.md) dokumentiert die finale Logo- und Datenbereich-Korrektur samt Responsive-Abnahme.
+- [WEBSITE_012_FINAL_POLISH.md](WEBSITE_012_FINAL_POLISH.md) dokumentiert die sichtbare Logo-Skalierung und ihre responsive Nachkorrektur.
+- [WEBSITE_013_POSITIONING_PRICING.md](WEBSITE_013_POSITIONING_PRICING.md) dokumentiert die finale Positionierung, das Einmalpreismodell, die Kostenrechnung und die verbleibenden technischen Launch-Blocker.
 - [legal/impressum.html](legal/impressum.html) enthält die anhand der öffentlichen Betreiberquelle verifizierte Anbieterkennzeichnung nach § 5 DDG.
 - [legal/datenschutz.html](legal/datenschutz.html) beschreibt den aktuellen technischen Datenschutzstand; unbekannte Hosting- und Backenddetails bleiben ausschließlich intern dokumentiert.
 
