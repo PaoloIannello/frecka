@@ -1,8 +1,8 @@
 # FRECKA: Deployment- und Infrastrukturkonzept für Synology Web Station
 
-Stand: 13. August 2026
+Stand: 24. August 2026
 
-Geltungsbereich: freigegebene Beta-Basis `0.10.10-b3456bf`, vorbereiteter Minor-Kandidat `0.11.0` / `TSE-002` und lokaler automatisierter Beta-Release
+Geltungsbereich: freigegebene Beta-Basis `0.11.0-99a1511`, vorbereiteter Patch-Kandidat `0.11.1` / `BETA-HANDOFF-001` und lokaler automatisierter Beta-Release
 
 Der verbindliche Infrastrukturrahmen steht in `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`. Dieses Dokument konkretisiert ausschließlich die statische Laufzeitmenge und ihre spätere Zuordnung zu Synology Web Station.
 
@@ -165,9 +165,11 @@ Der annotierte Release-Tag `v0.9.1` zeigt auf Commit `26dc63fbea434d9fb33a7e88a6
 
 Der annotierte Tag `v0.10.1` zeigt auf Commit `c195a099ef57af79177496f48d217247f2144175`; das daraus erzeugte unveränderliche Artefakt trägt die Release-ID `0.10.1-c195a09`. Der annotierte Tag `v0.10.2` zeigt auf Commit `18f41b5a47b93fee0efc086674e8d7e7007d14d8`; das daraus erzeugte und auf Beta bereitgestellte Artefakt trägt die Release-ID `0.10.2-18f41b5`. Der annotierte Tag `v0.10.3` zeigt auf Commit `3591b0b9f16534ce489b2a246d1c26c105c49477`; das daraus erzeugte und auf Beta bereitgestellte Artefakt trägt die Release-ID `0.10.3-3591b0b`. Der annotierte Tag `v0.10.4` zeigt auf Commit `2d5d3c4a6ae1ab3438bf9940dcc1928c204021fa`; das daraus erzeugte und auf Beta bereitgestellte Artefakt trägt die Release-ID `0.10.4-2d5d3c4`. Der annotierte Tag `v0.10.5` zeigt auf Commit `4a9bd007f6ede1696b41a6b7d29088f2ffab85aa`; das daraus erzeugte unveränderliche Artefakt trägt die Release-ID `0.10.5-4a9bd00`. Der annotierte Tag `v0.10.6` zeigt auf Commit `986a830bc4448e953cccbc46fc4a690f40e87436`; das daraus erzeugte unveränderliche Artefakt trägt die Release-ID `0.10.6-986a830`. Der annotierte Tag `v0.10.7` zeigt auf Commit `7d170cbf987afd11c279e4d29ca9eba7c33ab9e4`; das daraus erzeugte unveränderliche Artefakt trägt die Release-ID `0.10.7-7d170cb`.
 
-Der annotierte Tag `v0.10.8` zeigt auf Commit `6056e64db92eb79666f3f6216546cc8cbc1eb6d8`; das daraus erzeugte und auf Beta bereitgestellte Artefakt trägt die Release-ID `0.10.8-6056e64`. Sein realer iPhone-Test ist wegen des blockierten Updateabschlusses abgelehnt. Der korrigierte annotierte Tag `v0.10.9` zeigt auf Commit `5b180b64ec75ab6f6c2ef53842ead45c6cc32b4a`; das daraus erzeugte unveränderliche und auf Beta geprüfte Artefakt trägt die Release-ID `0.10.9-5b180b6`. Der annotierte Tag `v0.10.10` zeigt auf Commit `b3456bf1b5f4e6fff074e97acbaea994d064daac`; das unveränderliche Artefakt `0.10.10-b3456bf` verwendet Build `SERVICEWORKER-003`, den HTML-Titel `FRECKA – SERVICEWORKER-003`, den Asset-Abfragewert `serviceworker003-1` und den App-Shell-Cache `frecka-app-shell-0.10.10-serviceworker003-1`. Es validierte den lokalen Ein-Befehl-Releaseprozess real und ist die aktuelle freigegebene Beta-Basis.
+Der annotierte Tag `v0.10.8` zeigt auf Commit `6056e64db92eb79666f3f6216546cc8cbc1eb6d8`; das daraus erzeugte und auf Beta bereitgestellte Artefakt trägt die Release-ID `0.10.8-6056e64`. Sein realer iPhone-Test ist wegen des blockierten Updateabschlusses abgelehnt. Der korrigierte annotierte Tag `v0.10.9` zeigt auf Commit `5b180b64ec75ab6f6c2ef53842ead45c6cc32b4a`; das daraus erzeugte unveränderliche und auf Beta geprüfte Artefakt trägt die Release-ID `0.10.9-5b180b6`. Der annotierte Tag `v0.10.10` zeigt auf Commit `b3456bf1b5f4e6fff074e97acbaea994d064daac`; das unveränderliche Artefakt `0.10.10-b3456bf` verwendet Build `SERVICEWORKER-003`, den HTML-Titel `FRECKA – SERVICEWORKER-003`, den Asset-Abfragewert `serviceworker003-1` und den App-Shell-Cache `frecka-app-shell-0.10.10-serviceworker003-1`. Es validierte den lokalen Ein-Befehl-Releaseprozess real und war die unmittelbare freigegebene Beta-Basis vor 0.11.0.
 
-Der noch nicht getaggte Minor-Kandidat `0.11.0` verwendet Build `TSE-002`, den HTML-Titel `FRECKA – TSE-002`, den Asset-Abfragewert `tse002-1` und den App-Shell-Cache `frecka-app-shell-0.11.0-tse002-1`. Er bündelt USER-001/002, LICENSE-001/002, SETTINGS-001/002, UX-011, UPDATE-002, BACKUP-003 und TSE-002. TSE ist nur optional vorbereitet; eine reale Anbieteranbindung oder Fiskalisierung existiert nicht. Es existieren noch kein Tag, keine Release-ID und kein Artefakt für 0.11.0.
+Der annotierte Tag `v0.11.0` zeigt auf Commit `99a15113cfd589258928cad7b824f857c2be24d9`; das daraus erzeugte und real abgenommene Artefakt trägt die Release-ID `0.11.0-99a1511`. Es verwendet Build `TSE-002`, den HTML-Titel `FRECKA – TSE-002`, den Asset-Abfragewert `tse002-1` und den App-Shell-Cache `frecka-app-shell-0.11.0-tse002-1` und ist die aktuelle freigegebene Beta-Basis.
+
+Der noch nicht getaggte Patch-Kandidat `0.11.1` verwendet Build `BETA-HANDOFF-001`, den HTML-Titel `FRECKA – BETA-HANDOFF-001`, den Asset-Abfragewert `betahandoff001-1` und den App-Shell-Cache `frecka-app-shell-0.11.1-betahandoff001-1`. Er ergänzt gegenüber 0.11.0 ausschließlich BRANDING-001, BRANDING-002 und BETA-HANDOFF-001. BACKUP-004 und ONBOARDING-001 sind nicht enthalten. Es existieren noch kein Tag, keine Release-ID und kein Artefakt für 0.11.1.
 
 Ein Updateformat für signierte Kanäle und ein Signaturverfahren sind ausdrücklich noch nicht implementiert. SERVICEWORKER-002 erkennt ausschließlich Änderungen des Service Workers innerhalb derselben bereits aufgerufenen Deployment-Origin.
 
@@ -187,11 +189,15 @@ Bewertung: `0.9.1-26dc63f` ist für den Beta-Betrieb freigegeben und gilt als st
 
 ### 2.10 Beta-Betriebsnachweis 0.10.10
 
-`0.10.10-b3456bf` bündelt RELEASE-AUTOMATION-001/002 und SERVICEWORKER-003. Der Ein-Befehl-Prozess wurde real validiert, die einmalige Legacy-Brücke ist entfernt und das Regressionsgate bleibt offen. Bewertung: Beta-GO und aktuelle stabile Beta-Basis; noch keine Produktivfreigabe für `app.frecka.app`.
+`0.10.10-b3456bf` bündelt RELEASE-AUTOMATION-001/002 und SERVICEWORKER-003. Der Ein-Befehl-Prozess wurde real validiert, die einmalige Legacy-Brücke ist entfernt und das Regressionsgate bleibt offen. Bewertung: Beta-GO und historische unmittelbare Vorgängerbasis von 0.11.0; noch keine Produktivfreigabe für `app.frecka.app`.
 
-### 2.11 Vorbereiteter Minor-Kandidat 0.11.0
+### 2.11 Beta-Betriebsnachweis 0.11.0
 
-0.11.0 bündelt den seit 0.10.10 um Benutzer, lokale Lizenz- und Geräteinformationen, Unternehmens- und Betriebseinstellungen, manuellen Updatebereich, Sicherungserinnerung und optionale TSE-Vorbereitung erweiterten App-Stand. Datenbankschema und Geschäftsdatenformate bleiben unverändert. Vor dem realen In-place-Beta-Test sind eine verschlüsselte Sicherung und die dokumentierte Bestandsprüfung erforderlich; Web-Station-Umschaltung und Geräteabnahme bleiben manuell.
+`0.11.0-99a1511` bündelt den seit 0.10.10 um Benutzer, lokale Lizenz- und Geräteinformationen, Unternehmens- und Betriebseinstellungen, manuellen Updatebereich, Sicherungserinnerung und optionale TSE-Vorbereitung erweiterten App-Stand. Der reale Beta-Test ist abgenommen. Bewertung: Beta-GO und unmittelbare stabile Vorgängerbasis für 0.11.1; noch keine Produktivfreigabe für `app.frecka.app`.
+
+### 2.12 Vorbereiteter Patch-Kandidat 0.11.1
+
+0.11.1 ergänzt ausschließlich lokale Unternehmens-/Geschäftsbereichslogos, das unveränderliche historische Asset-Register und den produktiv leeren Erststart. Vorhandene Mandantendaten behalten Vorrang und werden nicht automatisch zurückgesetzt. Datenbankschema und Geschäftsdatenformate bleiben unverändert. Vor dem realen In-place-Beta-Test sind eine verschlüsselte Sicherung und die dokumentierte Bestandsprüfung erforderlich; Web-Station-Umschaltung und Geräteabnahme bleiben manuell.
 
 ## 3. Abgeleitete Deployment-Prinzipien
 

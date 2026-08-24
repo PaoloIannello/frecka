@@ -1,10 +1,19 @@
-# FRECKA – 0.11.0 / TSE-002
+# FRECKA – 0.11.1 / BETA-HANDOFF-001
 
-Browserbasierte FRECKA-PWA 0.11.0 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der Minor-Kandidat bündelt USER-001/002, LICENSE-001/002, SETTINGS-001/002, UX-011, UPDATE-002, BACKUP-003 und TSE-002. Die Release-Vorbereitung selbst ergänzt keine neue Fachlogik.
+Browserbasierte FRECKA-PWA 0.11.1 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der Patch-Kandidat ergänzt gegenüber der real abgenommenen Beta-Basis 0.11.0 ausschließlich BRANDING-001, BRANDING-002, BETA-HANDOFF-001 und die notwendigen Versions-/Releaseanpassungen. BACKUP-004 und ONBOARDING-001 sind nicht enthalten.
 
 Ein vollständig neuer Mandant startet ohne Kunden, Katalogpositionen, Belege, offene Zahlungen, Korrekturen, Gutscheine, Umsätze oder Logoassets. Neutrale technische Defaults, optionale Vorlagen und die ausschließlich für PERSISTENCE-010 erlaubte historische Vierer-Reparaturquelle sind strikt getrennt. Die verbindliche Erststartinventur und die 15-Punkte-Übergabecheckliste stehen in [`docs/beta-handoff.md`](docs/beta-handoff.md).
 
 UX-011 / UPDATE-002 / BACKUP-003 ergänzt darauf eine reale Seite **Einstellungen → Update**, bereinigt veraltete „Geplant“-Kennzeichnungen und erinnert nach sieben Tagen ohne bestätigte Sicherungsdatei nicht blockierend an ein neues lokales Backup. Die manuelle Suche verwendet den vorhandenen Updatecontroller; die Erinnerung bleibt im bestehenden Settings-Store und wird durch Restore nicht fälschlich zurückgesetzt.
+
+## Neu in 0.11.1
+
+- produktiver Erststart ohne Katalogpositionen, Kunden, Belege, offene Zahlungen, Korrekturen, Gutscheine, Umsätze oder Logoassets; neutrale technische Defaults bleiben erhalten
+- unveränderter Bestandsvorrang: vorhandene Mandanten- und Beta-Daten werden beim Update weder automatisch gelöscht, repariert noch auf Erststartwerte zurückgesetzt
+- lokale PNG-/JPEG-Logos bis 1 MB für Unternehmen und Geschäftsbereiche mit der Priorität Bereichslogo, Unternehmenslogo, Textfallback
+- versioniertes, unveränderliches Logo-Asset-Register; historische interne Ansichten und PDFs lösen weiterhin exakt die beim Geschäftsvorgang referenzierte Bildversion auf
+- Public Viewer und QR-Payload bleiben frei von Bildrohdaten; TSE bleibt optional vorbereitet und ohne Aktivierung, Anbieterkommunikation oder Fiskalisierung
+- verbindliches Erststartinventar und manuelle Beta-Übergabecheckliste in [`docs/beta-handoff.md`](docs/beta-handoff.md)
 
 ## Neu in TSE-002
 
@@ -57,7 +66,7 @@ UX-011 / UPDATE-002 / BACKUP-003 ergänzt darauf eine reale Seite **Einstellunge
 - **Einstellungen → Update** zeigt Version, Build und den letzten manuellen Prüfstatus; „Nach Updates suchen“ verwendet dieselbe Registration, Updatekarte, Aktivierungsnachricht und Einmal-Reload-Sperre
 - offene Belegentwürfe und laufende Schreibvorgänge blockieren die bewusste Aktivierung weiterhin; Offline-App-Shell, IndexedDB und sämtliche Geschäftsdaten bleiben unberührt
 
-Der reale iPhone/Home-Screen-PWA-Test von `0.10.8-6056e64` am 11. August 2026 bestätigte Updateerkennung und Offline-Kaltstart, blieb nach „Jetzt aktualisieren“ jedoch bei „Wird aktualisiert …“ ohne sichtbaren Reload stehen. Das korrigierte Release `0.10.9-5b180b6` bestand anschließend den realen Updatepfad, Offline-Kaltstart, Offline-Belegerstellung und den fortbestehenden lokalen Datenbestand nach Rückkehr ins Netz. `0.10.10-b3456bf` entfernte danach die bestätigte Legacy-Brücke und validierte den Ein-Befehl-Releaseprozess real. 0.10.10 ist die aktuelle freigegebene Beta-Basis, jedoch noch keine Produktivfreigabe für `app.frecka.app`.
+Der reale iPhone/Home-Screen-PWA-Test von `0.10.8-6056e64` am 11. August 2026 bestätigte Updateerkennung und Offline-Kaltstart, blieb nach „Jetzt aktualisieren“ jedoch bei „Wird aktualisiert …“ ohne sichtbaren Reload stehen. Das korrigierte Release `0.10.9-5b180b6` bestand anschließend den realen Updatepfad, Offline-Kaltstart, Offline-Belegerstellung und den fortbestehenden lokalen Datenbestand nach Rückkehr ins Netz. `0.10.10-b3456bf` entfernte danach die bestätigte Legacy-Brücke und validierte den Ein-Befehl-Releaseprozess real. Das nachfolgende `0.11.0-99a1511` ist die aktuelle real abgenommene Beta-Basis, jedoch noch keine Produktivfreigabe für `app.frecka.app`.
 
 ## Grundlage aus PERSISTENCE-010
 
