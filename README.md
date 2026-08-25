@@ -1,6 +1,6 @@
-# FRECKA – 0.11.3 / BACKUP-005
+# FRECKA – 0.11.4 / BACKUP-006
 
-Browserbasierte FRECKA-PWA 0.11.3 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der vorbereitete Patch-Kandidat basiert auf dem veröffentlichten, aber wegen des realen iPhone-Backupfehlers gesperrten Release 0.11.2 und ergänzt ausschließlich BACKUP-005 sowie notwendige Versions-, Cache-, Test- und Releaseanpassungen.
+Browserbasierte FRECKA-PWA 0.11.4 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der vorbereitete Patch-Kandidat basiert auf dem veröffentlichten, aber nach dem realen iPhone-Backupfehler gesperrten Release 0.11.3 und ergänzt ausschließlich BACKUP-006 sowie notwendige Versions-, Cache-, Test- und Releaseanpassungen.
 
 Der reale iPhone-Backup-Test von 0.11.3 ist weiterhin NO-GO. BACKUP-005 übernahm historische BRANDING-001-Logos korrekt, legte das nachträglich ergänzte BACKUP-004-Feld `interval` beim Settings-Write jedoch in einer anderen Eigenschaftsreihenfolge ab. Die Snapshotnormalisierung verglich den Reminder reihenfolgeabhängig mit `JSON.stringify` und meldete deshalb bei identischen Werten `BACKUP_REMINDER_REPAIRED`. BACKUP-006 verwendet den vorhandenen kanonischen Wertvergleich, persistiert ausschließlich vollständig nachvalidierte additive historische Settingsnormalisierungen und begrenzt die teilbare Diagnose auf Fehlercodes, Kategorien, Store und Datentyp. Ein neuer realer iPhone-Backup- und Restore-Test bleibt zwingendes Freigabegate.
 
@@ -9,6 +9,15 @@ Ein vollständig neuer Mandant startet ohne Kunden, Katalogpositionen, Belege, o
 UX-011 / UPDATE-002 / BACKUP-003/004 ergänzt darauf eine reale Seite **Einstellungen → Update**, bereinigt veraltete „Geplant“-Kennzeichnungen und erinnert nach einem wählbaren Intervall ohne bestätigte Sicherungsdatei nicht blockierend an ein neues lokales Backup. Zur Auswahl stehen 48 Stunden, 5 Tage und wöchentlich; wöchentlich ist der abwärtskompatible Standard. Die manuelle Suche verwendet den vorhandenen Updatecontroller; Restore übernimmt die Intervallwahl, gilt aber niemals als neue Sicherung und bewahrt lokale Frist- und Snooze-Zeitpunkte.
 
 ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzeit aufrufbare Installationshilfe für iPhone/iPad und Android. Sie priorisiert die passende Anleitung ausschließlich anhand lokaler Browsermerkmale, zeigt im Standalone-Modus den bereits installierten Zustand und bleibt vollständig offline verfügbar. Beide Plattformen können immer manuell gewählt werden. Der kompakte Ablauf und die abweichenden Android-Bezeichnungen sind in [`docs/installation.md`](docs/installation.md) dokumentiert.
+
+## Neu in 0.11.4
+
+- semantische statt eigenschaftsreihenfolgeabhängige Validierung des BACKUP-004-Reminders
+- ausschließlich deterministische, additive und vollständig nachvalidierte Normalisierung historischer Settings; mehrdeutige Zustände bleiben `fail closed`
+- unveränderte aktuelle Settings sowie unveränderte Belege, Kunden, Gutscheine, Historien, Beträge, Nummern und Referenzen
+- datenschutzgehärtete lokale Integritätsdiagnose ohne Geschäftsdaten, IDs, Bilddaten oder Zugangsdaten
+- Backupformat 1, IndexedDB-Schema 5 sowie AES-GCM/PBKDF2 bleiben unverändert
+- realer iPhone-Backup- und Restore-Test auf dem bestehenden historischen Datenbestand bleibt zwingendes Freigabegate
 
 ## Neu in 0.11.3
 
@@ -121,12 +130,12 @@ Die Release-Notiz `docs/releases/<version>.md` muss vor dem Commit mindestens di
 
 - unter **Einstellungen → Sicherung & Wiederherstellung → Lokale Datenintegrität prüfen** steht eine ausdrücklich gestartete Read-only-Diagnose bereit
 - Diagnose und Backup/Export lesen denselben zentralen Tenant-Snapshot; die fachliche Entscheidung trifft weiterhin ausschließlich `validateTenantSnapshot()` einschließlich der Gutschein-/Beleg-Invariante
-- die Ausgabe ist auf technischen Prüfcode, konkrete Invariante, Voucher-ID/-Referenz/-Code, Verkaufsbelegreferenzen, Receipt-ID/-Nummer/-Art/-Gegenreferenz sowie notwendige Zeit- und Historienreferenzen begrenzt
-- Kunden-, Unternehmens-, Positions-, Betrags- und Kennwortdaten werden nicht in die Diagnose übernommen
+- BACKUP-006 begrenzt die teilbare Diagnose auf sichere technische Fehlercodes, Kategorien sowie gegebenenfalls Store, Datentyp und Invariante
+- Namen, Beträge, IDs, Beleg- und Gutscheinnummern, Steuer-, Bild- und Zugangsdaten werden nicht in die Diagnose übernommen
 - die Diagnose verändert keine IndexedDB-Daten, repariert oder migriert nichts und besitzt keinen Netzwerkpfad
 - der Bericht bleibt lokal sichtbar und kann erst nach bewusster Nutzeraktion über den zentralen Share-/Speichern-Pfad als Textdatei ausgegeben werden
-- weil Belege und Gutscheine keine erzeugende App-Version speichern, behauptet die Diagnose keine unbelegbare automatische Zuordnung „vor/nach 0.10.3“, sondern zeigt die betroffenen Zeitstempel
-- 152 bestandene native Browser-Smoke-Tests einschließlich konsistentem Bestand, fehlendem/falsch referenziertem/verwaistem Gutscheinverkaufsbeleg, Duplikaten und nachweislich unveränderter IndexedDB
+- weil Belege und Gutscheine keine erzeugende App-Version speichern, behauptet die Diagnose keine unbelegbare automatische Zuordnung „vor/nach 0.10.3“
+- die aktuelle Regression umfasst 198 bestandene native Browser-Smoke-Tests einschließlich konsistentem Bestand, historischer Settingsprofile, fehlendem/falsch referenziertem/verwaistem Gutscheinverkaufsbeleg, Duplikaten und nachweislich unveränderter IndexedDB
 
 Für den realen iPhone-Test genau einmal **Diagnose erstellen** antippen, den lokal angezeigten Bericht prüfen und anschließend **Diagnose teilen oder speichern** wählen. Es findet vorher keine Datei- oder Serverausgabe statt.
 

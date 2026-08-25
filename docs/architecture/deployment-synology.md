@@ -2,7 +2,7 @@
 
 Stand: 25. August 2026
 
-Geltungsbereich: freigegebene Beta-Basis `0.11.1-3a4ff57`, gesperrtes Release `0.11.2-a959ec6`, vorbereiteter Patch-Kandidat `0.11.3` / `BACKUP-005` und lokaler automatisierter Beta-Release
+Geltungsbereich: freigegebene Beta-Basis `0.11.1-3a4ff57`, gesperrte Releases `0.11.2-a959ec6` und `0.11.3-a8380a0`, vorbereiteter Patch-Kandidat `0.11.4` / `BACKUP-006` und lokaler automatisierter Beta-Release
 
 Der verbindliche Infrastrukturrahmen steht in `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`. Dieses Dokument konkretisiert ausschließlich die statische Laufzeitmenge und ihre spätere Zuordnung zu Synology Web Station.
 
@@ -173,7 +173,9 @@ Der annotierte Tag `v0.11.1` zeigt auf Commit `3a4ff5768afc1aebfbc75ca700c1854d3
 
 Der annotierte Tag `v0.11.2` zeigt auf Commit `a959ec67791cbc520cf97fd832cc86a7817413ad`; das daraus erzeugte und auf Beta bereitgestellte Artefakt trägt die Release-ID `0.11.2-a959ec6`. Es verwendet Build `ONBOARDING-001`, den HTML-Titel `FRECKA – ONBOARDING-001`, den Asset-Abfragewert `onboarding001-1` und den App-Shell-Cache `frecka-app-shell-0.11.2-onboarding001-1`. Der reale iPhone-Backup-Test ist fehlgeschlagen; 0.11.2 bleibt deshalb gesperrt.
 
-Der noch nicht getaggte Patch-Kandidat `0.11.3` verwendet Build `BACKUP-005`, den HTML-Titel `FRECKA – BACKUP-005`, den Asset-Abfragewert `backup005-1` und den App-Shell-Cache `frecka-app-shell-0.11.3-backup005-1`. Er ergänzt gegenüber 0.11.2 ausschließlich BACKUP-005 sowie notwendige Versions-, Cache-, Test- und Releaseanpassungen. Es existieren noch kein Tag, keine Release-ID und kein Artefakt für 0.11.3.
+Der annotierte Tag `v0.11.3` zeigt auf Commit `a8380a05a662b765c99f89216faf32912cc9fb6e`; das daraus erzeugte und auf Beta bereitgestellte Artefakt trägt die Release-ID `0.11.3-a8380a0`. Es verwendet Build `BACKUP-005`, den HTML-Titel `FRECKA – BACKUP-005`, den Asset-Abfragewert `backup005-1` und den App-Shell-Cache `frecka-app-shell-0.11.3-backup005-1`. Der reale iPhone-Backup-Test blieb wegen einer fälschlich als Inkonsistenz gewerteten Reminder-Eigenschaftsreihenfolge gesperrt; 0.11.3 ist deshalb NO-GO.
+
+Der noch nicht getaggte Patch-Kandidat `0.11.4` verwendet Build `BACKUP-006`, den HTML-Titel `FRECKA – BACKUP-006`, den Asset-Abfragewert `backup006-1` und den App-Shell-Cache `frecka-app-shell-0.11.4-backup006-1`. Er ergänzt gegenüber 0.11.3 ausschließlich BACKUP-006 sowie notwendige Versions-, Cache-, Test- und Releaseanpassungen. Es existieren noch kein Tag, keine Release-ID und kein Artefakt für 0.11.4.
 
 Ein Updateformat für signierte Kanäle und ein Signaturverfahren sind ausdrücklich noch nicht implementiert. SERVICEWORKER-002 erkennt ausschließlich Änderungen des Service Workers innerhalb derselben bereits aufgerufenen Deployment-Origin.
 
@@ -207,9 +209,13 @@ Bewertung: `0.9.1-26dc63f` ist für den Beta-Betrieb freigegeben und gilt als st
 
 `0.11.2-a959ec6` ergänzt ausschließlich wählbare lokale Sicherungsintervalle samt Speicherhilfe sowie die offline verfügbare Installationshilfe für iPhone/iPad und Android. Der reale iPhone-Test stoppte die verschlüsselte Sicherung eines vorhandenen BRANDING-001-Bestands mit einer technischen Fehlermeldung. Ursache war die nur im Arbeitsspeicher, nicht aber dauerhaft in IndexedDB übernommene Normalisierung historischer Inline-Logos. Bewertung: NO-GO; keine Freigabe als stabile Beta-Basis.
 
-### 2.14 Vorbereiteter Patch-Kandidat 0.11.3
+### 2.14 Beta-Betriebsbefund 0.11.3
 
-0.11.3 ergänzt ausschließlich BACKUP-005. Historische BRANDING-001-Inline-Logos werden beim Start verlustfrei in das bestehende BRANDING-002-Asset-Register übernommen und im vorhandenen Settings-Store persistiert; dieselbe Kompatibilitätsprojektion schützt Backup und Restore. Backupformat, Datenbankschema, Verschlüsselung, Logoasset-Vollständigkeit und BACKUP-004-Reminder bleiben unverändert. Web-Station-Umschaltung sowie der reale iPhone-Backup- und Restore-Test bleiben manuelle Freigabegates.
+`0.11.3-a8380a0` ergänzt ausschließlich BACKUP-005. Die historische Logoübernahme funktionierte, der anschließende reale iPhone-Backup-Test blieb jedoch gesperrt: Ein inhaltlich unveränderter BACKUP-004-Reminder wurde wegen einer abweichenden Eigenschaftsreihenfolge beim `JSON.stringify`-Vergleich fälschlich als reparaturbedürftig bewertet. Bewertung: NO-GO; keine Freigabe als stabile Beta-Basis.
+
+### 2.15 Vorbereiteter Patch-Kandidat 0.11.4
+
+0.11.4 ergänzt ausschließlich BACKUP-006. Der Remindervergleich ist semantisch und historische Settings werden nur deterministisch, additiv, vollständig nachvalidiert und idempotent normalisiert; mehrdeutige Zustände bleiben `fail closed`. Die lokale Integritätsdiagnose enthält keine Geschäftsdaten oder Identifikatoren. Backupformat 1, Datenbankschema 5, AES-GCM/PBKDF2 und alle Geschäftsdaten bleiben unverändert. Web-Station-Umschaltung sowie der reale iPhone-Backup- und Restore-Test auf dem bestehenden historischen Bestand bleiben manuelle Freigabegates.
 
 ## 3. Abgeleitete Deployment-Prinzipien
 
