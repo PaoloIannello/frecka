@@ -1,6 +1,6 @@
 # FRECKA: Vollständiger Deployment- und Release-Workflow
 
-Stand: 24. August 2026
+Stand: 25. August 2026
 
 Geltungsbereich: Entwicklung im einzigen Master-Repository, lokaler automatisierter Beta-Release und weiterhin manuelle Web-Station-/Produktivfreigabe
 
@@ -382,9 +382,9 @@ Es wird nicht minifiziert, kompiliert oder gebündelt. „Build“ bedeutet bei 
 
 Das Artefakt wird zunächst unter einem versteckten `.build-<release-id>.*`-Namen erstellt. Eine exklusive `.publish-<release-id>.lock` verhindert zwei gleichzeitige lokale Finalisierungen. Bei einem Fehler entfernt der Builder ausschließlich sein eigenes unvollständiges lokales Staging; ein finaler Release-Name entsteht erst nach vollständiger Inhalts-, Bytegleichheits-, Prüfsummen- und Rechteprüfung.
 
-Der annotierte Tag `v0.10.8` zeigt auf den vollständigen Versionsstand `6056e64`; sein unveränderliches Artefakt bleibt wegen des abgelehnten realen Updateabschlusses unverändert. Der korrigierte Tag `v0.10.9` zeigt auf `5b180b64ec75ab6f6c2ef53842ead45c6cc32b4a` und bestand den realen Update- und Offlinepfad. Der annotierte Tag `v0.10.10` zeigt auf `b3456bf1b5f4e6fff074e97acbaea994d064daac`; das unveränderliche Artefakt `0.10.10-b3456bf` validierte anschließend SERVICEWORKER-003 und den Ein-Befehl-Releaseprozess real. Der annotierte Tag `v0.11.0` zeigt auf `99a15113cfd589258928cad7b824f857c2be24d9`; das real abgenommene Artefakt `0.11.0-99a1511` ist die aktuelle Beta-Basis. Historische Tags und Artefakte werden durch RELEASE-AUTOMATION-001 weder umbenannt noch neu erzeugt.
+Der annotierte Tag `v0.10.8` zeigt auf den vollständigen Versionsstand `6056e64`; sein unveränderliches Artefakt bleibt wegen des abgelehnten realen Updateabschlusses unverändert. Der korrigierte Tag `v0.10.9` zeigt auf `5b180b64ec75ab6f6c2ef53842ead45c6cc32b4a` und bestand den realen Update- und Offlinepfad. Der annotierte Tag `v0.10.10` zeigt auf `b3456bf1b5f4e6fff074e97acbaea994d064daac`; das unveränderliche Artefakt `0.10.10-b3456bf` validierte anschließend SERVICEWORKER-003 und den Ein-Befehl-Releaseprozess real. Der annotierte Tag `v0.11.0` zeigt auf `99a15113cfd589258928cad7b824f857c2be24d9`; das real abgenommene Artefakt `0.11.0-99a1511` bleibt unverändert erhalten. Der annotierte Tag `v0.11.1` zeigt auf `3a4ff5768afc1aebfbc75ca700c1854d3476ccb6`; das real abgenommene Artefakt `0.11.1-3a4ff57` ist die aktuelle Beta-Basis. Historische Tags und Artefakte werden durch RELEASE-AUTOMATION-001 weder umbenannt noch neu erzeugt.
 
-Das real abgenommene Artefakt `0.11.0-99a1511` / `TSE-002` ist die unmittelbare Beta-Basis. Der vorbereitete Patch-Kandidat `0.11.1` / `BETA-HANDOFF-001` ergänzt ausschließlich BRANDING-001, BRANDING-002 und BETA-HANDOFF-001; seine maschinenlesbare Freigabenotiz steht unter `docs/releases/0.11.1.md`. Neue Mandanten starten ohne Demo-Geschäftsdaten, während vorhandene Mandanten- und Beta-Daten unverändert Vorrang behalten. TSE bleibt optional vorbereitet und ist weder aktiviert noch verbunden oder fiskalisiert. BACKUP-004 und ONBOARDING-001 sind nicht enthalten. Der SERVICEWORKER-003-Regressionsschutz gegen die entfernte Legacy-Brücke bleibt unverändert aktiv.
+Das real abgenommene Artefakt `0.11.1-3a4ff57` / `BETA-HANDOFF-001` ist die unmittelbare Beta-Basis. Der vorbereitete Patch-Kandidat `0.11.2` / `ONBOARDING-001` ergänzt ausschließlich BACKUP-004, ONBOARDING-001 sowie notwendige Versions-, Cache-, Test- und Releaseanpassungen; seine maschinenlesbare Freigabenotiz steht unter `docs/releases/0.11.2.md`. Vorhandene Mandanten- und Beta-Daten behalten unverändert Vorrang. TSE bleibt optional vorbereitet und ist weder aktiviert noch verbunden oder fiskalisiert. Der SERVICEWORKER-003-Regressionsschutz gegen die entfernte Legacy-Brücke bleibt unverändert aktiv.
 
 ### 7.4 Unveränderlichkeit
 

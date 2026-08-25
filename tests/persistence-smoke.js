@@ -1977,7 +1977,7 @@
           ["is-share", "is-menu", "is-home", "is-app", "is-confirm"].forEach(icon => assert(css.includes(icon), `Lokales Piktogramm fehlt: ${icon}`));
           assert(css.includes("@media(max-width:390px)") && css.includes("@media(max-width:350px)"), "Mobile Installationsdarstellung ist nicht abgesichert");
           assert(!index.includes('data-route="installation"'), "Installationshilfe wurde fälschlich zur Hauptnavigation hinzugefügt");
-          assert(worker.includes('\"./js/app.js?v=betahandoff001-1\"') && worker.includes('\"./styles.css?v=betahandoff001-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
+          assert(worker.includes('\"./js/app.js?v=onboarding001-1\"') && worker.includes('\"./styles.css?v=onboarding001-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
 
           const measureInstallationLayout = width => new Promise((resolve, reject) => {
             const frame = document.createElement("iframe");

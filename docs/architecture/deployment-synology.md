@@ -1,8 +1,8 @@
 # FRECKA: Deployment- und Infrastrukturkonzept für Synology Web Station
 
-Stand: 24. August 2026
+Stand: 25. August 2026
 
-Geltungsbereich: freigegebene Beta-Basis `0.11.0-99a1511`, vorbereiteter Patch-Kandidat `0.11.1` / `BETA-HANDOFF-001` und lokaler automatisierter Beta-Release
+Geltungsbereich: freigegebene Beta-Basis `0.11.1-3a4ff57`, vorbereiteter Patch-Kandidat `0.11.2` / `ONBOARDING-001` und lokaler automatisierter Beta-Release
 
 Der verbindliche Infrastrukturrahmen steht in `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`. Dieses Dokument konkretisiert ausschließlich die statische Laufzeitmenge und ihre spätere Zuordnung zu Synology Web Station.
 
@@ -169,7 +169,9 @@ Der annotierte Tag `v0.10.8` zeigt auf Commit `6056e64db92eb79666f3f6216546cc8cb
 
 Der annotierte Tag `v0.11.0` zeigt auf Commit `99a15113cfd589258928cad7b824f857c2be24d9`; das daraus erzeugte und real abgenommene Artefakt trägt die Release-ID `0.11.0-99a1511`. Es verwendet Build `TSE-002`, den HTML-Titel `FRECKA – TSE-002`, den Asset-Abfragewert `tse002-1` und den App-Shell-Cache `frecka-app-shell-0.11.0-tse002-1` und ist die aktuelle freigegebene Beta-Basis.
 
-Der noch nicht getaggte Patch-Kandidat `0.11.1` verwendet Build `BETA-HANDOFF-001`, den HTML-Titel `FRECKA – BETA-HANDOFF-001`, den Asset-Abfragewert `betahandoff001-1` und den App-Shell-Cache `frecka-app-shell-0.11.1-betahandoff001-1`. Er ergänzt gegenüber 0.11.0 ausschließlich BRANDING-001, BRANDING-002 und BETA-HANDOFF-001. BACKUP-004 und ONBOARDING-001 sind nicht enthalten. Es existieren noch kein Tag, keine Release-ID und kein Artefakt für 0.11.1.
+Der annotierte Tag `v0.11.1` zeigt auf Commit `3a4ff5768afc1aebfbc75ca700c1854d3476ccb6`; das daraus erzeugte und real abgenommene Artefakt trägt die Release-ID `0.11.1-3a4ff57`. Es verwendet Build `BETA-HANDOFF-001`, den HTML-Titel `FRECKA – BETA-HANDOFF-001`, den Asset-Abfragewert `betahandoff001-1` und den App-Shell-Cache `frecka-app-shell-0.11.1-betahandoff001-1` und ist die aktuelle freigegebene Beta-Basis.
+
+Der noch nicht getaggte Patch-Kandidat `0.11.2` verwendet Build `ONBOARDING-001`, den HTML-Titel `FRECKA – ONBOARDING-001`, den Asset-Abfragewert `onboarding001-1` und den App-Shell-Cache `frecka-app-shell-0.11.2-onboarding001-1`. Er ergänzt gegenüber 0.11.1 ausschließlich BACKUP-004, ONBOARDING-001 sowie notwendige Versions-, Cache-, Test- und Releaseanpassungen. Es existieren noch kein Tag, keine Release-ID und kein Artefakt für 0.11.2.
 
 Ein Updateformat für signierte Kanäle und ein Signaturverfahren sind ausdrücklich noch nicht implementiert. SERVICEWORKER-002 erkennt ausschließlich Änderungen des Service Workers innerhalb derselben bereits aufgerufenen Deployment-Origin.
 
@@ -193,11 +195,15 @@ Bewertung: `0.9.1-26dc63f` ist für den Beta-Betrieb freigegeben und gilt als st
 
 ### 2.11 Beta-Betriebsnachweis 0.11.0
 
-`0.11.0-99a1511` bündelt den seit 0.10.10 um Benutzer, lokale Lizenz- und Geräteinformationen, Unternehmens- und Betriebseinstellungen, manuellen Updatebereich, Sicherungserinnerung und optionale TSE-Vorbereitung erweiterten App-Stand. Der reale Beta-Test ist abgenommen. Bewertung: Beta-GO und unmittelbare stabile Vorgängerbasis für 0.11.1; noch keine Produktivfreigabe für `app.frecka.app`.
+`0.11.0-99a1511` bündelt den seit 0.10.10 um Benutzer, lokale Lizenz- und Geräteinformationen, Unternehmens- und Betriebseinstellungen, manuellen Updatebereich, Sicherungserinnerung und optionale TSE-Vorbereitung erweiterten App-Stand. Der reale Beta-Test ist abgenommen. Bewertung: historisches Beta-GO und unmittelbare stabile Vorgängerbasis für 0.11.1; noch keine Produktivfreigabe für `app.frecka.app`.
 
-### 2.12 Vorbereiteter Patch-Kandidat 0.11.1
+### 2.12 Beta-Betriebsnachweis 0.11.1
 
-0.11.1 ergänzt ausschließlich lokale Unternehmens-/Geschäftsbereichslogos, das unveränderliche historische Asset-Register und den produktiv leeren Erststart. Vorhandene Mandantendaten behalten Vorrang und werden nicht automatisch zurückgesetzt. Datenbankschema und Geschäftsdatenformate bleiben unverändert. Vor dem realen In-place-Beta-Test sind eine verschlüsselte Sicherung und die dokumentierte Bestandsprüfung erforderlich; Web-Station-Umschaltung und Geräteabnahme bleiben manuell.
+`0.11.1-3a4ff57` ergänzt ausschließlich lokale Unternehmens-/Geschäftsbereichslogos, das unveränderliche historische Asset-Register und den produktiv leeren Erststart. Vorhandene Mandantendaten behielten beim realen In-place-Test Vorrang. Bewertung: Beta-GO und unmittelbare stabile Vorgängerbasis für 0.11.2; noch keine Produktivfreigabe für `app.frecka.app`.
+
+### 2.13 Vorbereiteter Patch-Kandidat 0.11.2
+
+0.11.2 ergänzt ausschließlich wählbare lokale Sicherungsintervalle samt Speicherhilfe sowie die offline verfügbare Installationshilfe für iPhone/iPad und Android. Vorhandene Mandantendaten, Datenbankschema, Geschäftsdatenformate und Service-Worker-Architektur bleiben unverändert. Vor dem realen In-place-Beta-Test sind eine verschlüsselte Sicherung und die dokumentierte Bestandsprüfung erforderlich; Web-Station-Umschaltung und Geräteabnahme bleiben manuell.
 
 ## 3. Abgeleitete Deployment-Prinzipien
 
