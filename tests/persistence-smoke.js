@@ -24,6 +24,59 @@
   const alternatePngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAQAAAACCAIAAADwyuo0AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAABKADAAQAAAABAAAAAgAAAABKLAuiAAAAHUlEQVQIHWPkz4lxUNdhYGA4cPMqC5BiYAQRQAAARMsD33P5iogAAAAASUVORK5CYII=";
   const tinyJpegBase64 = "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAA6ADAAQAAAABAAAAAgAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAAgADAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMAAgICAgICAwICAwUDAwMFBgUFBQUGCAYGBgYGCAoICAgICAgKCgoKCgoKCgwMDAwMDA4ODg4ODw8PDw8PDw8PD//bAEMBAgICBAQEBwQEBxALCQsQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEP/dAAQAAf/aAAwDAQACEQMRAD8A+bda/wCPyP8A69rX/wBER1k1r61/x+R/9e1r/wCiErIr3D+U6vxM/9k=";
 
+  function crc32(bytes) {
+    let crc = 0xffffffff;
+    for (let index = 0; index < bytes.length; index += 1) {
+      crc ^= bytes[index];
+      for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+
+  function realisticPngBase64(targetBytes, seed = 1) {
+    const original = Uint8Array.from(atob(tinyPngBase64), character => character.charCodeAt(0));
+    const iendBytes = 12;
+    const chunkOverhead = 12;
+    const dataLength = targetBytes - original.length - chunkOverhead;
+    if (dataLength < 16) throw new Error("Realistische PNG-Testgröße ist zu klein");
+    const type = Uint8Array.from([0x74, 0x45, 0x58, 0x74]);
+    const data = new Uint8Array(dataLength);
+    Uint8Array.from([0x46, 0x52, 0x45, 0x43, 0x4b, 0x41, 0x00]).forEach((value, index) => { data[index] = value; });
+    for (let index = 7; index < data.length; index += 1) data[index] = 32 + ((index + seed) % 90);
+    const crcInput = new Uint8Array(type.length + data.length);
+    crcInput.set(type);
+    crcInput.set(data, type.length);
+    const checksum = crc32(crcInput);
+    const chunk = new Uint8Array(chunkOverhead + data.length);
+    new DataView(chunk.buffer).setUint32(0, data.length);
+    chunk.set(type, 4);
+    chunk.set(data, 8);
+    new DataView(chunk.buffer).setUint32(8 + data.length, checksum);
+    const result = new Uint8Array(targetBytes);
+    const iendOffset = original.length - iendBytes;
+    result.set(original.subarray(0, iendOffset));
+    result.set(chunk, iendOffset);
+    result.set(original.subarray(iendOffset), iendOffset + chunk.length);
+    let binary = "";
+    for (let offset = 0; offset < result.length; offset += 0x4000) {
+      binary += String.fromCharCode(...result.subarray(offset, Math.min(result.length, offset + 0x4000)));
+    }
+    return btoa(binary);
+  }
+
+  function realisticLogoAssetFixture(assetId, targetBytes, createdAt, seed = 1) {
+    const base64 = realisticPngBase64(targetBytes, seed);
+    return {
+      formatVersion: 1,
+      assetId,
+      mimeType: "image/png",
+      fileName: `${assetId}.png`,
+      size: atob(base64).length,
+      createdAt,
+      dataUrl: `data:image/png;base64,${base64}`
+    };
+  }
+
   function companyLogoFixture(overrides = {}) {
     return {
       formatVersion: 1,
@@ -4239,7 +4292,7 @@
           const response = await fetch("../js/app.js", { cache: "no-store" });
           assert(response.ok, "App-Quelle für Backup-UX-Regression konnte nicht geladen werden");
           const source = await response.text();
-          const errorMessageStart = source.indexOf("function backupCreationErrorMessage");
+          const errorMessageStart = source.indexOf("function backupPreparationErrorMessage");
           const busyHelperStart = source.indexOf("function setBackupCreateFormBusy", errorMessageStart);
           const handlerStart = source.indexOf('const backupCreateForm = event.target.closest("#backupCreateForm")');
           const handlerEnd = source.indexOf('const backupUnlockForm = event.target.closest("#backupUnlockForm")', handlerStart);
@@ -4264,7 +4317,9 @@
           assert(catchStart >= 0, "Backup-Fehlerpfad fehlt");
           assert(!handlerBlock.slice(catchStart).includes("renderSettingsBackup"), "Backup-Fehlerpfad ersetzt weiterhin die Kennwortfelder");
           assert(handlerBlock.slice(catchStart).includes("showBackupCreateNotice"), "Backup-Fehler wird nicht sichtbar am Formular ausgegeben");
-          assert(!handlerBlock.slice(catchStart).includes("logPersistenceError"), "Behandelter Backup-Fehler erzeugt weiterhin einen Konsolenfehler");
+          assert(handlerBlock.slice(catchStart).includes('recordBackupFailure("preparation", error)'), "Backup-Vorbereitungsfehler wird nicht datensparsam klassifiziert");
+          assert(source.includes("function backupOutputErrorMessage"), "Getrennte Meldung für Backup-Ausgabefehler fehlt");
+          assert(source.includes("console.info(`[FRECKA] Sicherung ${safeStage} fehlgeschlagen: ${backupErrorCode(error)}`)"), "Interne Backup-Diagnose protokolliert nicht ausschließlich Phase und Fehlercode");
           assert(handlerBlock.includes("pendingBackupOutput = prepared"), "Verschlüsselte Sicherung wird nicht ausschließlich als explizit auszugebender Zustand gehalten");
           assert(!handlerBlock.includes("backup.deliverBackup"), "Backup-Submit startet weiterhin selbst eine Datei- oder Share-Ausgabe");
           assert(handlerBlock.includes("isCurrentBackupCreation(creationEpoch, backupCreateForm)"), "Veraltete asynchrone Backup-Ergebnisse werden nicht verworfen");
@@ -4796,6 +4851,110 @@
           assertEqual(validated.snapshot.stores.settings.users[0].tenantId, tenantId, "Backup-Benutzer gehört zum falschen Mandanten");
           assertEqual(validated.snapshot.stores.settings.license.tenantId, tenantId, "Backup-Lizenz gehört zum falschen Mandanten");
           assertEqual(validated.snapshot.stores.settings.license.deviceId, snapshot.stores.settings.license.deviceId, "Backup veränderte die Gerätebindung");
+        }
+      },
+      {
+        name: "Historische BRANDING-001-Settings werden vor Backup und Restore verlustfrei migriert",
+        run: async () => {
+          const tenantId = "test-backup-branding-legacy";
+          const legacy = completeTenantSnapshotFixture(tenantId);
+          delete legacy.stores.settings.logoAssets;
+          legacy.stores.settings.company.logo = companyLogoFixture();
+          legacy.stores.settings.businessAreas[0].logoMode = "custom";
+          legacy.stores.settings.businessAreas[0].logo = businessAreaLogoFixture();
+
+          const validated = api.validateTenantSnapshot(legacy, tenantId).snapshot;
+          assertEqual(validated.stores.settings.logoAssets.length, 2, "Historische Inline-Logos wurden nicht in das zentrale Register übernommen");
+          assertEqual(validated.stores.settings.company.logo.assetId, "company-logo", "Unternehmenslogo erhielt keine stabile Asset-Referenz");
+          assertEqual(validated.stores.settings.businessAreas[0].logo.assetId, "business-logo-hair", "Geschäftsbereichslogo erhielt keine stabile Asset-Referenz");
+
+          const encrypted = await backupApi.encryptTenantSnapshot(validated, cryptoPassphrase);
+          const decrypted = await backupApi.decryptTenantSnapshot(encrypted, cryptoPassphrase);
+          const roundtrip = api.validateTenantSnapshot(decrypted, tenantId).snapshot;
+          assertDeepEqual(roundtrip.stores.settings.logoAssets, validated.stores.settings.logoAssets, "Verschlüsselungs-Roundtrip verlor migrierte Logoassets");
+
+          const historicalWithoutLogos = completeTenantSnapshotFixture(`${tenantId}-empty`);
+          delete historicalWithoutLogos.stores.settings.logoAssets;
+          historicalWithoutLogos.stores.settings.company.logo = null;
+          historicalWithoutLogos.stores.settings.businessAreas.forEach(area => {
+            area.logoMode = "company";
+            area.logo = null;
+          });
+          const emptyValidated = api.validateTenantSnapshot(historicalWithoutLogos, `${tenantId}-empty`).snapshot;
+          assertDeepEqual(emptyValidated.stores.settings.logoAssets, [], "Historische Sicherung ohne Logos erhielt künstliche Assets");
+
+          const appResponse = await fetch("../js/app.js", { cache: "no-store" });
+          assert(appResponse.ok, "App-Quelle für BRANDING-002-Startmigration konnte nicht geladen werden");
+          const appSource = await appResponse.text();
+          assert(appSource.includes('repair.startsWith("LOGO_")'), "Startpfad persistiert das ergänzte Logo-Asset-Register nicht");
+          assert(appSource.includes('repair === "LEGACY_LOGO_ASSET_REGISTERED"'), "Startpfad persistiert migrierte Inline-Logos nicht");
+        }
+      },
+      {
+        name: "Realistischer Mehrlogo-Bestand durchläuft Snapshot, Verschlüsselung, Datei, Share und Restore",
+        run: async () => {
+          const persistence = context.makeClient("backup-realistic-logo-payload");
+          const snapshot = completeTenantSnapshotFixture(persistence.tenantId);
+          const logoAssets = [
+            realisticLogoAssetFixture("company-logo-current", 700000, "2030-01-01T10:00:00.000Z", 1),
+            realisticLogoAssetFixture("business-logo-current", 700000, "2030-01-02T10:00:00.000Z", 2),
+            realisticLogoAssetFixture("company-logo-historical", 700000, "2029-12-01T10:00:00.000Z", 3)
+          ];
+          const logoReference = asset => ({
+            formatVersion: 1,
+            assetId: asset.assetId,
+            name: asset.fileName,
+            mimeType: asset.mimeType,
+            size: asset.size,
+            updatedAt: asset.createdAt
+          });
+          snapshot.stores.settings.logoAssets = logoAssets;
+          snapshot.stores.settings.company.logo = logoReference(logoAssets[0]);
+          snapshot.stores.settings.businessAreas.forEach(area => {
+            area.logoMode = "company";
+            area.logo = null;
+          });
+          snapshot.stores.settings.businessAreas[0].logoMode = "custom";
+          snapshot.stores.settings.businessAreas[0].logo = logoReference(logoAssets[1]);
+          snapshot.stores.settings.backupReminder = {
+            formatVersion: 1,
+            interval: "5-days",
+            baselineAt: "2030-01-01T08:00:00.000Z",
+            lastSuccessfulAt: "2030-01-05T08:00:00.000Z",
+            snoozedUntil: null
+          };
+
+          const validated = api.validateTenantSnapshot(snapshot, persistence.tenantId).snapshot;
+          const prepared = await backupApi.createBackup({
+            passphrase: cryptoPassphrase,
+            createSnapshot: async () => validated
+          });
+          assert(new Blob([prepared.serializedBackup]).size > 2_000_000, "Mehrlogo-Test bildet keine realistische Sicherungsgröße ab");
+          const decrypted = await backupApi.decryptTenantSnapshot(prepared.serializedBackup, cryptoPassphrase);
+          assertEqual(decrypted.stores.settings.logoAssets.length, 3, "Verschlüsselung verlor historische Logoassets");
+
+          let sharedFile = null;
+          const output = await backupApi.deliverBackup(prepared.serializedBackup, prepared.filename, {
+            shareService: {
+              createFile: (content, options) => new File([content], options.name, { type: options.type }),
+              canShareFiles: files => files.length === 1 && files[0] instanceof File,
+              shareFiles: async files => {
+                sharedFile = files[0];
+                return { status: "shared", mode: "files" };
+              }
+            }
+          });
+          assertEqual(output.status, "shared", "Realistische Sicherungsdatei erreichte den Share-Pfad nicht");
+          assertEqual(sharedFile?.name, prepared.filename, "Share-Pfad veränderte den Sicherungsdateinamen");
+          assertEqual(sharedFile?.type, backupApi.constants.downloadMimeType, "Share-Pfad veränderte den Sicherungsdateityp");
+
+          await persistence.restoreTenantSnapshot(decrypted);
+          const restored = await persistence.exportTenantSnapshot();
+          assertDeepEqual(restored.stores.settings.logoAssets, logoAssets, "Restore verlor aktuelle oder historische Logoassets");
+          assertEqual(restored.stores.settings.backupReminder.interval, "5-days", "Restore verlor das BACKUP-004-Intervall");
+          assertEqual(restored.stores.settings.users.length, 1, "Restore verlor den aktiven Benutzer");
+          assertEqual(restored.stores.settings.license.tenantId, persistence.tenantId, "Restore verlor die lokale Lizenzbindung");
+          assertEqual(restored.stores.settings.tseSettings.enabled, false, "Restore veränderte die TSE-Vorbereitung");
         }
       },
       {

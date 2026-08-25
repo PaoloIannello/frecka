@@ -614,6 +614,39 @@
     return migrated;
   }
 
+  function settingsWithLegacyLogoAssetRegister(record) {
+    if (!isPlainObject(record)) return record;
+    const companyLogo = record.company?.logo;
+    const businessAreaLogos = Array.isArray(record.businessAreas)
+      ? record.businessAreas.map(area => area?.logo)
+      : [];
+    const legacyLogos = [companyLogo, ...businessAreaLogos];
+    const registerMissing = record.logoAssets === undefined;
+    const containsInlineLogo = legacyLogos.some(logo => isPlainObject(logo) && typeof logo.dataUrl === "string");
+    if (!registerMissing && !containsInlineLogo) return record;
+
+    const migrated = cloneSerializable(record);
+    const migratedCompanyLogo = migrated.company?.logo;
+    const migratedAreaLogos = Array.isArray(migrated.businessAreas)
+      ? migrated.businessAreas.map(area => area?.logo)
+      : [];
+    const logoAssets = normalizeLogoAssetRegister(
+      Array.isArray(migrated.logoAssets) ? migrated.logoAssets : [],
+      [migratedCompanyLogo, ...migratedAreaLogos]
+    );
+    migrated.logoAssets = logoAssets;
+    if (isPlainObject(migrated.company)) {
+      migrated.company.logo = normalizeLogoReference(migratedCompanyLogo, logoAssets, "Unternehmenslogo");
+    }
+    if (Array.isArray(migrated.businessAreas)) {
+      migrated.businessAreas.forEach((area, index) => {
+        if (!isPlainObject(area)) return;
+        area.logo = normalizeLogoReference(migratedAreaLogos[index], logoAssets, "Geschäftsbereichslogo");
+      });
+    }
+    return migrated;
+  }
+
   const centsFrom = (centsValue, decimalValue = 0) => Number.isInteger(centsValue)
     ? centsValue
     : Math.round(finiteNumber(decimalValue) * 100);
@@ -2448,7 +2481,8 @@
 
     const userSettingsInput = settingsWithLegacyUserModel(snapshot.stores.settings, safeTenantId);
     const licenseSettingsInput = settingsWithLegacyLicenseModel(userSettingsInput, safeTenantId);
-    const settingsInput = settingsWithLegacyTseSettingsModel(licenseSettingsInput);
+    const tseSettingsInput = settingsWithLegacyTseSettingsModel(licenseSettingsInput);
+    const settingsInput = settingsWithLegacyLogoAssetRegister(tseSettingsInput);
     const settings = assertSnapshotRecord(
       normalizeSettingsRecord(settingsInput, settingsInput, safeTenantId),
       settingsInput,

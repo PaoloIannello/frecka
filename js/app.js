@@ -975,7 +975,13 @@
     await persistence.openDatabase();
     const savedRecord = await persistence.readSettings();
     const normalized = persistence.normalizeSettingsRecord(savedRecord, defaultSettingsRecord, persistence.tenantId);
-    if (savedRecord === null || normalized.repairs.some(repair => repair.startsWith("USER_") || repair === "ACTIVE_USER_REPAIRED" || repair.startsWith("LICENSE_") || repair.startsWith("TSE_SETTINGS_") || repair.startsWith("BACKUP_REMINDER_"))) {
+    if (savedRecord === null || normalized.repairs.some(repair => repair.startsWith("USER_")
+      || repair === "ACTIVE_USER_REPAIRED"
+      || repair.startsWith("LICENSE_")
+      || repair.startsWith("TSE_SETTINGS_")
+      || repair.startsWith("BACKUP_REMINDER_")
+      || repair.startsWith("LOGO_")
+      || repair === "LEGACY_LOGO_ASSET_REGISTERED")) {
       await persistence.writeSettings(normalized.record);
     }
     applySettingsRecord(normalized.record);
@@ -4354,11 +4360,49 @@
     return `<div class="settings-save-notice ${state.backupNoticeIsError ? "is-error" : ""}" role="${state.backupNoticeIsError ? "alert" : "status"}">${escapeHtml(state.backupNotice)}</div>`;
   }
 
-  function backupCreationErrorMessage(error) {
+  function backupErrorCode(error) {
+    return typeof error?.code === "string" && /^[A-Z0-9_]{1,80}$/.test(error.code)
+      ? error.code
+      : typeof error?.name === "string" && /^[A-Za-z0-9]+(?:Error)?$/.test(error.name)
+        ? error.name
+        : "UNKNOWN";
+  }
+
+  function recordBackupFailure(stage, error) {
+    const safeStage = stage === "output" ? "Ausgabe" : "Vorbereitung";
+    console.info(`[FRECKA] Sicherung ${safeStage} fehlgeschlagen: ${backupErrorCode(error)}`);
+  }
+
+  function backupPreparationErrorMessage(error) {
     if (error?.code === "VOUCHER_RECEIPT_INVARIANT_INVALID") {
       return "Die Sicherung kann derzeit nicht erstellt werden, weil der vorhandene Datenbestand Inkonsistenzen enthält. Neue Belege können weiterhin erstellt werden. Bitte bereinige den Datenbestand, bevor eine Sicherung erstellt wird.";
     }
+    if (["BACKUP_VALIDATION_FAILED", "BACKUP_INCOMPLETE", "BACKUP_NUMBER_SEQUENCE_INVALID", "BACKUP_VOUCHER_HISTORY_INVALID"].includes(error?.code)) {
+      return "Die Sicherung kann derzeit nicht erstellt werden, weil der vorhandene Datenbestand nicht vollständig konsistent ist. Deine Daten wurden nicht verändert.";
+    }
+    if (["PASSPHRASE_TOO_SHORT", "PASSPHRASE_TOO_LONG"].includes(error?.code)) {
+      return error.userMessage;
+    }
+    if (error?.code === "CRYPTO_UNAVAILABLE") {
+      return "Die sichere Verschlüsselung ist auf diesem Gerät derzeit nicht verfügbar.";
+    }
+    if (error?.code === "BACKUP_FILE_TOO_LARGE") {
+      return "Die vollständige Sicherung ist für eine einzelne Datei zu groß. Es wurden keine Daten ausgelassen oder verändert.";
+    }
+    if (error?.code === "BACKUP_ENCRYPT_FAILED") {
+      return "Die Sicherung konnte auf diesem Gerät nicht verschlüsselt werden. Bitte schließe andere Apps und versuche es erneut.";
+    }
     return "Die Sicherung konnte aufgrund eines technischen Fehlers nicht erstellt werden.";
+  }
+
+  function backupOutputErrorMessage(error) {
+    if (["SHARE_FILE_INVALID", "SHARE_DATA_INVALID", "BACKUP_SHARE_UNAVAILABLE"].includes(error?.code)) {
+      return "Die vorbereitete Sicherungsdatei konnte auf diesem Gerät nicht geteilt werden.";
+    }
+    if (["SHARE_NOT_ALLOWED", "SHARE_INVALID_STATE"].includes(error?.code)) {
+      return error.userMessage || "Der Teilen-Dialog konnte nicht geöffnet werden.";
+    }
+    return "Die vorbereitete Sicherungsdatei konnte aufgrund eines technischen Fehlers nicht ausgegeben werden.";
   }
 
   async function recordSuccessfulBackup() {
@@ -6695,8 +6739,9 @@
         state.backupNoticeIsError = false;
         renderSettingsBackup();
       } catch (error) {
+        recordBackupFailure("output", error);
         if (form.isConnected && state.route === "settings-backup") {
-          showBackupCreateNotice(form, backupCreationErrorMessage(error), true);
+          showBackupCreateNotice(form, backupOutputErrorMessage(error), true);
         }
       } finally {
         if (button.isConnected) button.disabled = false;
@@ -7076,10 +7121,11 @@
         showBackupShareAction(backupCreateForm);
       } catch (error) {
         if (!isCurrentBackupCreation(creationEpoch, backupCreateForm)) return;
+        recordBackupFailure("preparation", error);
         state.backupBusy = false;
         setBackupCreateFormBusy(backupCreateForm, false);
         discardPendingBackupOutput();
-        showBackupCreateNotice(backupCreateForm, backupCreationErrorMessage(error), true);
+        showBackupCreateNotice(backupCreateForm, backupPreparationErrorMessage(error), true);
       } finally {
         if (isCurrentBackupCreation(creationEpoch, backupCreateForm)) {
           state.backupBusy = false;

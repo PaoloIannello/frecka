@@ -1,6 +1,6 @@
 # Verschlüsselte Sicherung und Wiederherstellung
 
-**Stand:** TSE-002 auf Basis SETTINGS-002, SETTINGS-001, USER-001, BACKUP-002, BACKUP-001 und PERSISTENCE-007
+**Stand:** BACKUP-005 auf Basis BRANDING-002, BACKUP-004, TSE-002, SETTINGS-002, SETTINGS-001, USER-001, BACKUP-002, BACKUP-001 und PERSISTENCE-007
 **Datenbankschema:** 5
 **Backupformat:** 1
 **Geltungsbereich:** Vollständiger lokaler Datenstand eines Mandanten
@@ -57,6 +57,8 @@ TSE-002 liegt als `tseSettings` ebenfalls innerhalb von `stores.settings`. Anbie
 SETTINGS-002 verwendet ausschließlich die bereits enthaltenen `taxSettings`, `receiptSettings`, `paymentChoices` und `businessAreas`. Betriebliche Vorgaben, geschützter Nummernstand und Standard-Geschäftsbereich werden deshalb ohne neue Sammelroutine, Schemaerhöhung oder Backupformatänderung vollständig verschlüsselt gesichert und wiederhergestellt.
 
 BRANDING-002 liegt ebenfalls vollständig innerhalb von `stores.settings`. Der Restore erhält mehrere Asset-Versionen verlustfrei und macht historische Beleg-/Gutscheinreferenzen danach wieder über denselben zentralen Resolver für Ansicht und PDF auflösbar. Er führt keine Bildmigration in Geschäftsvorgängen durch und bereinigt keine unreferenzierten Assets automatisch.
+
+BACKUP-005 schließt die Kompatibilitätslücke für bereits persistierte BRANDING-001-Settings: Fehlt darin das spätere `logoAssets`-Register noch oder liegt ein Unternehmens-/Geschäftsbereichslogo noch inline vor, projiziert die zentrale Snapshotprüfung diese Daten verlustfrei in genau das bestehende BRANDING-002-Register und ersetzt die aktive Zuordnung durch ihre stabile Asset-Referenz. Derselbe sichere Normalisierungsschritt wird beim App-Start dauerhaft in den vorhandenen Settingssatz geschrieben. Es entsteht weder ein neuer Store noch eine zweite Logo- oder Backupstruktur. Historische Settings ohne Logo erhalten ausschließlich ein leeres Register.
 
 ## Äußeres Dateiformat
 
@@ -173,17 +175,18 @@ Die für einen ausdrücklichen lokalen Download angelegte Objekt-URL bleibt für
 - IndexedDB-Fehler während Restore: vollständiger Transaktionsrollback und verständlicher Hinweis.
 - Maximale Dateigröße für die Entschlüsselung: 64 MiB.
 - Historisch inkonsistenter Gutschein-/Belegbestand bei der Sicherung: keine Datei, keine Verschlüsselung und ein verständlicher Hinweis ohne Codes, Gutscheinreferenzen oder Belegnummern. Unabhängige neue Belege bleiben weiterhin möglich.
+- Historischer BRANDING-001-Settingssatz ohne Asset-Register: verlustfreie Übernahme in das vorhandene BRANDING-002-Modell vor der strengen Snapshotprüfung; aktuelle und historische Logos bleiben vollständig enthalten.
 - Verschlüsselungs-, Datei- oder Share-Fehler bei der Sicherung: keine Erfolgsmeldung und keine zweite Ausgabe; die Kennwortfelder bleiben für Korrektur oder Wiederholung erhalten.
 - Abbruch des nativen Teilen-Dialogs: kein automatischer Download und kein zweiter Share-Aufruf. Die Oberfläche meldet den Abbruch, ohne ihn als erfolgreiche Sicherung zu behandeln.
 - Navigation, neue Eingabe oder ein neuer Sicherungsversuch entwerten jede noch laufende beziehungsweise fertig vorbereitete Ausgabe. Deren verspäteter Abschluss darf weder einen Dialog öffnen noch einen neuen Ausgabezustand herstellen.
 
-Fehlerlogs enthalten nur Vorgang und Fehlercode. Passphrase, Schlüsselmaterial, Dateipayload und Geschäftsdaten werden nicht protokolliert.
+Die sichtbare Fehlerbehandlung trennt Snapshot-/Vorbereitungsfehler von Fehlern der nachgelagerten Datei-/Share-Ausgabe. Die interne Diagnose enthält ausschließlich Phase und sicheren Fehlercode. Passphrase, Schlüsselmaterial, Dateipayload, Logo-Bilddaten und Geschäftsdaten werden nicht protokolliert.
 
 ## Tests
 
 BACKUP-004 ergänzt alle drei Intervalle, den wöchentlichen Standard, Reload, Wechsel vor und nach Fälligkeit, den erhaltenen 24-Stunden-Snooze, die ausschließliche Rücksetzung nach bestätigter Ausgabe, die reine lokale Speicherhilfe sowie den getrennten Restore-Vertrag für Intervallwahl und operative Zeitpunkte.
 
-`tests/persistence-smoke.html` prüft ohne zusätzliches Testframework die gesamte bisherige Persistenz sowie BACKUP-001/002/003, HARDEN-001, EXPORT-001/003, PERSISTENCE-007/008/010, SETTINGS-001/002, TSE-002 und QR-001. Die BACKUP-003-Fälle decken Sieben-Tage-Frist, 24-Stunden-Snooze, bestätigte Ausgabe, Fehler/Abbruch ohne Rücksetzung, Erststart/Altbestand sowie den atomar erhaltenen lokalen Reminder-Status beim Restore ab. Die bisherigen Backup-Ergänzungen prüfen weiterhin die reine Vorbereitung ohne vorzeitige Ausgabe, den Stopp eines historisch inkonsistenten Bestands vor Verschlüsselung und Ausgabe, verspätete Promise-Abschlüsse nach Navigation, Verschlüsselungs- und Dateifehler ohne vorbereiteten Zustand, Share-Abbruch ohne Fallback oder zweite Ausgabe, erhaltene Kennwortfelder und gefilterte UI-Meldungen. SETTINGS-002 bestätigt zusätzlich den unveränderten zentralen Settings-Roundtrip für Steuer-, Zahlungs-, Standardbereichs-, Nummern- und Belegtextwerte. TSE-002 prüft sichere Standardwerte, historische Settings und Backups, verschlüsselten Restore, Eigene-Daten-Export, ausgeschlossene Steuerberaterdaten sowie die Ablehnung unerlaubter Zugangsdaten. PERSISTENCE-010 ergänzt den erfolgreichen Backup- und Steuerberaterexport nach atomarer Reparatur sowie Stop- und Rollbackfälle ohne Store-Veränderung. Unverändert geprüft werden Format- und Mandantenprüfung, Vollständigkeit, Referenzen einschließlich der bidirektionalen Gutscheinverkaufsbeleg-Invariante, Nummernstand, Verschlüsselungs-Roundtrip, zufällige Ciphertexte, Klartextausschluss, falsches Kennwort, Payload- und Headermanipulation, abgeschnittene und unbekannte Formate, Export mit und ohne persistierte Stores, Restore in einen leeren Mandanten, vollständiges Überschreiben, atomarer Rollback, erneute Sicherung nach Restore, reversibler Kundenstatus sowie iOS-robuster Dateiname und Downloadtyp. Die fachlichen Export- und ZIP-Fälle sind in `docs/export.md`, die QR-Fälle in `docs/qr.md` beschrieben.
+`tests/persistence-smoke.html` prüft ohne zusätzliches Testframework die gesamte bisherige Persistenz sowie BACKUP-001/002/003/004/005, HARDEN-001, EXPORT-001/003, PERSISTENCE-007/008/010, SETTINGS-001/002, TSE-002 und QR-001. BACKUP-005 ergänzt einen historischen BRANDING-001-Snapshot mit Inline-Logos, einen historischen Snapshot ohne Logo/Register und einen realistischen Gesamtbestand mit Unternehmenslogo, Geschäftsbereichslogo, weiterer historischer Asset-Version, Benutzer, Lizenz, TSE-Vorbereitung, BACKUP-004-Reminder, Kunden, Belegen und Gutschein. Dieser Bestand durchläuft Vollvalidierung, AES-GCM, echte `File`-Erzeugung, Share-Adapter und Restore; alle Assetbytes und Referenzen müssen erhalten bleiben. Die bisherigen Backup-Ergänzungen prüfen weiterhin Vorbereitung und Ausgabe, Invariantenstopp, Fehler/Abbruch, Reminder, Manipulationsschutz, Export, Restore und Rollback. Die fachlichen Export- und ZIP-Fälle sind in `docs/export.md`, die QR-Fälle in `docs/qr.md` beschrieben.
 
 Jeder Lauf verwendet ausschließlich eine zufällig benannte Testdatenbank mit Guard gegen `frecka` und löscht diese anschließend. Ein simulierter Restore-Abbruch ist nur für eindeutig benannte Testdatenbanken freigeschaltet.
 
