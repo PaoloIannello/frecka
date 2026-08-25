@@ -102,10 +102,12 @@ Der Settings-Datensatz enthält ausschließlich:
 - `taxSettings`;
 - `receiptSettings` einschließlich Nummernkreis und Belegtexten;
 - `paymentChoices` in ihrer fachlichen Reihenfolge;
-- `backupReminder` mit Formatversion, lokalem Fristbeginn, Zeitpunkt der letzten bestätigten Sicherung und optionalem 24-Stunden-Snooze;
+- `backupReminder` mit Formatversion, genau einer Intervallwahl (`48-hours`, `5-days` oder `weekly`), lokalem Fristbeginn, Zeitpunkt der letzten bestätigten Sicherung und optionalem 24-Stunden-Snooze;
 - `setup.status` mit `not-started`, `started` oder `completed`.
 
 BACKUP-003 verändert weder Datenbankschema noch Settings-Formatversion. Fehlen die Reminder-Metadaten bei Erstinstallation oder historischem Bestand, wird lokal der Zeitpunkt der ersten kompatiblen Initialisierung als Fristbeginn gespeichert; dadurch erscheint keine sofortige Erinnerung. Der Status enthält keine personenbezogenen Daten. Beim atomaren Restore werden Unternehmen und alle fachlichen Stores aus der Sicherung übernommen, `backupReminder` bleibt jedoch vom aktuellen Gerät erhalten. Eine alte Sicherungsdatei kann damit weder die Wochenfrist fälschlich zurücksetzen noch einen lokalen Snooze überschreiben.
+
+BACKUP-004 ergänzt dasselbe Objekt additiv um `interval`; fehlende oder ungültige historische Werte normalisieren auf `weekly`. Ein Wechsel verändert weder `baselineAt` noch `lastSuccessfulAt` oder `snoozedUntil`. Beim Restore wird die gesicherte Intervallwahl als Einstellung übernommen, während diese drei operativen Zeitfelder vom aktuellen Gerät erhalten bleiben. Restore gilt dadurch weiterhin nicht als erfolgreiche Sicherung und kann einen laufenden Snooze nicht umgehen.
 
 SETTINGS-001 speichert genau ein optionales Unternehmenslogo im bestehenden Settings-Datensatz. BRANDING-001 verwendet dieselbe Validierung zusätzlich für optionale Geschäftsbereichslogos. BRANDING-002 normalisiert die vollständigen Bilddaten zu `logoAssets[]` mit `formatVersion`, stabiler opaker `assetId`, MIME-Type, Dateiname, Bytegröße, Erstellzeitpunkt und Data-URL. Zulässig sind weiterhin ausschließlich anhand MIME-Type und Dateisignatur geprüfte PNG- und JPEG-Daten bis 1 MiB. Unternehmens- und Geschäftsbereichseinstellung zeigen nur über eine versionierte Metadatenreferenz auf `assetId`. Ein identischer Bildinhalt verwendet nach Möglichkeit das vorhandene Asset; neuer Inhalt erhält eine neue ID. Gewöhnliche Settings-Schreibvorgänge vereinigen das vorhandene Register mit neuen Assets und lehnen eine abweichende Neubelegung derselben ID ab. Entfernen betrifft nur die aktive Zuordnung; es gibt keine automatische Löschung historischer oder unreferenzierter Assets.
 

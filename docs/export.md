@@ -61,6 +61,8 @@ SETTINGS-001 ergänzt nur für `Eigene Daten` die zentralen Unternehmensangaben 
 
 SETTINGS-002 ergänzt ebenfalls nur für `Eigene Daten` den strukturierten Kontext `operatingSettings`: feste Währung und Sprache, Steuerstatus, aktive und Standard-Steuersätze, Standard-Geschäftsbereich, Zahlungsarten samt Reihenfolge und Aktivstatus, geschützter Belegnummernstand sowie die vorhandenen Belegtexte. `Export-Info.txt` weist diese Werte lesbar aus. Im Steuerberaterexport ist `operatingSettings` ausdrücklich `null`; CSV-Dateien, Übersicht, PDF-Inhalte und ZIP-Struktur bleiben unverändert.
 
+BACKUP-004 ergänzt darin ausschließlich die gewählte Intervallkennung als Einstellungsmetadatum und weist sie in `Export-Info.txt` verständlich aus. Operative Reminder-Zeitpunkte und Snooze werden nicht projiziert. Der Steuerberaterexport bleibt unverändert und enthält weder Intervall noch Reminder-Metadaten.
+
 TSE-002 ergänzt nur für `Eigene Daten` den strukturierten Kontext `tseSettings` und vier lesbare Zeilen in `Export-Info.txt`: Anbieter, optionale Nutzung, nicht eingerichtete Anbindung und nicht verbundener Status. Im Steuerberaterexport ist `tseSettings` ausdrücklich `null`; CSV-Dateien, Übersicht, PDF-Inhalte und ZIP-Struktur enthalten weder TSE-Platzhalter noch fingierte Fiskaldaten.
 
 Alle Dateien entstehen im Arbeitsspeicher des Endgeräts. Die Anwendung überträgt weder Snapshot noch Exportdateien an FRECKA oder einen anderen Server. Ein Download ist eine bewusste Nutzeraktion; ab diesem Zeitpunkt ist der Nutzer für den gewählten Speicherort verantwortlich.

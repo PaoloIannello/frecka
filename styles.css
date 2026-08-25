@@ -1899,6 +1899,93 @@ body.work-mode:not(.catalog-mode) .flow-page {
 .backup-card > .backup-restore-confirm {
   grid-column: 1 / -1;
 }
+.backup-interval-card > * { grid-column: 1 / -1; }
+.backup-interval-heading h2,
+.backup-interval-heading p { margin: 0; }
+.backup-interval-heading h2 { font-size: 1rem; }
+.backup-interval-heading p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: .76rem;
+  line-height: 1.5;
+}
+.backup-interval-options {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+.backup-interval-options legend {
+  width: 100%;
+  margin-bottom: 8px;
+  font-size: .74rem;
+  font-weight: 850;
+}
+.backup-interval-option {
+  min-width: 0;
+  min-height: 76px;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--surface);
+  display: grid;
+  grid-template-columns: 21px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  cursor: pointer;
+}
+.backup-interval-option:has(input:checked) {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+.backup-interval-option input {
+  width: 20px;
+  height: 20px;
+  margin: 1px 0 0;
+  accent-color: var(--primary);
+}
+.backup-interval-option span { min-width: 0; display: grid; gap: 3px; }
+.backup-interval-option strong { overflow-wrap: anywhere; font-size: .76rem; }
+.backup-interval-option small { color: var(--muted); font-size: .66rem; line-height: 1.35; }
+.backup-interval-status {
+  min-height: 1.1em;
+  margin: -3px 0 0;
+  color: var(--primary-strong);
+  font-size: .7rem;
+  font-weight: 800;
+}
+.backup-interval-status.is-error { color: var(--danger); }
+.backup-storage-help {
+  margin: 0 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.backup-storage-help > summary {
+  min-height: 54px;
+  padding: 14px 16px;
+  color: var(--primary-strong);
+  font-size: .8rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+.backup-storage-help > div {
+  padding: 0 16px 15px;
+  display: grid;
+  gap: 8px;
+}
+.backup-storage-help p {
+  margin: 0;
+  color: var(--muted);
+  font-size: .74rem;
+  line-height: 1.5;
+}
 .backup-card .setting-field > small {
   color: var(--muted);
   font-size: .68rem;
@@ -2099,6 +2186,7 @@ body.work-mode:not(.catalog-mode) .flow-page {
 @media(max-width:520px) {
   .backup-card { grid-template-columns: 1fr; padding: 15px; }
   .backup-card > * { grid-column: 1 !important; }
+  .backup-interval-options { grid-template-columns: 1fr; }
 }
 @media(max-width:350px) {
   .backup-intro { grid-template-columns: 38px minmax(0, 1fr); padding: 14px; }

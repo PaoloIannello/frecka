@@ -1,10 +1,10 @@
 # FRECKA – 0.11.1 / BETA-HANDOFF-001
 
-Browserbasierte FRECKA-PWA 0.11.1 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der Patch-Kandidat ergänzt gegenüber der real abgenommenen Beta-Basis 0.11.0 ausschließlich BRANDING-001, BRANDING-002, BETA-HANDOFF-001 und die notwendigen Versions-/Releaseanpassungen. BACKUP-004 und ONBOARDING-001 sind nicht enthalten.
+Browserbasierte FRECKA-PWA 0.11.1 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Die veröffentlichte Version ergänzt gegenüber der real abgenommenen Beta-Basis 0.11.0 ausschließlich BRANDING-001, BRANDING-002, BETA-HANDOFF-001 und die notwendigen Versions-/Releaseanpassungen. Der noch nicht veröffentlichte Arbeitsstand ergänzt BACKUP-004; ONBOARDING-001 ist nicht enthalten.
 
 Ein vollständig neuer Mandant startet ohne Kunden, Katalogpositionen, Belege, offene Zahlungen, Korrekturen, Gutscheine, Umsätze oder Logoassets. Neutrale technische Defaults, optionale Vorlagen und die ausschließlich für PERSISTENCE-010 erlaubte historische Vierer-Reparaturquelle sind strikt getrennt. Die verbindliche Erststartinventur und die 15-Punkte-Übergabecheckliste stehen in [`docs/beta-handoff.md`](docs/beta-handoff.md).
 
-UX-011 / UPDATE-002 / BACKUP-003 ergänzt darauf eine reale Seite **Einstellungen → Update**, bereinigt veraltete „Geplant“-Kennzeichnungen und erinnert nach sieben Tagen ohne bestätigte Sicherungsdatei nicht blockierend an ein neues lokales Backup. Die manuelle Suche verwendet den vorhandenen Updatecontroller; die Erinnerung bleibt im bestehenden Settings-Store und wird durch Restore nicht fälschlich zurückgesetzt.
+UX-011 / UPDATE-002 / BACKUP-003/004 ergänzt darauf eine reale Seite **Einstellungen → Update**, bereinigt veraltete „Geplant“-Kennzeichnungen und erinnert nach einem wählbaren Intervall ohne bestätigte Sicherungsdatei nicht blockierend an ein neues lokales Backup. Zur Auswahl stehen 48 Stunden, 5 Tage und wöchentlich; wöchentlich ist der abwärtskompatible Standard. Die manuelle Suche verwendet den vorhandenen Updatecontroller; Restore übernimmt die Intervallwahl, gilt aber niemals als neue Sicherung und bewahrt lokale Frist- und Snooze-Zeitpunkte.
 
 ## Neu in 0.11.1
 
@@ -117,10 +117,11 @@ Für den realen iPhone-Test genau einmal **Diagnose erstellen** antippen, den lo
 - Navigation, neue Eingabe, Fehler und neue Versuche entwerten laufende oder vorbereitete Ausgaben; verspätete Promises können danach keinen Dialog mehr auslösen
 - ein Ausgabeversuch verbraucht den vorbereiteten Zustand vor dem ersten Systemaufruf; Share-Abbruch löst weder Download-Fallback noch zweiten Dialog aus
 - Sicherungskennwörter bleiben bei Fehlern und Share-Abbruch erhalten und werden nur nach erfolgreichem Share oder Download geleert
-- eine wöchentliche, nicht blockierende Sicherungserinnerung mit 24-Stunden-Snooze; Erstinstallationen und historische Settings ohne Metadaten erhalten zunächst sieben Tage Schonfrist
+- eine nicht blockierende Sicherungserinnerung nach 48 Stunden, 5 Tagen oder wöchentlich mit 24-Stunden-Snooze; Erstinstallationen und historische Settings ohne Auswahl verwenden wöchentlich
 - ausschließlich bestätigter Share oder Download setzt den letzten erfolgreichen Sicherungszeitpunkt; Vorbereitung, Fehler und Share-Abbruch tun dies nicht
+- eine aufklappbare Speicherhilfe für iPhone/iPad, Android und persönliche Cloud-Ordner ohne Cloudintegration oder Zugriff durch FRECKA
 - explizite iOS-taugliche Share-/Speichern-Aktion mit ausreichend lange lesbarer Objekt-URL für einen bewusst gestarteten Download
-- 179 bestandene native Browser-Smoke-Tests einschließlich Erfolgs-, Invarianten-, Navigations-, Verschlüsselungs-, Datei-, Share-Abbruch- und Sicherungserinnerungspfad
+- native Browser-Smoke-Tests einschließlich Erfolgs-, Invarianten-, Navigations-, Verschlüsselungs-, Datei-, Share-Abbruch- und Sicherungserinnerungspfad
 
 ## Grundlage aus PERSISTENCE-007
 

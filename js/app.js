@@ -1126,11 +1126,23 @@
     return persistence?.backupReminderIsDue?.(data.backupReminder, now) === true;
   }
 
+  const backupIntervalOptions = Object.freeze([
+    Object.freeze({ value: "48-hours", label: "Alle 48 Stunden", dueText: "48 Stunden", afterText: "48 Stunden" }),
+    Object.freeze({ value: "5-days", label: "Alle 5 Tage", dueText: "5 Tage", afterText: "5 Tagen" }),
+    Object.freeze({ value: "weekly", label: "Wöchentlich", dueText: "eine Woche", afterText: "einer Woche" })
+  ]);
+
+  function selectedBackupInterval() {
+    const selected = backupIntervalOptions.find(option => option.value === data.backupReminder?.interval);
+    return selected || backupIntervalOptions.find(option => option.value === "weekly");
+  }
+
   function backupReminderMarkup() {
     if (!backupReminderIsDue()) return "";
     const lastSuccessful = Date.parse(data.backupReminder?.lastSuccessfulAt || "");
+    const interval = selectedBackupInterval();
     const detail = Number.isFinite(lastSuccessful)
-      ? "Deine letzte Sicherung ist mindestens 7 Tage her."
+      ? `Deine letzte Sicherung liegt mindestens ${interval.dueText} zurück.`
       : "Seit der Einrichtung wurde noch keine aktuelle Sicherung erstellt.";
     return `<section class="backup-reminder" aria-labelledby="backupReminderTitle">
       <span class="backup-reminder-icon" aria-hidden="true">↥</span>
@@ -4418,6 +4430,60 @@
     });
   }
 
+  function backupIntervalSettingsMarkup() {
+    const selected = selectedBackupInterval().value;
+    return `<section class="backup-card backup-interval-card" aria-labelledby="backupIntervalTitle">
+      <div class="backup-interval-heading"><h2 id="backupIntervalTitle">Sicherungserinnerung</h2><p>Wähle, wann FRECKA dich nach der letzten erfolgreichen Sicherung wieder erinnert.</p></div>
+      <fieldset class="backup-interval-options" data-backup-interval-settings><legend>Sicherungsintervall</legend>
+        ${backupIntervalOptions.map(option => `<label class="backup-interval-option"><input type="radio" name="backupInterval" value="${option.value}" ${option.value === selected ? "checked" : ""}><span><strong>${option.label}</strong><small>Erinnerung nach ${option.afterText}</small></span></label>`).join("")}
+      </fieldset>
+      <p class="backup-interval-status" data-backup-interval-status role="status" aria-live="polite"></p>
+    </section>`;
+  }
+
+  function backupStorageHelpMarkup() {
+    return `<details class="backup-storage-help">
+      <summary>Wo soll ich meine Sicherung speichern?</summary>
+      <div>
+        <p>Auf iPhone und iPad speicherst du die Datei über „Dateien“. Auf Android wählst du einen verfügbaren Datei- oder Speicherort.</p>
+        <p>Empfehlenswert ist ein persönlicher Cloud-Ordner, zum Beispiel iCloud Drive, Google Drive oder OneDrive. Dann liegt die Sicherung nicht nur auf diesem Gerät und ist bei Verlust, Defekt oder Gerätewechsel leichter verfügbar.</p>
+        <p>FRECKA selbst erhält keinen Zugriff auf deinen Cloudspeicher. Den Speicherort wählst ausschließlich du über dein Gerät.</p>
+      </div>
+    </details>`;
+  }
+
+  function attachBackupReminderSettingsBehavior() {
+    const fieldset = document.querySelector("[data-backup-interval-settings]");
+    const status = document.querySelector("[data-backup-interval-status]");
+    fieldset?.addEventListener("change", async event => {
+      const input = event.target.closest('input[name="backupInterval"]');
+      if (!input || !input.checked) return;
+      const previous = cloneSettingsValue(data.backupReminder);
+      try {
+        const updated = persistence?.setBackupReminderInterval?.(data.backupReminder, input.value);
+        if (!updated) throw new Error("Backup interval unavailable");
+        Object.keys(data.backupReminder).forEach(key => { delete data.backupReminder[key]; });
+        Object.assign(data.backupReminder, updated);
+        if (status) {
+          status.classList.remove("is-error");
+          status.textContent = "Sicherungsintervall wird gespeichert …";
+        }
+        await persistCurrentSettings();
+        if (status) status.textContent = "Sicherungsintervall gespeichert.";
+      } catch (error) {
+        Object.keys(data.backupReminder).forEach(key => { delete data.backupReminder[key]; });
+        Object.assign(data.backupReminder, previous);
+        fieldset.querySelectorAll('input[name="backupInterval"]').forEach(control => {
+          control.checked = control.value === selectedBackupInterval().value;
+        });
+        if (status) {
+          status.classList.add("is-error");
+          status.textContent = `Das Sicherungsintervall konnte nicht gespeichert werden: ${persistenceErrorMessage(error)}`;
+        }
+      }
+    });
+  }
+
   function restoreStepMarkup() {
     if (state.backupStage === "unlock") {
       return `<div class="backup-selected-file"><span aria-hidden="true">✓</span><div><strong>${escapeHtml(state.backupRestoreFilename)}</strong><small>Datei ausgewählt</small></div><button type="button" data-action="backup-restore-cancel">Ändern</button></div>
@@ -4569,6 +4635,8 @@
       </div>
       ${backupNoticeMarkup()}
       <section class="backup-intro"><span aria-hidden="true">⌂</span><div><strong>Deine Daten bleiben bei dir</strong><p>Die Datei wird auf diesem Gerät verschlüsselt und nur an den von dir gewählten Speicherort übergeben. Es findet keine Serverübertragung statt.</p></div></section>
+      ${backupIntervalSettingsMarkup()}
+      ${backupStorageHelpMarkup()}
       <form id="backupCreateForm" class="settings-form backup-card">
         ${cardTitle("Neue Sicherung erstellen", "backup")}
         <p class="backup-card-copy">Die Sicherung enthält Einstellungen, Katalog, Kunden, Belege und Gutscheine einschließlich ihrer Historien.</p>
@@ -4585,6 +4653,7 @@
       ${integrityDiagnosticMarkup()}
       <p class="prototype-note">Die Sicherung wird ausschließlich lokal verarbeitet. Sicherungskennwörter werden weder protokolliert noch gespeichert.</p>
     </section>`;
+    attachBackupReminderSettingsBehavior();
     attachBackupCreateBehavior();
     attachBackupFileBehavior();
   }

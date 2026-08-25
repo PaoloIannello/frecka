@@ -160,6 +160,9 @@
     const defaultArea = activeAreas.find(area => area?.isDefault === true) || activeAreas[0] || null;
     const taxSettings = isPlainObject(settings?.taxSettings) ? settings.taxSettings : {};
     const receiptSettings = isPlainObject(settings?.receiptSettings) ? settings.receiptSettings : {};
+    const backupInterval = new Set(["48-hours", "5-days", "weekly"]).has(settings?.backupReminder?.interval)
+      ? settings.backupReminder.interval
+      : "weekly";
     const paymentChoices = (Array.isArray(settings?.paymentChoices) ? settings.paymentChoices : []).map((choice, index) => Object.freeze({
       id: text(choice?.id),
       title: text(choice?.title),
@@ -205,7 +208,8 @@
       receiptTexts: Object.freeze({
         footerText: text(receiptSettings.footerText),
         thankYouText: text(receiptSettings.thankYouText)
-      })
+      }),
+      backupReminder: Object.freeze({ interval: backupInterval })
     });
   }
 
@@ -855,6 +859,11 @@
       "small-business": "Kleinunternehmerregelung",
       undecided: "Nicht festgelegt"
     });
+    const backupIntervalLabels = Object.freeze({
+      "48-hours": "Alle 48 Stunden",
+      "5-days": "Alle 5 Tage",
+      weekly: "Wöchentlich"
+    });
     const lines = [
       "FRECKA-Export",
       "",
@@ -898,7 +907,8 @@
         `Aktive Zahlungsarten: ${projection.operatingSettings.paymentChoices.filter(choice => choice.active).map(choice => choice.title).join(", ") || "Keine"}`,
         `Nächste Belegnummer: ${projection.operatingSettings.receiptNumbering.yearPrefix}-${String(projection.operatingSettings.receiptNumbering.nextNumber || 0).padStart(6, "0")}`,
         `Beleg-Fußtext: ${projection.operatingSettings.receiptTexts.footerText || "Nicht hinterlegt"}`,
-        `Beleg-Dankestext: ${projection.operatingSettings.receiptTexts.thankYouText || "Nicht hinterlegt"}`
+        `Beleg-Dankestext: ${projection.operatingSettings.receiptTexts.thankYouText || "Nicht hinterlegt"}`,
+        `Sicherungsintervall: ${backupIntervalLabels[projection.operatingSettings.backupReminder.interval] || backupIntervalLabels.weekly}`
       ] : []),
       `Anzahl Belege: ${projection.receipts.length}`,
       `Anzahl Gutscheine: ${projection.vouchers.length}`,

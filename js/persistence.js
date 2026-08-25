@@ -1,6 +1,12 @@
 (() => {
   "use strict";
 
+  const backupReminderIntervals = Object.freeze({
+    "48-hours": 48 * 60 * 60 * 1000,
+    "5-days": 5 * 24 * 60 * 60 * 1000,
+    weekly: 7 * 24 * 60 * 60 * 1000
+  });
+
   const constants = Object.freeze({
     databaseName: "frecka",
     databaseVersion: 5,
@@ -20,7 +26,9 @@
     licenseFormatVersion: 1,
     tseSettingsFormatVersion: 1,
     backupReminderFormatVersion: 1,
-    backupReminderDelayMs: 7 * 24 * 60 * 60 * 1000,
+    backupReminderDefaultInterval: "weekly",
+    backupReminderIntervals,
+    backupReminderDelayMs: backupReminderIntervals.weekly,
     backupReminderSnoozeMs: 24 * 60 * 60 * 1000,
     settingsFormatVersion: 1,
     catalogFormatVersion: 1,
@@ -201,8 +209,14 @@
     const baselineAt = nullableIso(candidate.baselineAt)
       || nullableIso(fallback.baselineAt)
       || stableIso(initializedAt, new Date().toISOString());
+    const interval = Object.prototype.hasOwnProperty.call(constants.backupReminderIntervals, candidate.interval)
+      ? candidate.interval
+      : Object.prototype.hasOwnProperty.call(constants.backupReminderIntervals, fallback.interval)
+        ? fallback.interval
+        : constants.backupReminderDefaultInterval;
     return {
       formatVersion: constants.backupReminderFormatVersion,
+      interval,
       baselineAt,
       lastSuccessfulAt: Object.prototype.hasOwnProperty.call(candidate, "lastSuccessfulAt")
         ? nullableIso(candidate.lastSuccessfulAt)
@@ -220,8 +234,18 @@
     const snoozedUntil = Date.parse(reminder.snoozedUntil || "");
     return Number.isFinite(now)
       && Number.isFinite(baseline)
-      && now - baseline >= constants.backupReminderDelayMs
+      && now - baseline >= constants.backupReminderIntervals[reminder.interval]
       && (!Number.isFinite(snoozedUntil) || now >= snoozedUntil);
+  }
+
+  function setBackupReminderInterval(source, interval, initializedAt = new Date().toISOString()) {
+    if (!Object.prototype.hasOwnProperty.call(constants.backupReminderIntervals, interval)) {
+      throw new PersistenceError("INVALID_DATA", "Bitte wähle ein gültiges Sicherungsintervall.");
+    }
+    return {
+      ...normalizeBackupReminder(source, null, initializedAt),
+      interval
+    };
   }
 
   function snoozeBackupReminder(source, nowInput = Date.now()) {
@@ -4892,7 +4916,15 @@
                   null,
                   new Date().toISOString()
                 );
-                restoredRecords.settings.backupReminder = currentReminder;
+                const restoredReminder = normalizeBackupReminder(
+                  restoredRecords.settings.backupReminder,
+                  currentReminder,
+                  currentReminder.baselineAt
+                );
+                restoredRecords.settings.backupReminder = {
+                  ...currentReminder,
+                  interval: restoredReminder.interval
+                };
                 writeStore(storeName, 0, restoredRecords.settings);
               } catch (error) {
                 failure = error instanceof PersistenceError
@@ -4973,6 +5005,7 @@
     normalizeTseSettings,
     normalizeBackupReminder,
     backupReminderIsDue,
+    setBackupReminderInterval,
     snoozeBackupReminder,
     completeBackupReminder,
     normalizeCompanyLogo,

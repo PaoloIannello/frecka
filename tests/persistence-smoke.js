@@ -3997,28 +3997,43 @@
         }
       },
       {
-        name: "BACKUP-003 berechnet Wochenfrist, 24-Stunden-Snooze und erfolgreiche Sicherung deterministisch",
+        name: "BACKUP-004 berechnet 48 Stunden, 5 Tage und wöchentlich deterministisch",
         run: async () => {
           const baseline = Date.parse("2030-01-01T10:00:00.000Z");
           const reminder = api.normalizeBackupReminder({}, null, new Date(baseline).toISOString());
+          assertEqual(reminder.interval, "weekly", "Standardintervall ist nicht wöchentlich");
           assert(!api.backupReminderIsDue(reminder, baseline + api.constants.backupReminderDelayMs - 1), "Erinnerung erschien vor sieben Tagen");
           assert(api.backupReminderIsDue(reminder, baseline + api.constants.backupReminderDelayMs), "Erinnerung erschien nach sieben Tagen nicht");
 
+          const fiveDays = api.setBackupReminderInterval(reminder, "5-days");
+          assertEqual(fiveDays.baselineAt, reminder.baselineAt, "Intervallwechsel veränderte den Fristbeginn");
+          assert(!api.backupReminderIsDue(fiveDays, baseline + api.constants.backupReminderIntervals["5-days"] - 1), "Fünf-Tage-Erinnerung erschien zu früh");
+          assert(api.backupReminderIsDue(fiveDays, baseline + api.constants.backupReminderIntervals["5-days"]), "Fünf-Tage-Erinnerung erschien nicht fristgerecht");
+
+          const fortyEightHours = api.setBackupReminderInterval(reminder, "48-hours");
+          assert(!api.backupReminderIsDue(fortyEightHours, baseline + api.constants.backupReminderIntervals["48-hours"] - 1), "48-Stunden-Erinnerung erschien zu früh");
+          assert(api.backupReminderIsDue(fortyEightHours, baseline + api.constants.backupReminderIntervals["48-hours"]), "48-Stunden-Erinnerung erschien nicht fristgerecht");
+
           const snoozedAt = baseline + api.constants.backupReminderDelayMs;
-          const snoozed = api.snoozeBackupReminder(reminder, snoozedAt);
+          const snoozed = api.snoozeBackupReminder(fortyEightHours, snoozedAt);
           assert(!api.backupReminderIsDue(snoozed, snoozedAt + api.constants.backupReminderSnoozeMs - 1), "Snooze endete vor 24 Stunden");
           assert(api.backupReminderIsDue(snoozed, snoozedAt + api.constants.backupReminderSnoozeMs), "Erinnerung kehrte nach 24 Stunden nicht zurück");
+          const snoozedWeekly = api.setBackupReminderInterval(snoozed, "weekly");
+          assertEqual(snoozedWeekly.snoozedUntil, snoozed.snoozedUntil, "Intervallwechsel umging den bestehenden Snooze");
+          assert(!api.backupReminderIsDue(snoozedWeekly, snoozedAt + api.constants.backupReminderSnoozeMs - 1), "Intervallwechsel machte die Erinnerung trotz Snooze fällig");
 
           const completedAt = snoozedAt + 60_000;
-          const completed = api.completeBackupReminder(snoozed, completedAt);
+          const completed = api.completeBackupReminder(fiveDays, completedAt);
           assertEqual(completed.lastSuccessfulAt, new Date(completedAt).toISOString(), "Erfolgreiche Sicherung setzte keinen neuen Referenzzeitpunkt");
           assertEqual(completed.snoozedUntil, null, "Erfolgreiche Sicherung ließ den Snooze aktiv");
-          assert(!api.backupReminderIsDue(completed, completedAt + api.constants.backupReminderDelayMs - 1), "Neue Sicherung startete die Wochenfrist nicht neu");
-          assert(api.backupReminderIsDue(completed, completedAt + api.constants.backupReminderDelayMs), "Neue Wochenfrist endete nicht deterministisch");
+          assertEqual(completed.interval, "5-days", "Erfolgreiche Sicherung veränderte die Intervallwahl");
+          assert(!api.backupReminderIsDue(completed, completedAt + api.constants.backupReminderIntervals["5-days"] - 1), "Neue Sicherung startete das gewählte Intervall nicht neu");
+          assert(api.backupReminderIsDue(completed, completedAt + api.constants.backupReminderIntervals["5-days"]), "Neues Fünf-Tage-Intervall endete nicht deterministisch");
+          assertThrows(() => api.setBackupReminderInterval(reminder, "off"), "INVALID_DATA", "Ausgeschaltetes Sicherungsintervall");
         }
       },
       {
-        name: "BACKUP-003 gibt Erstinstallation und historischem Bestand ohne Metadaten sieben Tage Schonfrist",
+        name: "BACKUP-004 verwendet für Erstinstallation und historischen Bestand wöchentlich",
         run: async () => {
           const initializedAt = "2030-04-01T08:00:00.000Z";
           const defaults = recordFixture("backup-reminder-legacy");
@@ -4027,8 +4042,43 @@
           delete historical.backupReminder;
           const normalized = api.normalizeSettingsRecord(historical, defaults, "backup-reminder-legacy");
           assert(normalized.repairs.includes("BACKUP_REMINDER_DEFAULTED"), "Historischer Bestand weist die Ergänzung nicht aus");
+          assertEqual(normalized.record.backupReminder.interval, "weekly", "Historischer Bestand erhielt nicht das wöchentliche Standardintervall");
           assertEqual(normalized.record.backupReminder.baselineAt, initializedAt, "Historischer Bestand erhielt keinen deterministischen lokalen Startzeitpunkt");
           assert(!api.backupReminderIsDue(normalized.record.backupReminder, Date.parse(initializedAt)), "Historischer Bestand wurde sofort aggressiv erinnert");
+        }
+      },
+      {
+        name: "BACKUP-004 persistiert genau eine Intervallwahl und stellt sie nach Reload wieder her",
+        run: async () => {
+          const persistence = context.makeClient("backup-interval-reload");
+          const settings = recordFixture(persistence.tenantId, "completed");
+          settings.backupReminder = api.setBackupReminderInterval(settings.backupReminder, "48-hours");
+          await persistence.writeSettings(settings);
+          const reloaded = await persistence.readSettings();
+          assertEqual(reloaded.backupReminder.interval, "48-hours", "Intervall ging beim Reload verloren");
+          assertDeepEqual(Object.keys(api.constants.backupReminderIntervals), ["48-hours", "5-days", "weekly"], "Intervallvertrag enthält eine unerlaubte Auswahl");
+          assert(!Object.keys(api.constants.backupReminderIntervals).includes("off"), "Sicherungserinnerung kann ausgeschaltet werden");
+        }
+      },
+      {
+        name: "BACKUP-004 UI bietet drei exklusive Optionen und reine lokale Speicherhilfe",
+        run: async () => {
+          const response = await fetch("../js/app.js", { cache: "no-store" });
+          assert(response.ok, "App-Quelle für BACKUP-004-UI konnte nicht geladen werden");
+          const source = await response.text();
+          const intervalStart = source.indexOf("function backupIntervalSettingsMarkup()");
+          const helpStart = source.indexOf("function backupStorageHelpMarkup()", intervalStart);
+          const behaviorStart = source.indexOf("function attachBackupReminderSettingsBehavior()", helpStart);
+          const intervalBlock = source.slice(intervalStart, helpStart);
+          const helpBlock = source.slice(helpStart, behaviorStart);
+          assert(intervalStart >= 0 && helpStart > intervalStart && behaviorStart > helpStart, "BACKUP-004-Komponenten fehlen");
+          assert(intervalBlock.includes('type="radio"') && intervalBlock.includes('name="backupInterval"'), "Intervallauswahl ist nicht exklusiv als Radiogruppe umgesetzt");
+          ["48-hours", "5-days", "weekly"].forEach(value => assert(source.includes(`value: "${value}"`), `Intervall ${value} fehlt`));
+          assert(!intervalBlock.includes('value="off"'), "UI bietet eine unerlaubte Aus-Option");
+          assert(helpBlock.includes("iPhone und iPad") && helpBlock.includes("Android"), "Gerätebezogene Speicherhilfe fehlt");
+          assert(helpBlock.includes("iCloud Drive") && helpBlock.includes("Google Drive") && helpBlock.includes("OneDrive"), "Beispiele für persönliche Cloud-Ordner fehlen");
+          assert(helpBlock.includes("FRECKA selbst erhält keinen Zugriff"), "Datenschutzgrenze der Speicherhilfe fehlt");
+          assert(!helpBlock.includes("fetch(") && !helpBlock.includes("OAuth") && !helpBlock.includes("<button"), "Speicherhilfe enthält eine externe oder funktionslose Integration");
         }
       },
       {
@@ -4381,6 +4431,7 @@
         name: "Steuerberatung exportiert keine Kunden, Eigene Daten nur zugeordnete Kunden",
         run: async () => {
           const snapshot = completeExportSnapshotFixture("test-export-privacy");
+          snapshot.stores.settings.backupReminder = api.setBackupReminderInterval(snapshot.stores.settings.backupReminder, "5-days");
           const options = { periodType: "custom", dateFrom: "2030-01-01", dateTo: "2030-01-31", businessAreaId: "hair", includeCustomers: true };
           const taxFiles = exportApi.createExportFiles(snapshot, { ...options, exportType: "tax-advisor" });
           const ownFiles = exportApi.createExportFiles(snapshot, { ...options, exportType: "own-data" });
@@ -4413,12 +4464,14 @@
           assertDeepEqual(ownFiles.projection.operatingSettings?.paymentChoices.map(choice => choice.id), ["cash", "ec", "voucher"], "Eigene-Daten-Projektion verändert die Zahlungsartenreihenfolge");
           assertEqual(ownFiles.projection.operatingSettings?.receiptNumbering.nextNumber, 77, "Eigene-Daten-Projektion enthält den Nummernstand nicht");
           assertEqual(ownFiles.projection.operatingSettings?.receiptTexts.footerText, "Test-Fußtext", "Eigene-Daten-Projektion enthält den Beleg-Fußtext nicht");
+          assertDeepEqual(ownFiles.projection.operatingSettings?.backupReminder, { interval: "5-days" }, "Eigene-Daten-Projektion enthält nicht ausschließlich die Intervallwahl");
           const taxInfo = taxFiles.files.find(file => file.name === "Export-Info.txt")?.content || "";
           const ownInfo = ownFiles.files.find(file => file.name === "Export-Info.txt")?.content || "";
           assert(!taxInfo.includes("Aktiver Benutzer:"), "Steuerberatungsexport weist den internen Benutzer aus");
           assert(!taxInfo.includes("Lizenz-ID:") && !taxInfo.includes("Geräte-ID:"), "Steuerberatungsexport weist Lizenz- oder Gerätedaten aus");
           assert(!taxInfo.includes("Ansprechpartner:") && !taxInfo.includes("Website:"), "Steuerberatungsexport wurde um eigene Unternehmensstammdaten erweitert");
           assert(!taxInfo.includes("Standard-MwSt.:") && !taxInfo.includes("Aktive Zahlungsarten:"), "Steuerberatungsexport weist reine App-Einstellungen aus");
+          assert(!taxInfo.includes("Sicherungsintervall:"), "Steuerberatungsexport weist das lokale Sicherungsintervall aus");
           assert(ownInfo.includes("Aktiver Benutzer: Testperson"), "Eigene-Daten-Export dokumentiert den aktiven Benutzer nicht");
           assert(ownInfo.includes("Ansprechpartner: Test Kontakt"), "Eigene-Daten-Export dokumentiert den Ansprechpartner nicht");
           assert(ownInfo.includes("Website: https://test.example.invalid/"), "Eigene-Daten-Export dokumentiert die Website nicht");
@@ -4430,6 +4483,7 @@
           assert(ownInfo.includes("Standard-Geschäftsbereich: Friseur"), "Eigene-Daten-Export dokumentiert den Standard-Geschäftsbereich nicht");
           assert(ownInfo.includes("Aktive Zahlungsarten: Bar, EC, Gutschein"), "Eigene-Daten-Export dokumentiert die aktiven Zahlungsarten nicht");
           assert(ownInfo.includes("Nächste Belegnummer: 2030-000077"), "Eigene-Daten-Export dokumentiert den geschützten Nummernstand nicht");
+          assert(ownInfo.includes("Sicherungsintervall: Alle 5 Tage"), "Eigene-Daten-Export dokumentiert die Intervallwahl nicht");
         }
       },
       {
@@ -4931,12 +4985,13 @@
         }
       },
       {
-        name: "Restore bewahrt den lokalen BACKUP-003-Erinnerungsstatus atomar",
+        name: "Restore übernimmt die BACKUP-004-Intervallwahl und bewahrt lokale Zeitpunkte atomar",
         run: async () => {
           const persistence = context.makeClient("backup-reminder-restore");
           const current = completeTenantSnapshotFixture(persistence.tenantId, { companyName: "Aktueller Betrieb" });
           current.stores.settings.backupReminder = {
             formatVersion: 1,
+            interval: "48-hours",
             baselineAt: "2030-03-01T09:00:00.000Z",
             lastSuccessfulAt: "2030-03-10T09:00:00.000Z",
             snoozedUntil: "2030-03-18T09:00:00.000Z"
@@ -4946,13 +5001,17 @@
           const target = completeTenantSnapshotFixture(persistence.tenantId, { companyName: "Wiederhergestellter Betrieb" });
           target.stores.settings.backupReminder = {
             formatVersion: 1,
+            interval: "5-days",
             baselineAt: "2029-01-01T09:00:00.000Z",
             lastSuccessfulAt: "2029-01-02T09:00:00.000Z",
             snoozedUntil: null
           };
           const restored = await persistence.restoreTenantSnapshot(target);
-          assertDeepEqual(restored.records.settings.backupReminder, current.stores.settings.backupReminder, "Restore übernahm fälschlich alte Reminder-Metadaten");
-          assertDeepEqual((await persistence.readSettings()).backupReminder, current.stores.settings.backupReminder, "Persistierter Reminder-Status änderte sich durch Restore");
+          const expectedReminder = { ...current.stores.settings.backupReminder, interval: "5-days" };
+          assertDeepEqual(restored.records.settings.backupReminder, expectedReminder, "Restore behandelte Intervallwahl und lokale Reminder-Zeitpunkte nicht getrennt");
+          assertDeepEqual((await persistence.readSettings()).backupReminder, expectedReminder, "Persistierter Reminder-Vertrag ist nach Restore inkonsistent");
+          assertEqual((await persistence.readSettings()).backupReminder.lastSuccessfulAt, current.stores.settings.backupReminder.lastSuccessfulAt, "Restore zählte fälschlich als erfolgreiche Sicherung");
+          assertEqual((await persistence.readSettings()).backupReminder.snoozedUntil, current.stores.settings.backupReminder.snoozedUntil, "Restore umging den lokalen Snooze");
           assertEqual((await persistence.readSettings()).company.name, "Wiederhergestellter Betrieb", "Reminder-Schutz verhinderte den fachlichen Restore");
         }
       },

@@ -120,7 +120,7 @@ Unvollständige, beschädigte, manipulierte, mandantenfremde oder inkompatible D
 
 ## Atomare Wiederherstellung
 
-Nach positiver Vollvalidierung öffnet die Persistenzschicht eine gemeinsame Readwrite-Transaktion über alle fünf Stores. Jeder fachliche Store erhält genau den geprüften Datensatz des aktuellen Mandanten. Ausschließlich der gerätelokale BACKUP-003-Erinnerungsstatus wird aus dem bisherigen Settings-Datensatz erhalten, damit eine alte Sicherungsdatei die lokale Erinnerungsfrist weder zurücksetzt noch künstlich verlängert. Erst `transaction.oncomplete` bestätigt den Erfolg.
+Nach positiver Vollvalidierung öffnet die Persistenzschicht eine gemeinsame Readwrite-Transaktion über alle fünf Stores. Jeder fachliche Store erhält genau den geprüften Datensatz des aktuellen Mandanten. Beim BACKUP-004-Vertrag wird die gesicherte Intervallwahl als Einstellung übernommen; der gerätelokale Fristbeginn, der Zeitpunkt der letzten erfolgreichen Ausgabe und ein laufender Snooze bleiben aus dem bisherigen Settings-Datensatz erhalten. Eine alte Sicherungsdatei kann damit weder die lokale Erinnerungsfrist zurücksetzen noch einen Snooze umgehen. Erst `transaction.oncomplete` bestätigt den Erfolg.
 
 Schlägt irgendein Put-Vorgang fehl oder wird die Transaktion abgebrochen, rollt IndexedDB alle Änderungen zurück. Es gibt keinen Teil-Restore. Die App übernimmt die neuen Laufzeitdaten erst nach erfolgreichem Transaktionsabschluss, verwirft offene UI-Auswahlen und leitet Zähler sowie Standards neu ab.
 
@@ -136,13 +136,18 @@ Schlägt irgendein Put-Vorgang fehl oder wird die Transaktion abgebrochen, rollt
 6. Erst nach erfolgreicher Übergabe beziehungsweise erfolgreichem Download werden die beiden Kennwortfelder geleert.
 7. Sicherungskennwort und Klartextpayload werden nicht in App-State, IndexedDB oder Logs übernommen.
 
-### Wöchentliche Sicherungserinnerung
+### Wählbare Sicherungserinnerung
 
 - Maßgeblich ist die letzte tatsächlich an Share oder Download übergebene Sicherungsdatei. Reine Vorbereitung, Verschlüsselungs-/Dateifehler und Share-Abbruch verändern den Zeitpunkt nicht.
-- Ohne erfolgreiche Sicherung erscheint frühestens sieben Tage nach der lokalen Initialisierung eine nicht blockierende Karte auf der Startseite.
+- Genau eine der Optionen **Alle 48 Stunden**, **Alle 5 Tage** oder **Wöchentlich** ist aktiv; ein Ausschalten ist nicht vorgesehen. Neue und historische Daten ohne Auswahl verwenden **Wöchentlich**.
+- Ohne erfolgreiche Sicherung erscheint nach Ablauf des gewählten Intervalls ab der lokalen Initialisierung eine nicht blockierende Karte auf der Startseite.
+- Ein Intervallwechsel verändert weder Fristbeginn noch letzten Sicherungszeitpunkt. Ist die neue Frist bereits abgelaufen, erscheint die Erinnerung beim nächsten regulären Check.
 - „Jetzt sichern“ öffnet ausschließlich den vorhandenen Sicherungsbereich. „Später erinnern“ speichert einen lokalen Snooze von 24 Stunden im bestehenden Settings-Datensatz.
-- Historische Settings ohne Reminder-Metadaten erhalten bei der ersten kompatiblen Initialisierung eine neue Sieben-Tage-Frist; es gibt keine sofortige aggressive Altbestandsmeldung.
-- Restore übernimmt die fachlichen Daten der Sicherung, bewahrt aber den aktuellen lokalen Reminder-Status atomar. Restore selbst gilt nicht als neu erstellte Sicherung.
+- Ein laufender Snooze bleibt auch nach einem Intervallwechsel wirksam.
+- Historische Settings ohne Reminder-Metadaten erhalten bei der ersten kompatiblen Initialisierung eine neue wöchentliche Frist; es gibt keine sofortige aggressive Altbestandsmeldung.
+- Restore übernimmt die gesicherte Intervallwahl, bewahrt aber die aktuellen lokalen Zeitpunkte atomar. Restore selbst gilt nicht als neu erstellte Sicherung.
+
+Der aufklappbare Hinweis **Wo soll ich meine Sicherung speichern?** erklärt die Auswahl über „Dateien“ auf iPhone/iPad und über die verfügbaren Speicherorte auf Android. Ein persönlicher Cloud-Ordner wie iCloud Drive, Google Drive oder OneDrive wird als Schutz bei Verlust, Defekt oder Gerätewechsel empfohlen. Das ist ausschließlich eine Bedienhilfe: Es gibt keine Cloudintegration, keine Anmeldung und keinen Zugriff von FRECKA auf den gewählten Speicherort.
 
 Die für einen ausdrücklichen lokalen Download angelegte Objekt-URL bleibt für fünf Minuten gültig, damit ein verzögert arbeitender iOS-Dateidialog die Datei noch lesen kann. Der anschließende Timeout widerruft nur die URL und kann selbst keinen Dialog öffnen.
 
@@ -175,6 +180,8 @@ Die für einen ausdrücklichen lokalen Download angelegte Objekt-URL bleibt für
 Fehlerlogs enthalten nur Vorgang und Fehlercode. Passphrase, Schlüsselmaterial, Dateipayload und Geschäftsdaten werden nicht protokolliert.
 
 ## Tests
+
+BACKUP-004 ergänzt alle drei Intervalle, den wöchentlichen Standard, Reload, Wechsel vor und nach Fälligkeit, den erhaltenen 24-Stunden-Snooze, die ausschließliche Rücksetzung nach bestätigter Ausgabe, die reine lokale Speicherhilfe sowie den getrennten Restore-Vertrag für Intervallwahl und operative Zeitpunkte.
 
 `tests/persistence-smoke.html` prüft ohne zusätzliches Testframework die gesamte bisherige Persistenz sowie BACKUP-001/002/003, HARDEN-001, EXPORT-001/003, PERSISTENCE-007/008/010, SETTINGS-001/002, TSE-002 und QR-001. Die BACKUP-003-Fälle decken Sieben-Tage-Frist, 24-Stunden-Snooze, bestätigte Ausgabe, Fehler/Abbruch ohne Rücksetzung, Erststart/Altbestand sowie den atomar erhaltenen lokalen Reminder-Status beim Restore ab. Die bisherigen Backup-Ergänzungen prüfen weiterhin die reine Vorbereitung ohne vorzeitige Ausgabe, den Stopp eines historisch inkonsistenten Bestands vor Verschlüsselung und Ausgabe, verspätete Promise-Abschlüsse nach Navigation, Verschlüsselungs- und Dateifehler ohne vorbereiteten Zustand, Share-Abbruch ohne Fallback oder zweite Ausgabe, erhaltene Kennwortfelder und gefilterte UI-Meldungen. SETTINGS-002 bestätigt zusätzlich den unveränderten zentralen Settings-Roundtrip für Steuer-, Zahlungs-, Standardbereichs-, Nummern- und Belegtextwerte. TSE-002 prüft sichere Standardwerte, historische Settings und Backups, verschlüsselten Restore, Eigene-Daten-Export, ausgeschlossene Steuerberaterdaten sowie die Ablehnung unerlaubter Zugangsdaten. PERSISTENCE-010 ergänzt den erfolgreichen Backup- und Steuerberaterexport nach atomarer Reparatur sowie Stop- und Rollbackfälle ohne Store-Veränderung. Unverändert geprüft werden Format- und Mandantenprüfung, Vollständigkeit, Referenzen einschließlich der bidirektionalen Gutscheinverkaufsbeleg-Invariante, Nummernstand, Verschlüsselungs-Roundtrip, zufällige Ciphertexte, Klartextausschluss, falsches Kennwort, Payload- und Headermanipulation, abgeschnittene und unbekannte Formate, Export mit und ohne persistierte Stores, Restore in einen leeren Mandanten, vollständiges Überschreiben, atomarer Rollback, erneute Sicherung nach Restore, reversibler Kundenstatus sowie iOS-robuster Dateiname und Downloadtyp. Die fachlichen Export- und ZIP-Fälle sind in `docs/export.md`, die QR-Fälle in `docs/qr.md` beschrieben.
 
