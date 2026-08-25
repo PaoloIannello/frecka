@@ -1,6 +1,6 @@
 # Verschlüsselte Sicherung und Wiederherstellung
 
-**Stand:** BACKUP-005 auf Basis BRANDING-002, BACKUP-004, TSE-002, SETTINGS-002, SETTINGS-001, USER-001, BACKUP-002, BACKUP-001 und PERSISTENCE-007
+**Stand:** BACKUP-006 auf Basis BACKUP-005, BRANDING-002, BACKUP-004, TSE-002, SETTINGS-002, SETTINGS-001, USER-001, BACKUP-002, BACKUP-001 und PERSISTENCE-007
 **Datenbankschema:** 5
 **Backupformat:** 1
 **Geltungsbereich:** Vollständiger lokaler Datenstand eines Mandanten
@@ -59,6 +59,10 @@ SETTINGS-002 verwendet ausschließlich die bereits enthaltenen `taxSettings`, `r
 BRANDING-002 liegt ebenfalls vollständig innerhalb von `stores.settings`. Der Restore erhält mehrere Asset-Versionen verlustfrei und macht historische Beleg-/Gutscheinreferenzen danach wieder über denselben zentralen Resolver für Ansicht und PDF auflösbar. Er führt keine Bildmigration in Geschäftsvorgängen durch und bereinigt keine unreferenzierten Assets automatisch.
 
 BACKUP-005 schließt die Kompatibilitätslücke für bereits persistierte BRANDING-001-Settings: Fehlt darin das spätere `logoAssets`-Register noch oder liegt ein Unternehmens-/Geschäftsbereichslogo noch inline vor, projiziert die zentrale Snapshotprüfung diese Daten verlustfrei in genau das bestehende BRANDING-002-Register und ersetzt die aktive Zuordnung durch ihre stabile Asset-Referenz. Derselbe sichere Normalisierungsschritt wird beim App-Start dauerhaft in den vorhandenen Settingssatz geschrieben. Es entsteht weder ein neuer Store noch eine zweite Logo- oder Backupstruktur. Historische Settings ohne Logo erhalten ausschließlich ein leeres Register.
+
+BACKUP-006 schließt die danach im realen 0.11.3-iPhone-Bestand nachgewiesene Settingslücke. Der Settings-Write ergänzte das mit BACKUP-004 eingeführte Feld `backupReminder.interval` inhaltlich korrekt, konnte es durch den erhaltenden Objekt-Merge aber an einer anderen Eigenschaftsposition ablegen. Der frühere `JSON.stringify`-Vergleich deutete diese bedeutungslose Reihenfolge als `BACKUP_REMINDER_REPAIRED` und sperrte deshalb den vollständigen Snapshot. Der Vergleich verwendet nun den bereits vorhandenen kanonischen, schlüsselsortierten Wertvergleich.
+
+Darüber hinaus verwendet Start, Backup und Restore genau eine historische Settingsvorbereitung. Sie darf ausschließlich vollständig fehlende, in früheren Versionen noch nicht vorhandene Modelle und bekannte Felder ergänzen, die frühere Ein-Feld-Unternehmensidentität verlustfrei konsolidieren sowie das exakt erkannte alte Reminderformat um den wöchentlichen Standard erweitern. Vor dem Schreiben muss der resultierende Datensatz ohne weiteren Reparaturcode erneut exakt normalisierbar und sanitisiert sein. Doppelte oder ungültige Bereiche, ungültige Zeitpunkte, kollidierende Referenzen und jede andere mehrdeutige Abweichung bleiben unverändert gesperrt. Der Start schreibt die freigegebene Normalisierung atomar nur in den bestehenden Settings-Store; Belege, Kunden, Gutscheine, Beträge, Nummern, Historien und Referenzen werden dabei weder gelesen noch verändert.
 
 ## Äußeres Dateiformat
 
@@ -176,17 +180,19 @@ Die für einen ausdrücklichen lokalen Download angelegte Objekt-URL bleibt für
 - Maximale Dateigröße für die Entschlüsselung: 64 MiB.
 - Historisch inkonsistenter Gutschein-/Belegbestand bei der Sicherung: keine Datei, keine Verschlüsselung und ein verständlicher Hinweis ohne Codes, Gutscheinreferenzen oder Belegnummern. Unabhängige neue Belege bleiben weiterhin möglich.
 - Historischer BRANDING-001-Settingssatz ohne Asset-Register: verlustfreie Übernahme in das vorhandene BRANDING-002-Modell vor der strengen Snapshotprüfung; aktuelle und historische Logos bleiben vollständig enthalten.
+- Historischer BACKUP-004-Reminder mit identischen Werten in anderer Eigenschaftsreihenfolge: semantisch gleichwertig und kein Validierungsfehler.
+- Eindeutig additive historische Settings: einmalige atomare Startpersistierung und anschließend idempotente Vollvalidierung; mehrdeutige Reparaturen bleiben `fail closed`.
 - Verschlüsselungs-, Datei- oder Share-Fehler bei der Sicherung: keine Erfolgsmeldung und keine zweite Ausgabe; die Kennwortfelder bleiben für Korrektur oder Wiederholung erhalten.
 - Abbruch des nativen Teilen-Dialogs: kein automatischer Download und kein zweiter Share-Aufruf. Die Oberfläche meldet den Abbruch, ohne ihn als erfolgreiche Sicherung zu behandeln.
 - Navigation, neue Eingabe oder ein neuer Sicherungsversuch entwerten jede noch laufende beziehungsweise fertig vorbereitete Ausgabe. Deren verspäteter Abschluss darf weder einen Dialog öffnen noch einen neuen Ausgabezustand herstellen.
 
-Die sichtbare Fehlerbehandlung trennt Snapshot-/Vorbereitungsfehler von Fehlern der nachgelagerten Datei-/Share-Ausgabe. Die interne Diagnose enthält ausschließlich Phase und sicheren Fehlercode. Passphrase, Schlüsselmaterial, Dateipayload, Logo-Bilddaten und Geschäftsdaten werden nicht protokolliert.
+Die sichtbare Fehlerbehandlung trennt Snapshot-/Vorbereitungsfehler von Fehlern der nachgelagerten Datei-/Share-Ausgabe. Die teilbare lokale Integritätsdiagnose verwendet Formatversion 2 und enthält ausschließlich sichere Fehlercodes, Kategorien sowie gegebenenfalls Store und Datentyp. Namen, Beträge, IDs, Beleg- oder Gutscheinnummern, Steuerdaten, Bilddaten und Zugangsdaten sind ausgeschlossen. Die interne Backupklassifikation enthält ausschließlich Phase und sicheren Fehlercode. Passphrase, Schlüsselmaterial und Dateipayload werden nicht protokolliert oder übertragen.
 
 ## Tests
 
 BACKUP-004 ergänzt alle drei Intervalle, den wöchentlichen Standard, Reload, Wechsel vor und nach Fälligkeit, den erhaltenen 24-Stunden-Snooze, die ausschließliche Rücksetzung nach bestätigter Ausgabe, die reine lokale Speicherhilfe sowie den getrennten Restore-Vertrag für Intervallwahl und operative Zeitpunkte.
 
-`tests/persistence-smoke.html` prüft ohne zusätzliches Testframework die gesamte bisherige Persistenz sowie BACKUP-001/002/003/004/005, HARDEN-001, EXPORT-001/003, PERSISTENCE-007/008/010, SETTINGS-001/002, TSE-002 und QR-001. BACKUP-005 ergänzt einen historischen BRANDING-001-Snapshot mit Inline-Logos, einen historischen Snapshot ohne Logo/Register und einen realistischen Gesamtbestand mit Unternehmenslogo, Geschäftsbereichslogo, weiterer historischer Asset-Version, Benutzer, Lizenz, TSE-Vorbereitung, BACKUP-004-Reminder, Kunden, Belegen und Gutschein. Dieser Bestand durchläuft Vollvalidierung, AES-GCM, echte `File`-Erzeugung, Share-Adapter und Restore; alle Assetbytes und Referenzen müssen erhalten bleiben. Die bisherigen Backup-Ergänzungen prüfen weiterhin Vorbereitung und Ausgabe, Invariantenstopp, Fehler/Abbruch, Reminder, Manipulationsschutz, Export, Restore und Rollback. Die fachlichen Export- und ZIP-Fälle sind in `docs/export.md`, die QR-Fälle in `docs/qr.md` beschrieben.
+`tests/persistence-smoke.html` prüft ohne zusätzliches Testframework die gesamte bisherige Persistenz sowie BACKUP-001/002/003/004/005/006, HARDEN-001, EXPORT-001/003, PERSISTENCE-007/008/010, SETTINGS-001/002, TSE-002 und QR-001. BACKUP-006 ergänzt historische Profile für 0.9.x/0.10.x sowie Zustände vor USER-001, LICENSE-001, SETTINGS-001/002, BRANDING-001/002, BACKUP-004 und TSE-002 einschließlich Kombination und PERSISTENCE-010. Jeder freigegebene Profilpfad durchläuft Startnormalisierung, Settingspersistenz, Snapshotvalidierung, AES-GCM, Restore, erneute Vollvalidierung und Idempotenz. Ein eigener Negativfall beweist `fail closed` und unveränderte Eingabedaten. Die Diagnoseprüfungen suchen gezielt nach Namen, Beträgen, IDs, Nummern und Referenzen und dürfen ausschließlich sichere Kategorien ausgeben. Der aktuelle Browserlauf umfasst 198 bestandene Fälle.
 
 Jeder Lauf verwendet ausschließlich eine zufällig benannte Testdatenbank mit Guard gegen `frecka` und löscht diese anschließend. Ein simulierter Restore-Abbruch ist nur für eindeutig benannte Testdatenbanken freigeschaltet.
 

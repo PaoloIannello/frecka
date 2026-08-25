@@ -974,18 +974,18 @@
     }
     await persistence.openDatabase();
     const savedRecord = await persistence.readSettings();
-    const normalized = persistence.normalizeSettingsRecord(savedRecord, defaultSettingsRecord, persistence.tenantId);
-    if (savedRecord === null || normalized.repairs.some(repair => repair.startsWith("USER_")
-      || repair === "ACTIVE_USER_REPAIRED"
-      || repair.startsWith("LICENSE_")
-      || repair.startsWith("TSE_SETTINGS_")
-      || repair.startsWith("BACKUP_REMINDER_")
-      || repair.startsWith("LOGO_")
-      || repair === "LEGACY_LOGO_ASSET_REGISTERED")) {
-      await persistence.writeSettings(normalized.record);
+    const prepared = persistence.prepareHistoricalSettingsRecord
+      ? persistence.prepareHistoricalSettingsRecord(savedRecord, defaultSettingsRecord, persistence.tenantId)
+      : {
+          ...persistence.normalizeSettingsRecord(savedRecord, defaultSettingsRecord, persistence.tenantId),
+          compatible: false,
+          changed: savedRecord === null
+        };
+    if (savedRecord === null || (prepared.compatible && prepared.changed)) {
+      await persistence.writeSettings(prepared.record);
     }
-    applySettingsRecord(normalized.record);
-    return { firstStart: savedRecord === null, repairs: normalized.repairs };
+    applySettingsRecord(prepared.record);
+    return { firstStart: savedRecord === null, repairs: prepared.repairs };
   }
 
   async function loadCatalogForStart() {
@@ -4607,11 +4607,7 @@
       `Invariante: ${report.validation?.invariant || "–"}`,
       `Beschreibung: ${report.validation?.message || "–"}`,
       "",
-      `Belege gesamt: ${report.recordCounts?.receipts ?? 0}`,
-      `Gutscheinverkaufsbelege: ${report.recordCounts?.voucherSaleReceipts ?? 0}`,
-      `Gutscheine gesamt: ${report.recordCounts?.vouchers ?? 0}`,
-      "",
-      "Betroffene technische Datensätze:",
+      "Technische Fehlerkategorien:",
       details,
       "",
       "Historische Demo-Gutscheinverkaufsbelege:",
@@ -4621,7 +4617,7 @@
       report.recordVersionAssessment?.reason || "",
       "",
       "Datenschutzgrenze:",
-      "Nur lokale Read-only-Prüfung. Keine Reparatur. Keine Serverübertragung.",
+      "Nur lokale Read-only-Prüfung. Keine automatische Reparatur. Keine Serverübertragung.",
       report.privacy?.includedFields || ""
     ].filter((line, index, lines) => line !== "" || lines[index - 1] !== "").join("\n");
   }
@@ -7659,13 +7655,6 @@
         state.integrityDiagnosticNoticeIsError = false;
       } catch (error) {
         logPersistenceError("Historische Testdaten reparieren fehlgeschlagen", error);
-        const repairReport = error?.diagnostic?.repair;
-        if (repairReport && state.integrityDiagnostic) {
-          state.integrityDiagnostic = {
-            ...state.integrityDiagnostic,
-            historicalDemoRepair: repairReport
-          };
-        }
         state.integrityDiagnosticNotice = persistenceErrorMessage(
           error,
           "Die historischen Testdaten konnten nicht sicher repariert werden. Es wurden keine Teiländerungen übernommen."

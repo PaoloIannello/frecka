@@ -107,7 +107,7 @@
   });
   const integrityDiagnosticConstants = Object.freeze({
     format: "FRECKA_INTEGRITY_DIAGNOSTIC",
-    formatVersion: 1
+    formatVersion: 2
   });
   const historicalDemoVoucherReceiptRepairConstants = Object.freeze({
     format: "FRECKA_HISTORICAL_DEMO_VOUCHER_RECEIPT_REPAIR",
@@ -645,6 +645,153 @@
       });
     }
     return migrated;
+  }
+
+  function settingsWithLegacyCompanyIdentity(record) {
+    if (!isPlainObject(record) || !isPlainObject(record.company)) return record;
+    const rawName = trimmedString(record.company.name);
+    const rawOwner = trimmedString(record.company.owner);
+    const duplicatesOwner = rawName
+      && rawOwner
+      && rawName.localeCompare(rawOwner, "de-DE", { sensitivity: "base" }) === 0;
+    if ((!rawOwner && !rawName) || (rawOwner && !duplicatesOwner)) return record;
+    const migrated = cloneSerializable(record);
+    migrated.company.owner = rawOwner || rawName;
+    migrated.company.name = "";
+    return migrated;
+  }
+
+  function settingsWithLegacyBackupReminder(record) {
+    if (!isPlainObject(record)) return record;
+    if (!Object.prototype.hasOwnProperty.call(record, "backupReminder")) {
+      const migrated = cloneSerializable(record);
+      migrated.backupReminder = normalizeBackupReminder(null, null, migrated.updatedAt || epochIso);
+      return migrated;
+    }
+    if (!isPlainObject(record.backupReminder)
+      || Object.prototype.hasOwnProperty.call(record.backupReminder, "interval")) return record;
+
+    const legacyKeys = new Set(["formatVersion", "baselineAt", "lastSuccessfulAt", "snoozedUntil"]);
+    if (Object.keys(record.backupReminder).some(key => !legacyKeys.has(key))) return record;
+    const normalized = normalizeBackupReminder(record.backupReminder, null, record.updatedAt || epochIso);
+    const legacyView = { ...normalized };
+    delete legacyView.interval;
+    if (!sameSerializableValue(record.backupReminder, legacyView)) return record;
+    const migrated = cloneSerializable(record);
+    migrated.backupReminder = normalized;
+    return migrated;
+  }
+
+  function addMissingKnownFields(source, normalizedShape) {
+    if (Array.isArray(normalizedShape)) {
+      if (!Array.isArray(source) || source.length !== normalizedShape.length) return cloneSafe(source);
+      return source.map((entry, index) => addMissingKnownFields(entry, normalizedShape[index]));
+    }
+    if (!isPlainObject(normalizedShape) || !isPlainObject(source)) return cloneSafe(source);
+    const completed = cloneSafe(source);
+    Object.keys(normalizedShape).forEach(key => {
+      if (!Object.prototype.hasOwnProperty.call(completed, key) || completed[key] === undefined) {
+        completed[key] = cloneSafe(normalizedShape[key]);
+        return;
+      }
+      if (Array.isArray(normalizedShape[key]) || isPlainObject(normalizedShape[key])) {
+        completed[key] = addMissingKnownFields(completed[key], normalizedShape[key]);
+      }
+    });
+    return completed;
+  }
+
+  function prepareHistoricalSettingsRecord(rawRecord, defaultsInput, expectedTenantId = constants.tenantId) {
+    const original = rawRecord == null ? null : cloneSerializable(rawRecord);
+    const normalizedCurrent = normalizeSettingsRecord(rawRecord, defaultsInput, expectedTenantId);
+    if (original === null) {
+      return Object.freeze({
+        record: normalizedCurrent.record,
+        repairs: normalizedCurrent.repairs,
+        compatibilityCodes: Object.freeze([]),
+        compatible: true,
+        changed: true
+      });
+    }
+    if (!sameSerializableValue(original, cloneSafe(original))) {
+      return Object.freeze({
+        record: normalizedCurrent.record,
+        repairs: normalizedCurrent.repairs,
+        compatibilityCodes: Object.freeze([]),
+        compatible: false,
+        changed: false,
+        blockedCode: "SETTINGS_EXCLUDED_DATA_PRESENT"
+      });
+    }
+
+    let candidate = settingsWithLegacyUserModel(original, expectedTenantId);
+    candidate = settingsWithLegacyLicenseModel(candidate, expectedTenantId);
+    candidate = settingsWithLegacyTseSettingsModel(candidate);
+    candidate = settingsWithLegacyLogoAssetRegister(candidate);
+    candidate = settingsWithLegacyCompanyIdentity(candidate);
+    candidate = settingsWithLegacyBackupReminder(candidate);
+
+    let normalizedCandidate;
+    try {
+      normalizedCandidate = normalizeSettingsRecord(candidate, defaultsInput, expectedTenantId);
+    } catch (error) {
+      return Object.freeze({
+        record: normalizedCurrent.record,
+        repairs: normalizedCurrent.repairs,
+        compatibilityCodes: Object.freeze([]),
+        compatible: false,
+        changed: false,
+        blockedCode: error?.code || "SETTINGS_NORMALIZATION_FAILED"
+      });
+    }
+    if (normalizedCandidate.repairs.length) {
+      return Object.freeze({
+        record: normalizedCurrent.record,
+        repairs: normalizedCurrent.repairs,
+        compatibilityCodes: Object.freeze([]),
+        compatible: false,
+        changed: false,
+        blockedCode: "SETTINGS_REPAIR_NOT_UNAMBIGUOUS"
+      });
+    }
+
+    const completed = addMissingKnownFields(candidate, normalizedCandidate.record);
+    const verified = normalizeSettingsRecord(completed, completed, expectedTenantId);
+    const sanitizedCompleted = stripExcludedData(completed);
+    const compatible = verified.repairs.length === 0
+      && sameSerializableValue(verified.record, projectKnownFields(completed, verified.record))
+      && sameSerializableValue(completed, sanitizedCompleted);
+    if (!compatible) {
+      return Object.freeze({
+        record: normalizedCurrent.record,
+        repairs: normalizedCurrent.repairs,
+        compatibilityCodes: Object.freeze([]),
+        compatible: false,
+        changed: false,
+        blockedCode: "SETTINGS_COMPATIBILITY_VERIFICATION_FAILED"
+      });
+    }
+
+    const compatibilityCodes = [];
+    if (original.users === undefined && completed.users !== undefined) compatibilityCodes.push("USER_MODEL_ADDED");
+    if (original.license === undefined && completed.license !== undefined) compatibilityCodes.push("LICENSE_MODEL_ADDED");
+    if (original.tseSettings === undefined && completed.tseSettings !== undefined) compatibilityCodes.push("TSE_SETTINGS_ADDED");
+    if (original.logoAssets === undefined && completed.logoAssets !== undefined) compatibilityCodes.push("LOGO_ASSET_REGISTER_ADDED");
+    if (original.backupReminder === undefined) compatibilityCodes.push("BACKUP_REMINDER_ADDED");
+    else if (original.backupReminder?.interval === undefined && completed.backupReminder?.interval) compatibilityCodes.push("BACKUP_REMINDER_INTERVAL_ADDED");
+    if (trimmedString(original.company?.owner) !== trimmedString(completed.company?.owner)
+      || trimmedString(original.company?.name) !== trimmedString(completed.company?.name)) {
+      compatibilityCodes.push("COMPANY_IDENTITY_CONSOLIDATED");
+    }
+    if (!sameSerializableValue(candidate, completed)) compatibilityCodes.push("KNOWN_SETTINGS_FIELDS_ADDED");
+
+    return Object.freeze({
+      record: completed,
+      repairs: normalizedCurrent.repairs,
+      compatibilityCodes: Object.freeze(compatibilityCodes),
+      compatible: true,
+      changed: !sameSerializableValue(original, completed)
+    });
   }
 
   const centsFrom = (centsValue, decimalValue = 0) => Number.isInteger(centsValue)
@@ -2331,7 +2478,7 @@
     const backupReminder = normalizeBackupReminder(raw.backupReminder, defaultBackupReminder, defaultBackupReminder.baselineAt);
     if (!isPlainObject(raw.backupReminder)) {
       repairs.add("BACKUP_REMINDER_DEFAULTED");
-    } else if (JSON.stringify(raw.backupReminder) !== JSON.stringify(backupReminder)) {
+    } else if (!sameSerializableValue(raw.backupReminder, backupReminder)) {
       repairs.add("BACKUP_REMINDER_REPAIRED");
     }
 
@@ -2479,10 +2626,14 @@
       }
     });
 
-    const userSettingsInput = settingsWithLegacyUserModel(snapshot.stores.settings, safeTenantId);
-    const licenseSettingsInput = settingsWithLegacyLicenseModel(userSettingsInput, safeTenantId);
-    const tseSettingsInput = settingsWithLegacyTseSettingsModel(licenseSettingsInput);
-    const settingsInput = settingsWithLegacyLogoAssetRegister(tseSettingsInput);
+    const preparedSettings = prepareHistoricalSettingsRecord(
+      snapshot.stores.settings,
+      snapshot.stores.settings,
+      safeTenantId
+    );
+    const settingsInput = preparedSettings.compatible
+      ? preparedSettings.record
+      : snapshot.stores.settings;
     const settings = assertSnapshotRecord(
       normalizeSettingsRecord(settingsInput, settingsInput, safeTenantId),
       settingsInput,
@@ -2907,15 +3058,79 @@
     return prepareHistoricalDemoVoucherReceiptRepair(snapshotInput, canonicalRecordsInput, expectedTenantId).report;
   }
 
+  function safeDiagnosticCode(value, fallback = "UNKNOWN") {
+    return typeof value === "string" && /^[A-Z][A-Z0-9_]{0,79}$/.test(value)
+      ? value
+      : fallback;
+  }
+
+  function safeDiagnosticStore(value) {
+    const stores = new Map([
+      ["Die Einstellungen", "SETTINGS"],
+      ["Die Katalogdaten", "CATALOG"],
+      ["Die Kundendaten", "CUSTOMERS"],
+      ["Die Belegdaten", "RECEIPTS"],
+      ["Die Gutscheindaten", "VOUCHERS"]
+    ]);
+    return stores.get(value) || null;
+  }
+
+  function safeDiagnosticDetails(error) {
+    const diagnostic = isPlainObject(error?.diagnostic) ? error.diagnostic : {};
+    const findings = Array.isArray(diagnostic.findings) ? diagnostic.findings : [];
+    const codes = uniqueStrings([
+      ...findings.map(finding => safeDiagnosticCode(finding?.code, "")),
+      safeDiagnosticCode(diagnostic.code, "")
+    ]).filter(Boolean).slice(0, 20);
+    const invariants = uniqueStrings([
+      safeDiagnosticCode(diagnostic.invariant, ""),
+      ...findings.map(finding => safeDiagnosticCode(finding?.invariant, ""))
+    ]).filter(Boolean).slice(0, 20);
+    const repairs = uniqueStrings(Array.isArray(diagnostic.repairs) ? diagnostic.repairs : [])
+      .map(code => safeDiagnosticCode(code, ""))
+      .filter(Boolean)
+      .slice(0, 20);
+    const dataTypes = [];
+    if (Array.isArray(diagnostic.receipts) || findings.some(finding => Array.isArray(finding?.receipts))) dataTypes.push("RECEIPT");
+    if (Array.isArray(diagnostic.vouchers) || findings.some(finding => Array.isArray(finding?.vouchers))) dataTypes.push("VOUCHER");
+    if (Array.isArray(diagnostic.customers) || findings.some(finding => Array.isArray(finding?.customers))) dataTypes.push("CUSTOMER");
+    const store = safeDiagnosticStore(diagnostic.store);
+    const result = {
+      category: safeDiagnosticCode(error?.code, "PERSISTENCE_VALIDATION_FAILED")
+    };
+    if (store) result.store = store;
+    if (repairs.length) result.repairs = repairs;
+    if (codes.length) result.findingCodes = codes;
+    if (invariants.length) result.invariants = invariants;
+    if (dataTypes.length) result.dataTypes = dataTypes;
+    const truncated = nonNegativeInteger(diagnostic.findingsTruncated, 0);
+    if (truncated) result.findingsTruncated = truncated;
+    return Object.freeze(cloneSafe(result));
+  }
+
+  function safeHistoricalDemoRepairSummary(report) {
+    if (!isPlainObject(report)) return null;
+    const findingCodes = uniqueStrings([
+      ...(Array.isArray(report.findings) ? report.findings.map(finding => safeDiagnosticCode(finding?.code, "")) : []),
+      ...(Array.isArray(report.invariantFindings) ? report.invariantFindings.map(finding => safeDiagnosticCode(finding?.code, "")) : [])
+    ]).filter(Boolean).slice(0, 20);
+    const invariants = uniqueStrings([
+      ...(Array.isArray(report.findings) ? report.findings.map(finding => safeDiagnosticCode(finding?.invariant, "")) : []),
+      ...(Array.isArray(report.invariantFindings) ? report.invariantFindings.map(finding => safeDiagnosticCode(finding?.invariant, "")) : [])
+    ]).filter(Boolean).slice(0, 20);
+    return Object.freeze(cloneSafe({
+      category: "HISTORICAL_DEMO_VOUCHER_RECEIPT",
+      status: ["repairable", "blocked", "no-op", "repaired"].includes(report.status) ? report.status : "blocked",
+      canRepair: report.canRepair === true,
+      noOp: report.noOp === true,
+      findingCodes,
+      invariants
+    }));
+  }
+
   function diagnoseTenantSnapshot(snapshotInput, expectedTenantId = constants.tenantId, options = {}) {
     const diagnosticCreatedAt = stableIso(options.createdAt, new Date().toISOString());
     const candidate = isPlainObject(snapshotInput) ? snapshotInput : {};
-    const rawReceipts = Array.isArray(candidate.stores?.receipts?.receipts)
-      ? candidate.stores.receipts.receipts
-      : [];
-    const rawVouchers = Array.isArray(candidate.stores?.vouchers?.vouchers)
-      ? candidate.stores.vouchers.vouchers
-      : [];
     const base = {
       diagnosticFormat: integrityDiagnosticConstants.format,
       diagnosticFormatVersion: integrityDiagnosticConstants.formatVersion,
@@ -2927,24 +3142,19 @@
       appDataSchemaVersion: Number.isInteger(candidate.appDataSchemaVersion)
         ? candidate.appDataSchemaVersion
         : constants.databaseVersion,
-      recordCounts: {
-        receipts: rawReceipts.length,
-        voucherSaleReceipts: rawReceipts.filter(receipt => receipt?.receiptKind === "voucher-sale").length,
-        vouchers: rawVouchers.length
-      },
       privacy: {
         dataAccess: "read-only",
         automaticRepair: false,
         serverTransfer: false,
-        includedFields: "Nur technische IDs, Referenzen, Belegnummern, Belegarten und relevante Zeit-/Historienreferenzen."
+        includedFields: "Nur technische Fehlercodes, Kategorien sowie gegebenenfalls Store und Datentyp. Keine Namen, Beträge, IDs, Steuer-, Bild- oder Zugangsdaten."
       },
       recordVersionAssessment: {
         status: "not-determinable",
-        reason: "Belege und Gutscheine speichern keine erzeugende FRECKA-Version. Eine automatische Zuordnung zu vor oder nach 0.10.3 wäre daher nicht belastbar; die betroffenen Erstellungszeitpunkte werden stattdessen ausgegeben."
+        reason: "Belege und Gutscheine speichern keine erzeugende FRECKA-Version. Eine automatische Zuordnung zu vor oder nach 0.10.3 wäre daher nicht belastbar und wird deshalb nicht vorgenommen."
       }
     };
     const historicalDemoRepair = isPlainObject(options.canonicalRecords)
-      ? planHistoricalDemoVoucherReceiptRepair(snapshotInput, options.canonicalRecords, expectedTenantId)
+      ? safeHistoricalDemoRepairSummary(planHistoricalDemoVoucherReceiptRepair(snapshotInput, options.canonicalRecords, expectedTenantId))
       : null;
 
     try {
@@ -2962,18 +3172,18 @@
       }));
     } catch (error) {
       if (!(error instanceof PersistenceError)) throw error;
-      const diagnostic = cloneSafe(error.diagnostic) || {};
+      const diagnostic = isPlainObject(error.diagnostic) ? error.diagnostic : {};
       const primaryFinding = Array.isArray(diagnostic.findings) ? diagnostic.findings[0] : null;
       return Object.freeze(cloneSafe({
         ...base,
         historicalDemoRepair,
         status: "inconsistent",
         validation: {
-          code: trimmedString(error.code, "PERSISTENCE_VALIDATION_FAILED"),
-          invariant: trimmedString(primaryFinding?.invariant, trimmedString(diagnostic.invariant, trimmedString(error.code, "PERSISTENCE_VALIDATION_FAILED"))),
-          message: trimmedString(error.userMessage, "Die zentrale Snapshotprüfung hat eine Integritätsverletzung festgestellt.")
+          code: safeDiagnosticCode(error.code, "PERSISTENCE_VALIDATION_FAILED"),
+          invariant: safeDiagnosticCode(primaryFinding?.invariant || diagnostic.invariant || error.code, "PERSISTENCE_VALIDATION_FAILED"),
+          message: "Die zentrale Snapshotprüfung hat eine Integritätsverletzung festgestellt."
         },
-        details: Object.keys(diagnostic).length ? diagnostic : null
+        details: safeDiagnosticDetails(error)
       }));
     }
   }
@@ -5036,6 +5246,7 @@
     createSettingsPersistence,
     snapshotSettings,
     normalizeSettingsRecord,
+    prepareHistoricalSettingsRecord,
     normalizeTseSettings,
     normalizeBackupReminder,
     backupReminderIsDue,

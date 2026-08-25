@@ -146,6 +146,19 @@
     }
   }
 
+  function sortedSerializable(value) {
+    if (Array.isArray(value)) return value.map(sortedSerializable);
+    if (!value || typeof value !== "object") return value;
+    return Object.keys(value).sort().reduce((result, key) => {
+      result[key] = sortedSerializable(value[key]);
+      return result;
+    }, {});
+  }
+
+  function assertEquivalent(actual, expected, message) {
+    assertDeepEqual(sortedSerializable(actual), sortedSerializable(expected), message);
+  }
+
   async function assertRejects(operation, expectedCode, message) {
     try {
       await operation();
@@ -500,6 +513,66 @@
     return snapshot;
   }
 
+  function historicalSettingsSnapshotFixture(tenantId, variant) {
+    const snapshot = completeTenantSnapshotFixture(tenantId);
+    const settings = snapshot.stores.settings;
+    const mutations = {
+      "0.9.x": () => {
+        delete settings.users;
+        delete settings.activeUserId;
+        delete settings.license;
+        delete settings.tseSettings;
+        delete settings.logoAssets;
+        delete settings.backupReminder;
+        delete settings.company.contactPerson;
+        delete settings.company.houseNumber;
+        delete settings.company.country;
+        delete settings.company.website;
+        delete settings.company.updatedAt;
+        settings.businessAreas.forEach(area => {
+          delete area.visibleName;
+          delete area.logoMode;
+          delete area.logo;
+        });
+        settings.serviceLocations.forEach(location => { delete location.houseNumber; });
+      },
+      "pre-USER-001": () => {
+        delete settings.users;
+        delete settings.activeUserId;
+      },
+      "pre-LICENSE-001": () => { delete settings.license; },
+      "pre-SETTINGS-001-002": () => {
+        settings.company.name = settings.company.owner;
+        delete settings.company.owner;
+        delete settings.company.contactPerson;
+        delete settings.company.houseNumber;
+        delete settings.company.country;
+        delete settings.company.website;
+        delete settings.company.updatedAt;
+      },
+      "pre-BRANDING-001-002": () => {
+        delete settings.logoAssets;
+        settings.company.logo = companyLogoFixture();
+        settings.businessAreas[0].logoMode = "custom";
+        settings.businessAreas[0].logo = businessAreaLogoFixture();
+      },
+      "pre-BACKUP-004": () => { delete settings.backupReminder.interval; },
+      "pre-TSE-002": () => { delete settings.tseSettings; },
+      combination: () => {
+        mutations["0.9.x"]();
+        settings.company.name = settings.company.owner;
+        delete settings.company.owner;
+        settings.company.logo = companyLogoFixture();
+        settings.businessAreas[0].logoMode = "custom";
+        settings.businessAreas[0].logo = businessAreaLogoFixture();
+      }
+    };
+    const mutate = mutations[variant];
+    if (!mutate) throw new Error(`Unbekannte historische Settingsfixture: ${variant}`);
+    mutate();
+    return snapshot;
+  }
+
   function historicalDemoRepairSeed() {
     const seed = clone(globalThis.PROTOTYPE_DATA);
     const cases = api.historicalDemoVoucherReceiptRepairConstants?.cases || [];
@@ -553,6 +626,17 @@
     await persistence.writeCustomers(snapshot.stores.customers);
     await persistence.writeReceipts(snapshot.stores.receipts);
     await persistence.writeVouchers(snapshot.stores.vouchers);
+  }
+
+  async function writeRawSettingsRecord(persistence, settings) {
+    const database = await persistence.openDatabase();
+    await new Promise((resolve, reject) => {
+      const transaction = database.transaction(api.constants.storeName, "readwrite");
+      transaction.objectStore(api.constants.storeName).put(clone(settings));
+      transaction.oncomplete = () => resolve();
+      transaction.onabort = () => reject(transaction.error || new Error("Historische Settingsfixture konnte nicht geschrieben werden"));
+      transaction.onerror = () => reject(transaction.error || new Error("Historische Settingsfixture konnte nicht geschrieben werden"));
+    });
   }
 
   function historicalDemoRepairOptions(snapshot) {
@@ -3663,6 +3747,7 @@
             appBuild: "PERSISTENCE-010"
           });
           assertEqual(report.status, "consistent", "Konsistenter Bestand wurde als fehlerhaft gemeldet");
+          assertEqual(report.diagnosticFormatVersion, 2, "Datenschutzgehärtetes Diagnoseformat fehlt");
           assertEqual(report.validation.invariant, "TENANT_SNAPSHOT_VALID", "Erfolgreiche zentrale Invariante fehlt");
           assertEqual(report.details, null, "Konsistenter Bestand enthält falsche Fehlerdetails");
           assertDeepEqual(snapshot, before, "Diagnose hat den Eingabe-Snapshot verändert");
@@ -3674,7 +3759,7 @@
         }
       },
       {
-        name: "Read-only-Diagnose benennt einen fehlenden Gutscheinverkaufsbeleg exakt",
+        name: "Read-only-Diagnose klassifiziert einen fehlenden Gutscheinverkaufsbeleg ohne Identifikatoren",
         run: async () => {
           const snapshot = completeTenantSnapshotFixture("test-diagnostic-missing-sale");
           const voucher = snapshot.stores.vouchers.vouchers[0];
@@ -3683,57 +3768,61 @@
           assertEqual(report.status, "inconsistent", "Fehlender Verkaufsbeleg wurde nicht erkannt");
           assertEqual(report.validation.code, "VOUCHER_RECEIPT_INVARIANT_INVALID", "Falscher zentraler Fehlercode");
           assertEqual(report.validation.invariant, "VOUCHER_SALE_RECEIPT_NOT_FOUND", "Fehlende Verkaufsbeleg-Invariante wurde nicht benannt");
-          assertEqual(report.details.vouchers[0].id, voucher.id, "Betroffene Voucher-ID fehlt");
-          assertEqual(report.details.vouchers[0].code, voucher.code, "Betroffener Gutscheincode fehlt");
-          assertEqual(report.details.vouchers[0].saleReceiptReference, voucher.saleReceiptReference, "saleReceiptReference fehlt");
-          assertEqual(report.details.vouchers[0].saleReceipt.id, voucher.saleReceipt.id, "saleReceipt.id fehlt");
-          assertEqual(report.details.vouchers[0].saleReceipt.number, voucher.saleReceipt.number, "saleReceipt.number fehlt");
-          assert(report.details.missingById && report.details.missingByNumber, "Fehlende ID-/Nummernauflösung ist nicht eindeutig");
+          assert(report.details.invariants.includes("VOUCHER_SALE_RECEIPT_NOT_FOUND"), "Sichere technische Invariante fehlt");
+          assert(report.details.dataTypes.includes("VOUCHER") && report.details.dataTypes.includes("RECEIPT"), "Betroffene Datentypen fehlen");
+          const serialized = JSON.stringify(report);
+          [voucher.id, voucher.code, voucher.reference, voucher.saleReceipt.id, voucher.saleReceipt.number].forEach(value => {
+            assert(!serialized.includes(value), `Diagnose enthält unzulässigen Identifikator: ${value}`);
+          });
         }
       },
       {
-        name: "Read-only-Diagnose unterscheidet falsche Belegnummer und ID-/Nummernpaarung",
+        name: "Read-only-Diagnose klassifiziert falsche Belegpaarung ohne Nummern",
         run: async () => {
           const snapshot = completeTenantSnapshotFixture("test-diagnostic-wrong-number");
           const voucher = snapshot.stores.vouchers.vouchers[0];
           voucher.saleReceipt.number = "2030-999999";
           const report = api.diagnoseTenantSnapshot(snapshot, snapshot.tenantId);
           assertEqual(report.validation.invariant, "VOUCHER_SALE_RECEIPT_NOT_FOUND", "Falsche Verkaufsbelegnummer wurde nicht eingegrenzt");
-          assertEqual(report.details.vouchers[0].saleReceipt.number, "2030-999999", "Abweichende Belegnummer fehlt");
-          assertEqual(report.details.missingById, false, "Vorhandene Beleg-ID wurde fälschlich als fehlend markiert");
-          assertEqual(report.details.missingByNumber, true, "Fehlende Belegnummer wurde nicht markiert");
-          assertEqual(report.details.receipts[0].id, voucher.saleReceipt.id, "Korrespondierender Beleg nach ID fehlt");
+          assert(report.details.invariants.includes("VOUCHER_SALE_RECEIPT_NOT_FOUND"), "Technische Paarungsinvariante fehlt");
+          const serialized = JSON.stringify(report);
+          ["2030-999999", voucher.saleReceipt.id, voucher.id, voucher.code].forEach(value => {
+            assert(!serialized.includes(value), `Paarungsdiagnose enthält unzulässigen Identifikator: ${value}`);
+          });
         }
       },
       {
-        name: "Read-only-Diagnose benennt eine falsche Gutschein-Gegenreferenz",
+        name: "Read-only-Diagnose klassifiziert eine falsche Gutschein-Gegenreferenz ohne IDs",
         run: async () => {
           const snapshot = completeTenantSnapshotFixture("test-diagnostic-counter-reference");
           const receipt = snapshot.stores.receipts.receipts.find(entry => entry.receiptKind === "voucher-sale");
           receipt.voucherReference = "vch_unknown";
           const report = api.diagnoseTenantSnapshot(snapshot, snapshot.tenantId);
           assertEqual(report.validation.invariant, "VOUCHER_SALE_RECEIPT_COUNTER_REFERENCE_MISMATCH", "Falsche Gegenreferenz wurde nicht benannt");
-          assertEqual(report.details.receipts[0].id, receipt.id, "Betroffene Receipt-ID fehlt");
-          assertEqual(report.details.receipts[0].number, receipt.number, "Betroffene Receipt-Nummer fehlt");
-          assertEqual(report.details.receipts[0].receiptKind, "voucher-sale", "receiptKind fehlt");
-          assertEqual(report.details.receipts[0].voucherReference, "vch_unknown", "Falsche Gegenreferenz fehlt");
+          assert(report.details.dataTypes.includes("RECEIPT"), "Betroffener Belegdatentyp fehlt");
+          const serialized = JSON.stringify(report);
+          [receipt.id, receipt.number, "vch_unknown"].forEach(value => {
+            assert(!serialized.includes(value), `Gegenreferenzdiagnose enthält unzulässigen Identifikator: ${value}`);
+          });
         }
       },
       {
-        name: "Read-only-Diagnose benennt einen verwaisten Gutscheinverkaufsbeleg",
+        name: "Read-only-Diagnose klassifiziert einen verwaisten Gutscheinverkaufsbeleg ohne IDs",
         run: async () => {
           const snapshot = completeTenantSnapshotFixture("test-diagnostic-orphan-sale");
           const receipt = snapshot.stores.receipts.receipts.find(entry => entry.receiptKind === "voucher-sale");
           snapshot.stores.vouchers.vouchers = [];
           const report = api.diagnoseTenantSnapshot(snapshot, snapshot.tenantId);
           assertEqual(report.validation.invariant, "VOUCHER_SALE_RECEIPT_ORPHANED", "Verwaister Gutscheinverkaufsbeleg wurde nicht benannt");
-          assertEqual(report.details.vouchers.length, 0, "Diagnose erfindet einen Gutschein");
-          assertEqual(report.details.receipts[0].id, receipt.id, "Verwaiste Receipt-ID fehlt");
-          assertEqual(report.details.receipts[0].voucherReference, receipt.voucherReference, "Verwaiste Voucher-Referenz fehlt");
+          assert(report.details.invariants.includes("VOUCHER_SALE_RECEIPT_ORPHANED"), "Verwaiste technische Invariante fehlt");
+          const serialized = JSON.stringify(report);
+          [receipt.id, receipt.number, receipt.voucherReference].forEach(value => {
+            assert(!serialized.includes(value), `Verwaisungsdiagnose enthält unzulässigen Identifikator: ${value}`);
+          });
         }
       },
       {
-        name: "Read-only-Diagnose begrenzt doppelte Beleg-ID oder Belegnummer auf technische Felder",
+        name: "Read-only-Diagnose begrenzt doppelte Belege auf sichere Kategorien",
         run: async () => {
           const snapshot = completeTenantSnapshotFixture("test-diagnostic-duplicate-receipt");
           for (let index = 0; index < 25; index += 1) {
@@ -3745,11 +3834,13 @@
           const report = api.diagnoseTenantSnapshot(snapshot, snapshot.tenantId);
           assertEqual(report.validation.code, "BACKUP_VALIDATION_FAILED", "Doppelte Belegdaten umgehen die zentrale Snapshotprüfung");
           assertEqual(report.validation.invariant, "RECEIPT_ID_OR_NUMBER_DUPLICATE", "Doppelte Receipt-ID wurde nicht konkret benannt");
-          assert(report.details.findings[0].duplicateFields.includes("id"), "Doppeltes ID-Feld fehlt");
-          assertEqual(report.details.findings[0].receipts.length, 2, "Betroffene technische Belegansichten fehlen");
-          assertEqual(report.details.findings.length, 20, "Diagnose-Fundliste ist nicht auf 20 Einträge begrenzt");
           assertEqual(report.details.findingsTruncated, 5, "Ausgeblendete Diagnosefunde werden nicht ausgewiesen");
-          assert(!JSON.stringify(report).includes("Testperson"), "Duplikatdiagnose enthält Unternehmens- oder Kundendaten");
+          assert(report.details.repairs.includes("RECEIPT_DUPLICATE_REMOVED"), "Sicherer Duplikatcode fehlt");
+          assert(report.details.dataTypes.includes("RECEIPT"), "Betroffener Datentyp fehlt");
+          const serialized = JSON.stringify(report);
+          ["Testperson", snapshot.stores.receipts.receipts[0].id, snapshot.stores.receipts.receipts[0].number, "2030-000200"].forEach(value => {
+            assert(!serialized.includes(value), `Duplikatdiagnose enthält unzulässige Daten: ${value}`);
+          });
         }
       },
       {
@@ -4215,6 +4306,116 @@
           assert(helpBlock.includes("iCloud Drive") && helpBlock.includes("Google Drive") && helpBlock.includes("OneDrive"), "Beispiele für persönliche Cloud-Ordner fehlen");
           assert(helpBlock.includes("FRECKA selbst erhält keinen Zugriff"), "Datenschutzgrenze der Speicherhilfe fehlt");
           assert(!helpBlock.includes("fetch(") && !helpBlock.includes("OAuth") && !helpBlock.includes("<button"), "Speicherhilfe enthält eine externe oder funktionslose Integration");
+        }
+      },
+      {
+        name: "BACKUP-006 normalisiert freigegebene historische Settings vollständig und idempotent",
+        run: async () => {
+          assert(typeof api.prepareHistoricalSettingsRecord === "function", "Zentrale historische Settingsnormalisierung fehlt");
+          const current = recordFixture("backup006-current", "completed");
+          const currentPrepared = api.prepareHistoricalSettingsRecord(current, current, "backup006-current");
+          assert(currentPrepared.compatible && !currentPrepared.changed, "Aktuelle saubere Settings wurden verändert");
+          assertDeepEqual(currentPrepared.record, current, "Aktuelle saubere Settings sind nicht bytegleich geblieben");
+          const variants = [
+            "0.9.x",
+            "pre-USER-001",
+            "pre-LICENSE-001",
+            "pre-SETTINGS-001-002",
+            "pre-BRANDING-001-002",
+            "pre-BACKUP-004",
+            "pre-TSE-002",
+            "combination"
+          ];
+          for (const [index, variant] of variants.entries()) {
+            const persistence = context.makeClient(`backup006-${index}`);
+            const historical = historicalSettingsSnapshotFixture(persistence.tenantId, variant);
+            await writeRawSettingsRecord(persistence, historical.stores.settings);
+            await persistence.writeCatalog(historical.stores.catalog);
+            await persistence.writeCustomers(historical.stores.customers);
+            await persistence.writeReceipts(historical.stores.receipts);
+            await persistence.writeVouchers(historical.stores.vouchers);
+
+            const before = await persistence.readSettings();
+            const defaults = recordFixture(persistence.tenantId, "completed");
+            const prepared = api.prepareHistoricalSettingsRecord(before, defaults, persistence.tenantId);
+            assert(prepared.compatible && prepared.changed, `${variant}: eindeutige Startnormalisierung wurde nicht freigegeben`);
+            await persistence.writeSettings(prepared.record);
+            const persisted = await persistence.readSettings();
+            const repeated = api.prepareHistoricalSettingsRecord(persisted, defaults, persistence.tenantId);
+            if (variant === "pre-BACKUP-004") {
+              const reminderKeys = Object.keys(persisted.backupReminder);
+              assertEqual(reminderKeys[reminderKeys.length - 1], "interval", "Testfixture bildet die reale, durch Merge entstandene Feldreihenfolge nicht ab");
+              assert(!repeated.repairs.includes("BACKUP_REMINDER_REPAIRED"), "Reine Reminder-Feldreihenfolge wird weiterhin als Inkonsistenz bewertet");
+            }
+            assert(repeated.compatible && !repeated.changed, `${variant}: Startnormalisierung ist nicht idempotent (${JSON.stringify({ repairs: repeated.repairs, compatibilityCodes: repeated.compatibilityCodes, blockedCode: repeated.blockedCode })})`);
+
+            const snapshot = await persistence.exportTenantSnapshot();
+            const preparedBackup = await backupApi.createBackup({
+              passphrase: cryptoPassphrase,
+              createSnapshot: async () => snapshot
+            });
+            const decrypted = await backupApi.decryptTenantSnapshot(preparedBackup.serializedBackup, cryptoPassphrase);
+            api.validateTenantSnapshot(decrypted, persistence.tenantId);
+            await persistence.restoreTenantSnapshot(decrypted);
+            const restored = await persistence.exportTenantSnapshot();
+            api.validateTenantSnapshot(restored, persistence.tenantId);
+            assertEquivalent(restored.stores.settings, snapshot.stores.settings, `${variant}: Backup/Restore veränderte die normalisierten Settings`);
+            assertDeepEqual(restored.stores.receipts, snapshot.stores.receipts, `${variant}: Belege wurden verändert`);
+            assertDeepEqual(restored.stores.vouchers, snapshot.stores.vouchers, `${variant}: Gutscheine wurden verändert`);
+          }
+        }
+      },
+      {
+        name: "BACKUP-006 bleibt bei mehrdeutigen Settings fail closed und löscht keine Daten",
+        run: async () => {
+          const tenantId = "backup006-fail-closed";
+          const ambiguous = completeTenantSnapshotFixture(tenantId);
+          ambiguous.stores.settings.businessAreas.push(clone(ambiguous.stores.settings.businessAreas[0]));
+          ambiguous.stores.settings.backupReminder.baselineAt = "kein-zeitpunkt";
+          const before = clone(ambiguous);
+          const prepared = api.prepareHistoricalSettingsRecord(
+            ambiguous.stores.settings,
+            recordFixture(tenantId, "completed"),
+            tenantId
+          );
+          assert(!prepared.compatible && !prepared.changed, "Mehrdeutiger Settingssatz wurde zur Reparatur freigegeben");
+          assertThrows(() => api.validateTenantSnapshot(ambiguous, tenantId), "BACKUP_VALIDATION_FAILED", "Mehrdeutiger historischer Settingssatz");
+          assertDeepEqual(ambiguous, before, "Fail-closed-Prüfung hat Eingabedaten gelöscht oder verändert");
+        }
+      },
+      {
+        name: "BACKUP-006 kombiniert Settingsnormalisierung mit der PERSISTENCE-010-Reparatur",
+        run: async () => {
+          const persistence = context.makeClient("backup006-persistence010");
+          const historical = historicalDemoRepairSnapshotFixture(persistence.tenantId, ["2026-000124"]);
+          const legacySettings = historicalSettingsSnapshotFixture(persistence.tenantId, "combination").stores.settings;
+          historical.stores.settings = legacySettings;
+          historical.stores.settings.receiptSettings.yearPrefix = "2026";
+          historical.stores.settings.receiptSettings.nextNumber = 132;
+          await writeHistoricalDemoRepairSnapshot(persistence, historical);
+          await writeRawSettingsRecord(persistence, historical.stores.settings);
+
+          const prepared = api.prepareHistoricalSettingsRecord(
+            await persistence.readSettings(),
+            recordFixture(persistence.tenantId, "completed"),
+            persistence.tenantId
+          );
+          assert(prepared.compatible && prepared.changed, "Kombinierter historischer Settingssatz wurde nicht vorbereitet");
+          await persistence.writeSettings(prepared.record);
+          const repaired = await persistence.repairHistoricalDemoVoucherReceipts(historicalDemoRepairOptions(historical));
+          assert(repaired.changed, "PERSISTENCE-010 ergänzte den bekannten historischen Beleg nicht");
+          const snapshot = await persistence.exportTenantSnapshot();
+          const encrypted = await backupApi.encryptTenantSnapshot(snapshot, cryptoPassphrase);
+          const decrypted = await backupApi.decryptTenantSnapshot(encrypted, cryptoPassphrase);
+          await persistence.restoreTenantSnapshot(decrypted);
+          const finalSnapshot = await persistence.exportTenantSnapshot();
+          api.validateTenantSnapshot(finalSnapshot, persistence.tenantId);
+          const repeated = api.prepareHistoricalSettingsRecord(
+            finalSnapshot.stores.settings,
+            finalSnapshot.stores.settings,
+            persistence.tenantId
+          );
+          assert(repeated.compatible && !repeated.changed, "Kombinierter Reparaturpfad ist nicht idempotent");
         }
       },
       {
@@ -4916,8 +5117,8 @@
           const appResponse = await fetch("../js/app.js", { cache: "no-store" });
           assert(appResponse.ok, "App-Quelle für BRANDING-002-Startmigration konnte nicht geladen werden");
           const appSource = await appResponse.text();
-          assert(appSource.includes('repair.startsWith("LOGO_")'), "Startpfad persistiert das ergänzte Logo-Asset-Register nicht");
-          assert(appSource.includes('repair === "LEGACY_LOGO_ASSET_REGISTERED"'), "Startpfad persistiert migrierte Inline-Logos nicht");
+          assert(appSource.includes("persistence.prepareHistoricalSettingsRecord"), "Startpfad verwendet die zentrale historische Settingsnormalisierung nicht");
+          assert(appSource.includes("prepared.compatible && prepared.changed"), "Startpfad persistiert eine freigegebene historische Normalisierung nicht");
         }
       },
       {
