@@ -1159,6 +1159,24 @@ a {
   color: var(--color-text);
 }
 
+.c-positioning__extras {
+  margin-top: var(--space-5);
+  padding: var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+}
+
+.c-positioning__extras h4 {
+  color: var(--color-text);
+  font-size: var(--font-size-300);
+}
+
+.c-positioning__extras p {
+  margin-top: var(--space-2);
+  color: var(--color-text-soft);
+  font-size: var(--font-size-200);
+}
+
 /* FAQ */
 .c-faq-layout {
   display: grid;
@@ -1407,9 +1425,13 @@ a {
   vertical-align: top;
 }
 
+.c-cost-example td {
+  white-space: nowrap;
+}
+
 .c-cost-example th:first-child,
 .c-cost-example tbody th {
-  width: 28%;
+  width: 35%;
   text-align: left;
 }
 
@@ -1428,15 +1450,35 @@ a {
   font-size: inherit;
 }
 
+.c-cost-example tbody td > span,
+.c-cost-example tbody td > strong,
+.c-cost-example tbody td > small {
+  display: block;
+}
+
+.c-cost-example tbody td > span,
+.c-cost-example tbody td > small {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-regular);
+}
+
 .c-cost-example tbody th,
 .c-cost-example tbody td:last-child {
   color: var(--color-text);
   font-weight: var(--font-weight-bold);
 }
 
-.c-cost-example tbody tr:last-child th,
-.c-cost-example tbody tr:last-child td {
+.c-cost-example tfoot th,
+.c-cost-example tfoot td {
+  padding-top: var(--space-4);
   border-bottom: 0;
+  color: var(--color-text);
+  font-weight: var(--font-weight-bold);
+}
+
+.c-cost-example tfoot th {
+  text-align: left;
 }
 
 .c-cost-example > p {
@@ -1450,7 +1492,7 @@ a {
   margin-top: var(--space-6);
 }
 
-/* Beta request */
+/* Test access request */
 .c-cta-section {
   padding-top: var(--space-section-block-compact);
 }
