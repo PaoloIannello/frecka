@@ -2030,7 +2030,7 @@
           ["is-share", "is-menu", "is-home", "is-app", "is-confirm"].forEach(icon => assert(css.includes(icon), `Lokales Piktogramm fehlt: ${icon}`));
           assert(css.includes("@media(max-width:390px)") && css.includes("@media(max-width:350px)"), "Mobile Installationsdarstellung ist nicht abgesichert");
           assert(!index.includes('data-route="installation"'), "Installationshilfe wurde fälschlich zur Hauptnavigation hinzugefügt");
-          assert(worker.includes('\"./js/app.js?v=onboarding001-1\"') && worker.includes('\"./styles.css?v=onboarding001-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
+          assert(worker.includes('\"./js/app.js?v=backup005-1\"') && worker.includes('\"./styles.css?v=backup005-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
 
           const measureInstallationLayout = width => new Promise((resolve, reject) => {
             const frame = document.createElement("iframe");
@@ -4856,7 +4856,8 @@
       {
         name: "Historische BRANDING-001-Settings werden vor Backup und Restore verlustfrei migriert",
         run: async () => {
-          const tenantId = "test-backup-branding-legacy";
+          const persistence = context.makeClient("backup-branding-legacy");
+          const tenantId = persistence.tenantId;
           const legacy = completeTenantSnapshotFixture(tenantId);
           delete legacy.stores.settings.logoAssets;
           legacy.stores.settings.company.logo = companyLogoFixture();
@@ -4872,6 +4873,35 @@
           const decrypted = await backupApi.decryptTenantSnapshot(encrypted, cryptoPassphrase);
           const roundtrip = api.validateTenantSnapshot(decrypted, tenantId).snapshot;
           assertDeepEqual(roundtrip.stores.settings.logoAssets, validated.stores.settings.logoAssets, "Verschlüsselungs-Roundtrip verlor migrierte Logoassets");
+
+          const database = await persistence.openDatabase();
+          await new Promise((resolve, reject) => {
+            const transaction = database.transaction(api.constants.storeName, "readwrite");
+            transaction.objectStore(api.constants.storeName).put(legacy.stores.settings);
+            transaction.oncomplete = () => resolve();
+            transaction.onabort = () => reject(transaction.error || new Error("Historische BRANDING-001-Settings konnten nicht als Testfixture geschrieben werden"));
+            transaction.onerror = () => reject(transaction.error || new Error("Historische BRANDING-001-Settings konnten nicht als Testfixture geschrieben werden"));
+          });
+          await persistence.writeCatalog(legacy.stores.catalog);
+          await persistence.writeCustomers(legacy.stores.customers);
+          await persistence.writeReceipts(legacy.stores.receipts);
+          await persistence.writeVouchers(legacy.stores.vouchers);
+          const persistedLegacy = await persistence.readSettings();
+          assertEqual(persistedLegacy.logoAssets, undefined, "Testfixture wurde vor der Startnormalisierung unerwartet verändert");
+          const startupDefaults = api.snapshotSettings(freshRuntimeFixture(tenantId), "not-started", tenantId);
+          const startupNormalization = api.normalizeSettingsRecord(persistedLegacy, startupDefaults, tenantId);
+          assert(startupNormalization.repairs.includes("LOGO_ASSET_REGISTER_DEFAULTED"), "Startnormalisierung erkannte das fehlende Asset-Register nicht");
+          assert(startupNormalization.repairs.includes("LEGACY_LOGO_ASSET_REGISTERED"), "Startnormalisierung erkannte historische Inline-Logos nicht");
+          await persistence.writeSettings(startupNormalization.record);
+          const persistedNormalized = await persistence.readSettings();
+          assertEqual(persistedNormalized.logoAssets.length, 2, "Startnormalisierung wurde nicht dauerhaft in IndexedDB übernommen");
+          assertEqual(persistedNormalized.company.logo.assetId, "company-logo", "Persistierte Startnormalisierung verlor die Unternehmenslogo-Referenz");
+          const persistedBackup = await backupApi.createBackup({
+            passphrase: cryptoPassphrase,
+            createSnapshot: () => persistence.exportTenantSnapshot()
+          });
+          const persistedBackupSnapshot = await backupApi.decryptTenantSnapshot(persistedBackup.serializedBackup, cryptoPassphrase);
+          assertEqual(persistedBackupSnapshot.stores.settings.logoAssets.length, 2, "IndexedDB-Backup verlor die migrierten Logoassets");
 
           const historicalWithoutLogos = completeTenantSnapshotFixture(`${tenantId}-empty`);
           delete historicalWithoutLogos.stores.settings.logoAssets;

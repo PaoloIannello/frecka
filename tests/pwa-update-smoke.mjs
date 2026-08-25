@@ -424,14 +424,14 @@ assert.match(indexSource, />Jetzt aktualisieren</);
 assert.match(indexSource, />Später erinnern</);
 assert.match(indexSource, /Verbesserungen für Stabilität und Bedienung/);
 assert.doesNotMatch(indexSource, /Commit|Buildnummer|Service Worker/);
-assert.match(indexSource, /<title>FRECKA – ONBOARDING-001<\/title>/);
+assert.match(indexSource, /<title>FRECKA – BACKUP-005<\/title>/);
 assert.match(appSource, /Aktualisierung nicht abgeschlossen/);
 assert.match(appSource, /Erneut versuchen/);
-assert.match(indexSource, /js\/pwa-update\.js\?v=onboarding001-1/);
+assert.match(indexSource, /js\/pwa-update\.js\?v=backup005-1/);
 assert.match(stylesSource, /\.app-update-notice\[hidden\],\.app-update-notice \[hidden\]\{display:none\}/);
 assert.match(stylesSource, /@media\(max-width:340px\)/);
-assert.match(dataSource, /version:\s*"0\.11\.2"/);
-assert.match(dataSource, /build:\s*"ONBOARDING-001"/);
+assert.match(dataSource, /version:\s*"0\.11\.3"/);
+assert.match(dataSource, /build:\s*"BACKUP-005"/);
 
 const businessSnapshot = Object.freeze({ receipts: 7, customers: 4, vouchers: 3, settingsVersion: 5 });
 const snapshotBefore = JSON.stringify(businessSnapshot);

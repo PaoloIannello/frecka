@@ -1,31 +1,31 @@
 "use strict";
 
 const APP_SHELL_CACHE_PREFIX = "frecka-app-shell-";
-const APP_SHELL_CACHE = `${APP_SHELL_CACHE_PREFIX}0.11.2-onboarding001-1`;
+const APP_SHELL_CACHE = `${APP_SHELL_CACHE_PREFIX}0.11.3-backup005-1`;
 const APP_ENTRY_URL = new URL("./index.html", self.location.href).href;
 const APP_SHELL_PATHS = Object.freeze([
   "./index.html",
-  "./styles.css?v=onboarding001-1",
-  "./manifest.webmanifest?v=onboarding001-1",
+  "./styles.css?v=backup005-1",
+  "./manifest.webmanifest?v=backup005-1",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
-  "./vendor/qrcodegen-v1.8.0-es6.js?v=onboarding001-1",
-  "./vendor/pdf-lib-v1.17.1.min.js?v=onboarding001-1",
-  "./vendor/jszip-v3.10.1.min.js?v=onboarding001-1",
-  "./js/config.js?v=onboarding001-1",
-  "./js/qr.js?v=onboarding001-1",
-  "./js/documents.js?v=onboarding001-1",
-  "./js/public-documents.js?v=onboarding001-1",
-  "./js/sharing.js?v=onboarding001-1",
-  "./js/document-view.js?v=onboarding001-1",
-  "./js/public-viewer.js?v=onboarding001-1",
-  "./js/data.js?v=onboarding001-1",
-  "./js/persistence.js?v=onboarding001-1",
-  "./js/backup.js?v=onboarding001-1",
-  "./js/export.js?v=onboarding001-1",
-  "./js/export-package.js?v=onboarding001-1",
-  "./js/pwa-update.js?v=onboarding001-1",
-  "./js/app.js?v=onboarding001-1"
+  "./vendor/qrcodegen-v1.8.0-es6.js?v=backup005-1",
+  "./vendor/pdf-lib-v1.17.1.min.js?v=backup005-1",
+  "./vendor/jszip-v3.10.1.min.js?v=backup005-1",
+  "./js/config.js?v=backup005-1",
+  "./js/qr.js?v=backup005-1",
+  "./js/documents.js?v=backup005-1",
+  "./js/public-documents.js?v=backup005-1",
+  "./js/sharing.js?v=backup005-1",
+  "./js/document-view.js?v=backup005-1",
+  "./js/public-viewer.js?v=backup005-1",
+  "./js/data.js?v=backup005-1",
+  "./js/persistence.js?v=backup005-1",
+  "./js/backup.js?v=backup005-1",
+  "./js/export.js?v=backup005-1",
+  "./js/export-package.js?v=backup005-1",
+  "./js/pwa-update.js?v=backup005-1",
+  "./js/app.js?v=backup005-1"
 ]);
 const APP_SHELL_URLS = APP_SHELL_PATHS.map(path => new URL(path, self.location.href).href);
 

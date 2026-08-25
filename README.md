@@ -1,14 +1,22 @@
-# FRECKA – 0.11.2 / ONBOARDING-001
+# FRECKA – 0.11.3 / BACKUP-005
 
-Browserbasierte FRECKA-PWA 0.11.2 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der vorbereitete Release-Kandidat basiert vollständig auf dem veröffentlichten und real abgenommenen Beta-Release `0.11.1-3a4ff57` und ergänzt ausschließlich BACKUP-004, ONBOARDING-001 sowie die notwendigen Versions-, Cache-, Test- und Releaseanpassungen.
+Browserbasierte FRECKA-PWA 0.11.3 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der vorbereitete Patch-Kandidat basiert auf dem veröffentlichten, aber wegen des realen iPhone-Backupfehlers gesperrten Release 0.11.2 und ergänzt ausschließlich BACKUP-005 sowie notwendige Versions-, Cache-, Test- und Releaseanpassungen.
 
-Der reale iPhone-Backup-Test von 0.11.2 ist NO-GO: Ein noch im BRANDING-001-Format persistierter Settingssatz wurde beim Start zwar im Arbeitsspeicher in das BRANDING-002-Asset-Register projiziert, aber nicht dauerhaft übernommen. BACKUP-005 ergänzt genau diese fehlende Startmigration sowie die kompatible Snapshotprojektion und testet den vollständigen Mehrlogo-Backup-/Restorepfad. Produktversion und Build bleiben bis zu einer gesonderten Patchvorbereitung unverändert.
+Der reale iPhone-Backup-Test von 0.11.2 ist NO-GO: Ein noch im BRANDING-001-Format persistierter Settingssatz wurde beim Start zwar im Arbeitsspeicher in das BRANDING-002-Asset-Register projiziert, aber nicht dauerhaft übernommen. BACKUP-005 ergänzt genau diese fehlende Startmigration sowie die kompatible Snapshotprojektion und testet den vollständigen Mehrlogo-Backup-/Restorepfad. Ein erfolgreicher realer iPhone-Backup- und Restore-Test von 0.11.3 wird damit nicht vorweggenommen und bleibt zwingendes Freigabegate.
 
 Ein vollständig neuer Mandant startet ohne Kunden, Katalogpositionen, Belege, offene Zahlungen, Korrekturen, Gutscheine, Umsätze oder Logoassets. Neutrale technische Defaults, optionale Vorlagen und die ausschließlich für PERSISTENCE-010 erlaubte historische Vierer-Reparaturquelle sind strikt getrennt. Die verbindliche Erststartinventur und die 15-Punkte-Übergabecheckliste stehen in [`docs/beta-handoff.md`](docs/beta-handoff.md).
 
 UX-011 / UPDATE-002 / BACKUP-003/004 ergänzt darauf eine reale Seite **Einstellungen → Update**, bereinigt veraltete „Geplant“-Kennzeichnungen und erinnert nach einem wählbaren Intervall ohne bestätigte Sicherungsdatei nicht blockierend an ein neues lokales Backup. Zur Auswahl stehen 48 Stunden, 5 Tage und wöchentlich; wöchentlich ist der abwärtskompatible Standard. Die manuelle Suche verwendet den vorhandenen Updatecontroller; Restore übernimmt die Intervallwahl, gilt aber niemals als neue Sicherung und bewahrt lokale Frist- und Snooze-Zeitpunkte.
 
 ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzeit aufrufbare Installationshilfe für iPhone/iPad und Android. Sie priorisiert die passende Anleitung ausschließlich anhand lokaler Browsermerkmale, zeigt im Standalone-Modus den bereits installierten Zustand und bleibt vollständig offline verfügbar. Beide Plattformen können immer manuell gewählt werden. Der kompakte Ablauf und die abweichenden Android-Bezeichnungen sind in [`docs/installation.md`](docs/installation.md) dokumentiert.
+
+## Neu in 0.11.3
+
+- historische BRANDING-001-Inline-Logos werden beim Start verlustfrei in das vorhandene BRANDING-002-Asset-Register übernommen und im bestehenden Settings-Store persistiert
+- die zentrale Snapshotprüfung bleibt mit historischen Backups ohne `logoAssets` sowie mit Inline-Logos kompatibel
+- aktuelle und historische Logoassets bleiben vollständig Bestandteil der verschlüsselten Sicherung und des Restorepfads
+- Backupformat, Datenbankschema, AES-GCM-Verschlüsselung und BACKUP-004-Reminder bleiben unverändert
+- getrennte, datensparsame Fehlerklassifikation für Backup-Vorbereitung und Datei-/Share-Ausgabe
 
 ## Neu in 0.11.2
 

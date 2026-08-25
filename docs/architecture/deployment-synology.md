@@ -2,7 +2,7 @@
 
 Stand: 25. August 2026
 
-Geltungsbereich: freigegebene Beta-Basis `0.11.1-3a4ff57`, vorbereiteter Patch-Kandidat `0.11.2` / `ONBOARDING-001` und lokaler automatisierter Beta-Release
+Geltungsbereich: freigegebene Beta-Basis `0.11.1-3a4ff57`, gesperrtes Release `0.11.2-a959ec6`, vorbereiteter Patch-Kandidat `0.11.3` / `BACKUP-005` und lokaler automatisierter Beta-Release
 
 Der verbindliche Infrastrukturrahmen steht in `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`. Dieses Dokument konkretisiert ausschließlich die statische Laufzeitmenge und ihre spätere Zuordnung zu Synology Web Station.
 
@@ -171,7 +171,9 @@ Der annotierte Tag `v0.11.0` zeigt auf Commit `99a15113cfd589258928cad7b824f857c
 
 Der annotierte Tag `v0.11.1` zeigt auf Commit `3a4ff5768afc1aebfbc75ca700c1854d3476ccb6`; das daraus erzeugte und real abgenommene Artefakt trägt die Release-ID `0.11.1-3a4ff57`. Es verwendet Build `BETA-HANDOFF-001`, den HTML-Titel `FRECKA – BETA-HANDOFF-001`, den Asset-Abfragewert `betahandoff001-1` und den App-Shell-Cache `frecka-app-shell-0.11.1-betahandoff001-1` und ist die aktuelle freigegebene Beta-Basis.
 
-Der noch nicht getaggte Patch-Kandidat `0.11.2` verwendet Build `ONBOARDING-001`, den HTML-Titel `FRECKA – ONBOARDING-001`, den Asset-Abfragewert `onboarding001-1` und den App-Shell-Cache `frecka-app-shell-0.11.2-onboarding001-1`. Er ergänzt gegenüber 0.11.1 ausschließlich BACKUP-004, ONBOARDING-001 sowie notwendige Versions-, Cache-, Test- und Releaseanpassungen. Es existieren noch kein Tag, keine Release-ID und kein Artefakt für 0.11.2.
+Der annotierte Tag `v0.11.2` zeigt auf Commit `a959ec67791cbc520cf97fd832cc86a7817413ad`; das daraus erzeugte und auf Beta bereitgestellte Artefakt trägt die Release-ID `0.11.2-a959ec6`. Es verwendet Build `ONBOARDING-001`, den HTML-Titel `FRECKA – ONBOARDING-001`, den Asset-Abfragewert `onboarding001-1` und den App-Shell-Cache `frecka-app-shell-0.11.2-onboarding001-1`. Der reale iPhone-Backup-Test ist fehlgeschlagen; 0.11.2 bleibt deshalb gesperrt.
+
+Der noch nicht getaggte Patch-Kandidat `0.11.3` verwendet Build `BACKUP-005`, den HTML-Titel `FRECKA – BACKUP-005`, den Asset-Abfragewert `backup005-1` und den App-Shell-Cache `frecka-app-shell-0.11.3-backup005-1`. Er ergänzt gegenüber 0.11.2 ausschließlich BACKUP-005 sowie notwendige Versions-, Cache-, Test- und Releaseanpassungen. Es existieren noch kein Tag, keine Release-ID und kein Artefakt für 0.11.3.
 
 Ein Updateformat für signierte Kanäle und ein Signaturverfahren sind ausdrücklich noch nicht implementiert. SERVICEWORKER-002 erkennt ausschließlich Änderungen des Service Workers innerhalb derselben bereits aufgerufenen Deployment-Origin.
 
@@ -201,9 +203,13 @@ Bewertung: `0.9.1-26dc63f` ist für den Beta-Betrieb freigegeben und gilt als st
 
 `0.11.1-3a4ff57` ergänzt ausschließlich lokale Unternehmens-/Geschäftsbereichslogos, das unveränderliche historische Asset-Register und den produktiv leeren Erststart. Vorhandene Mandantendaten behielten beim realen In-place-Test Vorrang. Bewertung: Beta-GO und unmittelbare stabile Vorgängerbasis für 0.11.2; noch keine Produktivfreigabe für `app.frecka.app`.
 
-### 2.13 Vorbereiteter Patch-Kandidat 0.11.2
+### 2.13 Beta-Betriebsbefund 0.11.2
 
-0.11.2 ergänzt ausschließlich wählbare lokale Sicherungsintervalle samt Speicherhilfe sowie die offline verfügbare Installationshilfe für iPhone/iPad und Android. Vorhandene Mandantendaten, Datenbankschema, Geschäftsdatenformate und Service-Worker-Architektur bleiben unverändert. Vor dem realen In-place-Beta-Test sind eine verschlüsselte Sicherung und die dokumentierte Bestandsprüfung erforderlich; Web-Station-Umschaltung und Geräteabnahme bleiben manuell.
+`0.11.2-a959ec6` ergänzt ausschließlich wählbare lokale Sicherungsintervalle samt Speicherhilfe sowie die offline verfügbare Installationshilfe für iPhone/iPad und Android. Der reale iPhone-Test stoppte die verschlüsselte Sicherung eines vorhandenen BRANDING-001-Bestands mit einer technischen Fehlermeldung. Ursache war die nur im Arbeitsspeicher, nicht aber dauerhaft in IndexedDB übernommene Normalisierung historischer Inline-Logos. Bewertung: NO-GO; keine Freigabe als stabile Beta-Basis.
+
+### 2.14 Vorbereiteter Patch-Kandidat 0.11.3
+
+0.11.3 ergänzt ausschließlich BACKUP-005. Historische BRANDING-001-Inline-Logos werden beim Start verlustfrei in das bestehende BRANDING-002-Asset-Register übernommen und im vorhandenen Settings-Store persistiert; dieselbe Kompatibilitätsprojektion schützt Backup und Restore. Backupformat, Datenbankschema, Verschlüsselung, Logoasset-Vollständigkeit und BACKUP-004-Reminder bleiben unverändert. Web-Station-Umschaltung sowie der reale iPhone-Backup- und Restore-Test bleiben manuelle Freigabegates.
 
 ## 3. Abgeleitete Deployment-Prinzipien
 
