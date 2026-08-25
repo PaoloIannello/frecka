@@ -160,6 +160,7 @@
   const documentPdfFileCache = new Map();
   let receiptPreviewRenderToken = 0;
   let voucherPreviewRenderToken = 0;
+  let installationPlatformChoice = null;
 
   const mainContent = document.getElementById("mainContent");
   const companyName = document.getElementById("companyName");
@@ -5521,20 +5522,134 @@
     ordered[targetIndex].updatedAt = ordered[index].updatedAt;
   }
 
+  const installationGuides = Object.freeze({
+    apple: Object.freeze([
+      Object.freeze({ icon: "browser-apple", title: "Safari verwenden", copy: "Öffne auf deinem iPhone oder iPad den Browser Safari." }),
+      Object.freeze({ icon: "app", title: "FRECKA öffnen", copy: "Rufe die FRECKA-Adresse in Safari auf und warte, bis die App vollständig geladen ist." }),
+      Object.freeze({ icon: "share", title: "Teilen öffnen", copy: "Tippe in Safari auf das Teilen-Symbol: ein Quadrat mit Pfeil nach oben." }),
+      Object.freeze({ icon: "home", title: "Zum Home-Bildschirm", copy: "Wähle in der Liste „Zum Home-Bildschirm“." }),
+      Object.freeze({ icon: "confirm", title: "Hinzufügen", copy: "Bestätige oben rechts mit „Hinzufügen“." }),
+      Object.freeze({ icon: "app", title: "Als App starten", copy: "Öffne FRECKA danach über das neue Symbol auf deinem Home-Bildschirm." })
+    ]),
+    android: Object.freeze([
+      Object.freeze({ icon: "browser-android", title: "Chrome verwenden", copy: "Öffne auf deinem Android-Gerät den Browser Chrome." }),
+      Object.freeze({ icon: "app", title: "FRECKA öffnen", copy: "Rufe die FRECKA-Adresse in Chrome auf und warte, bis die App vollständig geladen ist." }),
+      Object.freeze({ icon: "menu", title: "Menü oder Installationssymbol öffnen", copy: "Tippe auf das Chrome-Menü oder auf ein sichtbares Installationssymbol." }),
+      Object.freeze({ icon: "home", title: "Installation auswählen", copy: "Wähle „App installieren“ oder „Zum Startbildschirm hinzufügen“." }),
+      Object.freeze({ icon: "confirm", title: "Bestätigen", copy: "Bestätige die Installation im angezeigten Hinweis." }),
+      Object.freeze({ icon: "app", title: "Als App starten", copy: "Öffne FRECKA danach über das neue Symbol auf deinem Startbildschirm." })
+    ])
+  });
+
+  function detectInstallationContext(navigatorValue = navigator, matchDisplayMode = query => window.matchMedia?.(query)) {
+    const reportedPlatform = String(navigatorValue?.userAgentData?.platform || navigatorValue?.platform || "");
+    const userAgent = String(navigatorValue?.userAgent || "");
+    const touchPoints = Number(navigatorValue?.maxTouchPoints || 0);
+    const appleMobile = /iPhone|iPad|iPod/i.test(`${reportedPlatform} ${userAgent}`)
+      || (/Mac/i.test(reportedPlatform) && touchPoints > 1);
+    const android = !appleMobile && /Android/i.test(`${reportedPlatform} ${userAgent}`);
+    let displayModeStandalone = false;
+    try {
+      displayModeStandalone = matchDisplayMode?.("(display-mode: standalone)")?.matches === true;
+    } catch {}
+    return Object.freeze({
+      platform: appleMobile ? "apple" : android ? "android" : "other",
+      standalone: navigatorValue?.standalone === true || displayModeStandalone
+    });
+  }
+
+  function installationPictogramMarkup(type) {
+    const allowed = new Set(["browser-apple", "browser-android", "share", "menu", "home", "confirm", "app"]);
+    const safeType = allowed.has(type) ? type : "app";
+    const letter = safeType === "browser-apple" ? "S" : safeType === "browser-android" ? "C" : safeType === "app" ? "F" : "";
+    return `<span class="installation-pictogram is-${safeType}" aria-hidden="true">${letter ? `<span>${letter}</span>` : ""}</span>`;
+  }
+
+  function installationStepsMarkup(platform) {
+    return `<ol class="installation-steps" role="list" aria-label="Installationsschritte für ${platform === "apple" ? "iPhone und iPad" : "Android"}">${installationGuides[platform].map((step, index) => `<li>
+      <span class="installation-step-number" aria-hidden="true">${index + 1}</span>
+      ${installationPictogramMarkup(step.icon)}
+      <div><strong>${escapeHtml(step.title)}</strong><p>${escapeHtml(step.copy)}</p></div>
+    </li>`).join("")}</ol>`;
+  }
+
+  function installationHelpMarkup(context, selectedPlatform) {
+    const installedStatus = context.standalone
+      ? `<div class="installation-status is-installed"><span aria-hidden="true">✓</span><div><strong>Bereits installiert</strong><p>FRECKA ist auf diesem Gerät bereits als App geöffnet.</p></div></div>`
+      : `<div class="installation-status"><span aria-hidden="true">⌂</span><div><strong>FRECKA als App installieren</strong><p>Für schnellen Zugriff und die vorgesehene Offline-Nutzung.</p></div></div>`;
+    return `<section class="installation-help" aria-labelledby="installationHelpTitle">
+      <header><p class="eyebrow">Erste Schritte</p><h2 id="installationHelpTitle">FRECKA installieren</h2><p>Installiert verhält sich FRECKA wie eine normale App und ist direkt über den Home- oder Startbildschirm erreichbar.</p></header>
+      ${installedStatus}
+      <div class="installation-platform-tabs" role="tablist" aria-label="Gerät auswählen">
+        <button id="installationAppleTab" type="button" role="tab" aria-selected="${selectedPlatform === "apple"}" aria-controls="installationApplePanel" tabindex="${selectedPlatform === "apple" ? "0" : "-1"}" data-installation-platform="apple"><span aria-hidden="true">S</span><strong>iPhone / iPad</strong><small>Safari</small></button>
+        <button id="installationAndroidTab" type="button" role="tab" aria-selected="${selectedPlatform === "android"}" aria-controls="installationAndroidPanel" tabindex="${selectedPlatform === "android" ? "0" : "-1"}" data-installation-platform="android"><span aria-hidden="true">C</span><strong>Android</strong><small>Chrome</small></button>
+      </div>
+      <section id="installationApplePanel" class="installation-platform-panel" role="tabpanel" aria-labelledby="installationAppleTab" ${selectedPlatform === "apple" ? "" : "hidden"}>
+        ${installationStepsMarkup("apple")}
+      </section>
+      <section id="installationAndroidPanel" class="installation-platform-panel" role="tabpanel" aria-labelledby="installationAndroidTab" ${selectedPlatform === "android" ? "" : "hidden"}>
+        <p class="installation-android-note"><strong>Je nach Gerät und Chrome-Version</strong><span>Bezeichnung und Position können abweichen. Suche nach „App installieren“ oder „Zum Startbildschirm hinzufügen“.</span></p>
+        ${installationStepsMarkup("android")}
+      </section>
+      <p class="installation-privacy-note">Die Erkennung erfolgt nur lokal, wird nicht gespeichert und nicht an FRECKA übertragen. Beide Anleitungen bleiben jederzeit auswählbar.</p>
+    </section>`;
+  }
+
+  function selectInstallationPlatform(platform, focusTab = false) {
+    if (!new Set(["apple", "android"]).has(platform)) return;
+    installationPlatformChoice = platform;
+    document.querySelectorAll("[data-installation-platform]").forEach(tab => {
+      const selected = tab.dataset.installationPlatform === platform;
+      tab.setAttribute("aria-selected", String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+      if (selected && focusTab) tab.focus();
+    });
+    const applePanel = document.getElementById("installationApplePanel");
+    const androidPanel = document.getElementById("installationAndroidPanel");
+    if (applePanel) applePanel.hidden = platform !== "apple";
+    if (androidPanel) androidPanel.hidden = platform !== "android";
+  }
+
+  function attachInstallationHelpBehavior() {
+    const tabs = Array.from(document.querySelectorAll("[data-installation-platform]"));
+    tabs.forEach((tab, index) => {
+      tab.addEventListener("click", () => selectInstallationPlatform(tab.dataset.installationPlatform));
+      tab.addEventListener("keydown", event => {
+        const keyOffsets = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+        let nextIndex = index;
+        if (Object.prototype.hasOwnProperty.call(keyOffsets, event.key)) {
+          nextIndex = (index + keyOffsets[event.key] + tabs.length) % tabs.length;
+        } else if (event.key === "Home") {
+          nextIndex = 0;
+        } else if (event.key === "End") {
+          nextIndex = tabs.length - 1;
+        } else {
+          return;
+        }
+        event.preventDefault();
+        selectInstallationPlatform(tabs[nextIndex].dataset.installationPlatform, true);
+      });
+    });
+  }
+
   function renderHelpLearning() {
+    const installationContext = detectInstallationContext();
+    const selectedPlatform = installationPlatformChoice
+      || (installationContext.platform === "android" ? "android" : "apple");
     const items = [
-      ["↗", "Erste Schritte", "Ein kurzer Einstieg folgt später."],
       ["?", "Häufige Fragen", "Antworten werden noch ergänzt."],
       ["↥", "Datensicherung", "Anleitung zur verschlüsselten Sicherung folgt."],
       ["T", "TSE", "Fachliche Vorbereitung und Einrichtung folgen."],
       ["✉", "Kontakt", "Kontaktmöglichkeiten werden später ergänzt."]
     ];
     mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter">
-      <div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">Einstellungen</p><h1 class="flow-title">Hilfe & Lernen</h1><p class="page-copy">Hier entsteht eine kompakte Hilfe direkt in FRECKA.</p></div>
-      <div class="help-learning-list">${items.map(([icon, title, note]) => `<article><span aria-hidden="true">${escapeHtml(icon)}</span><div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(note)}</small></div><em>Demnächst</em></article>`).join("")}</div>
-      <p class="prototype-note">Noch keine Inhalte, Videos oder externe Hilfe.</p>
+      <div class="flow-head compact-flow-head"><button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">Einstellungen</p><h1 class="flow-title">Hilfe & Lernen</h1><p class="page-copy">Installationshilfe und weitere Themen direkt in FRECKA.</p></div>
+      ${installationHelpMarkup(installationContext, selectedPlatform)}
+      <div class="help-learning-list" aria-label="Weitere Hilfethemen">${items.map(([icon, title, note]) => `<article><span aria-hidden="true">${escapeHtml(icon)}</span><div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(note)}</small></div><em>Demnächst</em></article>`).join("")}</div>
+      <p class="prototype-note">Weitere Hilfeinhalte folgen. Es gibt keine Videos oder externe Hilfe.</p>
       ${appVersionMarkup()}
     </section>`;
+    attachInstallationHelpBehavior();
   }
 
   function renderPlaceholder(routeKey) {

@@ -1,10 +1,12 @@
 # FRECKA – 0.11.1 / BETA-HANDOFF-001
 
-Browserbasierte FRECKA-PWA 0.11.1 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Die veröffentlichte Version ergänzt gegenüber der real abgenommenen Beta-Basis 0.11.0 ausschließlich BRANDING-001, BRANDING-002, BETA-HANDOFF-001 und die notwendigen Versions-/Releaseanpassungen. Der noch nicht veröffentlichte Arbeitsstand ergänzt BACKUP-004; ONBOARDING-001 ist nicht enthalten.
+Browserbasierte FRECKA-PWA 0.11.1 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Die veröffentlichte Version ergänzt gegenüber der real abgenommenen Beta-Basis 0.11.0 ausschließlich BRANDING-001, BRANDING-002, BETA-HANDOFF-001 und die notwendigen Versions-/Releaseanpassungen. Der noch nicht veröffentlichte Arbeitsstand ergänzt BACKUP-004 und ONBOARDING-001.
 
 Ein vollständig neuer Mandant startet ohne Kunden, Katalogpositionen, Belege, offene Zahlungen, Korrekturen, Gutscheine, Umsätze oder Logoassets. Neutrale technische Defaults, optionale Vorlagen und die ausschließlich für PERSISTENCE-010 erlaubte historische Vierer-Reparaturquelle sind strikt getrennt. Die verbindliche Erststartinventur und die 15-Punkte-Übergabecheckliste stehen in [`docs/beta-handoff.md`](docs/beta-handoff.md).
 
 UX-011 / UPDATE-002 / BACKUP-003/004 ergänzt darauf eine reale Seite **Einstellungen → Update**, bereinigt veraltete „Geplant“-Kennzeichnungen und erinnert nach einem wählbaren Intervall ohne bestätigte Sicherungsdatei nicht blockierend an ein neues lokales Backup. Zur Auswahl stehen 48 Stunden, 5 Tage und wöchentlich; wöchentlich ist der abwärtskompatible Standard. Die manuelle Suche verwendet den vorhandenen Updatecontroller; Restore übernimmt die Intervallwahl, gilt aber niemals als neue Sicherung und bewahrt lokale Frist- und Snooze-Zeitpunkte.
+
+ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzeit aufrufbare Installationshilfe für iPhone/iPad und Android. Sie priorisiert die passende Anleitung ausschließlich anhand lokaler Browsermerkmale, zeigt im Standalone-Modus den bereits installierten Zustand und bleibt vollständig offline verfügbar. Beide Plattformen können immer manuell gewählt werden. Der kompakte Ablauf und die abweichenden Android-Bezeichnungen sind in [`docs/installation.md`](docs/installation.md) dokumentiert.
 
 ## Neu in 0.11.1
 

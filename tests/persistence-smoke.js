@@ -1941,6 +1941,89 @@
         }
       },
       {
+        name: "ONBOARDING-001 bietet lokale Apple-/Android-Installation mit zugänglichem Plattformwechsel",
+        run: async () => {
+          const [appResponse, cssResponse, indexResponse, workerResponse] = await Promise.all([
+            fetch("../js/app.js", { cache: "no-store" }),
+            fetch("../styles.css", { cache: "no-store" }),
+            fetch("../index.html", { cache: "no-store" }),
+            fetch("../service-worker.js", { cache: "no-store" })
+          ]);
+          assert(appResponse.ok && cssResponse.ok && indexResponse.ok && workerResponse.ok, "ONBOARDING-001-Laufzeitquellen konnten nicht geladen werden");
+          const source = await appResponse.text();
+          const css = await cssResponse.text();
+          const index = await indexResponse.text();
+          const worker = await workerResponse.text();
+          const guideStart = source.indexOf("const installationGuides");
+          const guideEnd = source.indexOf("function renderPlaceholder", guideStart);
+          const guide = source.slice(guideStart, guideEnd);
+          assert(guideStart >= 0 && guideEnd > guideStart, "Zentrale Installationshilfe fehlt");
+          ["Safari verwenden", "FRECKA öffnen", "Teilen öffnen", "Zum Home-Bildschirm", "Hinzufügen", "Als App starten"].forEach(text => {
+            assert(guide.includes(text), `Apple-Schritt fehlt: ${text}`);
+          });
+          ["Chrome verwenden", "Menü oder Installationssymbol öffnen", "App installieren", "Zum Startbildschirm hinzufügen"].forEach(text => {
+            assert(guide.includes(text), `Android-Schritt fehlt: ${text}`);
+          });
+          assert(guide.includes("Je nach Gerät und Chrome-Version") && guide.includes("Bezeichnung und Position können abweichen"), "Android-Unterschiede werden nicht transparent erklärt");
+          assert(guide.includes('matchDisplayMode?.("(display-mode: standalone)")') && guide.includes("navigatorValue?.standalone === true"), "Standalone-Erkennung ist unvollständig");
+          assert(guide.includes("userAgentData?.platform") && guide.includes("maxTouchPoints") && guide.includes("/Android/i"), "Lokale Apple-/Android-Priorisierung ist unvollständig");
+          assert(guide.includes('role="tablist"') && guide.includes('role="tab"') && guide.includes('role="tabpanel"'), "Plattformwechsel besitzt keinen zugänglichen Tab-Vertrag");
+          assert(guide.includes('role="list"') && guide.includes('aria-label="Installationsschritte für'), "Nummerierte Schritte behalten ihre Listensemantik");
+          ["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp", 'event.key === "Home"', 'event.key === "End"'].forEach(key => {
+            assert(guide.includes(key), `Tastatursteuerung fehlt: ${key}`);
+          });
+          assert(guide.includes("Bereits installiert") && guide.includes("bereits als App geöffnet"), "Verständlicher Standalone-Status fehlt");
+          assert(guide.includes("Die Erkennung erfolgt nur lokal") && !guide.includes("persistCurrentSettings") && !guide.includes("fetch(") && !guide.includes("<img"), "Installationshilfe speichert, überträgt oder lädt unerlaubt Daten/Assets");
+          ["is-share", "is-menu", "is-home", "is-app", "is-confirm"].forEach(icon => assert(css.includes(icon), `Lokales Piktogramm fehlt: ${icon}`));
+          assert(css.includes("@media(max-width:390px)") && css.includes("@media(max-width:350px)"), "Mobile Installationsdarstellung ist nicht abgesichert");
+          assert(!index.includes('data-route="installation"'), "Installationshilfe wurde fälschlich zur Hauptnavigation hinzugefügt");
+          assert(worker.includes('\"./js/app.js?v=betahandoff001-1\"') && worker.includes('\"./styles.css?v=betahandoff001-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
+
+          const measureInstallationLayout = width => new Promise((resolve, reject) => {
+            const frame = document.createElement("iframe");
+            let settled = false;
+            const timeout = window.setTimeout(() => {
+              settled = true;
+              frame.remove();
+              reject(new Error(`Installationshilfe wurde bei ${width} px nicht rechtzeitig gerendert`));
+            }, 8000);
+            frame.title = `Installationshilfe bei ${width} Pixel`;
+            frame.style.cssText = `position:fixed;left:-2000px;top:0;width:${width}px;height:760px;border:0;`;
+            frame.src = `../index.html?onboarding-layout=${width}#/settings-help`;
+            frame.addEventListener("load", () => {
+              const inspect = () => {
+                if (settled) return;
+                const contentDocument = frame.contentDocument;
+                const help = contentDocument?.querySelector(".installation-help");
+                if (!help) {
+                  window.setTimeout(inspect, 50);
+                  return;
+                }
+                const documentElement = contentDocument.documentElement;
+                const result = {
+                  viewportWidth: frame.contentWindow.innerWidth,
+                  clientWidth: documentElement.clientWidth,
+                  scrollWidth: documentElement.scrollWidth,
+                  steps: contentDocument.querySelectorAll("#installationApplePanel .installation-steps li").length
+                };
+                settled = true;
+                window.clearTimeout(timeout);
+                frame.remove();
+                resolve(result);
+              };
+              inspect();
+            }, { once: true });
+            document.body.append(frame);
+          });
+          for (const width of [320, 390]) {
+            const layout = await measureInstallationLayout(width);
+            assertEqual(layout.viewportWidth, width, `Falscher Test-Viewport bei ${width} px`);
+            assert(layout.scrollWidth <= layout.clientWidth, `Horizontaler Überlauf bei ${width} px`);
+            assertEqual(layout.steps, 6, `Installationsschritte fehlen bei ${width} px`);
+          }
+        }
+      },
+      {
         name: "LICENSE-001 erzeugt genau eine stabile lokale und datensparsame Gerätebindung",
         run: async () => {
           const tenantId = "test-license-model";
