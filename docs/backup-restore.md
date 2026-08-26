@@ -1,7 +1,7 @@
 # Verschlüsselte Sicherung und Wiederherstellung
 
 **Stand:** BACKUP-006 auf Basis BACKUP-005, BRANDING-002, BACKUP-004, TSE-002, SETTINGS-002, SETTINGS-001, USER-001, BACKUP-002, BACKUP-001 und PERSISTENCE-007
-**Datenbankschema:** 5
+**Datenbankschema:** 6
 **Backupformat:** 1
 **Geltungsbereich:** Vollständiger lokaler Datenstand eines Mandanten
 

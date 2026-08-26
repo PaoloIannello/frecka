@@ -2229,7 +2229,7 @@
           ["is-share", "is-menu", "is-home", "is-app", "is-confirm"].forEach(icon => assert(css.includes(icon), `Lokales Piktogramm fehlt: ${icon}`));
           assert(css.includes("@media(max-width:390px)") && css.includes("@media(max-width:350px)"), "Mobile Installationsdarstellung ist nicht abgesichert");
           assert(!index.includes('data-route="installation"'), "Installationshilfe wurde fälschlich zur Hauptnavigation hinzugefügt");
-          assert(worker.includes('\"./js/app.js?v=backup006-1\"') && worker.includes('\"./styles.css?v=backup006-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
+          assert(worker.includes('\"./js/app.js?v=license005-1\"') && worker.includes('\"./styles.css?v=license005-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
 
           const measureInstallationLayout = width => new Promise((resolve, reject) => {
             const frame = document.createElement("iframe");
@@ -2359,7 +2359,7 @@
           const renderSource = source.slice(renderStart, renderEnd);
           assert(source.includes('{ id: "settings-license", icon: "✓", title: "Lizenz & Gerät"'), "Einstellungsbereich Lizenz & Gerät fehlt");
           assert(source.includes('else if (state.route === "settings-license") renderLicenseSettings()'), "Lizenzroute verwendet nicht die zentrale Ansicht");
-          ["Lizenz-ID", "Lokaler Mandant", "Lizenzdienst-Mandant", "Produkt", "Verknüpfung", "Geräteschlüssel", "Lizenznachweis", "Technischer Status"].forEach(label => {
+          ["Lizenz-ID", "Lokaler Mandant", "Lizenzdienst-Mandant", "Produkt", "Verknüpfung", "Geräteschlüssel", "Schlüsselprüfung", "Sicherer Vergleichswert", "Lizenznachweis", "Technischer Status"].forEach(label => {
             assert(renderSource.includes(label), `Lizenzangabe fehlt: ${label}`);
           });
           ["licenseId", "localTenantId", "serverTenantId", "productId", "majorVersion", "linkedAt"].forEach(field => {
@@ -2510,6 +2510,11 @@
           assertEqual(afterRestore.devicePublicKeyThumbprint, first.devicePublicKeyThumbprint, "Restore ersetzte den lokalen Geräteschlüssel");
           const status = await persistence.inspectLocalLicenseRuntime(settings.license);
           assertEqual(status.code, "LICENSE_RUNTIME_READY_UNLINKED", "Lokale Runtime täuscht einen Serverstatus vor");
+          assertEqual(status.keyValidationStatus, "verified", "Lokaler Signatur-Selbsttest wurde nicht bestätigt");
+          assert(/^P256-[A-Za-z0-9_-]{8}-[A-Za-z0-9_-]{8}$/.test(status.keyComparisonValue), "Sicherer Schlüsselvergleichswert fehlt");
+          assert(!status.keyComparisonValue.includes(first.deviceId), "Schlüsselvergleichswert enthält die Geräte-ID");
+          assert(!status.keyComparisonValue.includes(first.devicePublicKeyThumbprint), "Schlüsselvergleichswert enthält den vollständigen Thumbprint");
+          assert(!["deviceId", "devicePrivateKey", "devicePublicKey", "devicePublicKeyThumbprint", "signedLicenseToken"].some(key => hasOwn(status, key)), "Sicherer Runtime-Status enthält geheime oder exportgesperrte Felder");
           assertEqual(status.accessMode, "not_enforced", "LICENSE-005 aktiviert unerwartet eine Produktsperre");
         }
       },
@@ -5888,6 +5893,13 @@
 
           assertEqual(await firstTenant.readSettings(), null, "Zurückgesetzter Tenant ist noch vorhanden");
           assertEqual((await secondTenant.readSettings())?.company?.name, "Tenant B", "Zweiter Tenant wurde beim Reset verändert oder gelöscht");
+        }
+      },
+      {
+        name: "Browserlauf bleibt ohne Konsolen-, Ressourcen- und Laufzeitfehler",
+        run: async () => {
+          await new Promise(resolve => setTimeout(resolve, 0));
+          assertDeepEqual(globalThis.FRECKA_BROWSER_TEST_ERRORS || [], [], "Browserlauf hat einen Konsolen-, Ressourcen- oder Laufzeitfehler gemeldet");
         }
       }
     ];

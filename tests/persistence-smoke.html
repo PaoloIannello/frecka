@@ -4,6 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FRECKA – LICENSE-005 Smoke-Test</title>
+  <link rel="icon" href="../icons/icon-192.png">
+  <script>
+    (() => {
+      const runtimeErrors = [];
+      window.FRECKA_BROWSER_TEST_ERRORS = runtimeErrors;
+      window.addEventListener("error", () => { runtimeErrors.push("runtime-error"); }, true);
+      window.addEventListener("unhandledrejection", () => { runtimeErrors.push("unhandled-rejection"); });
+      const originalConsoleError = console.error.bind(console);
+      console.error = (...args) => {
+        runtimeErrors.push("console-error");
+        originalConsoleError(...args);
+      };
+    })();
+  </script>
   <style>
     :root {
       color-scheme: light;
@@ -137,6 +151,6 @@
   <script src="../js/backup.js?v=comm001-1"></script>
   <script src="../js/export.js?v=settings002-1"></script>
   <script src="../js/export-package.js?v=export001-2"></script>
-  <script src="persistence-smoke.js?v=backup006-1"></script>
+  <script src="persistence-smoke.js?v=license005-1"></script>
 </body>
 </html>

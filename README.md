@@ -1,16 +1,28 @@
-# FRECKA – 0.11.4 / BACKUP-006
+# FRECKA – 0.11.5 / LICENSE-005
 
-Browserbasierte FRECKA-PWA 0.11.4 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der vorbereitete Patch-Kandidat basiert auf dem veröffentlichten, aber nach dem realen iPhone-Backupfehler gesperrten Release 0.11.3 und ergänzt ausschließlich BACKUP-006 sowie notwendige Versions-, Cache-, Test- und Releaseanpassungen.
+Browserbasierte FRECKA-PWA 0.11.5 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der Geräteprüfungsstand basiert auf der real abgenommenen Beta-Basis `0.11.4-e628c11` und ergänzt ausschließlich DOCUMENT-001, LICENSE-005 sowie notwendige Versions-, Cache-, Diagnose-, Test- und Releaseanpassungen.
 
-Der noch nicht veröffentlichte Entwicklungsblock LICENSE-005 hebt das IndexedDB-Schema von 5 auf 6 an und trennt die portable Lizenzreferenz Version 2 vom ausschließlich gerätelokalen `licenseRuntime`-Store. Nicht exportierbare P-256-Privatkeys, Public-Key-Thumbprint und optionale Tokenruntime bleiben strikt außerhalb von Tenant-Snapshot, Backup, Restore und Export. Es gibt weiterhin keinen Lizenzserver, Trialstart, Kauf, wirksamen Lizenzstatus oder Produktsperre; vor LICENSE-006 sind reale CryptoKey-Persistenztests auf iPhone/Home-Screen-PWA und Android Pflicht.
+LICENSE-005 hebt das IndexedDB-Schema von 5 auf 6 an und trennt die portable Lizenzreferenz Version 2 vom ausschließlich gerätelokalen `licenseRuntime`-Store. Nicht exportierbare P-256-Privatkeys, Public-Key-Thumbprint und optionale Tokenruntime bleiben strikt außerhalb von Tenant-Snapshot, Backup, Restore und Export. Die lokale Ansicht zeigt nur einen gekürzten, öffentlichen Schlüsselvergleichswert und das Ergebnis des Signatur-Selbsttests; private Schlüssel, Geräte-ID und Token bleiben verborgen. Es gibt weiterhin keinen Lizenzserver, Trialstart, Kauf, wirksamen Lizenzstatus oder Produktsperre; vor LICENSE-006 sind reale CryptoKey-Persistenztests auf iPhone/Home-Screen-PWA und Android Pflicht.
 
-Der reale iPhone-Backup-Test von 0.11.3 ist weiterhin NO-GO. BACKUP-005 übernahm historische BRANDING-001-Logos korrekt, legte das nachträglich ergänzte BACKUP-004-Feld `interval` beim Settings-Write jedoch in einer anderen Eigenschaftsreihenfolge ab. Die Snapshotnormalisierung verglich den Reminder reihenfolgeabhängig mit `JSON.stringify` und meldete deshalb bei identischen Werten `BACKUP_REMINDER_REPAIRED`. BACKUP-006 verwendet den vorhandenen kanonischen Wertvergleich, persistiert ausschließlich vollständig nachvalidierte additive historische Settingsnormalisierungen und begrenzt die teilbare Diagnose auf Fehlercodes, Kategorien, Store und Datentyp. Ein neuer realer iPhone-Backup- und Restore-Test bleibt zwingendes Freigabegate.
+Der reale iPhone-Test von `0.11.4-e628c11` mit vorhandenem historischem Bestand hat Backup, Restore und Offline-Kaltstart bestanden. 0.11.4/BACKUP-006 ist damit die aktuelle stabile Beta-Basis. Dieser Nachweis gilt nicht als Gerätefreigabe für die neue CryptoKey-Runtime von 0.11.5.
 
 Ein vollständig neuer Mandant startet ohne Kunden, Katalogpositionen, Belege, offene Zahlungen, Korrekturen, Gutscheine, Umsätze oder Logoassets. Neutrale technische Defaults, optionale Vorlagen und die ausschließlich für PERSISTENCE-010 erlaubte historische Vierer-Reparaturquelle sind strikt getrennt. Die verbindliche Erststartinventur und die 15-Punkte-Übergabecheckliste stehen in [`docs/beta-handoff.md`](docs/beta-handoff.md).
 
 UX-011 / UPDATE-002 / BACKUP-003/004 ergänzt darauf eine reale Seite **Einstellungen → Update**, bereinigt veraltete „Geplant“-Kennzeichnungen und erinnert nach einem wählbaren Intervall ohne bestätigte Sicherungsdatei nicht blockierend an ein neues lokales Backup. Zur Auswahl stehen 48 Stunden, 5 Tage und wöchentlich; wöchentlich ist der abwärtskompatible Standard. Die manuelle Suche verwendet den vorhandenen Updatecontroller; Restore übernimmt die Intervallwahl, gilt aber niemals als neue Sicherung und bewahrt lokale Frist- und Snooze-Zeitpunkte.
 
 ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzeit aufrufbare Installationshilfe für iPhone/iPad und Android. Sie priorisiert die passende Anleitung ausschließlich anhand lokaler Browsermerkmale, zeigt im Standalone-Modus den bereits installierten Zustand und bleibt vollständig offline verfügbar. Beide Plattformen können immer manuell gewählt werden. Der kompakte Ablauf und die abweichenden Android-Bezeichnungen sind in [`docs/installation.md`](docs/installation.md) dokumentiert.
+
+## Neu in 0.11.5
+
+- DOCUMENT-001 korrigiert den Abstand zwischen echtem PNG-/JPEG-Logo und folgendem Brandingtext zentral in Ansicht und PDF
+- portable, nicht autoritative `settings.license`-Referenz Version 2 und getrennter lokaler `licenseRuntime`-Store
+- IndexedDB-Schema 6 mit ausschließlich einem zusätzlichen gerätelokalen Runtime-Store; die fünf Geschäftsstores bleiben unverändert
+- nicht exportierbarer P-256-Privatkey, exportierbarer Public Key, gespeicherter RFC-7638-Thumbprint und persistenter Reloadpfad
+- strikte Compact-JWS-/ES256-Prüfgrenze ohne eingebauten Serverprüfschlüssel und ohne Aktivierungsbehauptung
+- gekürzter öffentlicher Schlüsselvergleichswert und lokaler Signatur-Selbsttest für die reale Geräteprüfung, ohne private Schlüssel, Geräte-ID oder Token anzuzeigen
+- Runtime bleibt aus Tenant-Snapshot, Backup, Restore, Diagnose sowie Steuerberater- und Eigene-Daten-Export ausgeschlossen
+- noch kein Lizenzserver, Trialstart, Kauf, Active-Status, Netzwerkpfad oder Produktsperre
+- reale CryptoKey-Persistenztests auf iPhone/Home-Screen-PWA und Android bleiben zwingendes Gate vor LICENSE-006
 
 ## Neu in 0.11.4
 
@@ -19,7 +31,7 @@ ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzei
 - unveränderte aktuelle Settings sowie unveränderte Belege, Kunden, Gutscheine, Historien, Beträge, Nummern und Referenzen
 - datenschutzgehärtete lokale Integritätsdiagnose ohne Geschäftsdaten, IDs, Bilddaten oder Zugangsdaten
 - Backupformat 1, IndexedDB-Schema 5 sowie AES-GCM/PBKDF2 bleiben unverändert
-- realer iPhone-Backup- und Restore-Test auf dem bestehenden historischen Datenbestand bleibt zwingendes Freigabegate
+- realer iPhone-Test auf dem bestehenden historischen Datenbestand: Backup, Restore und Offline-Kaltstart bestanden; Beta-GO
 
 ## Neu in 0.11.3
 
@@ -97,7 +109,7 @@ ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzei
 - **Einstellungen → Update** zeigt Version, Build und den letzten manuellen Prüfstatus; „Nach Updates suchen“ verwendet dieselbe Registration, Updatekarte, Aktivierungsnachricht und Einmal-Reload-Sperre
 - offene Belegentwürfe und laufende Schreibvorgänge blockieren die bewusste Aktivierung weiterhin; Offline-App-Shell, IndexedDB und sämtliche Geschäftsdaten bleiben unberührt
 
-Der reale iPhone/Home-Screen-PWA-Test von `0.10.8-6056e64` am 11. August 2026 bestätigte Updateerkennung und Offline-Kaltstart, blieb nach „Jetzt aktualisieren“ jedoch bei „Wird aktualisiert …“ ohne sichtbaren Reload stehen. Das korrigierte Release `0.10.9-5b180b6` bestand anschließend den realen Updatepfad, Offline-Kaltstart, Offline-Belegerstellung und den fortbestehenden lokalen Datenbestand nach Rückkehr ins Netz. `0.10.10-b3456bf` entfernte danach die bestätigte Legacy-Brücke und validierte den Ein-Befehl-Releaseprozess real. Das nachfolgende `0.11.0-99a1511` ist die aktuelle real abgenommene Beta-Basis, jedoch noch keine Produktivfreigabe für `app.frecka.app`.
+Der reale iPhone/Home-Screen-PWA-Test von `0.10.8-6056e64` am 11. August 2026 bestätigte Updateerkennung und Offline-Kaltstart, blieb nach „Jetzt aktualisieren“ jedoch bei „Wird aktualisiert …“ ohne sichtbaren Reload stehen. Das korrigierte Release `0.10.9-5b180b6` bestand anschließend den realen Updatepfad, Offline-Kaltstart, Offline-Belegerstellung und den fortbestehenden lokalen Datenbestand nach Rückkehr ins Netz. `0.10.10-b3456bf` entfernte danach die bestätigte Legacy-Brücke und validierte den Ein-Befehl-Releaseprozess real. Nach den weiteren realen Freigaben von 0.11.0 und 0.11.1 sowie den gesperrten Zwischenständen 0.11.2/0.11.3 ist `0.11.4-e628c11` die aktuelle real abgenommene Beta-Basis, jedoch noch keine Produktivfreigabe für `app.frecka.app`.
 
 ## Grundlage aus PERSISTENCE-010
 

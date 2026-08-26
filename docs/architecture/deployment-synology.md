@@ -1,8 +1,8 @@
 # FRECKA: Deployment- und Infrastrukturkonzept für Synology Web Station
 
-Stand: 25. August 2026
+Stand: 26. August 2026
 
-Geltungsbereich: freigegebene Beta-Basis `0.11.1-3a4ff57`, gesperrte Releases `0.11.2-a959ec6` und `0.11.3-a8380a0`, vorbereiteter Patch-Kandidat `0.11.4` / `BACKUP-006` und lokaler automatisierter Beta-Release
+Geltungsbereich: freigegebene Beta-Basis `0.11.4-e628c11`, gesperrte Releases `0.11.2-a959ec6` und `0.11.3-a8380a0`, vorbereiteter Geräteprüfungsstand `0.11.5` / `LICENSE-005` und lokaler automatisierter Beta-Release
 
 Der verbindliche Infrastrukturrahmen steht in `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`. Dieses Dokument konkretisiert ausschließlich die statische Laufzeitmenge und ihre spätere Zuordnung zu Synology Web Station.
 
@@ -167,15 +167,17 @@ Der annotierte Tag `v0.10.1` zeigt auf Commit `c195a099ef57af79177496f48d217247f
 
 Der annotierte Tag `v0.10.8` zeigt auf Commit `6056e64db92eb79666f3f6216546cc8cbc1eb6d8`; das daraus erzeugte und auf Beta bereitgestellte Artefakt trägt die Release-ID `0.10.8-6056e64`. Sein realer iPhone-Test ist wegen des blockierten Updateabschlusses abgelehnt. Der korrigierte annotierte Tag `v0.10.9` zeigt auf Commit `5b180b64ec75ab6f6c2ef53842ead45c6cc32b4a`; das daraus erzeugte unveränderliche und auf Beta geprüfte Artefakt trägt die Release-ID `0.10.9-5b180b6`. Der annotierte Tag `v0.10.10` zeigt auf Commit `b3456bf1b5f4e6fff074e97acbaea994d064daac`; das unveränderliche Artefakt `0.10.10-b3456bf` verwendet Build `SERVICEWORKER-003`, den HTML-Titel `FRECKA – SERVICEWORKER-003`, den Asset-Abfragewert `serviceworker003-1` und den App-Shell-Cache `frecka-app-shell-0.10.10-serviceworker003-1`. Es validierte den lokalen Ein-Befehl-Releaseprozess real und war die unmittelbare freigegebene Beta-Basis vor 0.11.0.
 
-Der annotierte Tag `v0.11.0` zeigt auf Commit `99a15113cfd589258928cad7b824f857c2be24d9`; das daraus erzeugte und real abgenommene Artefakt trägt die Release-ID `0.11.0-99a1511`. Es verwendet Build `TSE-002`, den HTML-Titel `FRECKA – TSE-002`, den Asset-Abfragewert `tse002-1` und den App-Shell-Cache `frecka-app-shell-0.11.0-tse002-1` und ist die aktuelle freigegebene Beta-Basis.
+Der annotierte Tag `v0.11.0` zeigt auf Commit `99a15113cfd589258928cad7b824f857c2be24d9`; das daraus erzeugte und real abgenommene Artefakt trägt die Release-ID `0.11.0-99a1511`. Es verwendet Build `TSE-002`, den HTML-Titel `FRECKA – TSE-002`, den Asset-Abfragewert `tse002-1` und den App-Shell-Cache `frecka-app-shell-0.11.0-tse002-1` und bleibt als historische freigegebene Beta erhalten.
 
-Der annotierte Tag `v0.11.1` zeigt auf Commit `3a4ff5768afc1aebfbc75ca700c1854d3476ccb6`; das daraus erzeugte und real abgenommene Artefakt trägt die Release-ID `0.11.1-3a4ff57`. Es verwendet Build `BETA-HANDOFF-001`, den HTML-Titel `FRECKA – BETA-HANDOFF-001`, den Asset-Abfragewert `betahandoff001-1` und den App-Shell-Cache `frecka-app-shell-0.11.1-betahandoff001-1` und ist die aktuelle freigegebene Beta-Basis.
+Der annotierte Tag `v0.11.1` zeigt auf Commit `3a4ff5768afc1aebfbc75ca700c1854d3476ccb6`; das daraus erzeugte und real abgenommene Artefakt trägt die Release-ID `0.11.1-3a4ff57`. Es verwendet Build `BETA-HANDOFF-001`, den HTML-Titel `FRECKA – BETA-HANDOFF-001`, den Asset-Abfragewert `betahandoff001-1` und den App-Shell-Cache `frecka-app-shell-0.11.1-betahandoff001-1` und bleibt als historische freigegebene Beta erhalten.
 
 Der annotierte Tag `v0.11.2` zeigt auf Commit `a959ec67791cbc520cf97fd832cc86a7817413ad`; das daraus erzeugte und auf Beta bereitgestellte Artefakt trägt die Release-ID `0.11.2-a959ec6`. Es verwendet Build `ONBOARDING-001`, den HTML-Titel `FRECKA – ONBOARDING-001`, den Asset-Abfragewert `onboarding001-1` und den App-Shell-Cache `frecka-app-shell-0.11.2-onboarding001-1`. Der reale iPhone-Backup-Test ist fehlgeschlagen; 0.11.2 bleibt deshalb gesperrt.
 
 Der annotierte Tag `v0.11.3` zeigt auf Commit `a8380a05a662b765c99f89216faf32912cc9fb6e`; das daraus erzeugte und auf Beta bereitgestellte Artefakt trägt die Release-ID `0.11.3-a8380a0`. Es verwendet Build `BACKUP-005`, den HTML-Titel `FRECKA – BACKUP-005`, den Asset-Abfragewert `backup005-1` und den App-Shell-Cache `frecka-app-shell-0.11.3-backup005-1`. Der reale iPhone-Backup-Test blieb wegen einer fälschlich als Inkonsistenz gewerteten Reminder-Eigenschaftsreihenfolge gesperrt; 0.11.3 ist deshalb NO-GO.
 
-Der noch nicht getaggte Patch-Kandidat `0.11.4` verwendet Build `BACKUP-006`, den HTML-Titel `FRECKA – BACKUP-006`, den Asset-Abfragewert `backup006-1` und den App-Shell-Cache `frecka-app-shell-0.11.4-backup006-1`. Er ergänzt gegenüber 0.11.3 ausschließlich BACKUP-006 sowie notwendige Versions-, Cache-, Test- und Releaseanpassungen. Es existieren noch kein Tag, keine Release-ID und kein Artefakt für 0.11.4.
+Der annotierte Tag `v0.11.4` zeigt auf Commit `e628c116682cc76b33fb6273191eef4c82875946`; das daraus erzeugte und real abgenommene Artefakt trägt die Release-ID `0.11.4-e628c11`. Es verwendet Build `BACKUP-006`, den HTML-Titel `FRECKA – BACKUP-006`, den Asset-Abfragewert `backup006-1` und den App-Shell-Cache `frecka-app-shell-0.11.4-backup006-1` und ist die aktuelle stabile Beta-Basis.
+
+Der noch nicht getaggte Geräteprüfungsstand `0.11.5` verwendet Build `LICENSE-005`, den HTML-Titel `FRECKA – LICENSE-005`, den Asset-Abfragewert `license005-1` und den App-Shell-Cache `frecka-app-shell-0.11.5-license005-1`. Er ergänzt gegenüber 0.11.4 ausschließlich DOCUMENT-001, LICENSE-005 und notwendige Versions-, Cache-, Diagnose-, Test- und Releaseanpassungen. Es existieren noch kein Tag, keine Release-ID und kein Artefakt für 0.11.5.
 
 Ein Updateformat für signierte Kanäle und ein Signaturverfahren sind ausdrücklich noch nicht implementiert. SERVICEWORKER-002 erkennt ausschließlich Änderungen des Service Workers innerhalb derselben bereits aufgerufenen Deployment-Origin.
 
@@ -213,9 +215,13 @@ Bewertung: `0.9.1-26dc63f` ist für den Beta-Betrieb freigegeben und gilt als st
 
 `0.11.3-a8380a0` ergänzt ausschließlich BACKUP-005. Die historische Logoübernahme funktionierte, der anschließende reale iPhone-Backup-Test blieb jedoch gesperrt: Ein inhaltlich unveränderter BACKUP-004-Reminder wurde wegen einer abweichenden Eigenschaftsreihenfolge beim `JSON.stringify`-Vergleich fälschlich als reparaturbedürftig bewertet. Bewertung: NO-GO; keine Freigabe als stabile Beta-Basis.
 
-### 2.15 Vorbereiteter Patch-Kandidat 0.11.4
+### 2.15 Beta-Betriebsnachweis 0.11.4
 
-0.11.4 ergänzt ausschließlich BACKUP-006. Der Remindervergleich ist semantisch und historische Settings werden nur deterministisch, additiv, vollständig nachvalidiert und idempotent normalisiert; mehrdeutige Zustände bleiben `fail closed`. Die lokale Integritätsdiagnose enthält keine Geschäftsdaten oder Identifikatoren. Backupformat 1, Datenbankschema 5, AES-GCM/PBKDF2 und alle Geschäftsdaten bleiben unverändert. Web-Station-Umschaltung sowie der reale iPhone-Backup- und Restore-Test auf dem bestehenden historischen Bestand bleiben manuelle Freigabegates.
+`0.11.4-e628c11` ergänzt ausschließlich BACKUP-006. Der reale iPhone-Test auf dem bestehenden historischen Bestand hat Backup, Restore und Offline-Kaltstart bestanden. Bewertung: Beta-GO und aktuelle stabile Beta-Basis; noch keine Produktivfreigabe für `app.frecka.app`.
+
+### 2.16 Vorbereiteter Geräteprüfungsstand 0.11.5
+
+0.11.5 ergänzt DOCUMENT-001 und LICENSE-005. `settings.license` Version 2 bleibt portable; nicht exportierbarer P-256-Privatkey, Public Key, Thumbprint und optionale Tokenruntime liegen ausschließlich im gerätelokalen `licenseRuntime`-Store. Das IndexedDB-Schema steigt von 5 auf 6, die fünf Geschäftsstores bleiben unverändert. Runtime und Schlüssel bleiben aus Tenant-Snapshot, Backup, Restore und Export ausgeschlossen. Die Ansicht zeigt ausschließlich einen gekürzten öffentlichen Vergleichswert und den lokalen Signatur-Selbsttest. Ein Lizenzserver, Trial-/Active-Status, Netzwerkpfad und Produktsperre sind nicht enthalten. Reale iPhone- und Android-CryptoKey-Persistenztests bleiben manuelle Freigabegates vor LICENSE-006.
 
 ## 3. Abgeleitete Deployment-Prinzipien
 

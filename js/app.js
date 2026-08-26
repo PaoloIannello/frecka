@@ -125,6 +125,8 @@
     licenseRuntimeStatus: {
       code: "LICENSE_RUNTIME_NOT_CHECKED",
       keyStatus: "unavailable",
+      keyValidationStatus: "unavailable",
+      keyComparisonValue: null,
       tokenStatus: "absent",
       accessMode: "not_enforced"
     },
@@ -4247,6 +4249,8 @@
             <div><span>Produkt</span><strong>${escapeHtml(license.productId)} · Version ${escapeHtml(license.majorVersion)}</strong></div>
             <div><span>Verknüpfung</span><strong>${escapeHtml(license.linkedAt ? formatGermanDateTime({ iso: license.linkedAt }) : "Noch nicht mit dem Lizenzdienst verknüpft")}</strong></div>
             <div><span>Geräteschlüssel</span><strong>${runtimeStatus.keyStatus === "available" ? "Lokal vorbereitet" : "Nicht verfügbar"}</strong></div>
+            <div><span>Schlüsselprüfung</span><strong>${runtimeStatus.keyValidationStatus === "verified" ? "Erfolgreich" : "Nicht verfügbar"}</strong></div>
+            <div><span>Sicherer Vergleichswert</span><strong>${escapeHtml(runtimeStatus.keyComparisonValue || "Nicht verfügbar")}</strong></div>
             <div><span>Lizenznachweis</span><strong>${runtimeStatus.tokenStatus === "absent" ? "Noch nicht vorhanden" : "Noch nicht serverseitig bestätigt"}</strong></div>
           </div>
           <p class="settings-neutral-note">Die lokale Vorbereitung ist kein Aktivierungs-, Trial- oder Kaufnachweis. FRECKA schränkt die bestehende Beta-Nutzung dadurch noch nicht ein.</p>

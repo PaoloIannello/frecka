@@ -1,7 +1,7 @@
 # FRECKA-Exportkern Version 1
 
 **Stand:** TSE-002 auf Basis SETTINGS-002, SETTINGS-001, USER-001 und EXPORT-003
-**Datenbankschema:** unverändert Version 5  
+**Datenbankschema:** Version 6; Exportprojektion weiterhin ausschließlich aus den fünf Geschäftsstores
 **Exportformat:** `FRECKA_EXPORT`, Version 1
 
 ## Zweck und Abgrenzung

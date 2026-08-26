@@ -793,13 +793,23 @@
       return Object.freeze({
         code: allowedErrorCodes.has(error.code) ? error.code : "LICENSE_RUNTIME_INVALID",
         keyStatus: "unavailable",
+        keyValidationStatus: "unavailable",
+        keyComparisonValue: null,
         tokenStatus: "unverified",
         accessMode: "not_enforced"
       });
     }
+    const keyAvailable = Boolean(record?.devicePrivateKey && record?.devicePublicKey);
+    const thumbprint = validSha256Thumbprint(record?.devicePublicKeyThumbprint)
+      ? record.devicePublicKeyThumbprint
+      : "";
     return Object.freeze({
       code: record?.signedLicenseToken ? "LICENSE_RUNTIME_TOKEN_UNVERIFIED" : "LICENSE_RUNTIME_READY_UNLINKED",
-      keyStatus: record?.devicePrivateKey && record?.devicePublicKey ? "available" : "unavailable",
+      keyStatus: keyAvailable ? "available" : "unavailable",
+      keyValidationStatus: keyAvailable && thumbprint ? "verified" : "unavailable",
+      keyComparisonValue: keyAvailable && thumbprint
+        ? `P256-${thumbprint.slice(0, 8)}-${thumbprint.slice(-8)}`
+        : null,
       tokenStatus: record?.signedLicenseToken ? "unverified" : "absent",
       referenceStatus: record?.licenseId === licenseReference?.licenseId ? "matched" : "mismatch",
       accessMode: "not_enforced"
@@ -3974,6 +3984,8 @@
           return Object.freeze({
             code: "LICENSE_RUNTIME_MISSING",
             keyStatus: "unavailable",
+            keyValidationStatus: "unavailable",
+            keyComparisonValue: null,
             tokenStatus: "absent",
             referenceStatus: "missing",
             accessMode: "not_enforced"
