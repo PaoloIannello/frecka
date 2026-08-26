@@ -1744,7 +1744,7 @@ a {
 }
 
 .c-legal__content {
-  max-width: var(--measure-reading);
+  max-width: calc(var(--measure-reading) + var(--space-16));
 }
 
 .c-legal__intro {

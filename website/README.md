@@ -4,7 +4,7 @@ Statische offizielle FRECKA-Landingpage und ihre konzeptionelle Grundlage.
 
 ## Status
 
-Die Landingpage ist als statische HTML5-/CSS-/Vanilla-JavaScript-Seite umgesetzt und auf eine öffentliche 14-Tage-Testphase vorbereitet. Markenassets, Produktscreens, das finale Preismodell von einmalig 59 € für FRECKA, die Einzellizenz, der deaktivierte Testzugang und FRECKA-spezifische Legal-Seiten sind integriert. Optionale ZusatzTools sind ausschließlich als spätere, separat ergänzbare Erweiterungen eingeordnet. Formular-Backend, technische Trial-/Lizenzfreischaltung, Zahlungsabwicklung und Hostingprotokollierung bleiben vor ihrer jeweiligen Aktivierung verpflichtende Freigabepunkte.
+Die Landingpage ist als statische HTML5-/CSS-/Vanilla-JavaScript-Seite umgesetzt und auf eine öffentliche 14-Tage-Testphase vorbereitet. Markenassets, Produktscreens, das finale Preismodell von einmalig 59 € für FRECKA, die Einzellizenz, die öffentliche Kontaktadresse `hallo@frecka.app`, der deaktivierte Testzugang und FRECKA-spezifische Legal-Seiten sind integriert. Optionale ZusatzTools sind ausschließlich als spätere, separat ergänzbare Erweiterungen eingeordnet. Formular-Backend, technische Trial-/Lizenzfreischaltung, Zahlungsabwicklung und Hostingprotokollierung bleiben vor ihrer jeweiligen Aktivierung verpflichtende Freigabepunkte.
 
 ## Dokumente
 
@@ -33,6 +33,7 @@ Die Landingpage ist als statische HTML5-/CSS-/Vanilla-JavaScript-Seite umgesetzt
 - [WEBSITE_012_FINAL_POLISH.md](WEBSITE_012_FINAL_POLISH.md) dokumentiert die sichtbare Logo-Skalierung und ihre responsive Nachkorrektur.
 - [WEBSITE_013_POSITIONING_PRICING.md](WEBSITE_013_POSITIONING_PRICING.md) dokumentiert die finale Positionierung, das Einmalpreismodell, die Kostenrechnung und die verbleibenden technischen Launch-Blocker.
 - [WEBSITE_014_PRICING_TRIAL_EXTRAS.md](WEBSITE_014_PRICING_TRIAL_EXTRAS.md) dokumentiert die klarere Einmalpreis-Darstellung, die öffentliche Testphasen-Sprache und die vorsichtige Vorbereitung optionaler ZusatzTools.
+- [WEBSITE_016_CONTACT_LEGAL_FINALIZATION.md](WEBSITE_016_CONTACT_LEGAL_FINALIZATION.md) dokumentiert die aktuelle Kontaktadresse, die finalisierten Legal-Inhalte und die verbleibenden Trial-/Infrastruktur-Freigabepunkte.
 - [legal/impressum.html](legal/impressum.html) enthält die anhand der öffentlichen Betreiberquelle verifizierte Anbieterkennzeichnung nach § 5 DDG.
 - [legal/datenschutz.html](legal/datenschutz.html) beschreibt den aktuellen technischen Datenschutzstand; unbekannte Hosting- und Backenddetails bleiben ausschließlich intern dokumentiert.
 
