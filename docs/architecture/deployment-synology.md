@@ -414,7 +414,7 @@ SHA-256-Dateiprüfungen sichern den Transport beziehungsweise die Staging-Konsis
 
 ## 8. Noch erforderliche betriebliche Freigaben
 
-Domain, Hostmodell, reale Pfadbasis, Lizenzgrundmodell und grundsätzliche Synology-Rolle sind im Blueprint und in ADR-0003/ADR-0004 entschieden. Die LICENSE-003-Detailarchitektur ist in ADR-0005 vorgeschlagen. Eine reale nächste Freigabestufe muss dennoch anhalten, bis die jeweils betroffenen Betriebsfragen geklärt sind:
+Domain, Hostmodell, reale Pfadbasis, Lizenzgrundmodell und grundsätzliche Synology-Rolle sind im Blueprint und in ADR-0003/ADR-0004 entschieden. ADR-0005 und der LICENSE-004-Vertrag sind angenommen, aber noch nicht implementiert. Eine reale nächste Freigabestufe muss dennoch anhalten, bis die jeweils betroffenen Betriebsfragen geklärt sind:
 
 1. Zertifikatsausstellung und konkrete Zuordnung für jeden freigegebenen Host;
 2. Zugriffsschutz und Freigabekreis der Beta-Origin;
@@ -424,7 +424,7 @@ Domain, Hostmodell, reale Pfadbasis, Lizenzgrundmodell und grundsätzliche Synol
 6. Release-Aufbewahrung und verantwortliche Produktivfreigabe;
 7. DSM-Upgrade- und Kompatibilitätsplan vor Mailrelay oder Lizenzdienst;
 8. Provider-, Datenschutz-, Queue- und Löschregeln des Mailrelays;
-9. offene Freigaben aus ADR-0005 zu Identität, Offline-Intervallen, Altgeräte-Risiko sowie Aktivierungs- und Übertragungsprotokoll.
+9. Datenschutz-, Serverruntime-, Key-, Support-, Monitoring-, Backup- und Incident-Freigaben des Lizenzdienstes.
 
 Diese Punkte werden nicht geraten. Sie ändern nicht die beschlossene Grundstruktur aus statischem Public-Bereich, unveränderlichen Releases, getrennten App-Origins und getrennten dynamischen Diensten.
 
@@ -434,7 +434,8 @@ Diese Punkte werden nicht geraten. Sie ändern nicht die beschlossene Grundstruk
 - `docs/architecture/deployment-workflow.md`: operativer Entwicklungs- und Releaseprozess;
 - `docs/adr/ADR-0003-synology-als-infrastrukturplattform.md`: Rolle der Synology;
 - `docs/adr/ADR-0004-lizenzmodell-v1.md`: Lizenz- und Gerätegrundmodell;
-- `docs/adr/ADR-0005-trial-lizenzdienst-und-entitlements.md`: vorgeschlagene Detailarchitektur für Trial, Nachweis und Entitlements.
+- `docs/adr/ADR-0005-trial-lizenzdienst-und-entitlements.md`: angenommene Detailarchitektur für Trial, Nachweis und Entitlements;
+- `docs/licensing-contract.md`: verbindlicher LICENSE-004-Fach- und Protokollvertrag.
 
 ## 10. Referenzen
 
@@ -447,6 +448,7 @@ Diese Punkte werden nicht geraten. Sie ändern nicht die beschlossene Grundstruk
 - `docs/adr/ADR-0003-synology-als-infrastrukturplattform.md`
 - `docs/adr/ADR-0004-lizenzmodell-v1.md`
 - `docs/adr/ADR-0005-trial-lizenzdienst-und-entitlements.md`
+- `docs/licensing-contract.md`
 - `PROJECT.md`, insbesondere Offline-First-, Update-, Sicherheits- und Releaseprinzipien
 - `docs/adr/ADR-0001-offline-first-architektur.md`
 - `docs/persistence.md`

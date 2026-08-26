@@ -622,7 +622,7 @@ Die Update-Origin nimmt keine Kunden-, Beleg-, Lizenz- oder Nutzungsdaten entgeg
 
 Der Lizenzdienst ist für V1.0 vorgesehen, aber keine Voraussetzung für die erste statische Bereitstellung von Landingpage, Beta und App. Er ist kein Bestandteil des statischen Release-Artefakts und wird als eigener Dienst mit eigener Origin, eigener Laufzeit, eigener zweckgebundener Datenhaltung und eigenem Deploymentzyklus behandelt.
 
-Das verbindliche Grundmodell steht in `docs/adr/ADR-0004-lizenzmodell-v1.md`: Eine Lizenz gehört genau einem Mandanten beziehungsweise einer Filiale und erlaubt genau ein gleichzeitig aktives Gerät. Gerätewechsel erfolgt über kontrollierte Deaktivierung oder Übertragung; Mehrgerätebetrieb ist frühestens für eine spätere 2.x-Version vorgesehen. Die vorgeschlagene ADR-0005 ergänzt Trial, serverautorisierte Gerätebindung, signierte Offline-Nachweise, Payment-Grenze und Entitlements, ohne bereits einen Dienst zu implementieren.
+Das verbindliche Grundmodell steht in `docs/adr/ADR-0004-lizenzmodell-v1.md`: Eine Lizenz gehört genau einem Mandanten beziehungsweise einer Filiale und erlaubt genau ein gleichzeitig aktives Gerät. Gerätewechsel erfolgt über kontrollierte Deaktivierung oder Übertragung; Mehrgerätebetrieb ist frühestens für eine spätere 2.x-Version vorgesehen. Die angenommene ADR-0005 und `docs/licensing-contract.md` ergänzen Trial, serverautorisierte Gerätebindung, signierte Offline-Nachweise, Payment-Grenze und Entitlements, ohne bereits einen Dienst zu implementieren.
 
 Verbindliche Grenzen:
 
@@ -632,11 +632,11 @@ Verbindliche Grenzen:
 - versionierte API;
 - TLS und getrennte Dienstzugänge;
 - Ausfall des Lizenzdienstes darf lokale Daten nicht gefährden;
-- vorgeschlagene Offline-Intervalle, Recovery-Identität und das begrenzte Altgeräte-Risiko bleiben vor Umsetzung ausdrücklich freizugeben;
+- verifizierte E-Mail, 24/72-Stunden-Trialgrenzen, 30/180-Tage-Kaufgrenzen und das begrenzte Altgeräte-Risiko sind durch LICENSE-004 verbindlich angenommen;
 - Lizenzstatus darf nicht durch heimliche Telemetrie ersetzt werden;
 - Beta und Produktion verwenden getrennte Konfigurationen beziehungsweise Mandantenbereiche.
 
-Vor Umsetzung müssen insbesondere die offenen Freigaben aus ADR-0005 zu Identität, Datenschutz, Offline-Intervallen, Altgeräte-Risiko, Aktivierungs-/Übertragungsprotokoll, Sperrung, Wiederherstellung und Supportprozess entschieden werden. Bis dahin werden weder Ordner noch API-Platzhalter angelegt.
+Vor öffentlichem Betrieb müssen Datenschutz-/Aufbewahrung, Serverruntime, Schlüsselbetrieb, Paymentprovider, Supportprozess, DSM-Kompatibilität, Monitoring, Serverbackup und Incident Response freigegeben werden. Bis zu einem eigenen Umsetzungsblock werden weder Serverordner noch API-Platzhalter angelegt.
 
 ## 14. Mailrelay für V1.0
 
@@ -747,7 +747,7 @@ Domain `frecka.app`, statische Hosts, realer Zielpfad `/web/FRECKA/`, Synology-R
 5. verbindlich unterstützte Browser und Geräte;
 6. Service-Worker-/Updateformat einschließlich Signatur und Schlüsselverwaltung;
 7. dokumentierte DSM-Upgrade- und Kompatibilitätsprüfung vor neuen dynamischen öffentlichen Diensten;
-8. die offenen Produkt-, Datenschutz- und Betriebsfreigaben aus ADR-0005 für den Lizenzdienst;
+8. Datenschutz-, Key-, Runtime-, Support- und Betriebsfreigaben aus dem LICENSE-004-Vertrag für den Lizenzdienst;
 9. Mailrelay-Provider sowie Datenschutz-, Queue- und Löschregeln.
 
 Diese Entscheidungen werden nicht geraten. Sie blockieren keine lokale Entwicklung und keine Dokumentation, wohl aber die jeweils betroffene öffentliche Infrastruktur.
@@ -758,4 +758,5 @@ Diese Entscheidungen werden nicht geraten. Sie blockieren keine lokale Entwicklu
 - `docs/architecture/deployment-synology.md`;
 - `docs/adr/ADR-0003-synology-als-infrastrukturplattform.md`;
 - `docs/adr/ADR-0004-lizenzmodell-v1.md`;
-- `docs/adr/ADR-0005-trial-lizenzdienst-und-entitlements.md`.
+- `docs/adr/ADR-0005-trial-lizenzdienst-und-entitlements.md`;
+- `docs/licensing-contract.md`.

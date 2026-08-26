@@ -16,7 +16,8 @@ Ergänzende Dokumente:
 - `docs/architecture/deployment-workflow.md`: Entwicklung, Versionierung, Beta, Produktion, Rollback und Archivierung;
 - `docs/adr/ADR-0003-synology-als-infrastrukturplattform.md`: Erweiterung der Synology-Rolle;
 - `docs/adr/ADR-0004-lizenzmodell-v1.md`: verbindliches Lizenz- und Gerätemodell;
-- `docs/adr/ADR-0005-trial-lizenzdienst-und-entitlements.md`: vorgeschlagene Detailarchitektur für Trial, Offline-Nachweis und Entitlements.
+- `docs/adr/ADR-0005-trial-lizenzdienst-und-entitlements.md`: angenommene Detailarchitektur für Trial, Offline-Nachweis und Entitlements;
+- `docs/licensing-contract.md`: verbindlicher LICENSE-004-Feld-, Token-, Zeit- und API-Vertrag.
 
 Bei einer Abweichung hat das thematisch zuständige angenommene ADR Vorrang. Der datierte Betriebs-/Inventarabschnitt dieses Dokuments beschreibt beobachteten Zustand und ist keine dauerhafte Architekturentscheidung.
 
@@ -88,7 +89,7 @@ Sie dürfen keine PWA-Dateien in-place verändern und keine zentrale Sammlung vo
 
 ## 5. Lizenzmodell V1.0
 
-Das verbindliche Grundmodell steht in ADR-0004. LICENSE-003 konkretisiert in der noch vorgeschlagenen ADR-0005 die technische Zielarchitektur. Zusammenfassend gilt:
+Das verbindliche Grundmodell steht in ADR-0004. ADR-0005 und der LICENSE-004-Vertrag konkretisieren die technische Zielarchitektur. Zusammenfassend gilt:
 
 - eine Lizenz gehört genau zu einem Mandanten beziehungsweise einer Filiale;
 - genau ein Gerät darf gleichzeitig aktiv sein;
@@ -96,7 +97,7 @@ Das verbindliche Grundmodell steht in ADR-0004. LICENSE-003 konkretisiert in der
 - Backup und Restore übertragen Geschäftsdaten weiterhin ausschließlich kontrolliert durch den Nutzer;
 - der Lizenzdienst ist alleinige Autorität; lokale LICENSE-001/002-Felder bleiben bis zur Migration nur Platzhalter;
 - eine signierte, gerätegebundene und zeitlich begrenzte Bescheinigung ermöglicht begrenzte Offlinenutzung;
-- als noch freizugebende Startwerte gelten 24/72 Stunden im Trial und 30/60 Tage nach Kauf;
+- verbindlich gelten 24/72 Stunden im Trial und 30/180 Tage nach Kauf;
 - Ablauf oder fehlende Revalidierung führt zu Read-only statt Datenverlust;
 - Mehrgerätebetrieb ist nicht Teil von V1.0.
 
@@ -256,7 +257,8 @@ Verbindliche Grenzen:
 - lokale Geschäftsdaten bleiben bei Dienst- oder Netzausfall unverändert;
 - Lizenzbescheinigungen sind signiert, gerätegebunden und zeitlich begrenzt;
 - private Geräte- und Signaturschlüssel sowie Lizenz-Runtime-Daten gehören weder in statische Webroots noch in Backup oder Export;
-- genaue Intervalle, Recovery-Identität und das Offline-Risiko einer Notfallübernahme werden vor Umsetzung aus ADR-0005 freigegeben.
+- verifizierte E-Mail, Offlineintervalle und das begrenzte Offline-Risiko einer Notfallübernahme sind durch LICENSE-004 angenommen;
+- öffentliche API, Payment und Produktivbetrieb bleiben bis zu Datenschutz-, Key-, Runtime-, DSM- und Betriebsfreigaben gesperrt.
 
 ## 14. Update-Infrastruktur und Offline-Fähigkeit
 
