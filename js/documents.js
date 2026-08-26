@@ -6,6 +6,8 @@
   const MAX_RECEIPT_HEIGHT = 841.89; // A4 height
   const VOUCHER_SIZE = Object.freeze([419.53, 595.28]); // A5 portrait
   const QUIET_ZONE_MODULES = 4;
+  const PDF_IMAGE_LOGO_TEXT_GAP = 14;
+  const PDF_IMAGE_LOGO_HEIGHT_RESERVE = 64;
 
   class DocumentError extends Error {
     constructor(code, userMessage, cause = null) {
@@ -496,7 +498,7 @@
         width,
         height
       });
-      return y - maxHeight - 8;
+      return y - height - PDF_IMAGE_LOGO_TEXT_GAP;
     }
     page.drawRectangle({ x: centerX - 20, y: y - 40, width: 40, height: 40, borderColor: colors.ink, borderWidth: 1, color: colors.paper });
     drawCentered(page, fonts.bold, model.branding.logo.initials, 10, y - 22, colors.ink, centerX * 2);
@@ -520,9 +522,12 @@
     }));
   }
 
-  function estimateReceiptHeight(model, fonts) {
+  function estimateReceiptHeight(model, fonts, embeddedLogo) {
     const contentWidth = RECEIPT_WIDTH - 32;
-    let height = 32 + (model.branding.logo && model.branding.logoMode !== "none" ? 58 : 0) + 88;
+    const logoHeightReserve = model.branding.logo && model.branding.logoMode !== "none"
+      ? (embeddedLogo ? PDF_IMAGE_LOGO_HEIGHT_RESERVE : 58)
+      : 0;
+    let height = 32 + logoHeightReserve + 88;
     height += model.positions.reduce((sum, item) => sum + 30 + Math.max(0, wrapText(fonts.bold, item.title, 8.5, contentWidth - 62).length - 1) * 10, 0);
     if (model.customer) height += 45;
     height += 65;
@@ -575,7 +580,7 @@
     const margin = 16;
     const right = RECEIPT_WIDTH - margin;
     const contentWidth = right - margin;
-    const initialHeight = estimateReceiptHeight(model, fonts);
+    const initialHeight = estimateReceiptHeight(model, fonts, embeddedLogo);
     let page = pdf.addPage([RECEIPT_WIDTH, initialHeight]);
     let pageHeight = initialHeight;
     let y = pageHeight - 24;

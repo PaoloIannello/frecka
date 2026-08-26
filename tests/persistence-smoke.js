@@ -1577,6 +1577,8 @@
       {
         name: "PNG- und JPEG-Logoassets erscheinen proportional in interner Ansicht und PDF",
         run: async () => {
+          const documentsResponse = await fetch("../js/documents.js", { cache: "no-store" });
+          const documentsSource = await documentsResponse.text();
           const imageCount = pdf => [...pdf.context.enumerateIndirectObjects()].filter(([, object]) => (
             (object?.dict?.get?.(globalThis.PDFLib.PDFName.of("Subtype"))
               || object?.get?.(globalThis.PDFLib.PDFName.of("Subtype")))?.toString() === "/Image"
@@ -1585,16 +1587,82 @@
             brandingSnapshot: { logoMode: "company", visibleName: "", logo: { assetId: "company-logo", source: "company", label: "Unternehmenslogo" } }
           });
           const receiptModel = documentApi.createReceiptDocumentModel(receipt, documentOptions());
-          assert(documentViewApi.renderReceipt(receiptModel, { interactiveQr: false }).includes(`src="data:image/png;base64,`), "PNG fehlt in der internen Belegansicht");
+          const receiptMarkup = documentViewApi.renderReceipt(receiptModel, { interactiveQr: false });
+          assert(receiptMarkup.includes(`src="data:image/png;base64,`), "PNG fehlt in der internen Belegansicht");
+          assert(receiptMarkup.includes("document-brand-logo has-image"), "Echtes Bildlogo besitzt keine gezielte Layout-Kennzeichnung");
           const receiptPdf = await globalThis.PDFLib.PDFDocument.load(await documentApi.createPdfBytes(receiptModel));
           assert(imageCount(receiptPdf) > 0, "PNG wurde nicht in das Beleg-PDF eingebettet");
 
           const voucher = voucherDraftFixture("voucher-logo-pdf");
           voucher.contextSnapshot.branding = { logoMode: "custom", visibleName: "", logo: { assetId: "business-logo-hair", source: "business-area", label: "Geschäftsbereichslogo" } };
           const voucherModel = documentApi.createVoucherDocumentModel(voucher, documentOptions());
-          assert(documentViewApi.renderVoucher(voucherModel, { interactiveQr: false }).includes(`src="data:image/jpeg;base64,`), "JPEG fehlt in der internen Gutscheinansicht");
+          const voucherMarkup = documentViewApi.renderVoucher(voucherModel, { interactiveQr: false });
+          assert(voucherMarkup.includes(`src="data:image/jpeg;base64,`), "JPEG fehlt in der internen Gutscheinansicht");
           const voucherPdf = await globalThis.PDFLib.PDFDocument.load(await documentApi.createPdfBytes(voucherModel));
           assert(imageCount(voucherPdf) > 0, "JPEG wurde nicht in das Gutschein-PDF eingebettet");
+
+          const measureImageLogoLayout = (markup, width) => new Promise((resolve, reject) => {
+            const frame = document.createElement("iframe");
+            const timeout = window.setTimeout(() => {
+              frame.remove();
+              reject(new Error(`Dokumentansicht wurde bei ${width} px nicht rechtzeitig gerendert`));
+            }, 8000);
+            frame.title = `Dokument mit Bildlogo bei ${width} Pixel`;
+            frame.style.cssText = `position:fixed;left:-2000px;top:0;width:${width}px;height:900px;border:0;`;
+            frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="../styles.css"><style>body{margin:0;padding:8px;background:#eef3f1}</style></head><body>${markup}</body></html>`;
+            frame.addEventListener("load", () => window.requestAnimationFrame(() => {
+              try {
+                const contentDocument = frame.contentDocument;
+                const documentElement = contentDocument.documentElement;
+                const logo = contentDocument.querySelector(".document-brand-logo.has-image");
+                const following = logo?.nextElementSibling;
+                if (!logo || !following) throw new Error("Bildlogo oder Folgeblock fehlt");
+                const gap = following.getBoundingClientRect().top - logo.getBoundingClientRect().bottom;
+                const result = {
+                  viewportWidth: frame.contentWindow.innerWidth,
+                  scrollWidth: documentElement.scrollWidth,
+                  clientWidth: documentElement.clientWidth,
+                  marginBottom: Number.parseFloat(frame.contentWindow.getComputedStyle(logo).marginBottom),
+                  gap
+                };
+                window.clearTimeout(timeout);
+                frame.remove();
+                resolve(result);
+              } catch (error) {
+                window.clearTimeout(timeout);
+                frame.remove();
+                reject(error);
+              }
+            }), { once: true });
+            document.body.append(frame);
+          });
+          for (const width of [320, 390]) {
+            for (const markup of [receiptMarkup, voucherMarkup]) {
+              const layout = await measureImageLogoLayout(markup, width);
+              assertEqual(layout.viewportWidth, width, `Falscher Dokument-Viewport bei ${width} px`);
+              assert(layout.scrollWidth <= layout.clientWidth, `Dokument erzeugt horizontalen Überlauf bei ${width} px`);
+              assertEqual(layout.marginBottom, 10, `Bildlogo-Abstand ist bei ${width} px nicht gezielt gesetzt`);
+              assert(layout.gap >= 10 && layout.gap <= 20, `Optischer Bildlogo-Abstand ist bei ${width} px nicht klein und sichtbar: ${layout.gap}px`);
+            }
+          }
+
+          const textFallback = documentApi.createReceiptDocumentModel(receiptDocumentFixture({
+            brandingSnapshot: { logoMode: "company", visibleName: "", logo: { assetId: "missing-logo", source: "company", label: "Unternehmenslogo" } }
+          }), documentOptions());
+          const textFallbackMarkup = documentViewApi.renderReceipt(textFallback, { interactiveQr: false });
+          assert(textFallbackMarkup.includes("document-brand-logo") && !textFallbackMarkup.includes("document-brand-logo has-image"), "Textfallback erhielt fälschlich den Bildlogo-Abstand");
+          const textFallbackPdf = await globalThis.PDFLib.PDFDocument.load(await documentApi.createPdfBytes(textFallback));
+          assertEqual(imageCount(textFallbackPdf), 0, "Textfallback erzeugte fälschlich ein PDF-Bildlogo");
+          assertEqual(textFallbackPdf.getPageCount(), 1, "Textfallback destabilisiert den PDF-Seitenumbruch");
+          const noLogo = documentApi.createReceiptDocumentModel(receiptDocumentFixture({
+            brandingSnapshot: { logoMode: "none", visibleName: "", logo: null }
+          }), documentOptions());
+          assert(!documentViewApi.renderReceipt(noLogo, { interactiveQr: false }).includes("document-brand-logo"), "Kein-Logo-Modus erhielt fälschlich einen Logoabstand");
+          const noLogoPdf = await globalThis.PDFLib.PDFDocument.load(await documentApi.createPdfBytes(noLogo));
+          assertEqual(imageCount(noLogoPdf), 0, "Kein-Logo-Modus erzeugte fälschlich ein PDF-Bildlogo");
+          assertEqual(noLogoPdf.getPageCount(), 1, "Kein-Logo-Modus destabilisiert den PDF-Seitenumbruch");
+          assert(documentsSource.includes("return y - height - PDF_IMAGE_LOGO_TEXT_GAP") && documentsSource.includes("const PDF_IMAGE_LOGO_TEXT_GAP = 14"), "PDF-Bildlogo-Abstand verwendet nicht die tatsächliche Bildunterkante");
+          assert(documentsSource.includes("return y - maxHeight - 8"), "PDF-Textfallback wurde unerwartet verändert");
 
           const wide = documentApi.fitLogoDimensions(1200, 300, 124, 46);
           const tall = documentApi.fitLogoDimensions(200, 900, 124, 46);

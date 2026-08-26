@@ -86,6 +86,8 @@ FRECKA liefert `pdf-lib` 1.17.1 lokal unter `vendor/` aus. Die Bibliothek ist MI
 
 PNG und JPEG werden über dieselbe vorhandene `pdf-lib`-Instanz eingebettet. Die Maße werden proportional in einen festen Headerbereich eingepasst; das Seitenverhältnis bleibt erhalten und Unternehmensdaten sowie Beleginhalt beginnen darunter. Dieselbe Routine gilt für normale Belege, Gutscheinverkaufsbelege, Storno, Gutschrift und Gutschein. Mehrseitige Belege erhalten das Logo nur im Dokumentkopf der ersten Seite. Interne HTML-Ansicht und PDF verwenden dieselbe aufgelöste historische Asset-Version.
 
+Echte PNG-/JPEG-Logos erhalten zwischen ihrer tatsächlichen Bildunterkante und dem folgenden Branding- beziehungsweise Unternehmensblock einen kleinen festen Abstand. Die Regel gilt zentral für interne Beleg- und Gutscheinansichten sowie beide PDF-Layouts. Logoabmessungen, Textfallback und der Modus ohne Logo bleiben davon unberührt.
+
 Die Produktoberfläche ruft für Anzeige und Teilen dieselbe Funktion `createPdfBlob()` auf. Für den nativen Teilen-Dialog wird der Blob, soweit der Browser es unterstützt, als echtes `File` mit `application/pdf` und dem dokumentierten Dateinamen bereitgestellt. Ist ein `File` nicht konstruierbar oder nicht teilbar, bleibt der PDF-Blob für Anzeige beziehungsweise lokalen Download verwendbar. Die Anwendung erzeugt deshalb kein zweites PDF für COMM-001.
 
 Für die PDF-Anzeige wird eine temporäre Blob-URL geöffnet. Falls der Browser das vorbereitete Fenster blockiert, wird ein lokaler Download ausgelöst:

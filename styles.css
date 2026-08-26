@@ -2438,6 +2438,10 @@ body.work-mode:not(.catalog-mode) .flow-page {
   border-radius: 0;
   overflow: hidden;
 }
+.receipt-paper header > .document-brand-logo.has-image,
+.voucher-sheet header > .document-brand-logo.has-image {
+  margin-bottom: 10px;
+}
 .document-brand-logo.has-image img {
   width: 100%;
   height: 100%;
