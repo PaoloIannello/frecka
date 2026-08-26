@@ -15,7 +15,8 @@ Ergänzende Dokumente:
 - `docs/architecture/deployment-synology.md`: Laufzeitmenge, Verzeichnis- und Web-Station-Zuordnung;
 - `docs/architecture/deployment-workflow.md`: Entwicklung, Versionierung, Beta, Produktion, Rollback und Archivierung;
 - `docs/adr/ADR-0003-synology-als-infrastrukturplattform.md`: Erweiterung der Synology-Rolle;
-- `docs/adr/ADR-0004-lizenzmodell-v1.md`: verbindliches Lizenz- und Gerätemodell.
+- `docs/adr/ADR-0004-lizenzmodell-v1.md`: verbindliches Lizenz- und Gerätemodell;
+- `docs/adr/ADR-0005-trial-lizenzdienst-und-entitlements.md`: vorgeschlagene Detailarchitektur für Trial, Offline-Nachweis und Entitlements.
 
 Bei einer Abweichung hat das thematisch zuständige angenommene ADR Vorrang. Der datierte Betriebs-/Inventarabschnitt dieses Dokuments beschreibt beobachteten Zustand und ist keine dauerhafte Architekturentscheidung.
 
@@ -87,13 +88,16 @@ Sie dürfen keine PWA-Dateien in-place verändern und keine zentrale Sammlung vo
 
 ## 5. Lizenzmodell V1.0
 
-Das verbindliche Modell steht vollständig in ADR-0004. Zusammenfassend gilt:
+Das verbindliche Grundmodell steht in ADR-0004. LICENSE-003 konkretisiert in der noch vorgeschlagenen ADR-0005 die technische Zielarchitektur. Zusammenfassend gilt:
 
 - eine Lizenz gehört genau zu einem Mandanten beziehungsweise einer Filiale;
 - genau ein Gerät darf gleichzeitig aktiv sein;
 - ein Gerätewechsel muss durch Deaktivierung oder administrative Übertragung möglich sein;
 - Backup und Restore übertragen Geschäftsdaten weiterhin ausschließlich kontrolliert durch den Nutzer;
-- die genaue Offline-Kulanz und Aktivierungsprotokolle bleiben eine Folgeentscheidung;
+- der Lizenzdienst ist alleinige Autorität; lokale LICENSE-001/002-Felder bleiben bis zur Migration nur Platzhalter;
+- eine signierte, gerätegebundene und zeitlich begrenzte Bescheinigung ermöglicht begrenzte Offlinenutzung;
+- als noch freizugebende Startwerte gelten 24/72 Stunden im Trial und 30/60 Tage nach Kauf;
+- Ablauf oder fehlende Revalidierung führt zu Read-only statt Datenverlust;
 - Mehrgerätebetrieb ist nicht Teil von V1.0.
 
 Der Lizenzdienst ist für V1.0 vorgesehen, aber keine Voraussetzung für die erste statische Auslieferung von Landingpage, Beta und App.
@@ -250,7 +254,9 @@ Verbindliche Grenzen:
 - versionierte Schnittstelle;
 - kontrollierte Aktivierung, Deaktivierung und Geräteübertragung;
 - lokale Geschäftsdaten bleiben bei Dienst- oder Netzausfall unverändert;
-- genaue Offline-Kulanz bleibt offen und wird vor Umsetzung entschieden.
+- Lizenzbescheinigungen sind signiert, gerätegebunden und zeitlich begrenzt;
+- private Geräte- und Signaturschlüssel sowie Lizenz-Runtime-Daten gehören weder in statische Webroots noch in Backup oder Export;
+- genaue Intervalle, Recovery-Identität und das Offline-Risiko einer Notfallübernahme werden vor Umsetzung aus ADR-0005 freigegeben.
 
 ## 14. Update-Infrastruktur und Offline-Fähigkeit
 
@@ -278,6 +284,8 @@ Ein Gerätewechsel umfasst:
 2. Lizenz kontrolliert auf das neue Gerät übertragen;
 3. verschlüsseltes Backup durch den Nutzer bereitstellen;
 4. Backup auf dem neuen Gerät prüfen und wiederherstellen.
+
+Backup/Restore überträgt dabei ausschließlich portable Geschäfts- und Lizenzreferenzdaten. Ein privater Geräteschlüssel, eine signierte Lizenzbescheinigung oder eine aktive Gerätefreigabe darf niemals aus dem Backup auf das neue Gerät kopiert werden.
 
 Die Synology speichert keine zentrale Kopie der Geschäftsdaten. Ihre eigene Infrastruktur-Sicherung umfasst ausschließlich Releases, statische Inhalte, Dienstkonfiguration und die jeweils erlaubten zweckgebundenen Daten dynamischer Dienste.
 

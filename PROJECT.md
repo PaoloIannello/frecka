@@ -251,7 +251,7 @@ Die Version 1.0 liefert einen kleinen, stabilen und vollständig offline nutzbar
 - vom Kunden kontrollierte Ablage ermöglichen, ohne zentralen FRECKA-Speicher;
 - statische, integritätsgeprüfte Updates von der Synology mit sicherem Aktivierungszeitpunkt umsetzen;
 - Offline-, Update-, Migrations-, Backup- und Restore-Szenarien auf realen Zielgeräten abnehmen.
-- den für V1.0 vorgesehenen Lizenzdienst nach ADR-0004 mit genau einem aktiven Gerät pro Lizenz, kontrollierter Geräteübertragung und noch festzulegender Offline-Kulanz umsetzen;
+- den für V1.0 vorgesehenen Lizenzdienst nach ADR-0004 und der zunächst vorgeschlagenen ADR-0005 mit genau einem aktiven Gerät pro Lizenz, serverautorisierter Trial-/Kaufberechtigung, zeitlich begrenztem Offline-Nachweis und kontrollierter Geräteübertragung umsetzen;
 - das für V1.0 vorgesehene Mailrelay als getrennten, optionalen Versanddienst mit dem bestehenden Fallback „Teilen“ umsetzen;
 - weder Lizenzdienst noch Mailrelay zur Voraussetzung für die erste statische Bereitstellung von Landingpage, Beta und App machen.
 
