@@ -8,7 +8,7 @@
 
 **Serverformat:** Version 1
 
-**Zukünftiges Clientformat:** `settings.license` Version 2 und `licenseRuntime` Version 1
+**Clientformat seit LICENSE-005:** `settings.license` Version 2 und `licenseRuntime` Version 1
 
 **Grundlage:** ADR-0004 und angenommene ADR-0005
 
@@ -255,7 +255,7 @@ licenseRuntime
 
 `nextValidationAt`, `offlineValidUntil`, Status und `cachedEntitlements` sind nur gecachte Projektionen aus der zuletzt erfolgreich geprüften JWS. Bei Widerspruch gilt ausschließlich die JWS. Der private Schlüssel wird als nicht exportierbarer `CryptoKey` mittels Structured Clone gespeichert.
 
-Ein eigener Store ist zwingend, weil der heutige Settings-Store vollständig in Tenant-Snapshot, Backup, Restore und Eigene-Daten-Export einfließt. Die geplante IndexedDB-Schemaerhöhung ist deshalb Version 5 auf Version 6. Der Runtime-Store wird in keiner Snapshot-Allowlist ergänzt.
+Ein eigener Store ist zwingend, weil der Settings-Store vollständig in Tenant-Snapshot, Backup, Restore und Eigene-Daten-Export einfließt. LICENSE-005 erhöht das IndexedDB-Schema deshalb von Version 5 auf Version 6. Der Runtime-Store wird in keiner Snapshot-Allowlist ergänzt.
 
 ### 5.3 Backup, Restore und Neuinstallation
 
@@ -596,7 +596,7 @@ LICENSE-004 installiert keinen Server, legt keine Ordner an und erzeugt keine Se
 
 ## 14. Folgeblöcke
 
-1. **LICENSE-005 – Lokales Runtime- und Tokenmodell:** Schema 5→6, portable Referenz v2, Runtime-Store, Web-Crypto-Key, JWS-/Zeitprüfung und historische v1-Migration; noch keine öffentliche Aktivierung.
+1. **LICENSE-005 – Lokales Runtime- und Tokenmodell (umgesetzt):** Schema 5→6, portable Referenz v2, Runtime-Store, Web-Crypto-Key, strikte JWS-Grenze und historische v1-Migration; noch keine öffentliche Aktivierung oder wirksame Zeit-/Nutzungsentscheidung.
 2. **LICENSE-006 – Lizenzdienst-Grundgerüst:** getrennte Runtime, Datenbankschema, Fehlerformat, Idempotenz, Nonces, Keyset und rein lokale Servertests.
 3. **LICENSE-007 – Identity und Trial-Aktivierung:** E-Mail-Verifikation, Trialstart, Recovery-Nachweis und serverseitige Trialhistorie.
 4. **LICENSE-008 – Validierung und zentraler Clientmodus:** Revalidierung, 24/72- und 30/180-Zeitlogik, zentraler Schreibguard sowie Read-only-/Activation-Required-UX.

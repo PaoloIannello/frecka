@@ -9,6 +9,7 @@ js/document-view.js
 js/documents.js
 js/export-package.js
 js/export.js
+js/license-runtime.js
 js/persistence.js
 js/public-documents.js
 js/public-viewer.js

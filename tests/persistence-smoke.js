@@ -7,6 +7,7 @@
   const cleanupNoteElement = document.getElementById("cleanupNote");
   const runButton = document.getElementById("runTests");
   const api = globalThis.FRECKA_PERSISTENCE;
+  const licenseRuntimeApi = globalThis.FRECKA_LICENSE_RUNTIME;
   const backupApi = globalThis.FRECKA_BACKUP;
   const exportApi = globalThis.FRECKA_EXPORT;
   const exportPackageApi = globalThis.FRECKA_EXPORT_PACKAGE;
@@ -295,6 +296,18 @@
 
   function recordFixture(tenantId, setupStatus = "started") {
     return api.snapshotSettings(runtimeFixture(), setupStatus, tenantId);
+  }
+
+  function legacyLicenseFixture(tenantId, overrides = {}) {
+    return {
+      formatVersion: 1,
+      licenseId: "license_legacy_001",
+      tenantId,
+      deviceId: "device_legacy_001",
+      activatedAt: "2030-01-01T10:00:00.000Z",
+      lastValidation: "2030-01-01T10:00:00.000Z",
+      ...overrides
+    };
   }
 
   function freshRuntimeFixture(tenantId = "local-default") {
@@ -993,6 +1006,40 @@
         transaction.objectStore(api.constants.receiptsStoreName).put(receiptsRecord);
         transaction.oncomplete = () => { database.close(); resolve(); };
         transaction.onabort = () => { database.close(); reject(transaction.error || new Error("Legacy-v4-Daten konnten nicht geschrieben werden.")); };
+      };
+    });
+  }
+
+  function createLegacyV5Database(databaseName, records) {
+    return new Promise((resolve, reject) => {
+      const storeNames = [
+        api.constants.storeName,
+        api.constants.catalogStoreName,
+        api.constants.customersStoreName,
+        api.constants.receiptsStoreName,
+        api.constants.vouchersStoreName
+      ];
+      const recordKeys = ["settings", "catalog", "customers", "receipts", "vouchers"];
+      const request = globalThis.indexedDB.open(databaseName, 5);
+      request.onupgradeneeded = () => {
+        storeNames.forEach(storeName => {
+          if (!request.result.objectStoreNames.contains(storeName)) {
+            request.result.createObjectStore(storeName, { keyPath: "tenantId" });
+          }
+        });
+      };
+      request.onerror = () => reject(request.error || new Error("Legacy-v5-Testdatenbank konnte nicht geöffnet werden."));
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction(storeNames, "readwrite");
+        storeNames.forEach((storeName, index) => {
+          transaction.objectStore(storeName).put(records[recordKeys[index]]);
+        });
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onabort = () => {
+          database.close();
+          reject(transaction.error || new Error("Legacy-v5-Daten konnten nicht geschrieben werden."));
+        };
       };
     });
   }
@@ -2229,7 +2276,7 @@
         }
       },
       {
-        name: "LICENSE-001 erzeugt genau eine stabile lokale und datensparsame Gerätebindung",
+        name: "LICENSE-005 erzeugt eine stabile portable V2-Referenz ohne Runtime- oder Autoritätsdaten",
         run: async () => {
           const tenantId = "test-license-model";
           const runtime = runtimeFixture();
@@ -2237,28 +2284,34 @@
           const second = api.snapshotSettings(runtime, "completed", tenantId);
           assertDeepEqual(
             Object.keys(first.license).sort(),
-            ["activatedAt", "deviceId", "formatVersion", "lastValidation", "licenseId", "tenantId"].sort(),
+            ["formatVersion", "licenseId", "linkedAt", "localTenantId", "majorVersion", "productId", "serverTenantId"].sort(),
             "Lokales Lizenzmodell besitzt unerwartete Felder"
           );
-          assertEqual(first.license.formatVersion, 1, "Falsche Lizenzformatversion");
-          assertEqual(first.license.tenantId, tenantId, "Lizenz gehört nicht zum Mandanten");
+          assertEqual(first.license.formatVersion, 2, "Falsche Lizenzformatversion");
+          assertEqual(first.license.localTenantId, tenantId, "Lizenz gehört nicht zum Mandanten");
           assert(/^license_[A-Za-z0-9._:-]+$/.test(first.license.licenseId), "Lizenz-ID ist nicht opak");
-          assert(/^device_[A-Za-z0-9._:-]+$/.test(first.license.deviceId), "Geräte-ID ist nicht opak");
-          assert(first.license.licenseId !== first.license.deviceId, "Lizenz- und Geräte-ID sind nicht getrennt");
           assertEqual(second.license.licenseId, first.license.licenseId, "Lokale Lizenz-ID ist innerhalb der Installation nicht stabil");
-          assertEqual(second.license.deviceId, first.license.deviceId, "Lokale Geräte-ID ist innerhalb der Installation nicht stabil");
-          assertEqual(first.license.lastValidation, first.license.activatedAt, "Initiale lokale Prüfung ist nicht nachvollziehbar");
+          assertEqual(first.license.serverTenantId, null, "Ohne Server wurde eine Server-Mandantenreferenz vorgetäuscht");
+          assertEqual(first.license.linkedAt, null, "Ohne Server wurde eine Verknüpfung vorgetäuscht");
+          assertEqual(first.license.productId, "frecka.core", "Falsches Lizenzprodukt");
+          assertEqual(first.license.majorVersion, 1, "Falsche Produkthauptversion");
           const serialized = JSON.stringify(first.license).toLocaleLowerCase("de-DE");
+          ["deviceid", "token", "privatekey", "entitlement", "trial", "active"].forEach(forbidden => {
+            assert(!serialized.includes(forbidden), `Portable Referenz enthält Runtime- oder Autoritätsdaten: ${forbidden}`);
+          });
           [runtime.company.owner, runtime.company.email, runtime.company.phone, runtime.company.street].forEach(personalValue => {
             assert(!serialized.includes(String(personalValue).toLocaleLowerCase("de-DE")), "Gerätebindung enthält personenbezogene Unternehmensdaten");
           });
 
           const foreign = runtimeFixture();
-          foreign.license = { ...first.license, tenantId: "tenant-foreign" };
+          foreign.license = { ...first.license, localTenantId: "tenant-foreign" };
           assertThrows(() => api.snapshotSettings(foreign, "completed", tenantId), "INVALID_DATA", "Mandantenfremde Lizenz");
           const future = runtimeFixture();
-          future.license = { ...first.license, formatVersion: 2 };
+          future.license = { ...first.license, formatVersion: 3 };
           assertThrows(() => api.snapshotSettings(future, "completed", tenantId), "UNSUPPORTED_FORMAT", "Künftiges Lizenzformat");
+          const ambiguous = runtimeFixture();
+          ambiguous.license = { ...first.license, serverTenantId: "tenant_server_1", linkedAt: null };
+          assertThrows(() => api.snapshotSettings(ambiguous, "completed", tenantId), "INVALID_DATA", "Widersprüchliche Serververknüpfung");
           const incomplete = runtimeFixture();
           incomplete.license = { licenseId: first.license.licenseId };
           assertThrows(() => api.snapshotSettings(incomplete, "completed", tenantId), "INVALID_DATA", "Unvollständige Lizenz");
@@ -2268,7 +2321,7 @@
         }
       },
       {
-        name: "LICENSE-001 ergänzt historische Settings lokal und schützt vorhandene Bindungen",
+        name: "LICENSE-001 wird idempotent zu V2 migriert und erhält Lizenz- sowie Geräte-ID",
         run: async () => {
           const tenantId = "test-license-legacy";
           const defaults = recordFixture(tenantId, "completed");
@@ -2280,13 +2333,22 @@
 
           const preserved = api.normalizeSettingsRecord(defaults, defaults, tenantId);
           assertDeepEqual(preserved.record.license, defaults.license, "Vorhandene Lizenzbindung wurde bei der Normalisierung verändert");
+          const v1 = clone(defaults);
+          v1.license = legacyLicenseFixture(tenantId);
+          const prepared = api.prepareHistoricalSettingsRecord(v1, defaults, tenantId);
+          assert(prepared.compatible && prepared.changed, "Eindeutige LICENSE-001-Migration wurde nicht freigegeben");
+          assert(prepared.compatibilityCodes.includes("LICENSE_REFERENCE_V2_MIGRATED"), "LICENSE-001→V2-Migrationscode fehlt");
+          assertEqual(prepared.record.license.licenseId, v1.license.licenseId, "Historische Lizenz-ID wurde verändert");
+          assertEqual(api.legacyLicenseRuntimeHint(v1.license, tenantId).deviceId, v1.license.deviceId, "Historische Geräte-ID wurde nicht als Runtime-Hinweis erhalten");
+          const repeated = api.prepareHistoricalSettingsRecord(prepared.record, defaults, tenantId);
+          assert(!repeated.changed, "LICENSE-001→V2-Migration ist nicht idempotent");
           const newer = clone(defaults);
-          newer.license.formatVersion = 2;
+          newer.license.formatVersion = 3;
           assertThrows(() => api.normalizeSettingsRecord(newer, defaults, tenantId), "UNSUPPORTED_FORMAT", "Neuere Lizenzbindung");
         }
       },
       {
-        name: "LICENSE-002 zeigt die vorhandene Lizenz schreibgeschützt und ohne Gerätewechsel-Simulation",
+        name: "LICENSE-005 zeigt V2 und sicheren Runtime-Status ohne Aktivierungsbehauptung",
         run: async () => {
           const response = await fetch("../js/app.js", { cache: "no-store" });
           assert(response.ok, "App-Quelle für LICENSE-002 konnte nicht geladen werden");
@@ -2297,15 +2359,15 @@
           const renderSource = source.slice(renderStart, renderEnd);
           assert(source.includes('{ id: "settings-license", icon: "✓", title: "Lizenz & Gerät"'), "Einstellungsbereich Lizenz & Gerät fehlt");
           assert(source.includes('else if (state.route === "settings-license") renderLicenseSettings()'), "Lizenzroute verwendet nicht die zentrale Ansicht");
-          ["Lizenz-ID", "Geräte-ID", "Mandant", "Lokal angelegt am", "Letzte Prüfung", "Status", "Aktiv"].forEach(label => {
+          ["Lizenz-ID", "Lokaler Mandant", "Lizenzdienst-Mandant", "Produkt", "Verknüpfung", "Geräteschlüssel", "Lizenznachweis", "Technischer Status"].forEach(label => {
             assert(renderSource.includes(label), `Lizenzangabe fehlt: ${label}`);
           });
-          ["licenseId", "deviceId", "tenantId", "activatedAt", "lastValidation"].forEach(field => {
+          ["licenseId", "localTenantId", "serverTenantId", "productId", "majorVersion", "linkedAt"].forEach(field => {
             assert(renderSource.includes(`license.${field}`), `Vorhandenes Lizenzfeld wird nicht angezeigt: ${field}`);
           });
           assert(!renderSource.includes("<form") && !renderSource.includes("<input"), "Lizenzdaten sind entgegen LICENSE-002 bearbeitbar");
-          assert(!/license\.(?:licenseId|deviceId|tenantId|activatedAt|lastValidation)\s*=/.test(renderSource), "Lizenzansicht verändert das LICENSE-001-Datenmodell");
-          assert(!/aktiviert am/i.test(renderSource), "Lokaler Anlagezeitpunkt wird irreführend als Aktivierung bezeichnet");
+          assert(!/license\.(?:licenseId|localTenantId|serverTenantId|productId|majorVersion|linkedAt)\s*=/.test(renderSource), "Lizenzansicht verändert das V2-Datenmodell");
+          assert(!/<strong>Aktiv<\/strong>|Testzeitraum aktiv|Trial aktiv/i.test(renderSource), "Lokale Vorbereitung täuscht Lizenzautorität vor");
           assert(!/Gerät wechseln|Gerätebindung aufheben|neues Gerät aktivieren|Notfallübernahme/i.test(renderSource), "LICENSE-002 täuscht bereits einen Gerätewechsel vor");
         }
       },
@@ -2321,7 +2383,8 @@
           assert(database.objectStoreNames.contains(api.constants.customersStoreName), "Kunden-Store fehlt");
           assert(database.objectStoreNames.contains(api.constants.receiptsStoreName), "Receipt-Store fehlt");
           assert(database.objectStoreNames.contains(api.constants.vouchersStoreName), "Voucher-Store fehlt");
-          assert(!database.objectStoreNames.contains("licenses"), "LICENSE-001 hat fälschlich einen Parallelstore angelegt");
+          assert(database.objectStoreNames.contains(api.constants.licenseRuntimeStoreName), "licenseRuntime-Store fehlt");
+          assert(!database.objectStoreNames.contains("licenses"), "Es wurde ein paralleler Lizenz-Fachstore angelegt");
           assertEqual(await persistence.readSettings(), null, "Leerer Tenant muss null liefern");
           assertEqual(await persistence.readCatalog(), null, "Leerer Katalog-Tenant muss null liefern");
           assertEqual(await persistence.readCustomers(), null, "Leerer Kunden-Tenant muss null liefern");
@@ -2329,8 +2392,8 @@
           assertEqual(await persistence.readVouchers(), null, "Leerer Gutschein-Tenant muss null liefern");
         }
       },
-      {
-        name: "Produktiver Erststart enthält ausschließlich neutrale technische Defaults und keine Geschäftsdaten",
+     {
+       name: "Produktiver Erststart enthält ausschließlich neutrale technische Defaults und keine Geschäftsdaten",
         run: async () => {
           const runtime = freshRuntimeFixture("test-fresh-defaults");
           assertEqual(runtime.businessAreas.length, 1, "Erststart benötigt genau einen neutralen Geschäftsbereich");
@@ -2354,6 +2417,162 @@
           assertEqual(runtime.historicalDemoRepairReceipts.length, 4, "Historische Reparaturquelle ist nicht exakt begrenzt");
           assertEqual(runtime.historicalDemoRepairVouchers.length, 4, "Historische Gutschein-Reparaturquelle ist nicht exakt begrenzt");
         }
+     },
+      {
+        name: "LICENSE-005 migriert IndexedDB 5→6 ohne Fachstore-Veränderung",
+        run: async () => {
+          const databaseName = createDatabaseName();
+          const tenantId = "test-license-schema-upgrade";
+          const snapshot = completeTenantSnapshotFixture(tenantId);
+          snapshot.stores.settings.license = legacyLicenseFixture(tenantId, {
+            licenseId: "license_schema_legacy",
+            deviceId: "device_schema_legacy"
+          });
+          await createLegacyV5Database(databaseName, snapshot.stores);
+          const persistence = api.createSettingsPersistence({ databaseName, tenantId });
+          try {
+            const database = await persistence.openDatabase();
+            assertEqual(database.version, 6, "IndexedDB wurde nicht auf Schema 6 angehoben");
+            ["settingsStoreName", "catalogStoreName", "customersStoreName", "receiptsStoreName", "vouchersStoreName", "licenseRuntimeStoreName"].forEach(constantName => {
+              assert(database.objectStoreNames.contains(api.constants[constantName]), `Store fehlt nach 5→6: ${constantName}`);
+            });
+            const legacySettings = await persistence.readSettings();
+            assertEqual(legacySettings.license.formatVersion, 1, "Schema-Upgrade hat Settings außerhalb der Settingsmigration verändert");
+            assertDeepEqual(await persistence.readCatalog(), snapshot.stores.catalog, "Schema-Upgrade veränderte den Katalogstore");
+            assertDeepEqual(await persistence.readCustomers(), snapshot.stores.customers, "Schema-Upgrade veränderte den Kundenstore");
+            assertDeepEqual(await persistence.readReceipts(), snapshot.stores.receipts, "Schema-Upgrade veränderte den Receipt-Store");
+            assertDeepEqual(await persistence.readVouchers(), snapshot.stores.vouchers, "Schema-Upgrade veränderte den Voucher-Store");
+            const defaults = recordFixture(tenantId, "completed");
+            const prepared = api.prepareHistoricalSettingsRecord(legacySettings, defaults, tenantId);
+            assert(prepared.compatible && prepared.changed, "LICENSE-001-Settings wurden nicht eindeutig vorbereitet");
+            await persistence.writeSettings(prepared.record);
+            const runtime = await persistence.ensureLicenseRuntime(prepared.record.license, { legacyLicense: legacySettings.license });
+            assertEqual(runtime.deviceId, "device_schema_legacy", "Historische Geräte-ID ging bei 5→6 verloren");
+            assertEqual(runtime.licenseId, "license_schema_legacy", "Historische Lizenz-ID ging bei 5→6 verloren");
+          } finally {
+            persistence.closeDatabase();
+            await new Promise(resolve => setTimeout(resolve, 0));
+            await deleteTestDatabase(databaseName);
+          }
+        }
+      },
+      {
+        name: "LICENSE-005 persistiert genau ein nicht exportierbares P-256-Geräteschlüsselpaar",
+        run: async () => {
+          const persistence = context.makeClient("license-runtime-key");
+          const settings = recordFixture(persistence.tenantId, "completed");
+          await persistence.writeSettings(settings);
+          const first = await persistence.ensureLicenseRuntime(settings.license);
+          assertEqual(first.formatVersion, 1, "Falsche Runtime-Formatversion");
+          assertEqual(first.localTenantId, persistence.tenantId, "Runtime gehört zum falschen Mandanten");
+          assert(/^device_[A-Za-z0-9._:-]+$/.test(first.deviceId), "Runtime-Geräte-ID ist nicht opak");
+          assertEqual(first.devicePrivateKey.type, "private", "Privater CryptoKey fehlt");
+          assertEqual(first.devicePrivateKey.extractable, false, "Privater CryptoKey ist exportierbar");
+          assertEqual(first.devicePrivateKey.algorithm.name, "ECDSA", "Falscher Schlüsselalgorithmus");
+          assertEqual(first.devicePrivateKey.algorithm.namedCurve, "P-256", "Falsche Schlüsselkurve");
+          assertEqual(first.devicePublicKey.extractable, true, "Öffentlicher CryptoKey ist nicht exportierbar");
+          const publicJwk = await crypto.subtle.exportKey("jwk", first.devicePublicKey);
+          assertEqual(publicJwk.crv, "P-256", "Öffentlicher Schlüssel ist nicht P-256");
+          let privateExported = false;
+          try {
+            await crypto.subtle.exportKey("jwk", first.devicePrivateKey);
+            privateExported = true;
+          } catch (error) {
+            assert(error instanceof DOMException || error instanceof Error, "Privatkey-Export scheiterte ohne Fehlerobjekt");
+          }
+          assert(!privateExported, "Privater Geräteschlüssel konnte exportiert werden");
+          await licenseRuntimeApi.validateDeviceIdentity(first.devicePrivateKey, first.devicePublicKey, first.devicePublicKeyThumbprint);
+          persistence.closeDatabase();
+          const reloaded = await persistence.readLicenseRuntime();
+          assertEqual(reloaded.deviceId, first.deviceId, "Geräte-ID wurde beim Reload regeneriert");
+          assertEqual(reloaded.devicePublicKeyThumbprint, first.devicePublicKeyThumbprint, "Geräteschlüssel wurde beim Reload regeneriert");
+          const ensuredAgain = await persistence.ensureLicenseRuntime(settings.license);
+          assertEqual(ensuredAgain.devicePublicKeyThumbprint, first.devicePublicKeyThumbprint, "Wiederholte Initialisierung ersetzte den Schlüssel");
+          await persistence.writeSettings({
+            ...settings,
+            licenseRuntime: { signedLicenseToken: "forbidden", devicePrivateKey: "forbidden" }
+          });
+          assert(!hasOwn(await persistence.readSettings(), "licenseRuntime"), "Runtime-Daten wurden in den Settings-Store übernommen");
+          const complete = completeTenantSnapshotFixture(persistence.tenantId);
+          complete.stores.settings = settings;
+          await persistence.writeCatalog(complete.stores.catalog);
+          await persistence.writeCustomers(complete.stores.customers);
+          await persistence.writeReceipts(complete.stores.receipts);
+          await persistence.writeVouchers(complete.stores.vouchers);
+          const tenantSnapshot = await persistence.exportTenantSnapshot();
+          assert(!hasOwn(tenantSnapshot.stores, "licenseRuntime"), "Tenant-Snapshot enthält den Runtime-Store");
+          const serializedSnapshot = JSON.stringify(tenantSnapshot);
+          ["devicePrivateKey", "devicePublicKey", "devicePublicKeyThumbprint", "signedLicenseToken", first.deviceId].forEach(forbidden => {
+            assert(!serializedSnapshot.includes(forbidden), `Tenant-Snapshot enthält Runtime-Daten: ${forbidden}`);
+          });
+          await persistence.restoreTenantSnapshot(tenantSnapshot);
+          const afterRestore = await persistence.readLicenseRuntime();
+          assertEqual(afterRestore.devicePublicKeyThumbprint, first.devicePublicKeyThumbprint, "Restore ersetzte den lokalen Geräteschlüssel");
+          const status = await persistence.inspectLocalLicenseRuntime(settings.license);
+          assertEqual(status.code, "LICENSE_RUNTIME_READY_UNLINKED", "Lokale Runtime täuscht einen Serverstatus vor");
+          assertEqual(status.accessMode, "not_enforced", "LICENSE-005 aktiviert unerwartet eine Produktsperre");
+        }
+      },
+      {
+        name: "LICENSE-005 prüft Compact-JWS strikt und vertraut nie ungeprüften Signaturen",
+        run: async () => {
+          const encode = value => {
+            const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
+            let binary = "";
+            bytes.forEach(byte => { binary += String.fromCharCode(byte); });
+            return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+          };
+          const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"]);
+          assertEqual(pair.publicKey.type, "public", "Test-Prüfschlüssel besitzt den falschen Typ");
+          assertEqual(pair.publicKey.algorithm.name, "ECDSA", "Test-Prüfschlüssel besitzt den falschen Algorithmus");
+          assertEqual(pair.publicKey.algorithm.namedCurve, "P-256", "Test-Prüfschlüssel besitzt die falsche Kurve");
+          assert(Array.from(pair.publicKey.usages).includes("verify"), "Test-Prüfschlüssel besitzt keine Verify-Verwendung");
+          const deviceIdentity = await licenseRuntimeApi.createDeviceIdentity();
+          const header = { alg: "ES256", typ: "frecka-license+jwt", kid: "key_test_1" };
+          const claims = {
+            iss: "https://license.frecka.app", aud: "frecka-pwa", sub: "license_test_1", jti: "token_test_1",
+            iat: 2000000000, nbf: 1999999940, exp: 2000100000, token_version: 1, tenant_id: "tenant_server_1",
+            device_id: "device_test_1", binding_version: 1, license_status: "active", trial_ends_at: null,
+            product_id: "frecka.core", product_major: 1, entitlements: ["frecka.core.v1"],
+            next_validation_at: 2000050000, cnf: { jkt: deviceIdentity.publicKeyThumbprint }
+          };
+          const compact = async (tokenHeader = header, tokenClaims = claims, signingKey = pair.privateKey) => {
+            const signingInput = encode(new TextEncoder().encode(JSON.stringify(tokenHeader))) + "." + encode(new TextEncoder().encode(JSON.stringify(tokenClaims)));
+            const signature = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, signingKey, new TextEncoder().encode(signingInput)));
+            return signingInput + "." + encode(signature);
+          };
+          const token = await compact();
+          const inspected = licenseRuntimeApi.inspectCompactJws(token);
+          assertEqual(inspected.verificationStatus, "unverified", "Strukturprüfung behandelte die Signatur als gültig");
+          await assertRejects(() => licenseRuntimeApi.verifyCompactJws(token), "LICENSE_TOKEN_TRUST_MISSING", "Token ohne Vertrauensschlüssel");
+          const verified = await licenseRuntimeApi.verifyCompactJws(token, {
+            trustedPublicKey: pair.publicKey, expectedIssuer: claims.iss, expectedAudience: claims.aud,
+            expectedLicenseId: claims.sub, expectedServerTenantId: claims.tenant_id, expectedDeviceId: claims.device_id,
+            expectedBindingVersion: claims.binding_version, expectedPublicKeyThumbprint: claims.cnf.jkt, expectedKeyId: header.kid
+          });
+          assertEqual(verified.verificationStatus, "verified", "Testfixture wurde mit explizitem Vertrauensschlüssel nicht verifiziert");
+          assertThrows(() => licenseRuntimeApi.inspectCompactJws("a.b"), "LICENSE_TOKEN_SYNTAX_INVALID", "Unvollständiges Compact-JWS");
+          const algorithmNoneToken = await compact({ ...header, alg: "none" });
+          const wrongAlgorithmToken = await compact({ ...header, alg: "HS256" });
+          assertThrows(() => licenseRuntimeApi.inspectCompactJws(algorithmNoneToken), "LICENSE_TOKEN_ALGORITHM_UNSUPPORTED", "alg:none");
+          assertThrows(() => licenseRuntimeApi.inspectCompactJws(wrongAlgorithmToken), "LICENSE_TOKEN_ALGORITHM_UNSUPPORTED", "Falscher Algorithmus");
+          const noKid = { alg: "ES256", typ: "frecka-license+jwt" };
+          const noKidToken = await compact(noKid);
+          const criticalHeaderToken = await compact({ ...header, crit: ["x"] });
+          const unknownClaimToken = await compact(header, { ...claims, unexpected: true });
+          const wrongClaimTypeToken = await compact(header, { ...claims, exp: "2000100000" });
+          assertThrows(() => licenseRuntimeApi.inspectCompactJws(noKidToken), "LICENSE_TOKEN_KEY_ID_MISSING", "Fehlendes kid");
+          assertThrows(() => licenseRuntimeApi.inspectCompactJws(criticalHeaderToken), "LICENSE_TOKEN_HEADER_UNSUPPORTED", "Unbekannter kritischer Header");
+          assertThrows(() => licenseRuntimeApi.inspectCompactJws(unknownClaimToken), "LICENSE_TOKEN_CLAIMS_UNSUPPORTED", "Unbekannter Claim");
+          assertThrows(() => licenseRuntimeApi.inspectCompactJws(wrongClaimTypeToken), "LICENSE_TOKEN_CLAIMS_INVALID", "Falscher Claimtyp");
+          const tokenSegments = token.split(".");
+          const manipulated = tokenSegments[0] + "." + encode(new TextEncoder().encode(JSON.stringify({ ...claims, device_id: "device_other" }))) + "." + tokenSegments[2];
+          await assertRejects(() => licenseRuntimeApi.verifyCompactJws(manipulated, {
+            trustedPublicKey: pair.publicKey, expectedIssuer: claims.iss, expectedAudience: claims.aud,
+            expectedLicenseId: claims.sub, expectedServerTenantId: claims.tenant_id, expectedDeviceId: "device_other",
+            expectedBindingVersion: claims.binding_version, expectedPublicKeyThumbprint: claims.cnf.jkt, expectedKeyId: header.kid
+          }), "LICENSE_TOKEN_SIGNATURE_INVALID", "Manipulierter Payload");
+        }
       },
       {
         name: "Produktiver Erststart projiziert leere Fachstores ohne historische Reparaturdaten",
@@ -2368,7 +2587,7 @@
           assertEqual(settings.setup.status, "not-started", "Ersteinrichtung wurde ohne Nutzeraktion abgeschlossen");
           assertEqual(settings.users.length, 1, "Technischer Erststartbenutzer fehlt");
           assertEqual(settings.users[0].tenantId, tenantId, "Erststartbenutzer gehört zum falschen Mandanten");
-          assertEqual(settings.license.tenantId, tenantId, "Lokale Lizenzgrundlage gehört zum falschen Mandanten");
+          assertEqual(settings.license.localTenantId, tenantId, "Lokale Lizenzgrundlage gehört zum falschen Mandanten");
           assertEqual(settings.tseSettings.enabled, false, "TSE ist beim Erststart aktiv");
           assertEqual(settings.tseSettings.setupStatus, "not-configured", "TSE ist beim Erststart als eingerichtet markiert");
           assertEqual(settings.logoAssets.length, 0, "Settings-Snapshot enthält Logoassets");
@@ -2509,9 +2728,9 @@
           assertEqual(stored.users.length, 1, "Lokaler Benutzer fehlt im Settings-Store");
           assertEqual(stored.users[0].tenantId, persistence.tenantId, "Persistierter Benutzer gehört zum falschen Mandanten");
           assertEqual(stored.activeUserId, stored.users[0].id, "Persistierter aktiver Benutzer ist nicht eindeutig");
-          assertEqual(stored.license.tenantId, persistence.tenantId, "Persistierte Lizenz gehört zum falschen Mandanten");
+          assertEqual(stored.license.localTenantId, persistence.tenantId, "Persistierte Lizenz gehört zum falschen Mandanten");
           assertEqual(stored.license.licenseId, requested.license.licenseId, "Persistierte Lizenz-ID wurde verändert");
-          assertEqual(stored.license.deviceId, requested.license.deviceId, "Persistierte Geräte-ID wurde verändert");
+          assertEqual(stored.license.serverTenantId, null, "Persistierte Lizenz täuscht eine Serverbindung vor");
           assert(!Number.isNaN(Date.parse(written.updatedAt)), "updatedAt ist kein gültiger Zeitstempel");
           assertEqual(stored.tenantId, persistence.tenantId, "Tenant-ID wurde verändert");
         }
@@ -4085,7 +4304,7 @@
         }
       },
       {
-        name: "Schema-Upgrade von Version 4 erhält alle bisherigen Stores und ergänzt nur den Voucher-Store",
+        name: "Schema-Upgrade von Version 4 erhält alle bisherigen Stores und ergänzt Voucher- sowie Runtime-Store",
         run: async () => {
           const legacyDatabaseName = `${context.databaseName}-legacy-v4`;
           const tenantId = "legacy-v4-tenant";
@@ -4100,8 +4319,9 @@
             );
             migratedClient = api.createSettingsPersistence({ databaseName: legacyDatabaseName, tenantId });
             const database = await migratedClient.openDatabase();
-            assertEqual(database.version, 5, "Datenbank wurde nicht auf Schema-Version 5 aktualisiert");
+            assertEqual(database.version, 6, "Datenbank wurde nicht auf Schema-Version 6 aktualisiert");
             assert(database.objectStoreNames.contains(api.constants.vouchersStoreName), "Voucher-Store wurde beim Upgrade nicht ergänzt");
+            assert(database.objectStoreNames.contains(api.constants.licenseRuntimeStoreName), "licenseRuntime-Store wurde beim Upgrade nicht ergänzt");
             assertEqual((await migratedClient.readSettings()).company.name, "Teststudio Nord", "Settings gingen beim Upgrade verloren");
             assertEqual((await migratedClient.readCatalog()).items.length, 2, "Katalog ging beim Upgrade verloren");
             assertEqual((await migratedClient.readCustomers()).customers.length, 2, "Kunden gingen beim Upgrade verloren");
@@ -4288,7 +4508,7 @@
           assert(typeof backupApi?.deliverBackup === "function", "Zentrale Backup-Ausgabe fehlt");
           assert(typeof backupApi?.sharePreparedBackup === "function", "Explizite Backup-Share-Aktion fehlt");
           assert(typeof backupApi?.createBackup === "function", "Deterministischer Backup-Workflow fehlt");
-          assertEqual(api.constants.databaseVersion, 5, "Backup führte unerwartet eine neue Schema-Version ein");
+          assertEqual(api.constants.databaseVersion, 6, "Backup verwendet nicht die erwartete Schema-Version");
         }
       },
       {
@@ -4714,7 +4934,7 @@
           assertEqual(exportPackageApi?.JSZIP_VERSION, "3.10.1", "ZIP-Paketadapter erwartet eine falsche JSZip-Version");
           assertEqual(globalThis.JSZip?.version, "3.10.1", "Lokal vendorte JSZip-Version ist falsch");
           assertEqual(exportApi.constants.exportFormatVersion, 1, "Falsche Exportformatversion");
-          assertEqual(api.constants.databaseVersion, 5, "Export führte unerwartet eine neue Schema-Version ein");
+          assertEqual(api.constants.databaseVersion, 6, "Export verwendet nicht die erwartete Schema-Version");
         }
       },
       {
@@ -4883,7 +5103,8 @@
           assert(ownInfo.includes("Ansprechpartner: Test Kontakt"), "Eigene-Daten-Export dokumentiert den Ansprechpartner nicht");
           assert(ownInfo.includes("Website: https://test.example.invalid/"), "Eigene-Daten-Export dokumentiert die Website nicht");
           assert(ownInfo.includes(`Lizenz-ID: ${snapshot.stores.settings.license.licenseId}`), "Eigene-Daten-Export dokumentiert die Lizenz-ID nicht");
-          assert(ownInfo.includes(`Geräte-ID: ${snapshot.stores.settings.license.deviceId}`), "Eigene-Daten-Export dokumentiert die Geräte-ID nicht");
+          assert(ownInfo.includes("Lizenzprodukt: frecka.core · Version 1"), "Eigene-Daten-Export dokumentiert das Lizenzprodukt nicht");
+          assert(!ownInfo.includes("Geräte-ID:") && !ownInfo.includes("signedLicenseToken") && !ownInfo.includes("devicePrivateKey"), "Eigene-Daten-Export enthält lokale Runtime-Daten");
           assert(ownInfo.includes("Währung: EUR"), "Eigene-Daten-Export dokumentiert die Währung nicht");
           assert(ownInfo.includes("Steuerstatus: Umsatzsteuer wird berechnet"), "Eigene-Daten-Export dokumentiert den Steuerstatus nicht verständlich");
           assert(ownInfo.includes("Standard-MwSt.: 19,00 %"), "Eigene-Daten-Export dokumentiert die Standard-MwSt. nicht");
@@ -5118,8 +5339,12 @@
           assertEqual(validated.summary.vouchers, 1, "Gutscheinzählung ist falsch");
           assertEqual(validated.snapshot.stores.settings.users.length, 1, "Benutzer fehlt im Backup-Snapshot");
           assertEqual(validated.snapshot.stores.settings.users[0].tenantId, tenantId, "Backup-Benutzer gehört zum falschen Mandanten");
-          assertEqual(validated.snapshot.stores.settings.license.tenantId, tenantId, "Backup-Lizenz gehört zum falschen Mandanten");
-          assertEqual(validated.snapshot.stores.settings.license.deviceId, snapshot.stores.settings.license.deviceId, "Backup veränderte die Gerätebindung");
+          assertEqual(validated.snapshot.stores.settings.license.localTenantId, tenantId, "Backup-Lizenz gehört zum falschen Mandanten");
+          assertEqual(validated.snapshot.stores.settings.license.licenseId, snapshot.stores.settings.license.licenseId, "Backup veränderte die portable Lizenzreferenz");
+          const historicalSchemaFive = clone(snapshot);
+          historicalSchemaFive.appDataSchemaVersion = 5;
+          const migratedSchemaFive = api.validateTenantSnapshot(historicalSchemaFive, tenantId).snapshot;
+          assertEqual(migratedSchemaFive.appDataSchemaVersion, 6, "Historisches Schema-5-Backup wurde nicht auf die aktuelle Snapshotprojektion angehoben");
         }
       },
       {
@@ -5252,7 +5477,7 @@
           assertDeepEqual(restored.stores.settings.logoAssets, logoAssets, "Restore verlor aktuelle oder historische Logoassets");
           assertEqual(restored.stores.settings.backupReminder.interval, "5-days", "Restore verlor das BACKUP-004-Intervall");
           assertEqual(restored.stores.settings.users.length, 1, "Restore verlor den aktiven Benutzer");
-          assertEqual(restored.stores.settings.license.tenantId, persistence.tenantId, "Restore verlor die lokale Lizenzbindung");
+          assertEqual(restored.stores.settings.license.localTenantId, persistence.tenantId, "Restore verlor die portable Lizenzreferenz");
           assertEqual(restored.stores.settings.tseSettings.enabled, false, "Restore veränderte die TSE-Vorbereitung");
         }
       },
@@ -5271,7 +5496,7 @@
           const persistence = context.makeClient("backup-user-legacy-restore");
           legacy.tenantId = persistence.tenantId;
           Object.values(legacy.stores).forEach(store => { store.tenantId = persistence.tenantId; });
-          legacy.stores.settings.license.tenantId = persistence.tenantId;
+          legacy.stores.settings.license.localTenantId = persistence.tenantId;
           await persistence.restoreTenantSnapshot(legacy);
           const restored = await persistence.readSettings();
           assertEqual(restored.users.length, 1, "Restore persistierte den ergänzten Benutzer nicht");
@@ -5291,9 +5516,8 @@
             throw new Error(`Historische LICENSE-001-Migration wurde abgelehnt: ${error.code || error.name} ${JSON.stringify(error.diagnostic || {})}`);
           }
           const secondValidation = api.validateTenantSnapshot(legacy, tenantId).snapshot;
-          assertEqual(firstValidation.stores.settings.license.tenantId, tenantId, "Historische Sicherung erhielt eine mandantenfremde Lizenz");
+          assertEqual(firstValidation.stores.settings.license.localTenantId, tenantId, "Historische Sicherung erhielt eine mandantenfremde Lizenz");
           assertEqual(firstValidation.stores.settings.license.licenseId, secondValidation.stores.settings.license.licenseId, "Lokale Lizenzmigration ist innerhalb der Installation nicht stabil");
-          assertEqual(firstValidation.stores.settings.license.deviceId, secondValidation.stores.settings.license.deviceId, "Lokale Gerätemigration ist innerhalb der Installation nicht stabil");
 
           const persistence = context.makeClient("backup-license-legacy-restore");
           legacy.tenantId = persistence.tenantId;
@@ -5301,8 +5525,37 @@
           legacy.stores.settings.users.forEach(user => { user.tenantId = persistence.tenantId; });
           await persistence.restoreTenantSnapshot(legacy);
           const restored = await persistence.readSettings();
-          assertEqual(restored.license.tenantId, persistence.tenantId, "Restore persistierte eine mandantenfremde Lizenz");
-          assert(restored.license.licenseId && restored.license.deviceId, "Restore persistierte die lokale Gerätebindung nicht");
+          assertEqual(restored.license.localTenantId, persistence.tenantId, "Restore persistierte eine mandantenfremde Lizenz");
+          assert(restored.license.licenseId && restored.license.formatVersion === 2, "Restore persistierte die portable Lizenzreferenz nicht");
+          assertEqual(await persistence.readLicenseRuntime(), null, "Restore stellte fälschlich eine Geräteautorisierung her");
+        }
+      },
+      {
+        name: "Historisches LICENSE-001-Backup wird portabel migriert und stellt keine Runtime wieder her",
+        run: async () => {
+          const sourceTenantId = "test-backup-license-v1";
+          const historical = completeTenantSnapshotFixture(sourceTenantId);
+          historical.appDataSchemaVersion = 5;
+          historical.stores.settings.license = legacyLicenseFixture(sourceTenantId, {
+            licenseId: "license_backup_v1",
+            deviceId: "device_backup_v1"
+          });
+          const validated = api.validateTenantSnapshot(historical, sourceTenantId).snapshot;
+          assertEqual(validated.stores.settings.license.formatVersion, 2, "Historische Backup-Lizenz wurde nicht zu V2 migriert");
+          assertEqual(validated.stores.settings.license.licenseId, "license_backup_v1", "Historische Backup-Lizenz-ID wurde verändert");
+          assert(!hasOwn(validated.stores.settings.license, "deviceId"), "Historische Geräte-ID gelangte in die portable Referenz");
+
+          const persistence = context.makeClient("backup-license-v1-restore");
+          const targetTenantId = persistence.tenantId;
+          historical.tenantId = targetTenantId;
+          Object.values(historical.stores).forEach(store => { store.tenantId = targetTenantId; });
+          historical.stores.settings.users.forEach(user => { user.tenantId = targetTenantId; });
+          historical.stores.settings.license.tenantId = targetTenantId;
+          await persistence.restoreTenantSnapshot(historical);
+          const restored = await persistence.readSettings();
+          assertEqual(restored.license.formatVersion, 2, "Restore persistierte nicht die portable V2-Referenz");
+          assertEqual(restored.license.licenseId, "license_backup_v1", "Restore veränderte die historische Lizenz-ID");
+          assertEqual(await persistence.readLicenseRuntime(), null, "Restore importierte Geräte-ID oder Schlüsselruntime");
         }
       },
       {

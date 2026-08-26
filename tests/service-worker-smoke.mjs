@@ -82,12 +82,13 @@ listeners.get("install")({
 await installPromise;
 
 assert.equal(skipWaitingCalls, 0, "Die Installation darf den Worker nicht mehr automatisch aktivieren.");
-assert.equal(addedUrls.length, 22, "Der vollständige App-Shell muss vorab gecacht werden.");
+assert.equal(addedUrls.length, 23, "Der vollständige App-Shell muss vorab gecacht werden.");
 assert.equal(new Set(addedUrls).size, addedUrls.length, "App-Shell-URLs dürfen nicht doppelt sein.");
 assert.ok(addedUrls.includes(`${baseUrl}index.html`));
 assert.ok(addedUrls.includes(`${baseUrl}styles.css?v=backup006-1`));
 assert.ok(addedUrls.includes(`${baseUrl}vendor/jszip-v3.10.1.min.js?v=backup006-1`));
 assert.ok(addedUrls.includes(`${baseUrl}js/export-package.js?v=backup006-1`));
+assert.ok(addedUrls.includes(`${baseUrl}js/license-runtime.js?v=backup006-1`));
 assert.ok(addedUrls.includes(`${baseUrl}js/pwa-update.js?v=backup006-1`));
 assert.ok(addedUrls.includes(`${baseUrl}js/app.js?v=backup006-1`));
 assert.ok(addedUrls.every(url => url.startsWith(baseUrl)), "Alle URLs müssen relativ zum Release-Unterpfad bleiben.");

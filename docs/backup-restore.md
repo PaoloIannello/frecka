@@ -36,7 +36,7 @@ Der verschlüsselte Payload ist ein JSON-Objekt mit:
 
 - `backupFormat: "FRECKA_TENANT_SNAPSHOT"`;
 - `backupFormatVersion: 1`;
-- `appDataSchemaVersion: 5`;
+- `appDataSchemaVersion: 6`; historische Schema-5-Snapshots bleiben lesbar und werden bei erfolgreicher Prüfung auf die aktuelle Snapshotprojektion angehoben;
 - `tenantId`;
 - `createdAt` als ISO-Zeitstempel;
 - `app.version` und `app.build`;
@@ -50,7 +50,7 @@ Jeder Store enthält seinen bestehenden versionierten Datensatz einschließlich 
 
 USER-001 liegt innerhalb von `stores.settings` als `users` und `activeUserId`. Dadurch wird der lokale Benutzer ohne zusätzliche Sammlung oder Änderung des äußeren Backupformats vollständig mitgesichert.
 
-LICENSE-001 liegt innerhalb desselben `stores.settings`-Datensatzes als `license`. Lizenz- und Gerätekennung werden deshalb ohne zweite Sammlung, neuen Store oder neues Backupformat verschlüsselt mitgesichert und atomar wiederhergestellt.
+LICENSE-005 führt `stores.settings.license` als portable, nicht autoritative Referenz der Formatversion 2 fort. Nur diese Referenz wird verschlüsselt mitgesichert und atomar wiederhergestellt. Der getrennte Store `licenseRuntime`, Geräte-ID, private und öffentliche CryptoKeys, Thumbprint, Lizenz-Token, Validierungs- und Zeitanker sowie gecachte Entitlements gehören ausdrücklich nicht zum Tenant-Snapshot und können durch Restore weder importiert noch ersetzt werden.
 
 TSE-002 liegt als `tseSettings` ebenfalls innerhalb von `stores.settings`. Anbieter sowie deaktivierter Einrichtungs- und Verbindungsstatus werden dadurch verschlüsselt mitgesichert und atomar wiederhergestellt. Zugangsdaten, Tokens, Schlüssel und TSE-Transaktionen existieren in diesem Modell nicht.
 
@@ -106,7 +106,7 @@ Vor jeder Schreibtransaktion werden mindestens geprüft:
 - vollständige Anwesenheit aller fünf Stores;
 - Übereinstimmung sämtlicher `tenantId`-Werte;
 - genau ein aktiver Settings-Benutzer mit derselben `tenantId` und passender `activeUserId`;
-- genau eine vollständige lokale Lizenz mit derselben `tenantId`, gültigen opaken Kennungen und Zeitpunkten;
+- genau eine vollständige portable Lizenzreferenz Version 2 mit derselben `localTenantId`, gültiger opaker Lizenz-ID, festem Produkt `frecka.core`/Hauptversion 1 und konsistenter optionaler Serververknüpfung;
 - ausschließlich die erlaubte TSE-002-Vorbereitung mit Anbieter `fiskaly SIGN DE`, deaktivierter Nutzung sowie nicht eingerichtetem und nicht verbundenem Status;
 - gültige Store-Formatversionen und Datenstrukturen;
 - eindeutige Kunden-, Beleg- und Gutschein-IDs;
@@ -122,11 +122,11 @@ Historische Referenzen auf Einlösungs- oder Korrekturbelege dürfen nach einem 
 
 PERSISTENCE-010 lockert diese Regel nicht. Eine ausdrücklich bestätigte lokale Reparatur darf ausschließlich die vier fest freigegebenen historischen Demo-Gutscheinverkaufsbelege aus dem kanonischen Seed ergänzen. Vor dem einzigen atomaren Receipt-Store-Schreibvorgang muss der daraus gebildete vollständige Tenant-Kandidat alle Snapshotregeln erfüllen; anschließend wird der gespeicherte Tenant erneut vollständig validiert. Erst dann können Backup und Export wieder verwendet werden. Beliebige fehlende Belege, reale Geschäftsdaten, Kollisionen oder mehrdeutige Referenzen werden niemals rekonstruiert.
 
-Unvollständige, beschädigte, manipulierte, mandantenfremde oder inkompatible Daten werden vollständig abgelehnt. Additive Kompatibilitätsregeln bestehen ausschließlich für vollständig fehlende, historisch noch nicht vorhandene Modelle: USER-001 ergänzt den Primärbenutzer aus `Unternehmer/in` und der Snapshot-`tenantId`; LICENSE-001 erzeugt eine neue zufällige lokale Lizenz- und Gerätebindung für denselben Mandanten; TSE-002 ergänzt ausschließlich die sichere deaktivierte Standardvorbereitung. Teilweise vorhandene oder widersprüchliche Benutzer-, Lizenz- oder TSE-Daten werden nicht repariert. Die Validierung schreibt selbst nichts in IndexedDB; erst der bestätigte Restore persistiert den vollständig geprüften Snapshot.
+Unvollständige, beschädigte, manipulierte, mandantenfremde oder inkompatible Daten werden vollständig abgelehnt. Additive Kompatibilitätsregeln bestehen ausschließlich für vollständig fehlende, historisch noch nicht vorhandene Modelle: USER-001 ergänzt den Primärbenutzer aus `Unternehmer/in` und der Snapshot-`tenantId`; fehlende historische LICENSE-001-Daten erhalten eine stabile portable Referenz, und ein vollständiges LICENSE-001-Objekt wird unter Erhalt seiner Lizenz-ID zu V2 projiziert; TSE-002 ergänzt ausschließlich die sichere deaktivierte Standardvorbereitung. Die alte Geräte-ID wird bei einem Backup-Restore nie zur Runtime oder Autorisierung. Teilweise vorhandene, fremde, zukünftige oder widersprüchliche Benutzer-, Lizenz- oder TSE-Daten werden nicht repariert. Die Validierung schreibt selbst nichts in IndexedDB; erst der bestätigte Restore persistiert den vollständig geprüften Snapshot.
 
 ## Atomare Wiederherstellung
 
-Nach positiver Vollvalidierung öffnet die Persistenzschicht eine gemeinsame Readwrite-Transaktion über alle fünf Stores. Jeder fachliche Store erhält genau den geprüften Datensatz des aktuellen Mandanten. Beim BACKUP-004-Vertrag wird die gesicherte Intervallwahl als Einstellung übernommen; der gerätelokale Fristbeginn, der Zeitpunkt der letzten erfolgreichen Ausgabe und ein laufender Snooze bleiben aus dem bisherigen Settings-Datensatz erhalten. Eine alte Sicherungsdatei kann damit weder die lokale Erinnerungsfrist zurücksetzen noch einen Snooze umgehen. Erst `transaction.oncomplete` bestätigt den Erfolg.
+Nach positiver Vollvalidierung öffnet die Persistenzschicht eine gemeinsame Readwrite-Transaktion über die fünf Snapshot-Stores. Jeder fachliche Store erhält genau den geprüften Datensatz des aktuellen Mandanten; `licenseRuntime` ist nicht Teil dieser Transaktion. Eine bestehende Runtime auf demselben Gerät bleibt unverändert und muss nachfolgend zur restaurierten portablen Referenz passen, eine neue Installation bleibt ohne Runtime. Beim BACKUP-004-Vertrag wird die gesicherte Intervallwahl als Einstellung übernommen; der gerätelokale Fristbeginn, der Zeitpunkt der letzten erfolgreichen Ausgabe und ein laufender Snooze bleiben aus dem bisherigen Settings-Datensatz erhalten. Eine alte Sicherungsdatei kann damit weder die lokale Erinnerungsfrist zurücksetzen noch einen Snooze umgehen. Erst `transaction.oncomplete` bestätigt den Erfolg.
 
 Schlägt irgendein Put-Vorgang fehl oder wird die Transaktion abgebrochen, rollt IndexedDB alle Änderungen zurück. Es gibt keinen Teil-Restore. Die App übernimmt die neuen Laufzeitdaten erst nach erfolgreichem Transaktionsabschluss, verwirft offene UI-Auswahlen und leitet Zähler sowie Standards neu ab.
 
@@ -192,7 +192,7 @@ Die sichtbare Fehlerbehandlung trennt Snapshot-/Vorbereitungsfehler von Fehlern 
 
 BACKUP-004 ergänzt alle drei Intervalle, den wöchentlichen Standard, Reload, Wechsel vor und nach Fälligkeit, den erhaltenen 24-Stunden-Snooze, die ausschließliche Rücksetzung nach bestätigter Ausgabe, die reine lokale Speicherhilfe sowie den getrennten Restore-Vertrag für Intervallwahl und operative Zeitpunkte.
 
-`tests/persistence-smoke.html` prüft ohne zusätzliches Testframework die gesamte bisherige Persistenz sowie BACKUP-001/002/003/004/005/006, HARDEN-001, EXPORT-001/003, PERSISTENCE-007/008/010, SETTINGS-001/002, TSE-002 und QR-001. BACKUP-006 ergänzt historische Profile für 0.9.x/0.10.x sowie Zustände vor USER-001, LICENSE-001, SETTINGS-001/002, BRANDING-001/002, BACKUP-004 und TSE-002 einschließlich Kombination und PERSISTENCE-010. Jeder freigegebene Profilpfad durchläuft Startnormalisierung, Settingspersistenz, Snapshotvalidierung, AES-GCM, Restore, erneute Vollvalidierung und Idempotenz. Ein eigener Negativfall beweist `fail closed` und unveränderte Eingabedaten. Die Diagnoseprüfungen suchen gezielt nach Namen, Beträgen, IDs, Nummern und Referenzen und dürfen ausschließlich sichere Kategorien ausgeben. Der aktuelle Browserlauf umfasst 198 bestandene Fälle.
+`tests/persistence-smoke.html` prüft ohne zusätzliches Testframework die gesamte bisherige Persistenz sowie BACKUP-001/002/003/004/005/006, HARDEN-001, EXPORT-001/003, PERSISTENCE-007/008/010, SETTINGS-001/002, TSE-002, LICENSE-005 und QR-001. BACKUP-006 ergänzt historische Profile für 0.9.x/0.10.x sowie Zustände vor USER-001, LICENSE-001, SETTINGS-001/002, BRANDING-001/002, BACKUP-004 und TSE-002 einschließlich Kombination und PERSISTENCE-010. LICENSE-005 ergänzt Schema 5→6, portable V2-Migration, CryptoKey-Reload und den Nachweis, dass Runtime, Schlüssel und Token weder verschlüsselt gesichert noch restauriert werden. Jeder freigegebene Profilpfad durchläuft Startnormalisierung, Settingspersistenz, Snapshotvalidierung, AES-GCM, Restore, erneute Vollvalidierung und Idempotenz. Ein eigener Negativfall beweist `fail closed` und unveränderte Eingabedaten. Die Diagnoseprüfungen suchen gezielt nach Namen, Beträgen, IDs, Nummern und Referenzen und dürfen ausschließlich sichere Kategorien ausgeben.
 
 Jeder Lauf verwendet ausschließlich eine zufällig benannte Testdatenbank mit Guard gegen `frecka` und löscht diese anschließend. Ein simulierter Restore-Abbruch ist nur für eindeutig benannte Testdatenbanken freigeschaltet.
 

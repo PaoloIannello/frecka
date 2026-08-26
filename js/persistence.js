@@ -9,13 +9,14 @@
 
   const constants = Object.freeze({
     databaseName: "frecka",
-    databaseVersion: 5,
+    databaseVersion: 6,
     storeName: "settings",
     settingsStoreName: "settings",
     catalogStoreName: "catalog",
     customersStoreName: "customers",
     receiptsStoreName: "receipts",
     vouchersStoreName: "vouchers",
+    licenseRuntimeStoreName: "licenseRuntime",
     tenantId: "local-default",
     formatVersion: 1,
     companyLogoFormatVersion: 1,
@@ -23,7 +24,10 @@
     logoReferenceFormatVersion: 1,
     companyLogoMaxBytes: 1024 * 1024,
     userFormatVersion: 1,
-    licenseFormatVersion: 1,
+    licenseFormatVersion: 2,
+    licenseRuntimeFormatVersion: 1,
+    licenseProductId: "frecka.core",
+    licenseProductMajor: 1,
     tseSettingsFormatVersion: 1,
     backupReminderFormatVersion: 1,
     backupReminderDefaultInterval: "weekly",
@@ -40,19 +44,19 @@
   const forbiddenRootKeys = new Set([
     "catalog", "categories", "businessTemplates", "templateImportStatus",
     "customers", "customerChoices", "receipts", "vouchers", "histories",
-    "openReceipt", "drafts", "cancellations", "credits"
+    "openReceipt", "drafts", "cancellations", "credits", "licenseRuntime", "licenseRuntimeStatus"
   ]);
   const catalogForbiddenRootKeys = new Set([
     "company", "serviceLocations", "businessAreas", "taxSettings", "receiptSettings",
     "paymentChoices", "setup", "catalog", "businessTemplates", "templateImportStatus",
     "customers", "customerChoices", "receipts", "vouchers", "histories", "openReceipt",
-    "drafts", "cancellations", "credits", "images", "logos", "license"
+    "drafts", "cancellations", "credits", "images", "logos", "license", "licenseRuntime", "licenseRuntimeStatus"
   ]);
   const customersForbiddenRootKeys = new Set([
     "company", "serviceLocations", "businessAreas", "taxSettings", "receiptSettings",
     "paymentChoices", "setup", "catalog", "categories", "businessTemplates",
     "templateImportStatus", "customerChoices", "receipts", "vouchers", "histories",
-    "openReceipt", "drafts", "cancellations", "credits", "emailStatus", "license"
+    "openReceipt", "drafts", "cancellations", "credits", "emailStatus", "license", "licenseRuntime", "licenseRuntimeStatus"
   ]);
   const customerForbiddenKeys = new Set([
     "history", "histories", "receipts", "vouchers", "openPayments", "drafts",
@@ -63,7 +67,7 @@
     "company", "serviceLocations", "businessAreas", "taxSettings", "receiptSettings",
     "paymentChoices", "setup", "catalog", "categories", "businessTemplates",
     "templateImportStatus", "customers", "customerChoices", "vouchers", "histories",
-    "openReceipt", "drafts", "cancellations", "credits", "images", "logos", "license"
+    "openReceipt", "drafts", "cancellations", "credits", "images", "logos", "license", "licenseRuntime", "licenseRuntimeStatus"
   ]);
   const receiptForbiddenKeys = new Set([
     "voucher", "voucherObject", "voucherHistory", "emailStatus", "emailHistory",
@@ -73,7 +77,7 @@
     "company", "serviceLocations", "businessAreas", "taxSettings", "receiptSettings",
     "paymentChoices", "setup", "catalog", "categories", "businessTemplates",
     "templateImportStatus", "customers", "customerChoices", "receipts", "histories",
-    "openReceipt", "drafts", "cancellations", "credits", "images", "logos", "license"
+    "openReceipt", "drafts", "cancellations", "credits", "images", "logos", "license", "licenseRuntime", "licenseRuntimeStatus"
   ]);
   const voucherForbiddenKeys = new Set([
     "pdf", "pdfFile", "qrImage", "qrGraphic", "qrCells", "mailStatus", "emailStatus",
@@ -83,8 +87,11 @@
     "pin", "password", "passphrase", "login", "roles", "roleids", "permissions", "rights",
     "session", "sessions", "sessiontoken", "token", "accesstoken", "refreshtoken"
   ]);
-  const licenseAllowedKeys = new Set([
+  const legacyLicenseAllowedKeys = new Set([
     "formatVersion", "licenseId", "tenantId", "deviceId", "activatedAt", "lastValidation"
+  ]);
+  const licenseAllowedKeys = new Set([
+    "formatVersion", "localTenantId", "licenseId", "serverTenantId", "productId", "majorVersion", "linkedAt"
   ]);
   const tseSettingsAllowedKeys = new Set([
     "formatVersion", "provider", "enabled", "setupStatus", "connectionStatus"
@@ -102,6 +109,7 @@
     backupFormat: "FRECKA_TENANT_SNAPSHOT",
     backupFormatVersion: 1,
     appDataSchemaVersion: constants.databaseVersion,
+    minimumReadableSchemaVersion: 5,
     appVersion: "BACKUP-001",
     storeKeys: Object.freeze(["settings", "catalog", "customers", "receipts", "vouchers"])
   });
@@ -492,24 +500,59 @@
   function generatedLocalLicense(expectedTenantId) {
     const safeTenantId = nullableStringId(expectedTenantId) || constants.tenantId;
     if (!generatedLocalLicenses.has(safeTenantId)) {
-      const createdAt = new Date().toISOString();
       generatedLocalLicenses.set(safeTenantId, Object.freeze({
         formatVersion: constants.licenseFormatVersion,
         licenseId: createOpaqueLocalId("license"),
-        tenantId: safeTenantId,
-        deviceId: createOpaqueLocalId("device"),
-        activatedAt: createdAt,
-        lastValidation: createdAt
+        localTenantId: safeTenantId,
+        serverTenantId: null,
+        productId: constants.licenseProductId,
+        majorVersion: constants.licenseProductMajor,
+        linkedAt: null
       }));
     }
     return cloneSafe(generatedLocalLicenses.get(safeTenantId));
   }
 
   function hasLicenseModelFields(value) {
-    return isPlainObject(value) && [...licenseAllowedKeys].some(key => value[key] !== undefined);
+    return isPlainObject(value)
+      && [...new Set([...legacyLicenseAllowedKeys, ...licenseAllowedKeys])].some(key => value[key] !== undefined);
   }
 
-  function normalizeV1License(source, expectedTenantId, fallbackSource = null) {
+  const validLicenseId = value => typeof value === "string"
+    && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value);
+  const validSha256Thumbprint = value => typeof value === "string"
+    && value.length === 43
+    && /^[A-Za-z0-9_-]+$/u.test(value);
+
+  function normalizeLegacyLicense(source, expectedTenantId) {
+    const safeTenantId = nullableStringId(expectedTenantId) || constants.tenantId;
+    if (!isPlainObject(source)
+      || source.formatVersion !== 1
+      || Object.keys(source).some(key => !legacyLicenseAllowedKeys.has(key))) {
+      throw new PersistenceError("INVALID_DATA", "Die lokale Lizenz ist unvollständig.");
+    }
+    if (!validLicenseId(source.licenseId) || !validLicenseId(source.deviceId)) {
+      throw new PersistenceError("INVALID_DATA", "Die lokale Lizenz- oder Gerätekennung ist ungültig.");
+    }
+    if (nullableStringId(source.tenantId) !== safeTenantId) {
+      throw new PersistenceError("INVALID_DATA", "Die lokale Lizenz gehört zu einem anderen Mandanten.");
+    }
+    const activatedAt = stableIso(source.activatedAt, "");
+    const lastValidation = stableIso(source.lastValidation, "");
+    if (activatedAt === epochIso || lastValidation === epochIso || Date.parse(lastValidation) < Date.parse(activatedAt)) {
+      throw new PersistenceError("INVALID_DATA", "Die lokalen Lizenzzeitpunkte sind ungültig.");
+    }
+    return {
+      formatVersion: 1,
+      licenseId: source.licenseId,
+      tenantId: safeTenantId,
+      deviceId: source.deviceId,
+      activatedAt,
+      lastValidation
+    };
+  }
+
+  function normalizeLicenseReference(source, expectedTenantId, fallbackSource = null) {
     const safeTenantId = nullableStringId(expectedTenantId) || constants.tenantId;
     const sourceIsAbsent = source === undefined || source === null;
     const candidate = sourceIsAbsent
@@ -518,35 +561,249 @@
         : generatedLocalLicense(safeTenantId)
       : source;
     if (!isPlainObject(candidate)) {
-      throw new PersistenceError("INVALID_DATA", "Die lokale Lizenz ist unvollständig.");
+      throw new PersistenceError("INVALID_DATA", "Die lokale Lizenzreferenz ist unvollständig.");
     }
     if (!Number.isInteger(candidate.formatVersion) || candidate.formatVersion < 1) {
-      throw new PersistenceError("INVALID_DATA", "Die lokale Lizenz besitzt keine gültige Formatversion.");
+      throw new PersistenceError("INVALID_DATA", "Die lokale Lizenzreferenz besitzt keine gültige Formatversion.");
     }
     if (candidate.formatVersion > constants.licenseFormatVersion) {
       throw new PersistenceError("UNSUPPORTED_FORMAT", "Diese Lizenzdaten benötigen eine neuere FRECKA-Version und wurden nicht verändert.");
     }
-    const validOpaqueId = value => typeof value === "string"
-      && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value);
-    if (!validOpaqueId(candidate.licenseId) || !validOpaqueId(candidate.deviceId)) {
-      throw new PersistenceError("INVALID_DATA", "Die lokale Lizenz- oder Gerätekennung ist ungültig.");
+    if (candidate.formatVersion === 1) {
+      const legacy = normalizeLegacyLicense(candidate, safeTenantId);
+      return {
+        formatVersion: constants.licenseFormatVersion,
+        localTenantId: safeTenantId,
+        licenseId: legacy.licenseId,
+        serverTenantId: null,
+        productId: constants.licenseProductId,
+        majorVersion: constants.licenseProductMajor,
+        linkedAt: null
+      };
     }
-    if (nullableStringId(candidate.tenantId) !== safeTenantId) {
-      throw new PersistenceError("INVALID_DATA", "Die lokale Lizenz gehört zu einem anderen Mandanten.");
+    if (Object.keys(candidate).some(key => !licenseAllowedKeys.has(key))
+      || [...licenseAllowedKeys].some(key => !Object.prototype.hasOwnProperty.call(candidate, key))) {
+      throw new PersistenceError("INVALID_DATA", "Die lokale Lizenzreferenz enthält nicht unterstützte Felder.");
     }
-    const activatedAt = stableIso(candidate.activatedAt, "");
-    const lastValidation = stableIso(candidate.lastValidation, "");
-    if (activatedAt === epochIso || lastValidation === epochIso || Date.parse(lastValidation) < Date.parse(activatedAt)) {
-      throw new PersistenceError("INVALID_DATA", "Die lokalen Lizenzzeitpunkte sind ungültig.");
+    if (!validLicenseId(candidate.licenseId)
+      || nullableStringId(candidate.localTenantId) !== safeTenantId
+      || candidate.productId !== constants.licenseProductId
+      || candidate.majorVersion !== constants.licenseProductMajor) {
+      throw new PersistenceError("INVALID_DATA", "Die lokale Lizenzreferenz ist ungültig oder gehört zu einem anderen Mandanten.");
+    }
+    const serverTenantId = nullableStringId(candidate.serverTenantId);
+    if (serverTenantId && !validLicenseId(serverTenantId)) {
+      throw new PersistenceError("INVALID_DATA", "Die serverseitige Mandantenreferenz ist ungültig.");
+    }
+    const linkedAt = nullableIso(candidate.linkedAt);
+    if (Boolean(serverTenantId) !== Boolean(linkedAt)) {
+      throw new PersistenceError("INVALID_DATA", "Die lokale Lizenzreferenz besitzt einen widersprüchlichen Verknüpfungsstand.");
     }
     return {
       formatVersion: constants.licenseFormatVersion,
+      localTenantId: safeTenantId,
       licenseId: candidate.licenseId,
-      tenantId: safeTenantId,
-      deviceId: candidate.deviceId,
-      activatedAt,
-      lastValidation
+      serverTenantId,
+      productId: constants.licenseProductId,
+      majorVersion: constants.licenseProductMajor,
+      linkedAt
     };
+  }
+
+  function legacyLicenseRuntimeHint(source, expectedTenantId = constants.tenantId) {
+    if (!isPlainObject(source) || source.formatVersion !== 1) return null;
+    const legacy = normalizeLegacyLicense(source, expectedTenantId);
+    return Object.freeze({
+      localTenantId: legacy.tenantId,
+      licenseId: legacy.licenseId,
+      deviceId: legacy.deviceId
+    });
+  }
+
+  const licenseRuntimeAllowedKeys = new Set([
+    "formatVersion", "localTenantId", "licenseId", "serverTenantId", "deviceId",
+    "devicePrivateKey", "devicePublicKey", "devicePublicKeyThumbprint",
+    "signedLicenseToken", "tokenVersion", "keyId", "lastServerValidationAt",
+    "trustedServerTimeAnchor", "maxObservedLocalTime", "nextValidationAt",
+    "offlineValidUntil", "bindingVersion", "cachedEntitlements", "lastValidationOutcome"
+  ]);
+
+  function licenseRuntimeModule() {
+    const runtime = globalThis.FRECKA_LICENSE_RUNTIME;
+    if (!runtime?.createDeviceIdentity || !runtime?.validateDeviceIdentity || !runtime?.inspectCompactJws) {
+      throw new PersistenceError(
+        "LICENSE_RUNTIME_UNAVAILABLE",
+        "Die sichere lokale Gerätebindung ist in dieser FRECKA-Version nicht verfügbar."
+      );
+    }
+    return runtime;
+  }
+
+  function cloneRuntimeRecord(value) {
+    try {
+      if (typeof structuredClone !== "function") throw new Error("Structured Clone fehlt");
+      return structuredClone(value);
+    } catch (cause) {
+      throw new PersistenceError(
+        "LICENSE_RUNTIME_CLONE_FAILED",
+        "Die lokale Gerätebindung konnte nicht sicher verarbeitet werden.",
+        cause
+      );
+    }
+  }
+
+  function runtimePersistenceError(error, code, message) {
+    if (error instanceof PersistenceError) return error;
+    if (typeof error?.code === "string" && typeof error?.userMessage === "string") {
+      return new PersistenceError(error.code, error.userMessage, error);
+    }
+    return new PersistenceError(code, message, error);
+  }
+
+  function nullablePositiveInteger(value) {
+    return value === null || value === undefined
+      ? null
+      : Number.isSafeInteger(value) && value > 0
+        ? value
+        : NaN;
+  }
+
+  function normalizeRuntimeTimeAnchor(value) {
+    if (value === null || value === undefined) return null;
+    if (!isPlainObject(value)
+      || Object.keys(value).some(key => !new Set(["serverTime", "observedAt"]).has(key))) {
+      throw new PersistenceError("LICENSE_RUNTIME_INVALID", "Der lokale Lizenz-Zeitanker ist ungültig.");
+    }
+    const serverTime = nullableIso(value.serverTime);
+    const observedAt = nullableIso(value.observedAt);
+    if (!serverTime || !observedAt) {
+      throw new PersistenceError("LICENSE_RUNTIME_INVALID", "Der lokale Lizenz-Zeitanker ist ungültig.");
+    }
+    return { serverTime, observedAt };
+  }
+
+  function normalizeRuntimeIso(value, label) {
+    if (value === null || value === undefined) return null;
+    const normalized = nullableIso(value);
+    if (!normalized) {
+      throw new PersistenceError("LICENSE_RUNTIME_INVALID", "Der lokale Lizenzzeitpunkt " + label + " ist ungültig.");
+    }
+    return normalized;
+  }
+
+  async function normalizeLicenseRuntimeRecord(record, licenseReference, expectedTenantId) {
+    const safeTenantId = nullableStringId(expectedTenantId) || constants.tenantId;
+    const license = normalizeLicenseReference(licenseReference, safeTenantId);
+    if (!isPlainObject(record)
+      || record.formatVersion !== constants.licenseRuntimeFormatVersion
+      || Object.keys(record).some(key => !licenseRuntimeAllowedKeys.has(key))
+      || [...licenseRuntimeAllowedKeys].some(key => !Object.prototype.hasOwnProperty.call(record, key))) {
+      throw new PersistenceError("LICENSE_RUNTIME_INVALID", "Die lokale Gerätebindung besitzt kein unterstütztes Format.");
+    }
+    if (nullableStringId(record.localTenantId) !== safeTenantId) {
+      throw new PersistenceError("LICENSE_RUNTIME_TENANT_MISMATCH", "Die lokale Gerätebindung gehört zu einem anderen Mandanten.");
+    }
+    if (!validLicenseId(record.licenseId)
+      || record.licenseId !== license.licenseId
+      || nullableStringId(record.serverTenantId) !== nullableStringId(license.serverTenantId)) {
+      throw new PersistenceError("LICENSE_RUNTIME_REFERENCE_MISMATCH", "Die lokale Gerätebindung passt nicht zur portablen Lizenzreferenz.");
+    }
+    if (!validLicenseId(record.deviceId) || !validSha256Thumbprint(record.devicePublicKeyThumbprint)) {
+      throw new PersistenceError("LICENSE_RUNTIME_INVALID", "Die lokale Gerätebindung ist unvollständig.");
+    }
+    try {
+      await licenseRuntimeModule().validateDeviceIdentity(
+        record.devicePrivateKey,
+        record.devicePublicKey,
+        record.devicePublicKeyThumbprint
+      );
+    } catch (error) {
+      throw runtimePersistenceError(error, "LICENSE_RUNTIME_KEY_INVALID", "Der lokale Geräteschlüssel ist ungültig.");
+    }
+    const signedLicenseToken = record.signedLicenseToken === null || record.signedLicenseToken === undefined
+      ? null
+      : typeof record.signedLicenseToken === "string" && record.signedLicenseToken.length <= 16384
+        ? record.signedLicenseToken
+        : undefined;
+    if (signedLicenseToken === undefined) {
+      throw new PersistenceError("LICENSE_RUNTIME_INVALID", "Der lokale Lizenznachweis ist ungültig.");
+    }
+    const tokenVersion = nullablePositiveInteger(record.tokenVersion);
+    const bindingVersion = nullablePositiveInteger(record.bindingVersion);
+    if (Number.isNaN(tokenVersion) || Number.isNaN(bindingVersion)) {
+      throw new PersistenceError("LICENSE_RUNTIME_INVALID", "Die lokalen Lizenzversionen sind ungültig.");
+    }
+    const keyId = nullableStringId(record.keyId);
+    if (keyId && !validLicenseId(keyId)) {
+      throw new PersistenceError("LICENSE_RUNTIME_INVALID", "Die lokale Prüfschlüsselreferenz ist ungültig.");
+    }
+    const cachedEntitlements = uniqueStrings(record.cachedEntitlements);
+    if (cachedEntitlements.length !== (Array.isArray(record.cachedEntitlements) ? record.cachedEntitlements.length : 0)
+      || cachedEntitlements.some(value => !validLicenseId(value))
+      || cachedEntitlements.some((value, index) => index > 0 && cachedEntitlements[index - 1] >= value)) {
+      throw new PersistenceError("LICENSE_RUNTIME_INVALID", "Die lokale Berechtigungsprojektion ist ungültig.");
+    }
+    const lastValidationOutcome = nullableStringId(record.lastValidationOutcome);
+    const allowedOutcomes = new Set(["activation_required", "token_unverified", "verified", "read_only"]);
+    if (lastValidationOutcome && !allowedOutcomes.has(lastValidationOutcome)) {
+      throw new PersistenceError("LICENSE_RUNTIME_INVALID", "Der lokale Lizenzprüfstatus ist ungültig.");
+    }
+    if (signedLicenseToken) {
+      try {
+        licenseRuntimeModule().inspectCompactJws(signedLicenseToken);
+      } catch (error) {
+        throw runtimePersistenceError(error, "LICENSE_RUNTIME_TOKEN_INVALID", "Der lokale Lizenznachweis ist ungültig.");
+      }
+    }
+    const normalized = {
+      formatVersion: constants.licenseRuntimeFormatVersion,
+      localTenantId: safeTenantId,
+      licenseId: license.licenseId,
+      serverTenantId: license.serverTenantId,
+      deviceId: record.deviceId,
+      devicePrivateKey: record.devicePrivateKey,
+      devicePublicKey: record.devicePublicKey,
+      devicePublicKeyThumbprint: record.devicePublicKeyThumbprint,
+      signedLicenseToken,
+      tokenVersion,
+      keyId,
+      lastServerValidationAt: normalizeRuntimeIso(record.lastServerValidationAt, "lastServerValidationAt"),
+      trustedServerTimeAnchor: normalizeRuntimeTimeAnchor(record.trustedServerTimeAnchor),
+      maxObservedLocalTime: normalizeRuntimeIso(record.maxObservedLocalTime, "maxObservedLocalTime"),
+      nextValidationAt: normalizeRuntimeIso(record.nextValidationAt, "nextValidationAt"),
+      offlineValidUntil: normalizeRuntimeIso(record.offlineValidUntil, "offlineValidUntil"),
+      bindingVersion,
+      cachedEntitlements,
+      lastValidationOutcome: lastValidationOutcome || "activation_required"
+    };
+    if (!signedLicenseToken && [tokenVersion, keyId, normalized.lastServerValidationAt, normalized.trustedServerTimeAnchor,
+      normalized.nextValidationAt, normalized.offlineValidUntil, bindingVersion].some(value => value !== null)) {
+      throw new PersistenceError("LICENSE_RUNTIME_INVALID", "Die lokale Gerätebindung enthält Tokenmetadaten ohne Lizenznachweis.");
+    }
+    return normalized;
+  }
+
+  function safeLicenseRuntimeStatus(record, licenseReference, error = null) {
+    if (error) {
+      const allowedErrorCodes = new Set([
+        "LICENSE_RUNTIME_UNAVAILABLE", "LICENSE_CRYPTO_UNAVAILABLE", "LICENSE_RUNTIME_REFERENCE_MISMATCH",
+        "LICENSE_RUNTIME_TENANT_MISMATCH", "LICENSE_RUNTIME_KEY_INVALID", "LICENSE_DEVICE_KEY_INVALID",
+        "LICENSE_DEVICE_KEY_MISMATCH", "LICENSE_DEVICE_KEY_EXTRACTABLE", "LICENSE_DEVICE_PUBLIC_KEY_UNAVAILABLE"
+      ]);
+      return Object.freeze({
+        code: allowedErrorCodes.has(error.code) ? error.code : "LICENSE_RUNTIME_INVALID",
+        keyStatus: "unavailable",
+        tokenStatus: "unverified",
+        accessMode: "not_enforced"
+      });
+    }
+    return Object.freeze({
+      code: record?.signedLicenseToken ? "LICENSE_RUNTIME_TOKEN_UNVERIFIED" : "LICENSE_RUNTIME_READY_UNLINKED",
+      keyStatus: record?.devicePrivateKey && record?.devicePublicKey ? "available" : "unavailable",
+      tokenStatus: record?.signedLicenseToken ? "unverified" : "absent",
+      referenceStatus: record?.licenseId === licenseReference?.licenseId ? "matched" : "mismatch",
+      accessMode: "not_enforced"
+    });
   }
 
   function defaultTseSettings() {
@@ -601,10 +858,17 @@
   }
 
   function settingsWithLegacyLicenseModel(record, expectedTenantId) {
-    if (!isPlainObject(record) || Object.prototype.hasOwnProperty.call(record, "license")) return record;
+    if (!isPlainObject(record)) return record;
     const migrated = cloneSafe(record);
-    migrated.license = generatedLocalLicense(expectedTenantId);
-    return migrated;
+    if (!Object.prototype.hasOwnProperty.call(record, "license")) {
+      migrated.license = generatedLocalLicense(expectedTenantId);
+      return migrated;
+    }
+    if (isPlainObject(record.license) && record.license.formatVersion === 1) {
+      migrated.license = normalizeLicenseReference(record.license, expectedTenantId);
+      return migrated;
+    }
+    return record;
   }
 
   function settingsWithLegacyTseSettingsModel(record) {
@@ -775,6 +1039,9 @@
     const compatibilityCodes = [];
     if (original.users === undefined && completed.users !== undefined) compatibilityCodes.push("USER_MODEL_ADDED");
     if (original.license === undefined && completed.license !== undefined) compatibilityCodes.push("LICENSE_MODEL_ADDED");
+    if (original.license?.formatVersion === 1 && completed.license?.formatVersion === 2) {
+      compatibilityCodes.push("LICENSE_REFERENCE_V2_MIGRATED");
+    }
     if (original.tseSettings === undefined && completed.tseSettings !== undefined) compatibilityCodes.push("TSE_SETTINGS_ADDED");
     if (original.logoAssets === undefined && completed.logoAssets !== undefined) compatibilityCodes.push("LOGO_ASSET_REGISTER_ADDED");
     if (original.backupReminder === undefined) compatibilityCodes.push("BACKUP_REMINDER_ADDED");
@@ -851,7 +1118,7 @@
       throw new PersistenceError("INVALID_DATA", "Der aktive lokale Benutzer ist nicht eindeutig.");
     }
     const runtimeLicense = hasLicenseModelFields(runtimeData.license) ? runtimeData.license : null;
-    const license = normalizeV1License(runtimeLicense, safeTenantId);
+    const license = normalizeLicenseReference(runtimeLicense, safeTenantId);
     const tseSettings = normalizeTseSettings(runtimeData.tseSettings);
     const taxSettings = runtimeData.taxSettings || {};
     const receiptSettings = runtimeData.receiptSettings || {};
@@ -2274,9 +2541,9 @@
     const activeUserId = user.id;
     if (nullableStringId(raw.activeUserId) !== user.id) repairs.add("ACTIVE_USER_REPAIRED");
 
-    const defaultLicense = normalizeV1License(defaults.license, safeTenantId);
+    const defaultLicense = normalizeLicenseReference(defaults.license, safeTenantId);
     const rawHasLicense = hasLicenseModelFields(raw.license);
-    const license = normalizeV1License(raw.license, safeTenantId, defaultLicense);
+    const license = normalizeLicenseReference(raw.license, safeTenantId, defaultLicense);
     if (!rawHasLicense) repairs.add("LICENSE_MODEL_DEFAULTED");
     else if (!sameSerializableValue(projectKnownFields(raw.license, license), license)) {
       repairs.add("LICENSE_MODEL_REPAIRED");
@@ -2500,8 +2767,10 @@
         backupReminder,
         setup: { status: setupStatus }
     };
+    const mergedRecord = mergePreservingUnknown(raw, normalizedKnownFields);
+    mergedRecord.license = license;
     return {
-      record: stripExcludedData(mergePreservingUnknown(raw, normalizedKnownFields)),
+      record: stripExcludedData(mergedRecord),
       repairs: [...repairs]
     };
   }
@@ -2601,7 +2870,9 @@
       || snapshot.backupFormatVersion !== tenantSnapshotConstants.backupFormatVersion) {
       throw new PersistenceError("BACKUP_FORMAT_UNSUPPORTED", "Diese Sicherungsdatei besitzt kein unterstütztes FRECKA-Format.");
     }
-    if (snapshot.appDataSchemaVersion !== constants.databaseVersion) {
+    if (!Number.isInteger(snapshot.appDataSchemaVersion)
+      || snapshot.appDataSchemaVersion < tenantSnapshotConstants.minimumReadableSchemaVersion
+      || snapshot.appDataSchemaVersion > constants.databaseVersion) {
       throw new PersistenceError(
         "BACKUP_SCHEMA_UNSUPPORTED",
         snapshot.appDataSchemaVersion > constants.databaseVersion
@@ -3307,6 +3578,7 @@
     const customersStoreName = options.customersStoreName || constants.customersStoreName;
     const receiptsStoreName = options.receiptsStoreName || constants.receiptsStoreName;
     const vouchersStoreName = options.vouchersStoreName || constants.vouchersStoreName;
+    const licenseRuntimeStoreName = options.licenseRuntimeStoreName || constants.licenseRuntimeStoreName;
     const tenantId = nullableStringId(options.tenantId) || constants.tenantId;
     let databasePromise = null;
     let writeQueue = Promise.resolve();
@@ -3341,6 +3613,9 @@
           if (!database.objectStoreNames.contains(customersStoreName)) database.createObjectStore(customersStoreName, { keyPath: "tenantId" });
           if (!database.objectStoreNames.contains(receiptsStoreName)) database.createObjectStore(receiptsStoreName, { keyPath: "tenantId" });
           if (!database.objectStoreNames.contains(vouchersStoreName)) database.createObjectStore(vouchersStoreName, { keyPath: "tenantId" });
+          if (!database.objectStoreNames.contains(licenseRuntimeStoreName)) {
+            database.createObjectStore(licenseRuntimeStoreName, { keyPath: "localTenantId" });
+          }
         };
         request.onsuccess = () => {
           const database = request.result;
@@ -3352,7 +3627,8 @@
             || !database.objectStoreNames.contains(catalogStoreName)
             || !database.objectStoreNames.contains(customersStoreName)
             || !database.objectStoreNames.contains(receiptsStoreName)
-            || !database.objectStoreNames.contains(vouchersStoreName)) {
+            || !database.objectStoreNames.contains(vouchersStoreName)
+            || !database.objectStoreNames.contains(licenseRuntimeStoreName)) {
             settled = true;
             database.close();
             reject(new PersistenceError("SCHEMA_MISSING", "Die lokale Datenbank besitzt nicht das erwartete FRECKA-Schema."));
@@ -3470,6 +3746,7 @@
                 writtenRecord = stripExcludedData(mergePreservingUnknown(existing, requestedSnapshot));
                 writtenRecord.formatVersion = constants.formatVersion;
                 writtenRecord.tenantId = tenantId;
+                writtenRecord.license = normalizeLicenseReference(requestedSnapshot.license, tenantId);
                 writtenRecord.updatedAt = new Date().toISOString();
                 const putRequest = store.put(writtenRecord);
                 putRequest.onerror = () => {
@@ -3541,6 +3818,172 @@
           };
         });
       });
+    }
+
+    async function readLicenseRuntime() {
+      const database = await openDatabase();
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        let result = null;
+        let transaction;
+        try {
+          transaction = database.transaction(licenseRuntimeStoreName, "readonly");
+          const request = transaction.objectStore(licenseRuntimeStoreName).get(tenantId);
+          request.onsuccess = () => { result = request.result || null; };
+          request.onerror = () => {
+            if (settled) return;
+            settled = true;
+            reject(new PersistenceError(
+              "LICENSE_RUNTIME_READ_FAILED",
+              "Die lokale Gerätebindung konnte nicht gelesen werden.",
+              request.error
+            ));
+          };
+        } catch (cause) {
+          reject(new PersistenceError(
+            "LICENSE_RUNTIME_READ_FAILED",
+            "Die lokale Gerätebindung konnte nicht gelesen werden.",
+            cause
+          ));
+          return;
+        }
+        transaction.oncomplete = () => {
+          if (settled) return;
+          settled = true;
+          resolve(result ? cloneRuntimeRecord(result) : null);
+        };
+        transaction.onabort = () => {
+          if (settled) return;
+          settled = true;
+          reject(new PersistenceError(
+            "LICENSE_RUNTIME_READ_FAILED",
+            "Die lokale Gerätebindung konnte nicht gelesen werden.",
+            transaction.error
+          ));
+        };
+        transaction.onerror = () => {};
+      });
+    }
+
+    async function putLicenseRuntime(record) {
+      const database = await openDatabase();
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        let failure = null;
+        let transaction;
+        try {
+          transaction = database.transaction(licenseRuntimeStoreName, "readwrite");
+          const request = transaction.objectStore(licenseRuntimeStoreName).put(cloneRuntimeRecord(record));
+          request.onerror = () => {
+            failure = new PersistenceError(
+              "LICENSE_RUNTIME_WRITE_FAILED",
+              "Die lokale Gerätebindung konnte nicht gespeichert werden.",
+              request.error
+            );
+          };
+        } catch (cause) {
+          reject(new PersistenceError(
+            "LICENSE_RUNTIME_WRITE_FAILED",
+            "Die lokale Gerätebindung konnte nicht gespeichert werden.",
+            cause
+          ));
+          return;
+        }
+        transaction.oncomplete = () => {
+          if (settled) return;
+          settled = true;
+          if (failure) reject(failure);
+          else resolve(cloneRuntimeRecord(record));
+        };
+        transaction.onabort = () => {
+          if (settled) return;
+          settled = true;
+          reject(failure || new PersistenceError(
+            "LICENSE_RUNTIME_WRITE_FAILED",
+            "Die lokale Gerätebindung konnte nicht gespeichert werden.",
+            transaction.error
+          ));
+        };
+        transaction.onerror = () => {};
+      });
+    }
+
+    function ensureLicenseRuntime(licenseReference, options = {}) {
+      let portableLicense;
+      let legacyHint;
+      try {
+        portableLicense = normalizeLicenseReference(licenseReference, tenantId);
+        legacyHint = legacyLicenseRuntimeHint(options.legacyLicense, tenantId);
+        if (legacyHint && legacyHint.licenseId !== portableLicense.licenseId) {
+          throw new PersistenceError(
+            "LICENSE_RUNTIME_REFERENCE_MISMATCH",
+            "Die historische Gerätebindung passt nicht zur portablen Lizenzreferenz."
+          );
+        }
+      } catch (error) {
+        return Promise.reject(error);
+      }
+      return queued(async () => {
+        const existing = await readLicenseRuntime();
+        if (existing) {
+          const normalized = await normalizeLicenseRuntimeRecord(existing, portableLicense, tenantId);
+          return cloneRuntimeRecord(normalized);
+        }
+        let identity;
+        try {
+          identity = await licenseRuntimeModule().createDeviceIdentity();
+        } catch (error) {
+          throw runtimePersistenceError(
+            error,
+            "LICENSE_DEVICE_KEY_CREATE_FAILED",
+            "Der lokale Geräteschlüssel konnte nicht erstellt werden."
+          );
+        }
+        const initial = {
+          formatVersion: constants.licenseRuntimeFormatVersion,
+          localTenantId: tenantId,
+          licenseId: portableLicense.licenseId,
+          serverTenantId: portableLicense.serverTenantId,
+          deviceId: legacyHint?.deviceId || createOpaqueLocalId("device"),
+          devicePrivateKey: identity.privateKey,
+          devicePublicKey: identity.publicKey,
+          devicePublicKeyThumbprint: identity.publicKeyThumbprint,
+          signedLicenseToken: null,
+          tokenVersion: null,
+          keyId: null,
+          lastServerValidationAt: null,
+          trustedServerTimeAnchor: null,
+          maxObservedLocalTime: null,
+          nextValidationAt: null,
+          offlineValidUntil: null,
+          bindingVersion: null,
+          cachedEntitlements: [],
+          lastValidationOutcome: "activation_required"
+        };
+        const normalized = await normalizeLicenseRuntimeRecord(initial, portableLicense, tenantId);
+        return putLicenseRuntime(normalized);
+      });
+    }
+
+    async function inspectLocalLicenseRuntime(licenseReference) {
+      let record = null;
+      try {
+        const portableLicense = normalizeLicenseReference(licenseReference, tenantId);
+        record = await readLicenseRuntime();
+        if (!record) {
+          return Object.freeze({
+            code: "LICENSE_RUNTIME_MISSING",
+            keyStatus: "unavailable",
+            tokenStatus: "absent",
+            referenceStatus: "missing",
+            accessMode: "not_enforced"
+          });
+        }
+        const normalized = await normalizeLicenseRuntimeRecord(record, portableLicense, tenantId);
+        return safeLicenseRuntimeStatus(normalized, portableLicense);
+      } catch (error) {
+        return safeLicenseRuntimeStatus(record, licenseReference, error);
+      }
     }
 
     async function readCatalog() {
@@ -4192,6 +4635,7 @@
       const mergedSettings = stripExcludedData(mergePreservingUnknown(existingSettings, requestedSettings));
       mergedSettings.formatVersion = constants.settingsFormatVersion;
       mergedSettings.tenantId = tenantId;
+      mergedSettings.license = normalizeLicenseReference(requestedSettings.license, tenantId);
       mergedSettings.updatedAt = new Date().toISOString();
       mergedSettings.receiptSettings.nextNumber = Math.max(
         1,
@@ -5209,6 +5653,9 @@
       readSettings,
       writeSettings,
       deleteSettings,
+      readLicenseRuntime,
+      ensureLicenseRuntime,
+      inspectLocalLicenseRuntime,
       readCatalog,
       writeCatalog,
       deleteCatalog,
@@ -5247,6 +5694,10 @@
     snapshotSettings,
     normalizeSettingsRecord,
     prepareHistoricalSettingsRecord,
+    normalizeLicenseReference,
+    legacyLicenseRuntimeHint,
+    normalizeLicenseRuntimeRecord,
+    safeLicenseRuntimeStatus,
     normalizeTseSettings,
     normalizeBackupReminder,
     backupReminderIsDue,

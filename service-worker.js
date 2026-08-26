@@ -20,6 +20,7 @@ const APP_SHELL_PATHS = Object.freeze([
   "./js/document-view.js?v=backup006-1",
   "./js/public-viewer.js?v=backup006-1",
   "./js/data.js?v=backup006-1",
+  "./js/license-runtime.js?v=backup006-1",
   "./js/persistence.js?v=backup006-1",
   "./js/backup.js?v=backup006-1",
   "./js/export.js?v=backup006-1",

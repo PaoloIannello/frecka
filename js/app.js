@@ -122,6 +122,12 @@
     setupTestPreviewVisible: false,
     pendingBusinessTemplate: "",
     settingsReady: false,
+    licenseRuntimeStatus: {
+      code: "LICENSE_RUNTIME_NOT_CHECKED",
+      keyStatus: "unavailable",
+      tokenStatus: "absent",
+      accessMode: "not_enforced"
+    },
     receiptsReadyForWrites: false,
     vouchersReadyForWrites: false,
     settingsStorageNotice: "",
@@ -985,6 +991,15 @@
       await persistence.writeSettings(prepared.record);
     }
     applySettingsRecord(prepared.record);
+    if (persistence.ensureLicenseRuntime && persistence.inspectLocalLicenseRuntime) {
+      try {
+        await persistence.ensureLicenseRuntime(prepared.record.license, { legacyLicense: savedRecord?.license });
+      } catch (error) {
+        // LICENSE-005 bereitet nur die lokale Bindung vor. Ein Runtime-Fehler darf die
+        // bestehende Beta-Nutzung bis zur späteren Lizenzaktivierung nicht sperren.
+      }
+      state.licenseRuntimeStatus = await persistence.inspectLocalLicenseRuntime(prepared.record.license);
+    }
     return { firstStart: savedRecord === null, repairs: prepared.repairs };
   }
 
@@ -4217,21 +4232,25 @@
 
   function renderLicenseSettings() {
     const license = data.license;
+    const runtimeStatus = state.licenseRuntimeStatus || {};
     const available = license
+      && license.formatVersion === 2
       && String(license.licenseId || "").trim()
-      && String(license.deviceId || "").trim()
-      && String(license.tenantId || "").trim();
+      && String(license.localTenantId || "").trim();
     const content = available ? `<div class="settings-form">
         <section class="settings-form-card settings-single-column">
           <h2>Lizenz & Gerät</h2>
           <div class="settings-fixed-values user-fixed-values">
             <div><span>Lizenz-ID</span><strong>${escapeHtml(license.licenseId)}</strong></div>
-            <div><span>Geräte-ID</span><strong>${escapeHtml(license.deviceId)}</strong></div>
-            <div><span>Mandant</span><strong>${escapeHtml(license.tenantId)}</strong></div>
-            <div><span>Lokal angelegt am</span><strong>${escapeHtml(formatGermanDateTime({ iso: license.activatedAt }) || "–")}</strong></div>
-            <div><span>Letzte Prüfung</span><strong>${escapeHtml(formatGermanDateTime({ iso: license.lastValidation }) || "–")}</strong></div>
-            <div><span>Status</span><strong>Aktiv</strong></div>
+            <div><span>Lokaler Mandant</span><strong>${escapeHtml(license.localTenantId)}</strong></div>
+            <div><span>Lizenzdienst-Mandant</span><strong>${escapeHtml(license.serverTenantId || "Noch nicht zugeordnet")}</strong></div>
+            <div><span>Produkt</span><strong>${escapeHtml(license.productId)} · Version ${escapeHtml(license.majorVersion)}</strong></div>
+            <div><span>Verknüpfung</span><strong>${escapeHtml(license.linkedAt ? formatGermanDateTime({ iso: license.linkedAt }) : "Noch nicht mit dem Lizenzdienst verknüpft")}</strong></div>
+            <div><span>Geräteschlüssel</span><strong>${runtimeStatus.keyStatus === "available" ? "Lokal vorbereitet" : "Nicht verfügbar"}</strong></div>
+            <div><span>Lizenznachweis</span><strong>${runtimeStatus.tokenStatus === "absent" ? "Noch nicht vorhanden" : "Noch nicht serverseitig bestätigt"}</strong></div>
           </div>
+          <p class="settings-neutral-note">Die lokale Vorbereitung ist kein Aktivierungs-, Trial- oder Kaufnachweis. FRECKA schränkt die bestehende Beta-Nutzung dadurch noch nicht ein.</p>
+          <p class="settings-neutral-note"><small>Technischer Status: ${escapeHtml(runtimeStatus.code || "LICENSE_RUNTIME_NOT_CHECKED")}</small></p>
         </section>
       </div>` : `<div class="settings-save-notice is-error" role="alert">Die Lizenz- und Geräteinformationen sind derzeit nicht verfügbar.</div>`;
     mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter">
@@ -4239,7 +4258,7 @@
         <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
         <p class="eyebrow">Einstellungen</p>
         <h1 class="flow-title">Lizenz & Gerät</h1>
-        <p class="page-copy">Hier siehst du die Lizenz und das aktuell zugeordnete Gerät.</p>
+        <p class="page-copy">Hier siehst du die portable Lizenzreferenz und den lokalen technischen Vorbereitungsstand.</p>
       </div>
       ${content}
     </section>`;

@@ -1,8 +1,8 @@
 # Lizenzarchitektur V1.0
 
-**Aktueller Implementierungsstand:** LICENSE-001/002, ausschließlich lokale Vorbereitung und Anzeige
+**Aktueller Implementierungsstand:** LICENSE-005 auf Basis LICENSE-001/002, ausschließlich lokale Runtime- und Tokenvorbereitung
 
-**Verbindliches Zielmodell:** LICENSE-003/004, noch nicht implementiert
+**Verbindliches Zielmodell:** LICENSE-003/004; der lokale Clientteil ist mit LICENSE-005 umgesetzt
 
 **Grundsatzentscheidungen:** ADR-0004 und angenommene ADR-0005
 
@@ -12,27 +12,27 @@
 
 Dieses Dokument beschreibt Produkt- und Architekturmodell. Feldschemas, Constraints, JWS-Claims, Zeitberechnung, API-Routen, Aufbewahrung und Folgeblöcke stehen ausschließlich im normativen LICENSE-004-Vertrag. Es gibt keine zweite Lizenzstruktur.
 
-LICENSE-004 verändert keinen Produktcode, keine Persistenz, kein Backup, keinen Export und keine Nutzungsentscheidung der aktuellen App. Lizenzdienst, Aktivierung, Payment und Entitlements folgen in getrennten Blöcken.
+LICENSE-005 setzt ausschließlich die lokale Daten- und Prüfgrenze aus LICENSE-004 um. Lizenzdienst, Aktivierung, Payment, wirksame Entitlements und Produktsperre folgen in getrennten Blöcken.
 
-## 2. Heutiger Stand LICENSE-001/002
+## 2. Heutiger Stand LICENSE-005
 
-Heute existiert genau ein lokales Objekt im mandantenbezogenen Settings-Datensatz:
+Im mandantenbezogenen Settings-Datensatz liegt ausschließlich die portable, nicht autoritative Referenz:
 
 ```text
-license
-├── formatVersion
+license v2
+├── formatVersion: 2
+├── localTenantId
 ├── licenseId
-├── tenantId
-├── deviceId
-├── activatedAt
-└── lastValidation
+├── serverTenantId
+├── productId / majorVersion
+└── linkedAt
 ```
 
-`licenseId` und `deviceId` werden lokal zufällig und ohne personenbezogene oder geräteabgeleitete Merkmale erzeugt. `activatedAt` bezeichnet nur die Anlage des Platzhalters, `lastValidation` nur dessen lokale Strukturprüfung. Sie sind weder Zahlungsnachweis noch Serveraktivierung.
+`deviceId`, Schlüssel, Token, Zeitanker und gecachte Berechtigungen liegen getrennt im gerätelokalen `licenseRuntime`-Store. Die Geräte-ID wird zufällig ohne Personen-, Hardware- oder Netzwerkmerkmale erzeugt. Der private ECDSA-P-256-Schlüssel ist nicht exportierbar; der öffentliche Schlüssel ist exportierbar und sein RFC-7638-Fingerabdruck wird lokal gespeichert. Ein Reload verwendet dasselbe in IndexedDB strukturgeklonte Schlüsselpaar.
 
-Das Objekt wird mit dem Settings-Store persistiert, über die zentrale Tenant-Snapshot-API gesichert und atomar wiederhergestellt. „Eigene Daten“ enthält es, der Steuerberaterexport nicht. `Einstellungen → Lizenz & Gerät` zeigt es ausschließlich lesbar an.
+`settings.license` wird über die zentrale Tenant-Snapshot-API gesichert und wiederhergestellt sowie in „Eigene Daten“ projiziert. Der Runtime-Store ist dagegen aus Tenant-Snapshot, verschlüsseltem Backup, Restore und beiden Exportarten ausgeschlossen. `Einstellungen → Lizenz & Gerät` zeigt nur die portable Referenz und sichere technische Statuscodes.
 
-Dieser Stand ist keine Lizenzautorität und löst keinen Schreibschutz aus. Er kann Trial, Kauf, Geräteberechtigung oder Entitlements nicht beweisen.
+Der Compact-JWS-Parser akzeptiert ausschließlich die LICENSE-004-Allowlist, `ES256`, den festen Typ und ein vorhandenes `kid`. Eine Strukturprüfung liefert immer `unverified`; erst ein ausdrücklich übergebener vertrauenswürdiger öffentlicher Schlüssel und der vollständige Bindungskontext können ein Testfixture kryptografisch verifizieren. Da noch kein produktiver Serverprüfschlüssel vorhanden ist, erzeugt dieser Stand keine Lizenzautorität und löst keinen Schreibschutz aus.
 
 ## 3. Verbindliches Produktmodell
 
@@ -95,9 +95,9 @@ Der versionierte Serververtrag enthält:
 
 Ein Identity-Inhaber kann mehrere gekaufte Filiallizenzen besitzen. Der Trial derselben Hauptversion bleibt jedoch pro Identity, Tenant und wiedererkennbarem Schlüssel einmalig. Genau eine aktive Bindung pro Lizenz wird transaktional erzwungen.
 
-## 7. Geplantes Clientmodell
+## 7. Implementiertes lokales Clientmodell
 
-`settings.license` wird in einem späteren Migrationsblock zur portablen, nicht autoritativen Formatversion 2:
+`settings.license` besitzt die portable, nicht autoritative Formatversion 2:
 
 ```text
 settings.license v2
@@ -122,9 +122,9 @@ licenseRuntime v1
 └── cachedEntitlements
 ```
 
-Der Store ist zwingend vom Tenant-Snapshot, Backup, Restore und Export ausgeschlossen. Seine Einführung erfordert geplant das IndexedDB-Schema 5→6. Der private Schlüssel wird als nicht exportierbarer Web-Crypto-`CryptoKey` gespeichert.
+Der Store ist vom Tenant-Snapshot, Backup, Restore und Export ausgeschlossen. LICENSE-005 hebt das IndexedDB-Schema deterministisch von 5 auf 6 an und ergänzt ausschließlich diesen Store; die fünf bisherigen Stores bleiben unverändert. Der private Schlüssel wird als nicht exportierbarer Web-Crypto-`CryptoKey` gespeichert.
 
-Alte LICENSE-001-IDs sind nur Migrationshinweise. Auf einer neuen Installation oder nach Verlust des Runtime-Stores führt eine portable Referenz immer zu `activation_required`; es wird kein Trial aus lokaler Zeit oder Settings rekonstruiert.
+Bei der eindeutigen LICENSE-001-Migration bleiben die lokale Lizenz-ID und die bisherige Geräte-ID erhalten: Die Lizenz-ID geht in die portable Referenz, die Geräte-ID ausschließlich in die neue Runtime. Beide sind nur Migrationshinweise. Fremde Mandanten, unbekannte Felder, widersprüchliche Serververknüpfungen und zukünftige Formatversionen werden geschlossen abgewiesen. Auf einer neuen Installation oder nach Verlust des Runtime-Stores ist intern höchstens `activation_required` vorbereitet; es wird kein Trial aus lokaler Zeit oder Settings rekonstruiert und in LICENSE-005 noch keine Produktfunktion gesperrt.
 
 ## 8. JWS und Offlinezeit
 
@@ -180,8 +180,8 @@ Der spätere Dienst läuft getrennt unter `license.frecka.app` mit HTTPS, eigene
 
 ## 13. Folgeblöcke
 
-1. LICENSE-005 – lokales Runtime-/Tokenmodell und Schema 5→6;
-2. LICENSE-006 – Lizenzdienst-Grundgerüst;
+1. LICENSE-005 – lokales Runtime-/Tokenmodell und Schema 5→6 (umgesetzt);
+2. LICENSE-006 – Lizenzdienst-Grundgerüst nach realer CryptoKey-Zielgeräteabnahme;
 3. LICENSE-007 – Identity und Trial-Aktivierung;
 4. LICENSE-008 – Revalidierung und zentraler Clientmodus;
 5. LICENSE-009 – Backup-/Restore-/Exportmigration;
@@ -192,11 +192,11 @@ Der spätere Dienst läuft getrennt unter `license.frecka.app` mit HTTPS, eigene
 
 ## 14. Bewertung
 
-**GO für LICENSE-005.** Produktparameter, Status, Daten-, Token-, Offline-, API-, Gerätewechsel-, Payment- und Entitlementgrenzen sind verbindlich.
+**Technisches GO für die lokale LICENSE-005-Implementierung.** Produktparameter, Status, Daten-, Token-, Offline-, API-, Gerätewechsel-, Payment- und Entitlementgrenzen sind verbindlich. Vor LICENSE-006 bleiben reale Tests der CryptoKey-Persistenz auf iPhone/Safari als installierte Home-Screen-PWA und auf einem unterstützten Android-/Chromium-Gerät Pflicht.
 
 **NO-GO für öffentliche API, Payment oder Produktivbetrieb.** Vorher fehlen weiterhin konkrete Serverruntime, Datenschutz-/Rechtsprüfung, Key-Betrieb, Paymentprovider, Supportprozess, DSM-Kompatibilität, Monitoring, Serverbackup, Incident Response und reale Zielgerätetests.
 
-Der heutige App-Stand bleibt unverändert: LICENSE-001/002 ist lokal funktionsfähig, aber ohne Trial-, Kauf- oder Nutzungsautorität.
+Der heutige App-Stand bleibt ohne Trial-, Kauf- oder Nutzungsautorität. LICENSE-005 bereitet nur die lokale Vertrauensgrenze vor und erhält die bestehende Beta-Nutzbarkeit.
 
 ## 15. Technische Grundlagen
 

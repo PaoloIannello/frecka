@@ -132,14 +132,14 @@ Als datensparsamer Ausgangspunkt gelten: Nonces werden unmittelbar nach Verwendu
 
 ### 10. Migration von LICENSE-001/002
 
-Das vorhandene `settings.license` der Formatversion 1 bleibt bis zur Umsetzung ausschließlich lokaler Platzhalter und darf keinen Trial oder Kauf autorisieren.
+Das historische `settings.license` der Formatversion 1 war ausschließlich lokaler Platzhalter und darf keinen Trial oder Kauf autorisieren. LICENSE-005 migriert es unter Erhalt der lokalen IDs in die nachfolgend beschriebene Trennung.
 
 Die Zielmigration führt zwei getrennte Ebenen ein:
 
 - eine portable Lizenzreferenz in `settings` mit neuer Formatversion, `localTenantId`, `licenseId`, serverseitiger `serverTenantId` und Produkt/Hauptversion;
 - einen mandantenbezogenen lokalen Runtime-Speicher für privaten `CryptoKey`, signierte Bescheinigung, Zeitanker, Revalidierungsstatus und Gerätebindung.
 
-Der Runtime-Speicher erfordert eine versionierte IndexedDB-Migration, ist aber ausdrücklich kein zweites Geschäftsmodell. Er ist von Tenant-Snapshot, Backup, Restore und Export ausgeschlossen. Das bisherige lokale `licenseId` und `deviceId` können bei der ersten Registrierung nur als Migrationshinweis dienen; erst eine Serveraktivierung und Schlüsselbindung erzeugen Autorität.
+LICENSE-005 setzt den Runtime-Speicher mit der versionierten IndexedDB-Migration 5→6 um; er ist ausdrücklich kein zweites Geschäftsmodell. Er ist von Tenant-Snapshot, Backup, Restore und Export ausgeschlossen. Das bisherige lokale `licenseId` und `deviceId` dienen nur als Migrationshinweis; erst eine spätere Serveraktivierung und Schlüsselbindung erzeugen Autorität.
 
 Alte Backups bleiben lesbar. Restore übernimmt Geschäftsdaten und portable Lizenzreferenz, aber niemals Runtime-Schlüssel, Bescheinigung oder aktive Gerätefreigabe. Auf demselben Gerät bleibt die aktuelle Runtime-Bindung erhalten; auf einem neuen Gerät ist Aktivierung oder Übertragung erforderlich. Der Export „Eigene Daten“ darf nur eine nicht sensitive Lizenz- und Entitlement-Zusammenfassung enthalten, der Steuerberaterexport weiterhin keine Lizenzdaten.
 

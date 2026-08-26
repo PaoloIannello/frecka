@@ -234,21 +234,24 @@
     const license = settings?.license;
     const validTimestamp = value => typeof value === "string" && Number.isFinite(Date.parse(value));
     if (!isPlainObject(license)
-      || license.formatVersion !== 1
+      || license.formatVersion !== 2
       || !text(license.licenseId)
-      || text(license.tenantId) !== text(tenantId)
-      || !text(license.deviceId)
-      || !validTimestamp(license.activatedAt)
-      || !validTimestamp(license.lastValidation)) {
+      || text(license.localTenantId) !== text(tenantId)
+      || (license.serverTenantId !== null && !text(license.serverTenantId))
+      || text(license.productId) !== "frecka.core"
+      || license.majorVersion !== 1
+      || (license.linkedAt !== null && !validTimestamp(license.linkedAt))
+      || Boolean(license.serverTenantId) !== Boolean(license.linkedAt)) {
       throw new ExportError("INVALID_SNAPSHOT", "Die lokale Lizenz des FRECKA-Datensnapshots ist nicht eindeutig.");
     }
     return Object.freeze({
       formatVersion: license.formatVersion,
+      localTenantId: text(license.localTenantId),
       licenseId: text(license.licenseId),
-      tenantId: text(license.tenantId),
-      deviceId: text(license.deviceId),
-      activatedAt: text(license.activatedAt),
-      lastValidation: text(license.lastValidation)
+      serverTenantId: license.serverTenantId,
+      productId: license.productId,
+      majorVersion: license.majorVersion,
+      linkedAt: license.linkedAt
     });
   }
 
@@ -888,9 +891,10 @@
       ...(projection.activeUser ? [`Aktiver Benutzer: ${projection.activeUser.displayName}`] : []),
       ...(projection.license ? [
         `Lizenz-ID: ${projection.license.licenseId}`,
-        `Geräte-ID: ${projection.license.deviceId}`,
-        `Lokal aktiviert: ${formatDateKey(projection.license.activatedAt)} • ${formatTime(projection.license.activatedAt)}`,
-        `Letzte lokale Prüfung: ${formatDateKey(projection.license.lastValidation)} • ${formatTime(projection.license.lastValidation)}`
+        `Lizenzprodukt: ${projection.license.productId} · Version ${projection.license.majorVersion}`,
+        ...(projection.license.linkedAt
+          ? [`Lizenzreferenz verknüpft: ${formatDateKey(projection.license.linkedAt)} • ${formatTime(projection.license.linkedAt)}`]
+          : ["Lizenzreferenz: Noch nicht mit dem Lizenzdienst verknüpft"])
       ] : []),
       ...(projection.tseSettings ? [
         `TSE-Anbieter: ${projection.tseSettings.provider}`,
