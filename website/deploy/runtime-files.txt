@@ -1,0 +1,17 @@
+assets/logo/favicon/favicon.svg
+assets/logo/svg/frecka-icon.svg
+assets/logo/svg/frecka-logo.svg
+assets/logo/svg/frecka-wordmark.svg
+assets/screenshots/hero/home.png
+assets/screenshots/workflow/step-1.png
+assets/screenshots/workflow/step-2.png
+assets/screenshots/workflow/step-3.png
+assets/social/opengraph-1200x630.png
+index.html
+legal/datenschutz.html
+legal/impressum.html
+scripts/main.js
+styles/animation.css
+styles/brand-assets.css
+styles/design-tokens.css
+styles/main.css
