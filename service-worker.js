@@ -1,11 +1,11 @@
 "use strict";
 
 const APP_SHELL_CACHE_PREFIX = "frecka-app-shell-";
-const APP_SHELL_CACHE = `${APP_SHELL_CACHE_PREFIX}0.11.5-iosnav001-1`;
+const APP_SHELL_CACHE = `${APP_SHELL_CACHE_PREFIX}0.11.5-android002-1`;
 const APP_ENTRY_URL = new URL("./index.html", self.location.href).href;
 const APP_SHELL_PATHS = Object.freeze([
   "./index.html",
-  "./styles.css?v=android001-1",
+  "./styles.css?v=android002-1",
   "./manifest.webmanifest?v=license005-1",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
@@ -16,9 +16,9 @@ const APP_SHELL_PATHS = Object.freeze([
   "./js/qr.js?v=license005-1",
   "./js/documents.js?v=license005-1",
   "./js/public-documents.js?v=license005-1",
-  "./js/sharing.js?v=license005-1",
+  "./js/sharing.js?v=android002-1",
   "./js/document-view.js?v=license005-1",
-  "./js/public-viewer.js?v=license005-1",
+  "./js/public-viewer.js?v=android002-1",
   "./js/data.js?v=license005-1",
   "./js/license-runtime.js?v=license005-1",
   "./js/persistence.js?v=license005-1",
@@ -26,7 +26,7 @@ const APP_SHELL_PATHS = Object.freeze([
   "./js/export.js?v=license005-1",
   "./js/export-package.js?v=license005-1",
   "./js/pwa-update.js?v=license005-1",
-  "./js/app.js?v=license005-1"
+  "./js/app.js?v=android002-1"
 ]);
 const APP_SHELL_URLS = APP_SHELL_PATHS.map(path => new URL(path, self.location.href).href);
 

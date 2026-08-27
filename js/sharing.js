@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const SHARE_VERSION = "COMM-001";
+  const SHARE_VERSION = "ANDROID-002";
 
   class ShareServiceError extends Error {
     constructor(code, userMessage, cause = null) {
@@ -55,22 +55,33 @@
     };
   }
 
-  function errorResult(error) {
-    if (error?.name === "AbortError") return Object.freeze({ status: "cancelled", mode: "none" });
-    const code = ({
-      NotAllowedError: "SHARE_NOT_ALLOWED",
-      InvalidStateError: "SHARE_INVALID_STATE",
-      TypeError: "SHARE_DATA_INVALID",
-      DataError: "SHARE_DATA_INVALID"
-    })[error?.name] || "SHARE_FAILED";
-    const message = code === "SHARE_NOT_ALLOWED"
-      ? "Teilen wurde vom Browser nicht erlaubt. Bitte versuche es erneut."
-      : code === "SHARE_INVALID_STATE"
-      ? "Der Teilen-Dialog ist bereits geöffnet oder momentan nicht verfügbar."
-      : code === "SHARE_DATA_INVALID"
-      ? "Diese Datei oder dieser Link kann auf diesem Gerät nicht geteilt werden."
-      : "Teilen konnte nicht geöffnet werden.";
-    throw new ShareServiceError(code, message, error);
+  function classifyShareError(error) {
+    const name = typeof error?.name === "string" ? error.name : "Error";
+    const classification = ({
+      AbortError: ["SHARE_CANCELLED", "user-cancelled", "Teilen wurde abgebrochen."],
+      NotAllowedError: ["SHARE_NOT_ALLOWED", "not-allowed", "Diese Datei konnte auf diesem Gerät nicht direkt geteilt werden."],
+      InvalidStateError: ["SHARE_INVALID_STATE", "invalid-state", "Der Teilen-Dialog ist bereits geöffnet oder momentan nicht verfügbar."],
+      DataError: ["SHARE_DATA_INVALID", "data-error", "Diese Datei kann auf diesem Gerät nicht direkt geteilt werden."],
+      TypeError: ["SHARE_TYPE_INVALID", "type-error", "Diese Datei kann auf diesem Gerät nicht direkt geteilt werden."]
+    })[name] || ["SHARE_FAILED", "technical-error", "Die Datei konnte aufgrund eines technischen Fehlers nicht direkt geteilt werden."];
+    return Object.freeze({ name, code: classification[0], reason: classification[1], userMessage: classification[2] });
+  }
+
+  function shareErrorResult(error, mode) {
+    const failure = classifyShareError(error);
+    if (failure.code === "SHARE_CANCELLED") {
+      return Object.freeze({ status: "cancelled", mode, reason: failure.reason });
+    }
+    if (mode === "files") {
+      return Object.freeze({
+        status: "fallback-required",
+        mode,
+        reason: failure.reason,
+        code: failure.code,
+        userMessage: failure.userMessage
+      });
+    }
+    throw new ShareServiceError(failure.code, failure.userMessage, error);
   }
 
   function createShareService(environment = {}) {
@@ -110,13 +121,21 @@
       return secureContext && typeof navigatorObject?.share === "function";
     }
 
-    function canShareFiles(files) {
-      if (!canUseWebShare() || typeof navigatorObject?.canShare !== "function" || !areActualFiles(files)) return false;
+    function fileShareCapability(files) {
+      if (!canUseWebShare()) return Object.freeze({ supported: false, reason: "share-unavailable" });
+      if (typeof navigatorObject?.canShare !== "function") return Object.freeze({ supported: false, reason: "can-share-unavailable" });
+      if (!areActualFiles(files)) return Object.freeze({ supported: false, reason: "files-invalid" });
       try {
-        return navigatorObject.canShare({ files }) === true;
+        return navigatorObject.canShare({ files }) === true
+          ? Object.freeze({ supported: true, reason: "available" })
+          : Object.freeze({ supported: false, reason: "files-unsupported" });
       } catch (error) {
-        return false;
+        return Object.freeze({ supported: false, reason: "capability-error" });
       }
+    }
+
+    function canShareFiles(files) {
+      return fileShareCapability(files).supported;
     }
 
     function canShareUrl(value) {
@@ -136,13 +155,13 @@
     }
 
     async function shareFiles(files, metadata = {}) {
-      if (!canShareFiles(files)) return Object.freeze({ status: "unsupported", mode: "files" });
+      const capability = fileShareCapability(files);
+      if (!capability.supported) return Object.freeze({ status: "unsupported", mode: "files", reason: capability.reason });
       try {
         await navigatorObject.share({ files, ...shareMetadata(metadata) });
         return Object.freeze({ status: "shared", mode: "files" });
       } catch (error) {
-        const result = errorResult(error);
-        return result.mode === "none" ? Object.freeze({ ...result, mode: "files" }) : result;
+        return shareErrorResult(error, "files");
       }
     }
 
@@ -153,8 +172,7 @@
         await navigatorObject.share({ url, ...shareMetadata(metadata) });
         return Object.freeze({ status: "shared", mode: "url" });
       } catch (error) {
-        const result = errorResult(error);
-        return result.mode === "none" ? Object.freeze({ ...result, mode: "url" }) : result;
+        return shareErrorResult(error, "url");
       }
     }
 
@@ -186,7 +204,11 @@
     }
 
     async function sharePreferred({ files = [], url = "", metadata = {}, downloadFile = null } = {}) {
-      if (canShareFiles(files)) return shareFiles(files, metadata);
+      if (Array.isArray(files) && files.length) {
+        if (canShareFiles(files)) return shareFiles(files, metadata);
+        if (downloadFile) return downloadFallback(downloadFile);
+        return Object.freeze({ status: "unsupported", mode: "files", reason: fileShareCapability(files).reason });
+      }
       if (url && canShareUrl(url)) return shareUrl(url, metadata);
       if (downloadFile) return downloadFallback(downloadFile);
       return Object.freeze({ status: "unsupported", mode: "none" });
@@ -196,6 +218,7 @@
       version: SHARE_VERSION,
       createFile,
       canUseWebShare,
+      fileShareCapability,
       canShareFiles,
       canShareUrl,
       shareFiles,

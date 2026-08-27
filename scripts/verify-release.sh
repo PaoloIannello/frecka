@@ -56,6 +56,7 @@ find js tests -type f \( -name '*.js' -o -name '*.mjs' \) -print |
 
 "$NODE_BIN" tests/pwa-update-smoke.mjs
 "$NODE_BIN" tests/service-worker-smoke.mjs
+"$NODE_BIN" tests/sharing-smoke.mjs
 "$NODE_BIN" tests/measure-public-qr.mjs
 "$NODE_BIN" tests/render-documents.mjs
 sh tests/deploy-beta-smoke.sh

@@ -479,6 +479,7 @@
     const escapedReference = escapeHtml(reference);
     const actions = [
       ["pdf", "▤", "PDF anzeigen", "PDF lokal erzeugen"],
+      ["save", "⇩", "PDF speichern", "PDF auf dem Gerät speichern"],
       ["qr", "▦", "QR-Code anzeigen", "Auf einem zweiten Gerät öffnen"],
       ["share", "↗", "Teilen", "Nativen Teilen-Dialog öffnen"]
     ];
@@ -540,6 +541,12 @@
         return;
       }
       const source = await documentPdfSource(kind, reference);
+      if (action === "save") {
+        const file = await createDocumentPdfFile(source.model, source.key);
+        shareService.downloadFallback(file);
+        setDocumentOutputNotice(kind, "Das PDF wurde zum Speichern auf diesem Gerät bereitgestellt.");
+        return;
+      }
       if (action === "pdf") {
         const opened = await openDocumentPdf(source.model, source.key);
         if (opened && source.publicError) setDocumentOutputNotice(kind, source.publicError.userMessage || "Der öffentliche QR-Code ist für dieses umfangreiche Dokument nicht verfügbar.");
@@ -548,18 +555,14 @@
       if (action === "share") {
         const file = await createDocumentPdfFile(source.model, source.key);
         const recordLabel = source.model.type === "receipt" ? source.model.number : source.model.code;
-        const result = await shareService.sharePreferred({
-          files: [file],
-          url: source.bundle?.link || "",
-          metadata: {
-            title: `${source.model.type === "receipt" ? source.model.kind.title : "Gutschein"} ${recordLabel}`,
-            text: source.model.type === "receipt" ? "Digitaler FRECKA-Beleg" : "Digitaler FRECKA-Gutschein"
-          },
-          downloadFile: file
+        const result = await shareService.shareFiles([file], {
+          title: `${source.model.type === "receipt" ? source.model.kind.title : "Gutschein"} ${recordLabel}`,
+          text: source.model.type === "receipt" ? "Digitaler FRECKA-Beleg" : "Digitaler FRECKA-Gutschein"
         });
         if (result.status === "shared") setDocumentOutputNotice(kind, "Der Teilen-Dialog wurde an das Betriebssystem übergeben.");
-        else if (result.status === "downloaded") setDocumentOutputNotice(kind, "Teilen ist hier nicht verfügbar. Das PDF wurde stattdessen zum Speichern bereitgestellt.");
-        else if (result.status === "unsupported") setDocumentOutputNotice(kind, "Teilen ist in diesem Browser nicht verfügbar.");
+        else if (result.status === "cancelled") setDocumentOutputNotice(kind, "Teilen wurde abgebrochen. Das PDF bleibt verfügbar.");
+        else if (result.status === "unsupported") setDocumentOutputNotice(kind, "Direktes Teilen ist auf diesem Gerät nicht verfügbar. Du kannst das PDF stattdessen speichern.");
+        else if (result.status === "fallback-required") setDocumentOutputNotice(kind, `${result.userMessage} Du kannst das PDF stattdessen speichern.`);
       }
     } catch (error) {
       setDocumentOutputNotice(kind, error?.userMessage || "Die Dokumentausgabe konnte nicht vorbereitet werden.");
@@ -5969,6 +5972,11 @@
           notice.hidden = false;
           notice.classList.remove("is-error");
           notice.textContent = "Teilen wurde abgebrochen. Deine Auswahl bleibt erhalten.";
+        } else {
+          const message = result.status === "fallback-required"
+            ? `${result.userMessage} Du kannst alle Dateien stattdessen einzeln speichern.`
+            : "Diese Dateiauswahl kann auf diesem Gerät nicht direkt geteilt werden. Du kannst alle Dateien stattdessen einzeln speichern.";
+          showExportShareFallback(message);
         }
       } catch (error) {
         if (error?.code === "SHARE_FILE_UNAVAILABLE" || !shareService?.canShareFiles) {
@@ -6016,7 +6024,10 @@
             state.exportNoticeIsError = false;
             renderSettingsExport();
           } else {
-            showExportShareFallback("Dein Browser kann das ZIP-Gesamtpaket momentan nicht teilen. Du kannst es stattdessen auf dem Gerät speichern.");
+            const message = result.status === "fallback-required"
+              ? `${result.userMessage} Du kannst das ZIP-Gesamtpaket stattdessen auf dem Gerät speichern.`
+              : "Das ZIP-Gesamtpaket kann auf diesem Gerät nicht direkt geteilt werden. Du kannst es stattdessen auf dem Gerät speichern.";
+            showExportShareFallback(message);
           }
         } catch (error) {
           if (error?.code === "SHARE_FILE_UNAVAILABLE" || !shareService?.canShareFiles) {

@@ -1164,7 +1164,7 @@
           assertEqual(publicDocumentApi.FORMAT_VERSION, 1, "Falsche Public-Formatversion");
           assertEqual(publicDocumentApi.constants.errorCorrection, "M", "Falsche QR-Fehlerkorrektur");
           assertEqual(publicDocumentApi.constants.maxPositions, 25, "Positionsgrenze ist nicht dokumentiert");
-          assertEqual(sharingApi.SHARE_VERSION, "COMM-001", "Falsche Share-Service-Version");
+          assertEqual(sharingApi.SHARE_VERSION, "ANDROID-002", "Falsche Share-Service-Version");
           assertEqual(typeof sharingApi.createShareService, "function", "Injizierbarer Share-Service fehlt");
           assertEqual(documentViewApi.DOCUMENT_VIEW_VERSION, "COMM-001", "Gemeinsame Dokumentansicht fehlt");
         }
@@ -1337,7 +1337,7 @@
         }
       },
       {
-        name: "Share bevorzugt PDF, fällt auf Public-URL und zuletzt genau einen Download zurück",
+        name: "Share bevorzugt Dateien und nutzt bei vorab fehlender File-Capability genau einen Download",
         run: async () => {
           const shareCalls = [];
           const urlService = sharingApi.createShareService({
@@ -1352,10 +1352,9 @@
           });
           const file = urlService.createFile("pdf", { name: "Beleg.pdf", type: "application/pdf" });
           const publicUrl = "https://app.example.invalid/frecka/#/p/r/1/n/abc.def";
-          const urlResult = await urlService.sharePreferred({ files: [file], url: publicUrl, downloadFile: file });
-          assertEqual(urlResult.mode, "url", "Fehlendes File-Sharing fiel nicht auf URL zurück");
-          assertEqual(shareCalls[0].url, publicUrl, "URL-Fallback verwendete nicht den öffentlichen Kundenlink");
-          assert(!shareCalls[0].url.includes("#/receipt/"), "URL-Fallback verwendete internen Deep-Link");
+          const unsupported = await urlService.sharePreferred({ files: [file], url: publicUrl });
+          assertEqual(unsupported.status, "unsupported", "Fehlendes File-Sharing startete ungefragt einen anderen Share-Pfad");
+          assertEqual(shareCalls.length, 0, "Fehlendes File-Sharing löste ungefragt einen Public-Link-Share aus");
 
           let clicks = 0;
           let revokes = 0;
@@ -1394,6 +1393,30 @@
           assert(files.every(file => file instanceof File && file.type === "application/pdf" && file.size > 4000), "Dokumentausgabe erzeugte kein teilbares PDF-File");
           assertEqual(models[2].type, "receipt", "Gutscheinverkaufsbeleg nahm einen Gutschein-Sonderweg");
           assertEqual(models[2].kind.code, "voucher-sale", "Gutscheinverkaufsbeleg verlor seine Belegart");
+        }
+      },
+      {
+        name: "ANDROID-002 bietet PDF- und Export-Fallback ausschließlich als explizite Folgeaktion an",
+        run: async () => {
+          const [appResponse, viewerResponse] = await Promise.all([
+            fetch("../js/app.js", { cache: "no-store" }),
+            fetch("../js/public-viewer.js", { cache: "no-store" })
+          ]);
+          assert(appResponse.ok && viewerResponse.ok, "ANDROID-002-Laufzeitquellen konnten nicht geladen werden");
+          const source = await appResponse.text();
+          const viewer = await viewerResponse.text();
+          const documentStart = source.indexOf("async function handleDocumentOutputAction");
+          const documentEnd = source.indexOf("function openPendingPdfWindow", documentStart);
+          const documentBlock = source.slice(documentStart, documentEnd);
+          const exportStart = source.indexOf('if (event.target.closest("[data-export-share-save]"))');
+          const exportEnd = source.indexOf('const catalogView = event.target.closest("[data-catalog-manager-view]")', exportStart);
+          const exportBlock = source.slice(exportStart, exportEnd);
+          assert(documentBlock.includes('action === "save"') && documentBlock.includes("shareService.downloadFallback(file)"), "Explizite PDF-Speichern-Aktion fehlt");
+          assert(documentBlock.includes("shareService.shareFiles([file]") && !documentBlock.includes("shareService.sharePreferred"), "PDF-Share besitzt weiterhin einen automatischen zweiten Ausgabepfad");
+          assert(documentBlock.includes('result.status === "cancelled"') && documentBlock.includes('result.status === "fallback-required"'), "PDF-UX trennt Abbruch und notwendigen Fallback nicht");
+          assert(exportBlock.includes("showExportShareFallback") && exportBlock.includes("data-export-share-save"), "Exportfehler bietet keinen expliziten Speichern-Fallback");
+          assert(exportBlock.includes("downloadExportFile(state.exportResult.packageFile)") && exportBlock.includes("return;"), "Erfolgreiches ZIP-Speichern läuft in eine nachgelagerte Fehlermeldung");
+          assert(viewer.includes("sharing.shareFiles([file], metadata)") && viewer.includes("Du kannst das PDF stattdessen speichern"), "Public Viewer besitzt keinen neutralen expliziten PDF-Fallback");
         }
       },
       {
@@ -2229,7 +2252,7 @@
           ["is-share", "is-menu", "is-home", "is-app", "is-confirm"].forEach(icon => assert(css.includes(icon), `Lokales Piktogramm fehlt: ${icon}`));
           assert(css.includes("@media(max-width:390px)") && css.includes("@media(max-width:350px)"), "Mobile Installationsdarstellung ist nicht abgesichert");
           assert(!index.includes('data-route="installation"'), "Installationshilfe wurde fälschlich zur Hauptnavigation hinzugefügt");
-          assert(worker.includes('\"./js/app.js?v=license005-1\"') && worker.includes('\"./styles.css?v=android001-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
+          assert(worker.includes('\"./js/app.js?v=android002-1\"') && worker.includes('\"./styles.css?v=android002-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
 
           const measureInstallationLayout = width => new Promise((resolve, reject) => {
             const frame = document.createElement("iframe");
@@ -2288,7 +2311,7 @@
           const css = await cssResponse.text();
           const index = await indexResponse.text();
           assert(index.includes('content="width=device-width, initial-scale=1, viewport-fit=cover"'), "Mobiler Viewport-Vertrag fehlt");
-          assert(index.includes('href="styles.css?v=android001-1"'), "ANDROID-001-Styles besitzen keinen eigenen Cache-Schlüssel");
+          assert(index.includes('href="styles.css?v=android002-1"'), "Die weiterhin wirksamen ANDROID-001-Styles fehlen im aktuellen Cache-Schlüssel");
           assert(!css.includes("text-size-adjust") && !css.includes("font-size: 16px !important"), "Browserpräferenz wird aggressiv überschrieben");
           ["renderHome", "renderSettings", "renderReceiptDetail", "renderReceiptPreview"].forEach(renderer => {
             assert(appSource.includes(`function ${renderer}(`), `Produktive Ansicht fehlt: ${renderer}`);

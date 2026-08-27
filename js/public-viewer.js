@@ -44,7 +44,7 @@
     main.removeAttribute("aria-busy");
     main.innerHTML = `<section class="public-viewer-loading" aria-live="polite"><span class="persistence-loading-spinner" aria-hidden="true"></span><strong>Digitales Dokument wird geöffnet …</strong></section>`;
 
-    if (!transport?.decodePublicLink || !documentService?.createPdfBlob || !documentView?.renderDocument || !sharing?.downloadFallback || !sharing?.sharePreferred) {
+    if (!transport?.decodePublicLink || !documentService?.createPdfBlob || !documentView?.renderDocument || !sharing?.downloadFallback || !sharing?.shareFiles || !sharing?.shareUrl) {
       main.innerHTML = `<section class="public-viewer-error" role="alert"><span aria-hidden="true">!</span><h1>Dokument nicht verfügbar</h1><p>Diese FRECKA-Version kann den digitalen Link nicht öffnen.</p></section>`;
       return true;
     }
@@ -114,19 +114,17 @@
           return;
         }
         const file = pdfFile || await pdfPromise;
-        const result = await sharing.sharePreferred({
-          files: file ? [file] : [],
-          url: bundle.link,
-          metadata: {
+        const metadata = {
             title: `${heading} ${reference}`,
             text: model.type === "receipt" ? "Digitaler FRECKA-Beleg" : "Digitaler FRECKA-Gutschein"
-          },
-          downloadFile: file
-        });
+        };
+        const result = file
+          ? await sharing.shareFiles([file], metadata)
+          : await sharing.shareUrl(bundle.link, metadata);
         if (result.status === "shared") setNotice(notice, "Der Teilen-Dialog wurde an das Betriebssystem übergeben.");
         else if (result.status === "cancelled") setNotice(notice, "Teilen wurde abgebrochen.");
-        else if (result.status === "downloaded") setNotice(notice, "Das PDF wurde stattdessen zum Speichern bereitgestellt.");
-        else setNotice(notice, "Teilen ist in diesem Browser nicht verfügbar.", true);
+        else if (result.status === "fallback-required") setNotice(notice, `${result.userMessage} Du kannst das PDF stattdessen speichern.`);
+        else setNotice(notice, "Direktes Teilen ist auf diesem Gerät nicht verfügbar. Du kannst das PDF stattdessen speichern.");
       } catch (error) {
         setNotice(notice, error?.userMessage || "Die Aktion konnte nicht ausgeführt werden.", true);
       } finally {
