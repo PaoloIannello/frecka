@@ -5,6 +5,7 @@ import vm from "node:vm";
 const source = await readFile(new URL("../service-worker.js", import.meta.url), "utf8");
 const appSource = await readFile(new URL("../js/app.js", import.meta.url), "utf8");
 const indexSource = await readFile(new URL("../index.html", import.meta.url), "utf8");
+const stylesSource = await readFile(new URL("../styles.css", import.meta.url), "utf8");
 const manifest = JSON.parse(await readFile(new URL("../manifest.webmanifest", import.meta.url), "utf8"));
 const baseUrl = "https://beta.frecka.app/releases/0.11.5-test/site/";
 const listeners = new Map();
@@ -107,6 +108,11 @@ assert.equal(manifest.start_url, "./index.html#/home");
 assert.equal(manifest.scope, "./");
 assert.equal(new URL(manifest.start_url, baseUrl).pathname, "/releases/0.11.5-test/site/index.html");
 assert.equal(new URL(manifest.scope, baseUrl).pathname, "/releases/0.11.5-test/site/");
+const bottomNavigationStart = indexSource.indexOf('<nav id="bottomNav"');
+assert.ok(bottomNavigationStart > 0, "Bottom-Navigation fehlt im App-Shell.");
+assert.match(indexSource.slice(0, bottomNavigationStart), /<main id="mainContent"[\s\S]*<\/main>\s*<\/div>\s*$/, "Bottom-Navigation liegt nicht außerhalb des scrollenden App-Containers.");
+assert.match(stylesSource, /[.]bottom-nav\{position:fixed[^}]*bottom:calc\(12px \+ var\(--safe-bottom\)\)/, "Fixed- oder Safe-Area-Vertrag der Bottom-Navigation fehlt.");
+assert.match(stylesSource, /[.]app-shell\{[^}]*padding-bottom:calc\(104px \+ var\(--safe-bottom\)\)/, "Inhaltsabstand unter der Bottom-Navigation fehlt.");
 assert.match(appSource, /pwaUpdateController\.start\(\{\s*scriptUrl:\s*"\.\/service-worker\.js",\s*scope:\s*"\.\/"\s*\}\)/);
 assert.doesNotMatch(appSource, /\.unregister\s*\(/);
 assert.doesNotMatch(appSource, /caches\.keys\s*\(/);
@@ -114,7 +120,7 @@ assert.doesNotMatch(source, /LEGACY_AUTO_ACTIVATION_FOR_SERVICEWORKER_002/, "Die
 assert.doesNotMatch(source, /clients\.claim\s*\(/, "Der Worker darf laufende Clients nicht automatisch übernehmen.");
 assert.doesNotMatch(source, /indexedDB|localStorage|sessionStorage/, "Der Worker darf keine Geschäftsdaten berühren.");
 
-const currentCache = [...cacheNames].find(name => name === "frecka-app-shell-0.11.5-android001-1");
+const currentCache = [...cacheNames].find(name => name === "frecka-app-shell-0.11.5-iosnav001-1");
 assert.ok(currentCache, "Der versionsgebundene Cache wurde nicht angelegt.");
 
 let unrelatedMessageWaited = false;

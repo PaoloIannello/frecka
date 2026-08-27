@@ -2307,9 +2307,9 @@
             <button class="nav-item" data-critical-text data-critical-target><span class="nav-icon">⚙</span><span class="nav-label-full">Einstellungen</span><span class="nav-label-short">Einstell.</span></button>
           </nav>`;
           const views = {
-            start: `<div class="app-shell"><main class="main-content"><div class="home-layout"><section class="hero-card"><p class="eyebrow">Dienstleistungen</p><h1>Was möchtest du erfassen?</h1><p class="hero-copy" data-critical-text>Leistungen und Produkte direkt auswählen.</p><button class="button button-primary" data-critical-text data-critical-target>Neuer Beleg</button></section></div></main>${bottomNavigation}</div>`,
-            settings: `<div class="app-shell"><main class="main-content"><section class="settings-overview"><header class="settings-head"><h1>Einstellungen</h1><p class="page-copy" data-critical-text>Unternehmen und Belegabläufe verwalten.</p></header><div class="settings-list"><button class="settings-entry" data-critical-text data-critical-target><span class="settings-entry-icon">▣</span><span><strong>Unternehmen</strong><small data-critical-text>Stammdaten und Leistungsort verwalten</small></span><span class="settings-entry-arrow">›</span></button></div><button class="context-help" data-critical-target aria-label="Hilfe">?</button></section></main>${bottomNavigation}</div>`,
-            detail: `<div class="app-shell"><main class="main-content"><section class="flow-page"><button class="button button-back" data-critical-text data-critical-target>Zurück</button><h1>Belegdetails</h1><div class="receipt-detail-status"><span class="receipt-status is-paid" data-critical-text>Bezahlt</span><strong>39,00 €</strong></div><article class="receipt-detail-card"><div class="receipt-detail-row" data-critical-text><span>Kunde</span><button data-critical-target>Privatkunde</button></div><div class="receipt-detail-items"><div><span><strong>Haarschnitt</strong><small data-critical-text>1 × 39,00 €</small></span><strong>39,00 €</strong></div></div></article><div class="receipt-primary-actions"><button class="button button-secondary" data-critical-text data-critical-target>Beleg anzeigen</button></div></section></main>${bottomNavigation}</div>`,
+            start: `<div class="app-shell"><main class="main-content"><div class="home-layout"><section class="hero-card"><p class="eyebrow">Dienstleistungen</p><h1>Was möchtest du erfassen?</h1><p class="hero-copy" data-critical-text>Leistungen und Produkte direkt auswählen.</p><button class="button button-primary" data-critical-text data-critical-target>Neuer Beleg</button></section></div></main></div>${bottomNavigation}`,
+            settings: `<div class="app-shell"><main class="main-content"><section class="settings-overview"><header class="settings-head"><h1>Einstellungen</h1><p class="page-copy" data-critical-text>Unternehmen und Belegabläufe verwalten.</p></header><div class="settings-list"><button class="settings-entry" data-critical-text data-critical-target><span class="settings-entry-icon">▣</span><span><strong>Unternehmen</strong><small data-critical-text>Stammdaten und Leistungsort verwalten</small></span><span class="settings-entry-arrow">›</span></button></div><button class="context-help" data-critical-target aria-label="Hilfe">?</button></section></main></div>${bottomNavigation}`,
+            detail: `<div class="app-shell"><main class="main-content"><section class="flow-page"><button class="button button-back" data-critical-text data-critical-target>Zurück</button><h1>Belegdetails</h1><div class="receipt-detail-status"><span class="receipt-status is-paid" data-critical-text>Bezahlt</span><strong>39,00 €</strong></div><article class="receipt-detail-card"><div class="receipt-detail-row" data-critical-text><span>Kunde</span><button data-critical-target>Privatkunde</button></div><div class="receipt-detail-items"><div><span><strong>Haarschnitt</strong><small data-critical-text>1 × 39,00 €</small></span><strong>39,00 €</strong></div></div></article><div class="receipt-primary-actions"><button class="button button-secondary" data-critical-text data-critical-target>Beleg anzeigen</button></div></section></main></div>${bottomNavigation}`,
             preview: `<main class="main-content"><section class="flow-page receipt-preview-page"><button class="button button-back" data-critical-text data-critical-target>Zurück</button><div data-document-preview>${receiptMarkup}</div></section></main>`
           };
           const profiles = [
@@ -2380,6 +2380,92 @@
           const larger = await measure("settings", views.settings, profiles[2]);
           const normal = await measure("settings", views.settings, profiles[1]);
           assert(Math.max(...larger.textSizes) > Math.max(...normal.textSizes), "Größere Accessibility-Schrift wird begrenzt");
+        }
+      },
+      {
+        name: "IOS-NAV-001 hält die Bottom-Navigation außerhalb der Scroll-Shell am Viewport",
+        run: async () => {
+          const [indexResponse, cssResponse] = await Promise.all([
+            fetch("../index.html", { cache: "no-store" }),
+            fetch("../styles.css", { cache: "no-store" })
+          ]);
+          assert(indexResponse.ok && cssResponse.ok, "IOS-NAV-001-Laufzeitquellen konnten nicht geladen werden");
+          const index = await indexResponse.text();
+          const css = await cssResponse.text();
+          const parsed = new DOMParser().parseFromString(index, "text/html");
+          const productionNavigation = parsed.querySelector("#bottomNav");
+          assert(productionNavigation, "Bottom-Navigation fehlt im produktiven App-Shell");
+          assertEqual(productionNavigation.parentElement?.tagName, "BODY", "Bottom-Navigation liegt weiterhin in einem scrollenden App-Container");
+          assert(css.includes(".bottom-nav{position:fixed") && css.includes("bottom:calc(12px + var(--safe-bottom))"), "Fixed- oder Safe-Area-Vertrag der Bottom-Navigation fehlt");
+          assert(css.includes(".app-shell{width:min(100%,780px)") && css.includes("padding-bottom:calc(104px + var(--safe-bottom))"), "Inhaltsabstand unter der Viewport-Navigation fehlt");
+
+          const navigationMarkup = `<nav id="bottomNav" class="bottom-nav" aria-label="Hauptnavigation">
+            <button class="nav-item is-active"><span class="nav-icon">⌂</span><span>Start</span></button>
+            <button class="nav-item"><span class="nav-icon">▤</span><span>Belege</span></button>
+            <button class="nav-item"><span class="nav-icon">◎</span><span>Kunden</span></button>
+            <button class="nav-item"><span class="nav-icon">◇</span><span class="nav-label-full">Gutscheine</span><span class="nav-label-short">Gutschein</span></button>
+            <button class="nav-item"><span class="nav-icon">⚙</span><span class="nav-label-full">Einstellungen</span><span class="nav-label-short">Einstell.</span></button>
+          </nav>`;
+          const measureNavigation = width => new Promise((resolve, reject) => {
+            const frame = document.createElement("iframe");
+            const timeout = window.setTimeout(() => {
+              frame.remove();
+              reject(new Error(`Bottom-Navigation wurde bei ${width} px nicht rechtzeitig gerendert`));
+            }, 8000);
+            frame.title = `IOS-NAV-001 bei ${width} Pixel`;
+            frame.style.cssText = `position:fixed;left:-2000px;top:0;width:${width}px;height:807px;border:0;`;
+            frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><link rel="stylesheet" href="../styles.css"></head><body><div class="app-shell"><main class="main-content"><section class="settings-overview"><h1>Einstellungen</h1>${Array.from({ length: 70 }, (_, index) => `<p>Scrollinhalt ${index + 1}</p>`).join("")}</section></main></div>${navigationMarkup}</body></html>`;
+            frame.addEventListener("load", () => window.requestAnimationFrame(() => {
+              try {
+                const view = frame.contentWindow;
+                const contentDocument = frame.contentDocument;
+                const documentElement = contentDocument.documentElement;
+                const navigation = contentDocument.querySelector("#bottomNav");
+                const shell = contentDocument.querySelector(".app-shell");
+                if (!navigation || !shell) throw new Error("Navigation oder App-Shell fehlt");
+                const before = navigation.getBoundingClientRect();
+                const position = view.getComputedStyle(navigation).position;
+                const shellPaddingBottom = Number.parseFloat(view.getComputedStyle(shell).paddingBottom);
+                view.scrollTo(0, 600);
+                view.requestAnimationFrame(() => view.requestAnimationFrame(() => {
+                  const after = navigation.getBoundingClientRect();
+                  const result = {
+                    viewportWidth: view.innerWidth,
+                    clientWidth: documentElement.clientWidth,
+                    scrollWidth: documentElement.scrollWidth,
+                    scrollY: view.scrollY,
+                    position,
+                    parentTag: navigation.parentElement?.tagName,
+                    beforeTop: before.top,
+                    afterTop: after.top,
+                    beforeBottom: before.bottom,
+                    afterBottom: after.bottom,
+                    navigationHeight: after.height,
+                    shellPaddingBottom
+                  };
+                  window.clearTimeout(timeout);
+                  frame.remove();
+                  resolve(result);
+                }));
+              } catch (error) {
+                window.clearTimeout(timeout);
+                frame.remove();
+                reject(error);
+              }
+            }), { once: true });
+            document.body.append(frame);
+          });
+
+          for (const width of [320, 390, 411]) {
+            const layout = await measureNavigation(width);
+            assertEqual(layout.viewportWidth, width, `Falscher Navigations-Viewport bei ${width} px`);
+            assert(layout.scrollY > 0, `Navigationsprüfung hat bei ${width} px nicht gescrollt`);
+            assertEqual(layout.position, "fixed", `Navigation ist bei ${width} px nicht fixed`);
+            assertEqual(layout.parentTag, "BODY", `Navigation liegt bei ${width} px nicht direkt am Viewport-Root`);
+            assert(Math.abs(layout.afterTop - layout.beforeTop) <= 1 && Math.abs(layout.afterBottom - layout.beforeBottom) <= 1, `Navigation wanderte beim Scrollen bei ${width} px`);
+            assert(layout.scrollWidth <= layout.clientWidth, `Navigation erzeugt horizontalen Überlauf bei ${width} px`);
+            assert(layout.shellPaddingBottom >= layout.navigationHeight + 20, `Inhaltsabstand reicht bei ${width} px nicht für die Navigation`);
+          }
         }
       },
       {
