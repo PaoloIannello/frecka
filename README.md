@@ -1,16 +1,27 @@
-# FRECKA – 0.11.5 / LICENSE-005
+# FRECKA – 0.11.6 / ANDROID-002
 
-Browserbasierte FRECKA-PWA 0.11.5 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der Geräteprüfungsstand basiert auf der real abgenommenen Beta-Basis `0.11.4-e628c11` und ergänzt ausschließlich DOCUMENT-001, LICENSE-005 sowie notwendige Versions-, Cache-, Diagnose-, Test- und Releaseanpassungen.
+Browserbasierte FRECKA-PWA 0.11.6 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der Build ANDROID-002 bündelt ausschließlich die seit 0.11.5 abgeschlossenen Kompatibilitätsblöcke ANDROID-001, IOS-NAV-001 und ANDROID-002 sowie die notwendigen Versions-, Cache-, Test- und Releaseanpassungen.
 
-LICENSE-005 hebt das IndexedDB-Schema von 5 auf 6 an und trennt die portable Lizenzreferenz Version 2 vom ausschließlich gerätelokalen `licenseRuntime`-Store. Nicht exportierbare P-256-Privatkeys, Public-Key-Thumbprint und optionale Tokenruntime bleiben strikt außerhalb von Tenant-Snapshot, Backup, Restore und Export. Die lokale Ansicht zeigt nur einen gekürzten, öffentlichen Schlüsselvergleichswert und das Ergebnis des Signatur-Selbsttests; private Schlüssel, Geräte-ID und Token bleiben verborgen. Es gibt weiterhin keinen Lizenzserver, Trialstart, Kauf, wirksamen Lizenzstatus oder Produktsperre; vor LICENSE-006 sind reale CryptoKey-Persistenztests auf iPhone/Home-Screen-PWA und Android Pflicht.
+ANDROID-001 sichert die mobile Skalierung und Touch-Ziele auch für Android-nahe Darstellungsprofile ab. IOS-NAV-001 verankert die Bottom-Navigation außerhalb der scrollenden App-Shell direkt am Viewport. ANDROID-002 behandelt den tatsächlichen File-Share nicht mehr als durch `canShare()` garantiert, klassifiziert Fehler neutral und bietet PDF- sowie ZIP-Speichern ausschließlich als bewusste Folgeaktion an. Der erfolgreiche iPhone-Datei-Share bleibt ohne Plattformweiche erhalten.
 
-Der reale iPhone-Test von `0.11.4-e628c11` mit vorhandenem historischem Bestand hat Backup, Restore und Offline-Kaltstart bestanden. 0.11.4/BACKUP-006 ist damit die aktuelle stabile Beta-Basis. Dieser Nachweis gilt nicht als Gerätefreigabe für die neue CryptoKey-Runtime von 0.11.5.
+Die reale Gerätebasis bestätigt die fixierte Bottom-Navigation auf iPhone und Android sowie den grundsätzlich funktionsfähigen Android-Stand bei normaler Textskalierung. Der vor ANDROID-002 diagnostizierte PDF-/ZIP-Share-Fehler in Samsung Internet ist implementierungsseitig abgesichert, aber erst nach Veröffentlichung von 0.11.6 real abzunehmen. LICENSE-005 und das IndexedDB-Schema 6 bleiben unverändert; Lizenzserver, Trial, Kauf, Payment und Produktsperren sind weiterhin nicht enthalten.
 
 Ein vollständig neuer Mandant startet ohne Kunden, Katalogpositionen, Belege, offene Zahlungen, Korrekturen, Gutscheine, Umsätze oder Logoassets. Neutrale technische Defaults, optionale Vorlagen und die ausschließlich für PERSISTENCE-010 erlaubte historische Vierer-Reparaturquelle sind strikt getrennt. Die verbindliche Erststartinventur und die 15-Punkte-Übergabecheckliste stehen in [`docs/beta-handoff.md`](docs/beta-handoff.md).
 
 UX-011 / UPDATE-002 / BACKUP-003/004 ergänzt darauf eine reale Seite **Einstellungen → Update**, bereinigt veraltete „Geplant“-Kennzeichnungen und erinnert nach einem wählbaren Intervall ohne bestätigte Sicherungsdatei nicht blockierend an ein neues lokales Backup. Zur Auswahl stehen 48 Stunden, 5 Tage und wöchentlich; wöchentlich ist der abwärtskompatible Standard. Die manuelle Suche verwendet den vorhandenen Updatecontroller; Restore übernimmt die Intervallwahl, gilt aber niemals als neue Sicherung und bewahrt lokale Frist- und Snooze-Zeitpunkte.
 
 ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzeit aufrufbare Installationshilfe für iPhone/iPad und Android. Sie priorisiert die passende Anleitung ausschließlich anhand lokaler Browsermerkmale, zeigt im Standalone-Modus den bereits installierten Zustand und bleibt vollständig offline verfügbar. Beide Plattformen können immer manuell gewählt werden. Der kompakte Ablauf und die abweichenden Android-Bezeichnungen sind in [`docs/installation.md`](docs/installation.md) dokumentiert.
+
+## Neu in 0.11.6
+
+- ANDROID-001: robuste mobile Mindestgrößen, Touch-Target-Untergrenzen und Android-nahe 411×807-Regressionsprofile
+- IOS-NAV-001: Bottom-Navigation als direktes `body`-Kind außerhalb der scrollenden `.app-shell`, mit unverändertem Fixed-/Safe-Area-Vertrag
+- ANDROID-002: differenzierte File-Share-Fehlerklassifikation ohne Samsung-UA-Weiche und ohne unbewiesene Berechtigungsbehauptung
+- explizite PDF- und Steuerberater-ZIP-Speichern-Fallbacks nach tatsächlichem Share-Fehler
+- kein automatischer zweiter Share-Dialog oder Download nach fehlgeschlagenem Share beziehungsweise Benutzerabbruch
+- 17 gezielte Share-Smoke-Fälle für PDF, ZIP, Capability, Erfolg, Abbruch und technische Fehler
+- einheitliche Release-, Asset- und App-Shell-Kennung `0.11.6 / ANDROID-002 / android002-1`
+- ANDROID-003 ist nicht enthalten
 
 ## Neu in 0.11.5
 
