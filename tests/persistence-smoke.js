@@ -2229,7 +2229,7 @@
           ["is-share", "is-menu", "is-home", "is-app", "is-confirm"].forEach(icon => assert(css.includes(icon), `Lokales Piktogramm fehlt: ${icon}`));
           assert(css.includes("@media(max-width:390px)") && css.includes("@media(max-width:350px)"), "Mobile Installationsdarstellung ist nicht abgesichert");
           assert(!index.includes('data-route="installation"'), "Installationshilfe wurde fälschlich zur Hauptnavigation hinzugefügt");
-          assert(worker.includes('\"./js/app.js?v=license005-1\"') && worker.includes('\"./styles.css?v=license005-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
+          assert(worker.includes('\"./js/app.js?v=license005-1\"') && worker.includes('\"./styles.css?v=android001-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
 
           const measureInstallationLayout = width => new Promise((resolve, reject) => {
             const frame = document.createElement("iframe");
@@ -2273,6 +2273,113 @@
             assert(layout.scrollWidth <= layout.clientWidth, `Horizontaler Überlauf bei ${width} px`);
             assertEqual(layout.steps, 6, `Installationsschritte fehlen bei ${width} px`);
           }
+        }
+      },
+      {
+        name: "ANDROID-001 sichert das 411-px-Mobilprofil bei normaler, kleiner und größerer Root-Schrift ab",
+        run: async () => {
+          const [appResponse, cssResponse, indexResponse] = await Promise.all([
+            fetch("../js/app.js", { cache: "no-store" }),
+            fetch("../styles.css", { cache: "no-store" }),
+            fetch("../index.html", { cache: "no-store" })
+          ]);
+          assert(appResponse.ok && cssResponse.ok && indexResponse.ok, "ANDROID-001-Laufzeitquellen konnten nicht geladen werden");
+          const appSource = await appResponse.text();
+          const css = await cssResponse.text();
+          const index = await indexResponse.text();
+          assert(index.includes('content="width=device-width, initial-scale=1, viewport-fit=cover"'), "Mobiler Viewport-Vertrag fehlt");
+          assert(index.includes('href="styles.css?v=android001-1"'), "ANDROID-001-Styles besitzen keinen eigenen Cache-Schlüssel");
+          assert(!css.includes("text-size-adjust") && !css.includes("font-size: 16px !important"), "Browserpräferenz wird aggressiv überschrieben");
+          ["renderHome", "renderSettings", "renderReceiptDetail", "renderReceiptPreview"].forEach(renderer => {
+            assert(appSource.includes(`function ${renderer}(`), `Produktive Ansicht fehlt: ${renderer}`);
+          });
+          [".nav-item", ".settings-entry", ".receipt-detail-row", ".receipt-paper"].forEach(selector => {
+            assert(css.includes(selector), `Robustheitsziel fehlt im Stylesheet: ${selector}`);
+          });
+
+          const receiptModel = documentApi.createReceiptDocumentModel(receiptDocumentFixture(), documentOptions());
+          const receiptMarkup = documentViewApi.renderReceipt(receiptModel, { interactiveQr: false });
+          const bottomNavigation = `<nav class="bottom-nav" aria-label="Hauptnavigation">
+            <button class="nav-item is-active" data-critical-text data-critical-target><span class="nav-icon">⌂</span><span>Start</span></button>
+            <button class="nav-item" data-critical-text data-critical-target><span class="nav-icon">▤</span><span>Belege</span></button>
+            <button class="nav-item" data-critical-text data-critical-target><span class="nav-icon">◎</span><span>Kunden</span></button>
+            <button class="nav-item" data-critical-text data-critical-target><span class="nav-icon">◇</span><span class="nav-label-full">Gutscheine</span><span class="nav-label-short">Gutschein</span></button>
+            <button class="nav-item" data-critical-text data-critical-target><span class="nav-icon">⚙</span><span class="nav-label-full">Einstellungen</span><span class="nav-label-short">Einstell.</span></button>
+          </nav>`;
+          const views = {
+            start: `<div class="app-shell"><main class="main-content"><div class="home-layout"><section class="hero-card"><p class="eyebrow">Dienstleistungen</p><h1>Was möchtest du erfassen?</h1><p class="hero-copy" data-critical-text>Leistungen und Produkte direkt auswählen.</p><button class="button button-primary" data-critical-text data-critical-target>Neuer Beleg</button></section></div></main>${bottomNavigation}</div>`,
+            settings: `<div class="app-shell"><main class="main-content"><section class="settings-overview"><header class="settings-head"><h1>Einstellungen</h1><p class="page-copy" data-critical-text>Unternehmen und Belegabläufe verwalten.</p></header><div class="settings-list"><button class="settings-entry" data-critical-text data-critical-target><span class="settings-entry-icon">▣</span><span><strong>Unternehmen</strong><small data-critical-text>Stammdaten und Leistungsort verwalten</small></span><span class="settings-entry-arrow">›</span></button></div><button class="context-help" data-critical-target aria-label="Hilfe">?</button></section></main>${bottomNavigation}</div>`,
+            detail: `<div class="app-shell"><main class="main-content"><section class="flow-page"><button class="button button-back" data-critical-text data-critical-target>Zurück</button><h1>Belegdetails</h1><div class="receipt-detail-status"><span class="receipt-status is-paid" data-critical-text>Bezahlt</span><strong>39,00 €</strong></div><article class="receipt-detail-card"><div class="receipt-detail-row" data-critical-text><span>Kunde</span><button data-critical-target>Privatkunde</button></div><div class="receipt-detail-items"><div><span><strong>Haarschnitt</strong><small data-critical-text>1 × 39,00 €</small></span><strong>39,00 €</strong></div></div></article><div class="receipt-primary-actions"><button class="button button-secondary" data-critical-text data-critical-target>Beleg anzeigen</button></div></section></main>${bottomNavigation}</div>`,
+            preview: `<main class="main-content"><section class="flow-page receipt-preview-page"><button class="button button-back" data-critical-text data-critical-target>Zurück</button><div data-document-preview>${receiptMarkup}</div></section></main>`
+          };
+          const profiles = [
+            { name: "root-8-naeherung", root: 8 },
+            { name: "normal-100", root: 16 },
+            { name: "accessibility-150", root: 24 }
+          ];
+          const measure = (viewName, markup, profile) => new Promise((resolve, reject) => {
+            const frame = document.createElement("iframe");
+            const timeout = window.setTimeout(() => {
+              frame.remove();
+              reject(new Error(`${viewName}/${profile.name} wurde nicht rechtzeitig gerendert`));
+            }, 8000);
+            frame.title = `ANDROID-001 ${viewName} ${profile.name}`;
+            frame.dataset.referenceDpr = "2.625";
+            frame.style.cssText = "position:fixed;left:-2000px;top:0;width:411px;height:807px;border:0;";
+            frame.srcdoc = `<!doctype html><html style="font-size:${profile.root}px"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><link rel="stylesheet" href="../styles.css"></head><body>${markup}</body></html>`;
+            frame.addEventListener("load", () => window.requestAnimationFrame(() => {
+              try {
+                const contentDocument = frame.contentDocument;
+                const documentElement = contentDocument.documentElement;
+                const view = frame.contentWindow;
+                const criticalTextElements = [...contentDocument.querySelectorAll("[data-critical-text]")];
+                if (viewName === "preview") {
+                  criticalTextElements.push(...contentDocument.querySelectorAll(".receipt-paper header > strong, .receipt-paper-meta, .receipt-paper-items > div, .receipt-paper-total, .receipt-paper footer"));
+                }
+                const textSizes = criticalTextElements.map(element => Number.parseFloat(view.getComputedStyle(element).fontSize));
+                const targets = [...contentDocument.querySelectorAll("[data-critical-target]")].map(element => {
+                  const rect = element.getBoundingClientRect();
+                  return { width: rect.width, height: rect.height, text: element.textContent.trim() };
+                });
+                const result = {
+                  viewportWidth: view.innerWidth,
+                  viewportHeight: view.innerHeight,
+                  mobileBreakpoint: view.matchMedia("(max-width: 420px)").matches,
+                  clientWidth: documentElement.clientWidth,
+                  scrollWidth: documentElement.scrollWidth,
+                  rootSize: Number.parseFloat(view.getComputedStyle(documentElement).fontSize),
+                  referenceDpr: Number(frame.dataset.referenceDpr),
+                  textSizes,
+                  targets
+                };
+                window.clearTimeout(timeout);
+                frame.remove();
+                resolve(result);
+              } catch (error) {
+                window.clearTimeout(timeout);
+                frame.remove();
+                reject(error);
+              }
+            }), { once: true });
+            document.body.append(frame);
+          });
+
+          for (const profile of profiles) {
+            for (const [viewName, markup] of Object.entries(views)) {
+              const layout = await measure(viewName, markup, profile);
+              assertEqual(layout.viewportWidth, 411, `${viewName}/${profile.name}: falsche Viewportbreite`);
+              assertEqual(layout.viewportHeight, 807, `${viewName}/${profile.name}: falsche Viewporthoehe`);
+              assert(layout.mobileBreakpoint, `${viewName}/${profile.name}: mobiler Breakpoint ist nicht aktiv`);
+              assertEqual(layout.referenceDpr, 2.625, `${viewName}/${profile.name}: S24+-Referenz-DPR fehlt`);
+              assert(layout.scrollWidth <= layout.clientWidth, `${viewName}/${profile.name}: horizontaler Überlauf`);
+              assertEqual(layout.rootSize, profile.root, `${viewName}/${profile.name}: deterministische Root-Schrift ist falsch`);
+              assert(layout.textSizes.length > 0 && layout.textSizes.every(size => size >= 12), `${viewName}/${profile.name}: kritischer Text ist kleiner als 12 px`);
+              assert(layout.targets.length > 0 && layout.targets.every(target => target.width >= 44 && target.height >= 44), `${viewName}/${profile.name}: kritisches Touch Target ist kleiner als 44 px`);
+            }
+          }
+          const larger = await measure("settings", views.settings, profiles[2]);
+          const normal = await measure("settings", views.settings, profiles[1]);
+          assert(Math.max(...larger.textSizes) > Math.max(...normal.textSizes), "Größere Accessibility-Schrift wird begrenzt");
         }
       },
       {

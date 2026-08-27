@@ -1,11 +1,11 @@
 "use strict";
 
 const APP_SHELL_CACHE_PREFIX = "frecka-app-shell-";
-const APP_SHELL_CACHE = `${APP_SHELL_CACHE_PREFIX}0.11.5-license005-1`;
+const APP_SHELL_CACHE = `${APP_SHELL_CACHE_PREFIX}0.11.5-android001-1`;
 const APP_ENTRY_URL = new URL("./index.html", self.location.href).href;
 const APP_SHELL_PATHS = Object.freeze([
   "./index.html",
-  "./styles.css?v=license005-1",
+  "./styles.css?v=android001-1",
   "./manifest.webmanifest?v=license005-1",
   "./icons/icon-192.png",
   "./icons/icon-512.png",

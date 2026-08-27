@@ -5801,3 +5801,88 @@ body.public-document-mode {
   .frecka-qr { cursor: default; }
   .receipt-paper-qr { break-inside: avoid; }
 }
+
+/* ANDROID-001 – robuste Mindestgrößen ohne Begrenzung größerer Textskalierung */
+.company-name { font-size: max(1.05rem, 16px); }
+.company-caption,
+.status-pill,
+.step-badge,
+.cart-label,
+.cart-toggle .cart-label,
+.cart-toggle-hint,
+.checkout-section h2 span,
+.price-editor label > span,
+.price-editor-note,
+.price-mode-label > span,
+.discount-label,
+.form-grid label span,
+.receipt-card-main small,
+.receipt-card-number,
+.receipt-status,
+.receipt-detail-items small,
+.related-receipt small,
+.settings-entry small,
+.setting-field > span,
+.setting-field > span small,
+.settings-legacy-address-note,
+.settings-location-choice small,
+.receipt-paper header span,
+.receipt-paper-meta,
+.receipt-paper footer,
+.receipt-paper-items small,
+.receipt-paper header small,
+.receipt-paper-item em,
+.receipt-paper-totals > div,
+.receipt-paper-customer > small,
+.receipt-paper-voucher-payment small,
+.receipt-paper-voucher-payment strong,
+.receipt-paper-kind span,
+.receipt-paper-kind strong,
+.receipt-paper-voucher-link span,
+.receipt-paper-voucher-link strong,
+.document-visible-name,
+.public-viewer-privacy {
+  font-size: max(.75rem, 12px);
+}
+.button,
+.settings-entry,
+.receipt-admin-card,
+.receipt-detail-row,
+.hero-copy,
+.page-copy {
+  font-size: max(1rem, 16px);
+}
+.nav-item { font-size: max(.75rem, 12px); }
+.receipt-paper { font-size: max(1rem, 14px); }
+.receipt-paper header > strong,
+.receipt-paper-total { font-size: max(1.2rem, 16px); }
+.document-brand-logo strong { font-size: max(.78rem, 12px) !important; }
+
+.category-tab,
+.catalog-category-tabs .category-tab,
+.quantity-control button,
+.text-action,
+.remove-item,
+.receipt-detail-row button,
+.context-help,
+.settings-entry-tools .context-help,
+.catalog-row-actions > button,
+.catalog-row-actions > span button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.quantity-control { grid-template-columns: 44px 28px 44px; }
+.quantity-control button { width: 44px; height: 44px; }
+.text-action,
+.remove-item,
+.receipt-detail-row button {
+  display: inline-flex;
+  align-items: center;
+}
+.context-help,
+.settings-entry-tools .context-help { width: 44px; height: 44px; }
+
+@media (max-width: 420px) {
+  .nav-label-full { display: none; }
+  .nav-label-short { display: inline; }
+}

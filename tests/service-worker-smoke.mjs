@@ -85,7 +85,7 @@ assert.equal(skipWaitingCalls, 0, "Die Installation darf den Worker nicht mehr a
 assert.equal(addedUrls.length, 23, "Der vollständige App-Shell muss vorab gecacht werden.");
 assert.equal(new Set(addedUrls).size, addedUrls.length, "App-Shell-URLs dürfen nicht doppelt sein.");
 assert.ok(addedUrls.includes(`${baseUrl}index.html`));
-assert.ok(addedUrls.includes(`${baseUrl}styles.css?v=license005-1`));
+assert.ok(addedUrls.includes(`${baseUrl}styles.css?v=android001-1`));
 assert.ok(addedUrls.includes(`${baseUrl}vendor/jszip-v3.10.1.min.js?v=license005-1`));
 assert.ok(addedUrls.includes(`${baseUrl}js/export-package.js?v=license005-1`));
 assert.ok(addedUrls.includes(`${baseUrl}js/license-runtime.js?v=license005-1`));
@@ -114,7 +114,7 @@ assert.doesNotMatch(source, /LEGACY_AUTO_ACTIVATION_FOR_SERVICEWORKER_002/, "Die
 assert.doesNotMatch(source, /clients\.claim\s*\(/, "Der Worker darf laufende Clients nicht automatisch übernehmen.");
 assert.doesNotMatch(source, /indexedDB|localStorage|sessionStorage/, "Der Worker darf keine Geschäftsdaten berühren.");
 
-const currentCache = [...cacheNames].find(name => name === "frecka-app-shell-0.11.5-license005-1");
+const currentCache = [...cacheNames].find(name => name === "frecka-app-shell-0.11.5-android001-1");
 assert.ok(currentCache, "Der versionsgebundene Cache wurde nicht angelegt.");
 
 let unrelatedMessageWaited = false;
@@ -167,7 +167,7 @@ listeners.get("fetch")({
 assert.equal(await navigationResponse, cachedEntry, "Offline-Navigation muss auf index.html zurückfallen.");
 assert.equal(networkRequests.length, 0, "Für den gecachten Offline-Start darf kein Netzwerkzugriff nötig sein.");
 
-const cachedAsset = { source: "cache", url: `${baseUrl}styles.css?v=license005-1` };
+const cachedAsset = { source: "cache", url: `${baseUrl}styles.css?v=android001-1` };
 responses.set(cachedAsset.url, cachedAsset);
 let assetResponse;
 listeners.get("fetch")({
