@@ -1,5 +1,7 @@
 # FRECKA – 0.11.6 / ANDROID-002
 
+**Arbeitsstand nach v0.11.6: PODOLOGY-001.** Optionale Rezeptverwaltung je Geschäftsbereich, Kundenprofil mit mehreren Rezepten und Schema 7. Produktversion, Build und App-Shell bleiben bis zur gesonderten Releasevorbereitung unverändert. [Datenmodell, Datenschutz und Prüfungen](docs/prescriptions.md).
+
 Browserbasierte FRECKA-PWA 0.11.6 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der Build ANDROID-002 bündelt ausschließlich die seit 0.11.5 abgeschlossenen Kompatibilitätsblöcke ANDROID-001, IOS-NAV-001 und ANDROID-002 sowie die notwendigen Versions-, Cache-, Test- und Releaseanpassungen.
 
 ANDROID-001 sichert die mobile Skalierung und Touch-Ziele auch für Android-nahe Darstellungsprofile ab. IOS-NAV-001 verankert die Bottom-Navigation außerhalb der scrollenden App-Shell direkt am Viewport. ANDROID-002 behandelt den tatsächlichen File-Share nicht mehr als durch `canShare()` garantiert, klassifiziert Fehler neutral und bietet PDF- sowie ZIP-Speichern ausschließlich als bewusste Folgeaktion an. Der erfolgreiche iPhone-Datei-Share bleibt ohne Plattformweiche erhalten.
@@ -290,7 +292,7 @@ Der vollständige Exportvertrag steht in `docs/export.md`.
 - vollständige Prüfung von Format, Mandant, Stores, IDs, Referenzen, Werten und Nummernstand vor jedem Restore
 - Vorschau des Sicherungsinhalts vor dem Überschreiben
 - angebotenes verschlüsseltes Sicherheitsbackup des aktuellen Stands
-- atomarer Restore aller fünf IndexedDB-Stores ohne Teilzustände
+- atomarer Restore aller sechs fachlichen IndexedDB-Stores ohne Teilzustände
 - keine Passphrase, Schlüssel, Geschäftsdaten oder Sicherungsdatei in zentraler Speicherung
 - zentrale und validierte Tenant-Snapshot-API für Backup, Restore und Export
 

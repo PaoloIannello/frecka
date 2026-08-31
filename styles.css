@@ -777,6 +777,28 @@ body.work-mode:not(.catalog-mode) .flow-page {
   padding: 13px 0;
   border-top: 1px dashed #9ba8a4;
 }
+
+/* PODOLOGY-001: private customer subview, not part of document/public layouts. */
+.customer-prescriptions { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.customer-prescriptions h2 { margin: 0; font-size: 1.05rem; }
+.prescription-list { display: grid; gap: 8px; margin: 12px 0; }
+.prescription-list-item { width: 100%; min-width: 0; min-height: 48px; padding: 12px; display: flex; gap: 10px; align-items: start; text-align: left; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
+.prescription-list-item > span { min-width: 0; display: grid; gap: 4px; overflow-wrap: anywhere; }
+.prescription-list-item small, .prescription-capability small { font-size: max(.8rem, 12px); color: var(--muted); line-height: 1.45; }
+.prescription-list-item em { margin-left: auto; font-size: max(.75rem, 12px); font-style: normal; }
+.prescription-capability { display: flex; align-items: start; gap: 10px; padding-top: 12px; min-width: 0; }
+.prescription-capability input { flex: 0 0 22px; width: 22px; height: 22px; }
+.prescription-capability > span { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.prescription-capability strong { font-size: max(.85rem, 14px); }
+.prescription-page { min-width: 0; }
+.prescription-page .form-grid > label { min-width: 0; }
+.prescription-page input, .prescription-page select, .prescription-page textarea { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; font: inherit; font-size: max(1rem, 16px); }
+.prescription-page select { padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.prescription-details { display: grid; gap: 14px; margin: 20px 0; }
+.prescription-details dt { font-size: max(.8rem, 12px); color: var(--muted); }
+.prescription-details dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.prescription-note { white-space: pre-wrap; }
+.prescription-actions { display: grid; gap: 10px; }
 .receipt-paper-customer > span,
 .receipt-paper-customer > strong,
 .receipt-paper-customer > small {

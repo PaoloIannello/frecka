@@ -12,6 +12,8 @@ Die veröffentlichte Version `0.11.1` mit Build `BETA-HANDOFF-001` ergänzt gege
 
 ## 1. Projektvision
 
+Aktueller Entwicklungszusatz PODOLOGY-001 auf Basis von v0.11.6: `features.prescriptionDocumentation` ist pro Geschäftsbereich optional und standardmäßig aus. Rezepte sind ein eigener mandantenbezogener Bestand (`prescriptions`, Schema 7), nicht Teil von Kundenobjekten oder Belegen. Snapshot, verschlüsseltes Backup, Restore und Integritätsprüfung umfassen jetzt sechs Fachstores; `licenseRuntime` bleibt getrennt. Behandlungstext und Rezeptnotizen bleiben aus regulären Exporten, Dokumenten, Public-QR und Diagnoseausgaben ausgeschlossen. Es gibt noch keine Rezeptnutzung oder Behandlungsakte. Die zuvor beschriebenen Fünf-Store-Stände dokumentieren die jeweilige Historie. Verbindliche Details: [Rezeptverwaltung](docs/prescriptions.md).
+
 FRECKA ist ein verlässliches, mobiles Belegwerkzeug für kleine Unternehmen und Selbstständige. Es soll Belege im direkten Kundenkontakt schnell, verständlich und auch ohne Internetverbindung erfassbar machen. Die Anwendung gehört funktional dem Betrieb: Geschäftsdaten verbleiben unter seiner Kontrolle, der laufende Betrieb hängt nicht von einem zentralen FRECKA-Dienst ab.
 
 Der Produkterfolg wird an einem einfachen, robusten Arbeitsablauf gemessen – nicht an der Anzahl verfügbarer Funktionen.
@@ -116,7 +118,7 @@ Ein Build-System, Framework, eine UI-Bibliothek oder zusätzliche Backend-Kompon
 
 IndexedDB ist die verbindliche Hauptdatenbank. Einstellungen werden seit PERSIST-001a, Katalogdaten seit PERSIST-002, Kundenstammdaten seit PERSIST-003, abgeschlossene Belege einschließlich offener Zahlungen, Stornos, Gutschriften und Aktivitäten seit PERSIST-004 sowie Gutscheine einschließlich Restwerten, Referenzen, Snapshots und unveränderlich angehängter Historien seit PERSIST-005 darin gespeichert. BACKUP-001 kann diesen vollständigen mandantenbezogenen Stand verschlüsselt exportieren und nach Vollprüfung atomar wiederherstellen. EXPORT-001 liest denselben validierten Snapshot, projiziert ihn ausschließlich im Arbeitsspeicher und verändert keine gespeicherten Daten. QR-001 leitet aus stabilen Referenzen ausschließlich zur Laufzeit App-Link, QR-Matrix und SVG ab; QR-Grafiken gehören weder in IndexedDB noch in Backup oder Export. DOCUMENT-001 projiziert dieselben gespeicherten Geschäftsvorgänge im Arbeitsspeicher zu Bildschirm- und PDF-Dokumenten. COMM-001 / QR-002 erzeugt daraus eine eigenständig versionierte, datensparsame Public-Whitelist und hält sie ausschließlich im Arbeitsspeicher. Public-Payload, Share-Vorgang, Blob-URLs, QR-Matrizen und SVGs gehören nicht in IndexedDB oder Backup. PDF-Dateien werden nicht persistiert; sie entstehen nur zur Laufzeit für Ansicht, Teilen oder das ausdrücklich erzeugte Steuerberater-ZIP. Belegentwürfe folgen in einem getrennten, ausdrücklich beauftragten Persistenzblock.
 
-Der gerätelokale `licenseRuntime`-Store ist kein Geschäftsdatenstore. Er wird unabhängig von den fünf Tenant-Stores geführt und niemals in Tenant-Snapshot, Backup, Restore, Diagnose oder Export aufgenommen. Eine portable Lizenzreferenz kann keine Geräteautorisierung rekonstruieren.
+Der gerätelokale `licenseRuntime`-Store ist kein Geschäftsdatenstore. Er wird unabhängig von den sechs Tenant-Stores geführt und niemals in Tenant-Snapshot, Backup, Restore, Diagnose oder Export aufgenommen. Eine portable Lizenzreferenz kann keine Geräteautorisierung rekonstruieren.
 
 Verbindliche Regeln:
 
@@ -135,7 +137,7 @@ Verbindliche Regeln:
 - Unverschlüsselte Fachexporte sind bewusste Nutzerdownloads. Kundendaten werden dabei nur für den Exporttyp „Eigene Daten“ und nach ausdrücklicher Auswahl auf die im Filter referenzierten Kunden begrenzt.
 - Öffentliche Fragmentlinks werden nicht als zweite Belegablage behandelt. Der Public Viewer liest sie zustandslos und darf weder Datensätze anlegen noch vorhandene Unternehmerdaten verändern.
 - Die Public-Payload enthält ausschließlich den sichtbaren Dokumentinhalt. Interne IDs, Rohsnapshots, Historien, Notizen sowie nicht angezeigte Telefon- und E-Mail-Daten sind ausgeschlossen.
-- Integritätsdiagnosen verwenden ausschließlich die zentrale Snapshot-Validierung als Wahrheitsquelle. Sie lesen die fünf Tenant-Stores in einer Read-only-Transaktion und dürfen nur Prüfcode, konkrete Invariante sowie die dafür notwendigen technischen IDs, Referenzen, Belegnummern, Belegarten und Zeit-/Historienreferenzen ausgeben. Kunden-, Unternehmens-, Positions-, Betrags- und Kennwortdaten bleiben ausgeschlossen; eine Ausgabe erfolgt erst nach bewusster Nutzeraktion.
+- Integritätsdiagnosen verwenden ausschließlich die zentrale Snapshot-Validierung als Wahrheitsquelle. Sie lesen die sechs Tenant-Stores in einer Read-only-Transaktion und dürfen nur Prüfcode, konkrete Invariante sowie die dafür notwendigen technischen IDs, Referenzen, Belegnummern, Belegarten und Zeit-/Historienreferenzen ausgeben. Kunden-, Unternehmens-, Positions-, Betrags- und Kennwortdaten bleiben ausgeschlossen; eine Ausgabe erfolgt erst nach bewusster Nutzeraktion.
 
 ## 8. Update-Strategie
 

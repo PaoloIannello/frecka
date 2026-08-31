@@ -72,19 +72,22 @@ BETA-HANDOFF-001 trennt den produktiven Erststart zusätzlich von der historisch
 ## Datenbankvertrag
 
 - Datenbankname: `frecka`
-- Datenbankschema-Version: `6`
-- Object Stores: `settings`, `catalog`, `customers`, `receipts`, `vouchers` und `licenseRuntime`
-- Key Path der fünf Tenant-Stores: `tenantId`; Key Path von `licenseRuntime`: `localTenantId`
+- Datenbankschema-Version: `7` (PODOLOGY-001)
+- Object Stores: `settings`, `catalog`, `customers`, `receipts`, `vouchers`, `prescriptions` und `licenseRuntime`
+- Key Path der sechs Tenant-Stores: `tenantId`; Key Path von `licenseRuntime`: `localTenantId`
 - Standardschlüssel/Instanz: `local-default`
 - Einstellungsformat-Version: `1`
 - Katalogformat-Version: `1`
 - Kundenformat-Version: `1`
 - Belegformat-Version: `1`
 - Gutscheinformat-Version: `1`
+- Rezeptformat-Version: `1`
+
+PODOLOGY-001 ergänzt bei 6→7 ausschließlich den leeren `prescriptions`-Store samt leeren Datensätzen für bestehende Settings-Mandanten und die aktuelle Instanz. Die Versionchange-Transaktion verändert keine bisherigen Store-Datensätze; ein Abbruch rollt das Upgrade zurück. Die bestehende historische Settingsnormalisierung ergänzt anschließend je Geschäftsbereich die fehlende Capability mit `false`. Details, Datenschutz und Grenzen: [Rezeptverwaltung](prescriptions.md).
 
 Das Upgrade von Schema-Version 4 auf 5 legt ausschließlich den neuen `vouchers`-Store an. LICENSE-005 hebt anschließend von 5 auf 6 an und ergänzt ausschließlich `licenseRuntime` mit `localTenantId` als Schlüssel; alle fünf bisherigen Stores und Datensätze bleiben unverändert. Die älteren Upgradepfade ergänzen weiterhin alle später hinzugekommenen Stores. Es werden dabei keine Demo-Geschäftsdaten ungefragt geschrieben. Datenbankschema- und Datenformatversionen werden unabhängig versioniert.
 
-BACKUP-001 verändert das Datenbankschema nicht. Die zentrale Persistenzschicht ergänzt `exportTenantSnapshot`, `validateTenantSnapshot` und `restoreTenantSnapshot`. Export liest alle fünf Stores konsistent; Restore ersetzt sie nach einer vollständigen Vorabprüfung in einer einzigen Readwrite-Transaktion. Das verschlüsselte Dateiformat und der genaue Ablauf sind in `docs/backup-restore.md` beschrieben.
+Die zentrale Persistenzschicht verwendet `exportTenantSnapshot`, `validateTenantSnapshot` und `restoreTenantSnapshot`. Seit PODOLOGY-001 lesen Snapshot und Integritätsdiagnose alle sechs Fachstores konsistent; Restore ersetzt sie nach vollständiger Vorabprüfung in einer einzigen Readwrite-Transaktion. Auch der Kandidat der historischen Vierer-Reparatur enthält den Rezeptstore, schreibt aber weiterhin ausschließlich zulässige historische Receipts. `licenseRuntime` bleibt ausgeschlossen. Das verschlüsselte Dateiformat und der Ablauf sind in [Backup/Restore](backup-restore.md) beschrieben.
 
 EXPORT-001 verändert das Datenbankschema ebenfalls nicht. Der fachliche Export ruft dieselbe Funktion `exportTenantSnapshot` auf und übergibt den validierten Snapshot an die reine Projektion in `js/export.js`. Das Exportmodul öffnet keine Datenbank, liest keine UI-Listen und schreibt keine Daten. Der CSV-Vertrag und die Datenschutzgrenzen sind in `docs/export.md` dokumentiert.
 
@@ -105,7 +108,7 @@ Der Settings-Datensatz enthält ausschließlich:
 - `backupReminder` mit Formatversion, genau einer Intervallwahl (`48-hours`, `5-days` oder `weekly`), lokalem Fristbeginn, Zeitpunkt der letzten bestätigten Sicherung und optionalem 24-Stunden-Snooze;
 - `setup.status` mit `not-started`, `started` oder `completed`.
 
-Der Datensatz im Store `licenseRuntime` besitzt Formatversion 1 und enthält ausschließlich die gerätelokale Lizenzruntime gemäß LICENSE-004: lokale Tenant- und Lizenzreferenz, optionale Serverreferenz, opake Geräte-ID, privater und öffentlicher P-256-`CryptoKey`, Public-Key-Thumbprint sowie optionale signierte Token-, Validierungs-, Zeitanker-, Bindungs- und Entitlementprojektionen. Der Initialzustand enthält weder Token noch Trial-/Active-Status oder wirksame Entitlements und meldet intern höchstens `activation_required`. Private Schlüssel sind nicht exportierbar. Dieser Store wird niemals in den fünf-Store-Tenant-Snapshot, Backup, Restore, Export oder die lokale Integritätsdiagnose aufgenommen.
+Der Datensatz im Store `licenseRuntime` besitzt Formatversion 1 und enthält ausschließlich die gerätelokale Lizenzruntime gemäß LICENSE-004: lokale Tenant- und Lizenzreferenz, optionale Serverreferenz, opake Geräte-ID, privater und öffentlicher P-256-`CryptoKey`, Public-Key-Thumbprint sowie optionale signierte Token-, Validierungs-, Zeitanker-, Bindungs- und Entitlementprojektionen. Der Initialzustand enthält weder Token noch Trial-/Active-Status oder wirksame Entitlements und meldet intern höchstens `activation_required`. Private Schlüssel sind nicht exportierbar. Dieser Store wird niemals in den sechs-Fachstore-Tenant-Snapshot, Backup, Restore, Export oder die lokale Integritätsdiagnose aufgenommen.
 
 BACKUP-003 verändert weder Datenbankschema noch Settings-Formatversion. Fehlen die Reminder-Metadaten bei Erstinstallation oder historischem Bestand, wird lokal der Zeitpunkt der ersten kompatiblen Initialisierung als Fristbeginn gespeichert; dadurch erscheint keine sofortige Erinnerung. Der Status enthält keine personenbezogenen Daten. Beim atomaren Restore werden Unternehmen und alle fachlichen Stores aus der Sicherung übernommen, `backupReminder` bleibt jedoch vom aktuellen Gerät erhalten. Eine alte Sicherungsdatei kann damit weder die Wochenfrist fälschlich zurücksetzen noch einen lokalen Snooze überschreiben.
 
@@ -209,7 +212,7 @@ PERSISTENCE-010 ergänzt keine allgemeine Migration. Es behebt ausschließlich d
 - `receipt_demo_2026_000124` / `2026-000124` / `vch_8f4c2a91d7e6`;
 - `receipt_demo_2026_000131` / `2026-000131` / `vch_1b7e93a4c5d8`.
 
-Die kanonischen Receipt-Daten stammen ausschließlich aus einer getrennten Reparaturquelle mit exakt diesen vier Beleg-/Gutscheinpaaren. Sie gehören nicht zum aktiven Erststart-Seed. Vor jedem Schreibzugriff liest die Reparatur alle fünf Tenant-Stores innerhalb einer gemeinsamen Readwrite-Transaktion, sammelt sämtliche Gutschein-/Verkaufsbelegverletzungen und erzeugt zunächst einen vollständig validierten Kandidaten im Arbeitsspeicher. Geschrieben wird ausschließlich der Receipt-Store und nur dann, wenn nach dem Ergänzen aller fehlenden zulässigen Demo-Receipts der vollständige Tenant-Snapshot gültig ist. Einstellungen, Belegnummernfolge, Katalog, Kunden, Gutscheine, vorhandene Receipts und neuere Gutscheinverkäufe werden nicht verändert.
+Die kanonischen Receipt-Daten stammen ausschließlich aus einer getrennten Reparaturquelle mit exakt diesen vier Beleg-/Gutscheinpaaren. Sie gehören nicht zum aktiven Erststart-Seed. Vor jedem Schreibzugriff liest die Reparatur alle sechs Tenant-Stores innerhalb einer gemeinsamen Readwrite-Transaktion, sammelt sämtliche Gutschein-/Verkaufsbelegverletzungen und erzeugt zunächst einen vollständig validierten Kandidaten im Arbeitsspeicher. Geschrieben wird ausschließlich der Receipt-Store und nur dann, wenn nach dem Ergänzen aller fehlenden zulässigen Demo-Receipts der vollständige Tenant-Snapshot gültig ist. Einstellungen, Belegnummernfolge, Katalog, Kunden, Gutscheine, vorhandene Receipts und neuere Gutscheinverkäufe werden nicht verändert.
 
 Harte Stop-Bedingungen sind insbesondere ID- oder Nummernkollisionen, abweichende Voucher-Referenzen oder Gutscheincodes, falsche Belegart beziehungsweise Gegenreferenz, vom kanonischen Demo-Receipt abweichende vorhandene Daten, doppelte Voucher-Ansprüche, fehlende oder mehrdeutige kanonische Quellen und jede weitere Snapshotverletzung, die nach der Ergänzung fortbestünde. Bei einem Stopp gibt es keinen `put`; bei einem simulierten oder realen Schreibfehler rollt IndexedDB die gesamte Transaktion zurück. Ein zweiter erfolgreicher Aufruf erkennt alle vier Paare als vollständig und bleibt ein No-op.
 

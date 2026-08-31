@@ -1,7 +1,7 @@
 # Verschlüsselte Sicherung und Wiederherstellung
 
 **Stand:** BACKUP-006 auf Basis BACKUP-005, BRANDING-002, BACKUP-004, TSE-002, SETTINGS-002, SETTINGS-001, USER-001, BACKUP-002, BACKUP-001 und PERSISTENCE-007
-**Datenbankschema:** 6
+**Datenbankschema:** 7 (PODOLOGY-001; Backup-Kryptographie und Ausgabeablauf unverändert)
 **Backupformat:** 1
 **Geltungsbereich:** Vollständiger lokaler Datenstand eines Mandanten
 
@@ -15,9 +15,9 @@ BACKUP-001 enthält keine Cloudanbindung, Synchronisation, Automatik, Zeitplanun
 
 `js/persistence.js` stellt die wiederverwendbaren mandantenbezogenen Datenoperationen bereit:
 
-- `exportTenantSnapshot(options)` liest `settings`, `catalog`, `customers`, `receipts` und `vouchers` in einer gemeinsamen Readonly-Transaktion. Fehlt beim Erststart noch ein Store-Datensatz, darf ausschließlich die Projektion der bestehenden zentralen Laufzeitquelle als Fallback verwendet werden.
+- `exportTenantSnapshot(options)` liest `settings`, `catalog`, `customers`, `receipts`, `vouchers` und `prescriptions` in einer gemeinsamen Readonly-Transaktion. Bestehende Erststart-Fallbacks bleiben auf die zentrale Laufzeitquelle begrenzt. Ein fehlender/beschädigter Rezeptbestand eines bestehenden Schema-7-Mandanten wird niemals durch ein leeres Laufzeitarray ersetzt.
 - `validateTenantSnapshot(snapshot)` prüft das komplette entschlüsselte Datenpaket, ohne IndexedDB zu verändern.
-- `restoreTenantSnapshot(snapshot)` validiert erneut und ersetzt danach alle fünf Store-Datensätze in genau einer Readwrite-Transaktion.
+- `restoreTenantSnapshot(snapshot)` validiert erneut und ersetzt danach alle sechs Fachstore-Datensätze in genau einer Readwrite-Transaktion.
 
 Die UI besitzt keinen direkten IndexedDB-Zugriff. Das spätere Exportmodul kann `exportTenantSnapshot` wiederverwenden, ohne eine zweite Datenquelle oder Parallelarchitektur einzuführen.
 
@@ -36,7 +36,7 @@ Der verschlüsselte Payload ist ein JSON-Objekt mit:
 
 - `backupFormat: "FRECKA_TENANT_SNAPSHOT"`;
 - `backupFormatVersion: 1`;
-- `appDataSchemaVersion: 6`; historische Schema-5-Snapshots bleiben lesbar und werden bei erfolgreicher Prüfung auf die aktuelle Snapshotprojektion angehoben;
+- `appDataSchemaVersion: 7`; unterstützte historische Schema-5/6-Snapshots ohne Rezeptstore bleiben lesbar und erhalten bei erfolgreicher Prüfung einen leeren Rezeptbestand sowie fehlende Capabilities mit `false`;
 - `tenantId`;
 - `createdAt` als ISO-Zeitstempel;
 - `app.version` und `app.build`;
@@ -44,7 +44,10 @@ Der verschlüsselte Payload ist ein JSON-Objekt mit:
 - `stores.catalog`;
 - `stores.customers`;
 - `stores.receipts`;
-- `stores.vouchers`.
+- `stores.vouchers`;
+- `stores.prescriptions` (einschließlich archivierter Rezepte und interner Rezeptnotizen).
+
+Die verschlüsselte Gesamtsicherung enthält damit besonders sensible Rezeptinhalte. Nur der bewusst ausgelöste Vollrestore übernimmt sie; reguläre CSV-/ZIP-Exporte enthalten sie nicht. Ein älteres Backup ersetzt auch den aktuellen Rezeptbestand durch seinen damals leeren Bestand, es ist kein Merge. Ab Schema 7 ist ein fehlender Rezeptstore ein Fehler. Siehe [Rezeptverwaltung](prescriptions.md).
 
 Jeder Store enthält seinen bestehenden versionierten Datensatz einschließlich `tenantId`. Das Snapshotformat erfindet keine zusätzlichen Geschäftsmodelle. Beleg- und Gutscheinsnapshots, Historien, QR-Referenzen, Nummernstand und fachliche Referenzen bleiben Teil ihrer bisherigen Store-Objekte.
 
@@ -103,7 +106,7 @@ Die aktuelle Mindestlänge einer Passphrase beträgt 12 Zeichen. Sie ersetzt kei
 Vor jeder Schreibtransaktion werden mindestens geprüft:
 
 - äußeres und inneres Format sowie unterstützte Versionsstände;
-- vollständige Anwesenheit aller fünf Stores;
+- vollständige Anwesenheit aller sechs Fachstores (mit der beschriebenen Altformat-Kompatibilität);
 - Übereinstimmung sämtlicher `tenantId`-Werte;
 - genau ein aktiver Settings-Benutzer mit derselben `tenantId` und passender `activeUserId`;
 - genau eine vollständige portable Lizenzreferenz Version 2 mit derselben `localTenantId`, gültiger opaker Lizenz-ID, festem Produkt `frecka.core`/Hauptversion 1 und konsistenter optionaler Serververknüpfung;
@@ -126,7 +129,7 @@ Unvollständige, beschädigte, manipulierte, mandantenfremde oder inkompatible D
 
 ## Atomare Wiederherstellung
 
-Nach positiver Vollvalidierung öffnet die Persistenzschicht eine gemeinsame Readwrite-Transaktion über die fünf Snapshot-Stores. Jeder fachliche Store erhält genau den geprüften Datensatz des aktuellen Mandanten; `licenseRuntime` ist nicht Teil dieser Transaktion. Eine bestehende Runtime auf demselben Gerät bleibt unverändert und muss nachfolgend zur restaurierten portablen Referenz passen, eine neue Installation bleibt ohne Runtime. Beim BACKUP-004-Vertrag wird die gesicherte Intervallwahl als Einstellung übernommen; der gerätelokale Fristbeginn, der Zeitpunkt der letzten erfolgreichen Ausgabe und ein laufender Snooze bleiben aus dem bisherigen Settings-Datensatz erhalten. Eine alte Sicherungsdatei kann damit weder die lokale Erinnerungsfrist zurücksetzen noch einen Snooze umgehen. Erst `transaction.oncomplete` bestätigt den Erfolg.
+Nach positiver Vollvalidierung öffnet die Persistenzschicht eine gemeinsame Readwrite-Transaktion über die sechs Snapshot-Stores. Jeder fachliche Store erhält genau den geprüften Datensatz des aktuellen Mandanten; `licenseRuntime` ist nicht Teil dieser Transaktion. Eine bestehende Runtime auf demselben Gerät bleibt unverändert und muss nachfolgend zur restaurierten portablen Referenz passen, eine neue Installation bleibt ohne Runtime. Beim BACKUP-004-Vertrag wird die gesicherte Intervallwahl als Einstellung übernommen; der gerätelokale Fristbeginn, der Zeitpunkt der letzten erfolgreichen Ausgabe und ein laufender Snooze bleiben aus dem bisherigen Settings-Datensatz erhalten. Eine alte Sicherungsdatei kann damit weder die lokale Erinnerungsfrist zurücksetzen noch einen Snooze umgehen. Erst `transaction.oncomplete` bestätigt den Erfolg.
 
 Schlägt irgendein Put-Vorgang fehl oder wird die Transaktion abgebrochen, rollt IndexedDB alle Änderungen zurück. Es gibt keinen Teil-Restore. Die App übernimmt die neuen Laufzeitdaten erst nach erfolgreichem Transaktionsabschluss, verwirft offene UI-Auswahlen und leitet Zähler sowie Standards neu ab.
 
@@ -167,7 +170,7 @@ Die für einen ausdrücklichen lokalen Download angelegte Objekt-URL bleibt für
 6. Die Vorschau zeigt Erstellungsdatum, Unternehmen sowie Anzahl von Geschäftsbereichen, Kunden, Belegen und Gutscheinen.
 7. Vor dem Überschreiben wird ein verschlüsseltes Sicherheitsbackup des aktuellen Stands angeboten.
 8. Eine ausdrückliche Bestätigung ist erforderlich.
-9. Alle fünf Stores werden atomar ersetzt und der zentrale App-Zustand wird neu geladen.
+9. Alle sechs Fachstores werden atomar ersetzt und der zentrale App-Zustand einschließlich Rezepten wird neu geladen.
 
 ## Fehlerverhalten
 
@@ -203,7 +206,7 @@ Vor einer produktiven Freigabe zusätzlich auf einem realen iPhone in Safari bez
 1. Sicherung mit realistisch großem fiktivem Datenbestand erstellen und an einen vom Nutzer kontrollierten Speicherort sichern.
 2. Datei nach Safari-Neustart in der Dateien-App auswählen; prüfen, dass sie nicht ausgegraut ist, und anschließend falsches sowie richtiges Sicherungskennwort testen.
 3. Vorschau und Sicherheitsbackup prüfen.
-4. Teil- und Vollrestore dürfen nicht auftreten: nach erfolgreichem Restore alle fünf Bereiche und nach absichtlichem Abbruch den unveränderten Altstand prüfen.
+4. Teilzustände dürfen nicht auftreten: nach erfolgreichem Restore alle sechs Fachbereiche und nach absichtlichem Abbruch den unveränderten Altstand prüfen.
 5. App vollständig schließen, erneut öffnen und Einstellungen, Katalog, Kunden, Belege, Gutscheine, Snapshots, Historien und Nummernstand prüfen.
 6. Ablauf offline sowie bei wenig freiem Speicher testen.
 7. 320- und 390-Pixel-Ansichten, Tastatur, Fokus, langer Dateiname und lange Unternehmensbezeichnung prüfen.

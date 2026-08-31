@@ -13,6 +13,7 @@ window.PROTOTYPE_DATA = Object.freeze({
     }
   ],
   userSettings: { activeUserId: "user-primary" },
+  prescriptions: [],
   license: {},
   tseSettings: {},
   backupReminder: {},
@@ -68,7 +69,7 @@ window.PROTOTYPE_DATA = Object.freeze({
     language: "Deutsch"
   },
   businessAreas: [
-    { id: "general", label: "Geschäftsbereich", visibleName: "", logoMode: "company", logo: null, active: true, isDefault: true, defaultServiceLocationId: "location-default" }
+    { id: "general", label: "Geschäftsbereich", visibleName: "", logoMode: "company", logo: null, active: true, isDefault: true, defaultServiceLocationId: "location-default", features: { prescriptionDocumentation: false } }
   ],
   catalog: { general: [] },
   categories: [],

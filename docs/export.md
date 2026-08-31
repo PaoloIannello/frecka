@@ -1,10 +1,12 @@
 # FRECKA-Exportkern Version 1
 
 **Stand:** TSE-002 auf Basis SETTINGS-002, SETTINGS-001, USER-001 und EXPORT-003
-**Datenbankschema:** Version 6; Exportprojektion weiterhin ausschließlich aus den fünf Geschäftsstores
+**Datenbankschema:** Version 7; zentrale Snapshotquelle mit sechs Fachstores, reguläre Exportprojektion weiterhin ausschließlich aus den bisherigen fünf Bereichen
 **Exportformat:** `FRECKA_EXPORT`, Version 1
 
 ## Zweck und Abgrenzung
+
+PODOLOGY-001 erweitert ausschließlich die zentrale Snapshotquelle: `prescriptions`, Behandlungstext und interne Rezeptnotizen werden weder in „Eigene Daten“/Kundenexport noch in Steuerberater-CSV/ZIP/PDF projiziert. Nur das verschlüsselte Vollbackup enthält den Rezeptbestand. Kein medizinischer Export und keine Änderung der bisherigen Exportdatei-API.
 
 Der Exportkern erzeugt fachlich nachvollziehbare Dateien für Steuerberatung und die eigene Weiterverarbeitung. Er ist keine bestätigte DATEV-Importschnittstelle und ersetzt weder das verschlüsselte FRECKA-Backup noch eine steuerliche Prüfung.
 

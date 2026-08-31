@@ -66,6 +66,11 @@
     customerHistoryOpenNumber: null,
     customerNotice: "",
     customerNoticeIsError: false,
+    prescriptionsReady: false,
+    prescriptionDraft: null,
+    prescriptionDetailId: null,
+    prescriptionNotice: "",
+    prescriptionNoticeIsError: false,
     receiptInternalNote: "",
     pendingDialogAction: null,
     editingCustomerId: null,
@@ -797,6 +802,11 @@
     documentPdfFileCache.clear();
   }
 
+  function applyPrescriptionsRecord(record) {
+    replaceSettingsArray(data.prescriptions, record.prescriptions);
+    state.prescriptionsReady = true;
+  }
+
   function applyVouchersRecord(record) {
     replaceSettingsArray(data.vouchers, Array.isArray(record?.vouchers) ? record.vouchers : []);
     publicDocumentCache.clear();
@@ -830,7 +840,7 @@
       "[data-action='business-area-add']", "[data-template-choice]", "[data-action='template-use']",
       "[data-action='template-empty']", "[data-action='settings-reset']", "[data-action='catalog-reset']",
       "[data-action='customers-reset']", "[data-action='receipts-reset']", "[data-action='vouchers-reset']", ".customer-form button", ".customer-form input", ".customer-form textarea",
-      "[data-toggle-customer-active]",
+      "[data-toggle-customer-active]", "#prescriptionForm select",
       "[data-catalog-toggle-item]", "[data-catalog-toggle-category]", "[data-catalog-move-item]",
       "[data-catalog-move-category]", "[data-route]",
       "#businessSwitcher", "#bottomSheetClose", "#cancelDiscard", "#confirmDiscard"
@@ -2064,9 +2074,121 @@
     return { label: "Bezahlt", className: "is-paid" };
   }
 
+  function prescriptionAreas() {
+    return data.businessAreas.filter(area => area.active !== false && area.features?.prescriptionDocumentation === true);
+  }
+
+  function prescriptionCanEdit(entry, customer) {
+    return state.prescriptionsReady && customer.active !== false
+      && prescriptionAreas().some(area => area.id === entry.businessAreaId);
+  }
+
+  function prescriptionNoticeMarkup() {
+    return state.prescriptionNotice ? `<p class="settings-save-notice ${state.prescriptionNoticeIsError ? "is-error" : ""}" role="${state.prescriptionNoticeIsError ? "alert" : "status"}">${escapeHtml(state.prescriptionNotice)}</p>` : "";
+  }
+
+  function customerPrescriptionsMarkup(customer) {
+    const entries = data.prescriptions.filter(entry => entry.customerId === customer.id)
+      .sort((a, b) => b.prescribedOn.localeCompare(a.prescribedOn) || b.createdAt.localeCompare(a.createdAt));
+    if (!prescriptionAreas().length && !entries.length && !state.prescriptionNotice) return "";
+    return `<section class="customer-prescriptions" aria-labelledby="customerPrescriptionsTitle">
+      <div class="section-title-row"><h2 id="customerPrescriptionsTitle">Rezepte</h2></div>
+      ${prescriptionNoticeMarkup()}
+      <div class="prescription-list">${entries.map(entry => `<button type="button" class="prescription-list-item" data-open-prescription="${escapeHtml(entry.id)}">
+        <span><strong>${escapeHtml(entry.treatmentText)}</strong><small>${escapeHtml(formatGermanDate(entry.prescribedOn))} · ${entry.prescribedUnits} ${entry.prescribedUnits === 1 ? "Behandlung" : "Behandlungen"}</small><small>${escapeHtml(data.businessAreas.find(area => area.id === entry.businessAreaId)?.label || "Geschäftsbereich nicht verfügbar")}</small></span><em>${entry.active ? "Aktiv" : "Archiviert"}</em>
+      </button>`).join("") || '<p class="page-copy">Noch keine Rezepte hinterlegt.</p>'}</div>
+      ${customer.active !== false && prescriptionAreas().length && state.prescriptionsReady ? '<button class="button button-secondary" type="button" data-prescription-new>Rezept anlegen</button>' : '<p class="page-copy">Vorhandene Rezepte bleiben hier lesbar. Neue Eingaben benötigen einen aktiven Kunden und einen aktivierten Geschäftsbereich.</p>'}
+    </section>`;
+  }
+
+  function prescriptionPageHead(customer, title) {
+    return `<div class="flow-head compact-work-head"><button class="button button-back" type="button" data-prescription-back>← Zurück</button><p class="eyebrow">${escapeHtml(customerName(customer))}</p><h1 class="flow-title">${title}</h1></div>${prescriptionNoticeMarkup()}`;
+  }
+
+  function renderPrescriptionDetail(customer) {
+    const entry = data.prescriptions.find(entry => entry.id === state.prescriptionDetailId && entry.customerId === customer.id);
+    if (!entry) { state.prescriptionDetailId = null; renderCustomerDetail(); return; }
+    mainContent.innerHTML = `<section class="flow-page prescription-page page-enter">${prescriptionPageHead(customer, "Rezept")}
+      <dl class="prescription-details">
+        <div><dt>Geschäftsbereich</dt><dd>${escapeHtml(data.businessAreas.find(area => area.id === entry.businessAreaId)?.label || "Nicht verfügbar")}</dd></div>
+        <div><dt>Rezept vom</dt><dd>${escapeHtml(formatGermanDate(entry.prescribedOn))}</dd></div>
+        <div><dt>Behandlung</dt><dd>${escapeHtml(entry.treatmentText)}</dd></div>
+        <div><dt>Verordnet</dt><dd>${entry.prescribedUnits} ${entry.prescribedUnits === 1 ? "Behandlung" : "Behandlungen"}</dd></div>
+        <div><dt>Status</dt><dd>${entry.active ? "Aktiv" : "Archiviert"}</dd></div>
+        ${entry.internalNote ? `<div><dt>Interne Rezeptnotiz</dt><dd class="prescription-note">${escapeHtml(entry.internalNote)}</dd></div>` : ""}
+      </dl>
+      <p class="page-copy">Nur lokal gespeichert und in der verschlüsselten Sicherung enthalten. Keine Ausgabe auf Belegen oder in regulären Exporten.</p>
+      ${prescriptionCanEdit(entry, customer) ? `<div class="prescription-actions"><button class="button button-primary" type="button" data-prescription-edit>Rezept bearbeiten</button><button class="button button-secondary" type="button" data-prescription-archive>${entry.active ? "Archivieren" : "Aktivieren"}</button></div>` : '<p class="page-copy">Dieses Rezept ist derzeit nur lesbar. Der Kunde oder die Funktion im Geschäftsbereich ist deaktiviert.</p>'}
+    </section>`;
+  }
+
+  function renderPrescriptionEditor(customer) {
+    const draft = state.prescriptionDraft;
+    if (!draft || draft.customerId !== customer.id) { state.prescriptionDraft = null; renderCustomerDetail(); return; }
+    const existing = data.prescriptions.find(entry => entry.id === draft.id);
+    if (!prescriptionCanEdit(existing || draft, customer)) {
+      state.prescriptionDraft = null;
+      state.prescriptionNotice = "Die Rezeptverwaltung ist für diesen Kunden oder Geschäftsbereich nicht verfügbar.";
+      state.prescriptionNoticeIsError = true;
+      renderCustomerDetail(); return;
+    }
+    const items = (data.catalog[draft.businessAreaId] || []).filter(item => item.type === "service" && item.active !== false);
+    mainContent.innerHTML = `<section class="flow-page prescription-page page-enter">${prescriptionPageHead(customer, existing ? "Rezept bearbeiten" : "Rezept anlegen")}
+      <form id="prescriptionForm" class="customer-form">
+        <div class="form-grid">
+          <label class="full"><span>Geschäftsbereich</span><select name="businessAreaId" required>${prescriptionAreas().map(area => `<option value="${escapeHtml(area.id)}" ${area.id === draft.businessAreaId ? "selected" : ""}>${escapeHtml(area.label)}</option>`).join("")}</select></label>
+          <label><span>Rezeptdatum *</span><input type="date" name="prescribedOn" required value="${escapeHtml(draft.prescribedOn)}"></label>
+          <label><span>Anzahl Behandlungen *</span><input type="number" name="prescribedUnits" min="1" step="1" inputmode="numeric" required value="${escapeHtml(draft.prescribedUnits)}"></label>
+          <label class="full"><span>Aus Katalog übernehmen <small>optional</small></span><select name="catalogItemId"><option value="">Freitext verwenden</option>${draft.catalogItemId && !items.some(item => item.id === draft.catalogItemId) ? `<option value="${escapeHtml(draft.catalogItemId)}" selected>Gespeicherte Leistungsreferenz (nicht mehr verfügbar)</option>` : ""}${items.map(item => `<option value="${escapeHtml(item.id)}" ${item.id === draft.catalogItemId ? "selected" : ""}>${escapeHtml(item.title || item.name)}</option>`).join("")}</select></label>
+          <label class="full"><span>Behandlung *</span><textarea name="treatmentText" rows="2" maxlength="200" required>${escapeHtml(draft.treatmentText)}</textarea></label>
+          <label class="full"><span>Interne Rezeptnotiz <small>optional · nicht auf dem Beleg</small></span><textarea name="internalNote" rows="3" maxlength="2000">${escapeHtml(draft.internalNote || "")}</textarea></label>
+        </div>
+        <p class="page-copy">Behandlungstext bleibt auch bei späteren Katalogänderungen erhalten. Eingaben werden erst mit „Rezept speichern“ gesichert.</p>
+        <button class="button button-primary form-submit" type="submit">Rezept speichern</button>
+      </form>
+    </section>`;
+    const form = document.getElementById("prescriptionForm");
+    form.addEventListener("input", () => {
+      const fields = new FormData(form);
+      Object.assign(draft, { prescribedOn: String(fields.get("prescribedOn")), prescribedUnits: String(fields.get("prescribedUnits")), treatmentText: String(fields.get("treatmentText")), internalNote: String(fields.get("internalNote")) });
+    });
+    form.addEventListener("change", event => {
+      if (event.target.name === "businessAreaId") { draft.businessAreaId = event.target.value; draft.catalogItemId = null; renderPrescriptionEditor(customer); }
+      if (event.target.name === "catalogItemId") {
+        draft.catalogItemId = event.target.value || null;
+        const item = items.find(item => item.id === draft.catalogItemId);
+        if (item) draft.treatmentText = item.title || item.name;
+        renderPrescriptionEditor(customer);
+      }
+    });
+  }
+
+  async function persistPrescriptionDraft(draft, expectedUpdatedAt) {
+    pendingSettingsWrites += 1;
+    setSettingsWritePending(true);
+    try {
+      const result = await persistence.savePrescription(draft, expectedUpdatedAt);
+      applyPrescriptionsRecord(result.record);
+      state.prescriptionDetailId = result.prescription.id;
+      state.prescriptionDraft = null;
+      state.prescriptionNotice = "Rezept gespeichert.";
+      state.prescriptionNoticeIsError = false;
+    } catch (error) {
+      logPersistenceError("Rezept speichern fehlgeschlagen", error);
+      state.prescriptionNotice = persistenceErrorMessage(error, "Das Rezept konnte nicht gespeichert werden. Deine Eingaben bleiben erhalten.");
+      state.prescriptionNoticeIsError = true;
+    } finally {
+      pendingSettingsWrites = Math.max(0, pendingSettingsWrites - 1);
+      if (!pendingSettingsWrites) setSettingsWritePending(false);
+    }
+    renderCustomerDetail();
+  }
+
   function renderCustomerDetail() {
     const c = data.customers.find(x => x.id === state.customerDetailId);
     if (!c) { navigate("customers", false); return; }
+    if (state.prescriptionDraft) { renderPrescriptionEditor(c); return; }
+    if (state.prescriptionDetailId) { renderPrescriptionDetail(c); return; }
 
     const address = customerAddressLines(c);
     const allHistory = customerReceipts(c);
@@ -2156,6 +2278,7 @@
       </section>
 
       ${historyMarkup}
+      ${customerPrescriptionsMarkup(c)}
 
       ${c.note ? `<section class="customer-note"><h2>Notiz</h2><p>${escapeHtml(c.note)}</p></section>` : ""}
 
@@ -3535,7 +3658,7 @@
     const id = `area-${Date.now()}`;
     const initialLocation = data.serviceLocations.find(serviceLocationAvailable) ?? null;
     if (initialLocation && !initialLocation.businessAreaIds.includes(id)) initialLocation.businessAreaIds.push(id);
-    data.businessAreas.push({ id, label, visibleName: "", logoMode: "company", logo: null, active: true, isDefault: false, defaultServiceLocationId: initialLocation?.id ?? null });
+    data.businessAreas.push({ id, label, visibleName: "", logoMode: "company", logo: null, active: true, isDefault: false, defaultServiceLocationId: initialLocation?.id ?? null, features: { prescriptionDocumentation: false } });
     if (initialLocation && !initialLocation.businessAreaIds.includes(id)) initialLocation.businessAreaIds.push(id);
     data.catalog[id] = [];
     const importResult = templateKey ? importBusinessTemplate(id, templateKey) : null;
@@ -3744,6 +3867,9 @@
       area.active = activeIds.includes(area.id);
       area.isDefault = area.id === defaultId;
       area.defaultServiceLocationId = locationDefaults.get(area.id) || area.defaultServiceLocationId || null;
+      if (formData.has("prescriptionFeaturesForm")) {
+        area.features = { ...area.features, prescriptionDocumentation: formData.has(`prescriptions:${area.id}`) };
+      }
       const visibleNameField = `areaVisibleName:${area.id}`;
       const logoModeField = `areaLogoMode:${area.id}`;
       if (formData.has(visibleNameField)) area.visibleName = String(formData.get(visibleNameField) || "").trim();
@@ -4310,7 +4436,8 @@
       catalog: persistence.snapshotCatalog(data, persistence.tenantId),
       customers: persistence.snapshotCustomers(data, persistence.tenantId),
       receipts: persistence.snapshotReceipts(data, persistence.tenantId),
-      vouchers: persistence.snapshotVouchers(data, persistence.tenantId)
+      vouchers: persistence.snapshotVouchers(data, persistence.tenantId),
+      prescriptions: persistence.snapshotPrescriptions(data, persistence.tenantId)
     };
   }
 
@@ -4890,6 +5017,10 @@
     applyCustomersRecord(records.customers);
     applyReceiptsRecord(records.receipts);
     applyVouchersRecord(records.vouchers);
+    applyPrescriptionsRecord(records.prescriptions);
+    state.prescriptionDraft = null;
+    state.prescriptionDetailId = null;
+    state.prescriptionNotice = "";
     state.cart = [];
     state.customerFilter = "active";
     state.customerSearch = "";
@@ -5307,6 +5438,7 @@
       <div class="settings-standalone-title">${cardTitle("Geschäftsbereiche", "business")}</div>
       <div class="business-model-note"><strong>Eine Instanz entspricht einer Filiale.</strong><span>Friseur, Podologie oder weitere Angebote sind Geschäftsbereiche – keine Filialen.</span></div>
       <form id="businessAreaSettingsForm" class="settings-form">
+        <input type="hidden" name="prescriptionFeaturesForm" value="1">
         <div class="business-area-list">
           ${data.businessAreas.map(area => `<section class="business-area-row">
             <label class="setting-field"><span>Name</span><input name="areaLabel:${escapeHtml(area.id)}" value="${escapeHtml(area.label)}" required></label>
@@ -5315,6 +5447,7 @@
             </div>
             ${businessAreaServiceLocationField(area)}
             ${businessAreaBrandingFields(area)}
+            <label class="prescription-capability"><input type="checkbox" name="prescriptions:${escapeHtml(area.id)}" ${area.features?.prescriptionDocumentation ? "checked" : ""}><span><strong>Rezept- &amp; Behandlungsdokumentation verwenden</strong><small>Aktiviert die Rezeptverwaltung. Weitere Behandlungsfunktionen folgen später.</small></span></label>
           </section>`).join("")}
         </div>
         <button class="button button-secondary business-area-add" type="button" data-action="business-area-add">＋ Geschäftsbereich</button>
@@ -6277,12 +6410,48 @@
     }
     const openCustomer = event.target.closest("[data-open-customer]");
     if (openCustomer) {
+      state.prescriptionDraft = null;
+      state.prescriptionDetailId = null;
+      if (state.prescriptionsReady) state.prescriptionNotice = "";
       state.customerNotice = "";
       state.customerNoticeIsError = false;
       state.customerDetailId = openCustomer.dataset.openCustomer;
       state.customerHistoryExpanded = false;
       state.customerHistoryOpenNumber = null;
       navigate("customer-detail");
+      return;
+    }
+    if (event.target.closest("[data-prescription-back]")) {
+      if (state.prescriptionDraft) {
+        openConfirmDialog({ title: "Rezeptentwurf verwerfen?", text: "Die ungespeicherten Eingaben werden verworfen. Gespeicherte Rezepte bleiben unverändert.", confirmLabel: "Entwurf verwerfen", action: "discard-prescription", danger: false });
+      } else { state.prescriptionDetailId = null; state.prescriptionNotice = ""; renderCustomerDetail(); }
+      return;
+    }
+    const openPrescription = event.target.closest("[data-open-prescription]");
+    if (openPrescription) {
+      state.prescriptionDetailId = openPrescription.dataset.openPrescription;
+      state.prescriptionNotice = "";
+      renderCustomerDetail(); return;
+    }
+    if (event.target.closest("[data-prescription-new]")) {
+      const customer = data.customers.find(customer => customer.id === state.customerDetailId);
+      const area = prescriptionAreas().find(area => area.id === state.activeBusinessArea) || prescriptionAreas()[0];
+      if (!customer || customer.active === false || !area || !state.prescriptionsReady) return;
+      const now = new Date().toISOString();
+      state.prescriptionDetailId = null;
+      state.prescriptionNotice = "";
+      state.prescriptionDraft = { formatVersion: 1, id: `prescription_${crypto.randomUUID()}`, tenantId: persistence.tenantId,
+        customerId: customer.id, businessAreaId: area.id, prescribedOn: "", treatmentText: "", prescribedUnits: 1,
+        catalogItemId: null, internalNote: "", active: true, createdAt: now, updatedAt: now };
+      renderCustomerDetail(); return;
+    }
+    if (event.target.closest("[data-prescription-edit], [data-prescription-archive]")) {
+      const entry = data.prescriptions.find(entry => entry.id === state.prescriptionDetailId && entry.customerId === state.customerDetailId);
+      const customer = data.customers.find(customer => customer.id === state.customerDetailId);
+      if (!entry || !customer || !prescriptionCanEdit(entry, customer)) return;
+      state.prescriptionNotice = "";
+      if (event.target.closest("[data-prescription-edit]")) { state.prescriptionDraft = cloneSettingsValue(entry); renderCustomerDetail(); }
+      else await persistPrescriptionDraft({ ...entry, active: !entry.active }, entry.updatedAt);
       return;
     }
     const selectCustomer = event.target.closest("[data-select-customer]");
@@ -7074,6 +7243,19 @@
   document.addEventListener("submit", async event => {
     if (!state.settingsReady || pendingSettingsWrites) {
       event.preventDefault();
+      return;
+    }
+    const prescriptionForm = event.target.closest("#prescriptionForm");
+    if (prescriptionForm) {
+      event.preventDefault();
+      if (!state.prescriptionDraft || !state.prescriptionsReady) return;
+      const fields = new FormData(prescriptionForm);
+      const draft = { ...state.prescriptionDraft, businessAreaId: String(fields.get("businessAreaId")),
+        prescribedOn: String(fields.get("prescribedOn")), prescribedUnits: Number(fields.get("prescribedUnits")),
+        treatmentText: String(fields.get("treatmentText") || "").trim(), internalNote: String(fields.get("internalNote") || "").trim(),
+        catalogItemId: String(fields.get("catalogItemId") || "") || null };
+      const existing = data.prescriptions.find(entry => entry.id === draft.id);
+      await persistPrescriptionDraft(draft, existing ? state.prescriptionDraft.updatedAt : null);
       return;
     }
     const exportForm = event.target.closest("#exportForm");
@@ -7885,6 +8067,14 @@
       return;
     }
 
+    if (pendingAction === "discard-prescription") {
+      state.prescriptionDraft = null;
+      state.prescriptionDetailId = null;
+      state.prescriptionNotice = "";
+      closeDiscardDialog();
+      renderCustomerDetail();
+      return;
+    }
     if (pendingAction === "discard-open-receipt") {
       state.cart = [];
       state.cartExpanded = false;
@@ -8084,6 +8274,16 @@
     state.settingsStorageNoticeIsError = true;
   }
   migratePrototypeContextSnapshots();
+  try {
+    applyPrescriptionsRecord(await persistence.readPrescriptions());
+  } catch (error) {
+    logPersistenceError("Rezepte laden fehlgeschlagen", error);
+    state.prescriptionsReady = false;
+    state.prescriptionNotice = "Die Rezepte konnten nicht sicher geladen werden. Neue Rezepte bleiben gesperrt; vorhandene Daten wurden nicht verändert.";
+    state.prescriptionNoticeIsError = true;
+    state.settingsStorageNotice = [state.settingsStorageNotice, state.prescriptionNotice].filter(Boolean).join(" ");
+    state.settingsStorageNoticeIsError = true;
+  }
   try {
     if (!persistence?.snapshotReceipts) throw new Error("Die Belegpersistenz wurde nicht geladen.");
     defaultReceiptsRecord = persistence.snapshotReceipts(data, persistence.tenantId);
