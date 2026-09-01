@@ -1,12 +1,12 @@
-# FRECKA – 0.11.6 / ANDROID-002
+# FRECKA – 0.11.7 / PODOLOGY-004
 
-**Arbeitsstand nach v0.11.6: PODOLOGY-004.** Die optionale Rezeptverwaltung, der aus Belegen abgeleitete Verbrauch und Schema 8 bleiben unverändert. Lokale Kundendokumente normaler Belege zeigen nun kompakt das historische Rezeptdatum und den beleggebundenen Kundenpflegehinweis. Interne Behandlungsdokumentation bleibt immer intern; Public Viewer, QR-Payload, Steuerberaterausgabe und reguläre Datenexporte bleiben frei von diesen Angaben. Produktversion, Build und App-Shell bleiben bis zur gesonderten Releasevorbereitung unverändert. [Rezeptverwaltung](docs/prescriptions.md) · [Behandlungsdokumentation und Datenschutz](docs/treatment-documentation.md).
+**Vorbereiteter Beta-Stand:** 0.11.7 bündelt auf Basis von 0.11.6 die bereits abgeschlossenen Blöcke PODOLOGY-001 bis PODOLOGY-004. Die optionale Rezept- und Behandlungsfunktion bleibt je Geschäftsbereich standardmäßig ausgeschaltet. Interne Behandlungsdokumentation bleibt immer intern; Public Viewer, QR-Payload, Steuerberaterausgabe und reguläre Datenexporte bleiben frei von Rezeptdatum und Pflegehinweis. [Rezeptverwaltung](docs/prescriptions.md) · [Behandlungsdokumentation und Datenschutz](docs/treatment-documentation.md).
 
-Browserbasierte FRECKA-PWA 0.11.6 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der Build ANDROID-002 bündelt ausschließlich die seit 0.11.5 abgeschlossenen Kompatibilitätsblöcke ANDROID-001, IOS-NAV-001 und ANDROID-002 sowie die notwendigen Versions-, Cache-, Test- und Releaseanpassungen.
+Browserbasierte FRECKA-PWA 0.11.7 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der Build PODOLOGY-004 verwendet IndexedDB-Schema 8 mit den mandantenbezogenen Stores `prescriptions` und `treatmentRecords`; die getrennte gerätelokale `licenseRuntime` bleibt unverändert außerhalb von Tenant-Snapshot, Backup und Export.
 
 ANDROID-001 sichert die mobile Skalierung und Touch-Ziele auch für Android-nahe Darstellungsprofile ab. IOS-NAV-001 verankert die Bottom-Navigation außerhalb der scrollenden App-Shell direkt am Viewport. ANDROID-002 behandelt den tatsächlichen File-Share nicht mehr als durch `canShare()` garantiert, klassifiziert Fehler neutral und bietet PDF- sowie ZIP-Speichern ausschließlich als bewusste Folgeaktion an. Der erfolgreiche iPhone-Datei-Share bleibt ohne Plattformweiche erhalten.
 
-Die reale Gerätebasis bestätigt die fixierte Bottom-Navigation auf iPhone und Android sowie den grundsätzlich funktionsfähigen Android-Stand bei normaler Textskalierung. Der vor ANDROID-002 diagnostizierte PDF-/ZIP-Share-Fehler in Samsung Internet ist implementierungsseitig abgesichert, aber erst nach Veröffentlichung von 0.11.6 real abzunehmen. LICENSE-005 und das IndexedDB-Schema 6 bleiben unverändert; Lizenzserver, Trial, Kauf, Payment und Produktsperren sind weiterhin nicht enthalten.
+0.11.6 / ANDROID-002 bleibt die bestätigte Beta-Basis vor den Podologie-Blöcken. 0.11.7 benötigt vor jeder Beta- oder Produktivfreigabe eine reale In-place-Abnahme auf iPhone/Home-Screen-PWA und Android. Lizenzserver, Trial, Kauf, Payment, neue TSE-Logik und ein allgemeiner Medizinexport sind nicht enthalten.
 
 Ein vollständig neuer Mandant startet ohne Kunden, Katalogpositionen, Belege, offene Zahlungen, Korrekturen, Gutscheine, Umsätze oder Logoassets. Neutrale technische Defaults, optionale Vorlagen und die ausschließlich für PERSISTENCE-010 erlaubte historische Vierer-Reparaturquelle sind strikt getrennt. Die verbindliche Erststartinventur und die 15-Punkte-Übergabecheckliste stehen in [`docs/beta-handoff.md`](docs/beta-handoff.md).
 
@@ -14,14 +14,18 @@ UX-011 / UPDATE-002 / BACKUP-003/004 ergänzt darauf eine reale Seite **Einstell
 
 ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzeit aufrufbare Installationshilfe für iPhone/iPad und Android. Sie priorisiert die passende Anleitung ausschließlich anhand lokaler Browsermerkmale, zeigt im Standalone-Modus den bereits installierten Zustand und bleibt vollständig offline verfügbar. Beide Plattformen können immer manuell gewählt werden. Der kompakte Ablauf und die abweichenden Android-Bezeichnungen sind in [`docs/installation.md`](docs/installation.md) dokumentiert.
 
-## Neu in PODOLOGY-004
+## Neu in 0.11.7
 
+- optionale Capability für Rezept- und Behandlungsdokumentation je Geschäftsbereich sowie mehrere Rezepte pro Kunde
+- aus unveränderlichen Ursprungsbelegen abgeleiteter Rezeptverbrauch mit expliziter Überziehungsbestätigung, Vollstornofreigabe und historischen Zuordnungssnapshots
+- mandantenbezogene Stores `prescriptions` und `treatmentRecords` in IndexedDB-Schema 8; interne Behandlungshistorie, Pflegehinweise und zentrale Vorlagen
 - genau eine zentrale Dokumentenprojektion mit den Ausgabemodi `customer`, `tax-advisor` und `restricted`; ohne ausdrücklichen Kundenmodus gilt die restriktive Ausgabe
 - lokaler normaler Kundenbeleg mit deutschem Rezeptdatum aus dem unveränderlichen Belegsnapshot und Kundenpflegehinweis aus dem exakt referenzierten historischen Behandlungsdatensatz
 - keine Ausgabe auf Storno, Gutschrift oder Gutscheinverkaufsbeleg; keine interne Dokumentation, Rezept-ID, Behandlung, Einheiten, Verbrauchs- oder Statusdaten im Kundendokument
 - unveränderte `FPD/v1`-Whitelist: Public Viewer, QR-Payload, Steuerberater-PDF/ZIP, CSV/TXT, Diagnose und Logs bleiben frei von Rezeptdatum und Pflegehinweis
 - verlustfreier 80-mm-PDF-Umbruch auch für exakt 300 Zeichen, lange Einzelwörter, URLs, Umlaute und Unicode
-- keine Schema-, Persistenz-, Backupformat-, Versions-, Cache- oder Abhängigkeitsänderung; 249/249 native Browserprüfungen bestanden
+- unveränderte Backup-Verschlüsselung, Export-, Public-, Lizenzruntime- und Service-Worker-Architektur; keine neue Abhängigkeit
+- einheitliche Release-, Asset- und App-Shell-Kennung `0.11.7 / PODOLOGY-004 / podology004-1`
 
 ## Neu in 0.11.6
 

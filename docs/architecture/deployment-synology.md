@@ -2,7 +2,7 @@
 
 Stand: 26. August 2026
 
-Geltungsbereich: freigegebene Beta-Basis `0.11.4-e628c11`, gesperrte Releases `0.11.2-a959ec6` und `0.11.3-a8380a0`, vorbereiteter Geräteprüfungsstand `0.11.5` / `LICENSE-005` und lokaler automatisierter Beta-Release
+Geltungsbereich: bestätigte Beta-Basis `0.11.6-ee13b12`, gesperrte Releases `0.11.2-a959ec6` und `0.11.3-a8380a0`, vorbereiteter Beta-Stand `0.11.7` / `PODOLOGY-004` und lokaler automatisierter Beta-Release
 
 Der verbindliche Infrastrukturrahmen steht in `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`. Dieses Dokument konkretisiert ausschließlich die statische Laufzeitmenge und ihre spätere Zuordnung zu Synology Web Station.
 
@@ -177,7 +177,11 @@ Der annotierte Tag `v0.11.3` zeigt auf Commit `a8380a05a662b765c99f89216faf32912
 
 Der annotierte Tag `v0.11.4` zeigt auf Commit `e628c116682cc76b33fb6273191eef4c82875946`; das daraus erzeugte und real abgenommene Artefakt trägt die Release-ID `0.11.4-e628c11`. Es verwendet Build `BACKUP-006`, den HTML-Titel `FRECKA – BACKUP-006`, den Asset-Abfragewert `backup006-1` und den App-Shell-Cache `frecka-app-shell-0.11.4-backup006-1` und ist die aktuelle stabile Beta-Basis.
 
-Der noch nicht getaggte Geräteprüfungsstand `0.11.5` verwendet Build `LICENSE-005`, den HTML-Titel `FRECKA – LICENSE-005`, den Asset-Abfragewert `license005-1` und den App-Shell-Cache `frecka-app-shell-0.11.5-license005-1`. Er ergänzt gegenüber 0.11.4 ausschließlich DOCUMENT-001, LICENSE-005 und notwendige Versions-, Cache-, Diagnose-, Test- und Releaseanpassungen. Es existieren noch kein Tag, keine Release-ID und kein Artefakt für 0.11.5.
+Der annotierte Tag `v0.11.5` zeigt auf Commit `c80edc7d63042c9f8762a751d376d2d4dacb884d`; das unveränderliche Artefakt `0.11.5-c80edc7` verwendet Build `LICENSE-005`, den HTML-Titel `FRECKA – LICENSE-005`, den Asset-Abfragewert `license005-1` und den App-Shell-Cache `frecka-app-shell-0.11.5-license005-1`.
+
+Der annotierte Tag `v0.11.6` zeigt auf Commit `ee13b12ed7cd4763d23d6f4979b83cd5a75ebbef`; das unveränderliche Artefakt `0.11.6-ee13b12` verwendet Build `ANDROID-002`, den HTML-Titel `FRECKA – ANDROID-002`, den Asset-Abfragewert `android002-1` und den App-Shell-Cache `frecka-app-shell-0.11.6-android002-1`. Es ist die bestätigte Beta-Basis vor PODOLOGY-001 bis PODOLOGY-004.
+
+Der noch nicht getaggte Stand `0.11.7 / PODOLOGY-004` verwendet den Asset-Abfragewert `podology004-1` und den App-Shell-Cache `frecka-app-shell-0.11.7-podology004-1`. Er bündelt ausschließlich PODOLOGY-001 bis PODOLOGY-004 und notwendige Versions-, Cache-, Test- und Releaseanpassungen. Tag, Release-ID, Artefakt, Upload und Web-Station-Umschaltung existieren in diesem Vorbereitungsschritt nicht.
 
 Ein Updateformat für signierte Kanäle und ein Signaturverfahren sind ausdrücklich noch nicht implementiert. SERVICEWORKER-002 erkennt ausschließlich Änderungen des Service Workers innerhalb derselben bereits aufgerufenen Deployment-Origin.
 
@@ -219,9 +223,17 @@ Bewertung: `0.9.1-26dc63f` ist für den Beta-Betrieb freigegeben und gilt als st
 
 `0.11.4-e628c11` ergänzt ausschließlich BACKUP-006. Der reale iPhone-Test auf dem bestehenden historischen Bestand hat Backup, Restore und Offline-Kaltstart bestanden. Bewertung: Beta-GO und aktuelle stabile Beta-Basis; noch keine Produktivfreigabe für `app.frecka.app`.
 
-### 2.16 Vorbereiteter Geräteprüfungsstand 0.11.5
+### 2.16 Release-Stand 0.11.5
 
-0.11.5 ergänzt DOCUMENT-001 und LICENSE-005. `settings.license` Version 2 bleibt portable; nicht exportierbarer P-256-Privatkey, Public Key, Thumbprint und optionale Tokenruntime liegen ausschließlich im gerätelokalen `licenseRuntime`-Store. Das IndexedDB-Schema steigt von 5 auf 6, die fünf Geschäftsstores bleiben unverändert. Runtime und Schlüssel bleiben aus Tenant-Snapshot, Backup, Restore und Export ausgeschlossen. Die Ansicht zeigt ausschließlich einen gekürzten öffentlichen Vergleichswert und den lokalen Signatur-Selbsttest. Ein Lizenzserver, Trial-/Active-Status, Netzwerkpfad und Produktsperre sind nicht enthalten. Reale iPhone- und Android-CryptoKey-Persistenztests bleiben manuelle Freigabegates vor LICENSE-006.
+`0.11.5-c80edc7` ergänzt DOCUMENT-001 und LICENSE-005. `settings.license` Version 2 bleibt portable; nicht exportierbarer P-256-Privatkey, Public Key, Thumbprint und optionale Tokenruntime liegen ausschließlich im gerätelokalen `licenseRuntime`-Store. Das IndexedDB-Schema steigt von 5 auf 6, die fünf Geschäftsstores bleiben unverändert. Runtime und Schlüssel bleiben aus Tenant-Snapshot, Backup, Restore und Export ausgeschlossen. Ein Lizenzserver, Trial-/Active-Status, Netzwerkpfad und Produktsperre sind nicht enthalten.
+
+### 2.17 Bestätigte Beta-Basis 0.11.6
+
+`0.11.6-ee13b12` bündelt ANDROID-001, IOS-NAV-001 und ANDROID-002. Die statische App-Shell, der bewusste Updatevertrag, die expliziten PDF-/ZIP-Speichern-Fallbacks sowie die vorhandenen Daten- und Lizenzgrenzen bleiben Grundlage des nachfolgenden Podologie-Pakets. IndexedDB-Schema 6 ist der Ausgangspunkt für das additive Upgrade auf Schema 8.
+
+### 2.18 Vorbereiteter Beta-Stand 0.11.7
+
+0.11.7 bündelt PODOLOGY-001 bis PODOLOGY-004. Schema 7 ergänzt `prescriptions`, Schema 8 `treatmentRecords`; vorhandene Mandantendaten werden nicht zurückgesetzt. Lokale Kundendokumente dürfen Rezeptdatum und Pflegehinweis zeigen, Public QR/Public Viewer und Steuerberaterexport bleiben davon isoliert. Reale iPhone- und Android-Abnahmen, Beta-Upload und manuelle Web-Station-Umschaltung bleiben nachgelagerte Freigabegates.
 
 ## 3. Abgeleitete Deployment-Prinzipien
 

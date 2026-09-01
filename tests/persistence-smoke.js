@@ -3829,7 +3829,7 @@
           ["is-share", "is-menu", "is-home", "is-app", "is-confirm"].forEach(icon => assert(css.includes(icon), `Lokales Piktogramm fehlt: ${icon}`));
           assert(css.includes("@media(max-width:390px)") && css.includes("@media(max-width:350px)"), "Mobile Installationsdarstellung ist nicht abgesichert");
           assert(!index.includes('data-route="installation"'), "Installationshilfe wurde fälschlich zur Hauptnavigation hinzugefügt");
-          assert(worker.includes('\"./js/app.js?v=android002-1\"') && worker.includes('\"./styles.css?v=android002-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
+          assert(worker.includes('\"./js/app.js?v=podology004-1\"') && worker.includes('\"./styles.css?v=podology004-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
 
           const measureInstallationLayout = width => new Promise((resolve, reject) => {
             const frame = document.createElement("iframe");
@@ -3888,7 +3888,7 @@
           const css = await cssResponse.text();
           const index = await indexResponse.text();
           assert(index.includes('content="width=device-width, initial-scale=1, viewport-fit=cover"'), "Mobiler Viewport-Vertrag fehlt");
-          assert(index.includes('href="styles.css?v=android002-1"'), "Die weiterhin wirksamen ANDROID-001-Styles fehlen im aktuellen Cache-Schlüssel");
+          assert(index.includes('href="styles.css?v=podology004-1"'), "Die weiterhin wirksamen ANDROID-001-Styles fehlen im aktuellen Cache-Schlüssel");
           assert(!css.includes("text-size-adjust") && !css.includes("font-size: 16px !important"), "Browserpräferenz wird aggressiv überschrieben");
           ["renderHome", "renderSettings", "renderReceiptDetail", "renderReceiptPreview"].forEach(renderer => {
             assert(appSource.includes(`function ${renderer}(`), `Produktive Ansicht fehlt: ${renderer}`);
