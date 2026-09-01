@@ -1777,13 +1777,13 @@
           } finally { frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase(); frame.remove(); }
         }
       } },
-      { name: "PODOLOGY-002/003: Checkout, Behandlungsdokumentation, Fehlererhalt und mobile Einhandansicht funktionieren bei 320/390/411 px", run: async () => {
+      { name: "PODOLOGY-002/003/005: Checkout, Vorlagenauswahl, Fehlererhalt und mobile Einhandansicht funktionieren bei 320/360/390/411 px", run: async () => {
         const index = await (await fetch("../index.html", { cache: "no-store" })).text();
         const waitFor = async predicate => {
           for (let i = 0; i < 200; i += 1) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 50)); }
           throw new Error(`PODOLOGY-002-Checkout wurde nicht rechtzeitig bereit: ${predicate.toString()}`);
         };
-        for (const width of [320, 390, 411]) {
+        for (const width of [320, 360, 390, 411]) {
           const client = context.makeClient(`prescription-checkout-ui-${width}`);
           const initial = prescriptionSnapshot(client.tenantId, [prescriptionFixture(client.tenantId, {
             treatmentText: "Testhaarschnitt", catalogItemId: "service-cut", prescribedUnits: 1, internalNote: "PRIVATE-CHECKOUT-NOTE"
@@ -1793,9 +1793,13 @@
           initial.stores.settings.receiptSettings.nextNumber = 1;
           initial.stores.settings.treatmentTemplates = [
             treatmentTemplateFixture(),
-            treatmentTemplateFixture({ id: "checkout-care-template", purpose: "customer-care", title: "Pflege zuhause", text: "PRIVATE-UI-CARE" })
+            treatmentTemplateFixture({ id: "checkout-internal-second", title: "Zweite Dokumentation", text: "PRIVATE-UI-INTERNAL-SECOND" }),
+            treatmentTemplateFixture({ id: "checkout-care-template", purpose: "customer-care", title: "Pflege zuhause", text: "PRIVATE-UI-CARE" }),
+            treatmentTemplateFixture({ id: "checkout-archived-template", title: "Archivierte Vorlage", text: "PRIVATE-ARCHIVED", active: false }),
+            treatmentTemplateFixture({ id: "checkout-wrong-area-template", businessAreaId: "coaching", title: "Falscher Bereich", text: "PRIVATE-WRONG-AREA" })
           ];
           await client.restoreTenantSnapshot(initial);
+          const originalTemplates = clone((await client.readSettings()).treatmentTemplates);
           const frame = document.createElement("iframe");
           frame.title = `Rezeptcheckout ${width} px`;
           frame.style.cssText = `position:fixed;left:-2000px;top:0;width:${width}px;height:807px;border:0`;
@@ -1804,6 +1808,10 @@
           try {
             const doc = () => frame.contentDocument;
             const click = selector => { const element = doc().querySelector(selector); assert(element, `Checkout-UI fehlt: ${selector}`); element.click(); };
+            const choose = (selector, value) => {
+              const element = doc().querySelector(selector); assert(element, `Checkout-Auswahl fehlt: ${selector}`);
+              element.value = value; element.dispatchEvent(new frame.contentWindow.Event("change", { bubbles: true }));
+            };
             const noOverflow = () => assert(doc().documentElement.scrollWidth <= frame.contentWindow.innerWidth, `Checkout hat horizontalen Überlauf bei ${width} px`);
             const prepareCheckout = async () => {
               await waitFor(() => doc()?.querySelector('[data-toggle-item="service-cut"]'));
@@ -1819,10 +1827,34 @@
               noOverflow();
             };
             await prepareCheckout();
-            click('[data-apply-treatment-template="treatment-template-internal"]');
-            click('[data-apply-treatment-template="checkout-care-template"]');
+            const internalSelect = doc().querySelector('[data-checkout-treatment-template="internal-documentation"]');
+            const careSelect = doc().querySelector('[data-checkout-treatment-template="customer-care"]');
+            assert(internalSelect && careSelect, "Zweckgetrennte native Vorlagenauswahl fehlt");
+            assertEqual(internalSelect.value, "", "Interne Einzel-/Mehrfachauswahl wurde automatisch vorbelegt");
+            assertEqual(careSelect.value, "", "Einzelne Pflegevorlage wurde automatisch vorbelegt");
+            assertEqual(internalSelect.options.length, 3, "Interne Auswahl enthält falsche, archivierte oder bereichsfremde Vorlagen");
+            assertEqual(careSelect.options.length, 2, "Pflegeauswahl enthält nicht genau Platzhalter und aktive Pflegevorlage");
+            assert(!doc().body.textContent.includes("Archivierte Vorlage") && !doc().body.textContent.includes("Falscher Bereich"), "Checkout zeigt archivierte oder bereichsfremde Vorlagen");
+            assert(doc().body.textContent.includes("Erscheint auf dem Kundenbeleg und PDF."), "Korrekte Pflegehinweis-Ausgabehilfe fehlt");
+            assert(doc().body.textContent.includes("Nur intern – erscheint nicht auf Beleg, PDF, QR-Code oder Export."), "Interner Datenschutzhinweis fehlt");
+            choose('[data-checkout-treatment-template="internal-documentation"]', "treatment-template-internal");
+            choose('[data-checkout-treatment-template="customer-care"]', "checkout-care-template");
             assertEqual(doc().querySelector("#checkoutInternalDocumentation").value, "PRIVATE-TEMPLATE-INTERNAL-ÄÖÜ", "Interne Vorlage wurde nicht in den Entwurf kopiert");
             assertEqual(doc().querySelector("#checkoutCustomerCareAdvice").value, "PRIVATE-UI-CARE", "Pflegevorlage wurde nicht in den Entwurf kopiert");
+            const internalField = doc().querySelector("#checkoutInternalDocumentation");
+            internalField.value = "PRIVATE-MANUELL-BEARBEITET";
+            internalField.dispatchEvent(new frame.contentWindow.Event("input", { bubbles: true }));
+            choose('[data-checkout-treatment-template="internal-documentation"]', "checkout-internal-second");
+            assertEqual(doc().querySelector("#checkoutInternalDocumentation").value, "PRIVATE-MANUELL-BEARBEITET", "Vorlagenwechsel überschrieb manuell bearbeiteten Text");
+            assert(doc().querySelector('[role="alert"]')?.textContent.includes("Leere das Feld"), "Überschreibschutz erklärt den nächsten Schritt nicht");
+            const protectedField = doc().querySelector("#checkoutInternalDocumentation");
+            protectedField.value = "";
+            protectedField.dispatchEvent(new frame.contentWindow.Event("input", { bubbles: true }));
+            choose('[data-checkout-treatment-template="internal-documentation"]', "checkout-internal-second");
+            assertEqual(doc().querySelector("#checkoutInternalDocumentation").value, "PRIVATE-UI-INTERNAL-SECOND", "Vorlage ließ sich nach bewusstem Leeren nicht übernehmen");
+            choose('[data-checkout-treatment-template="internal-documentation"]', "treatment-template-internal");
+            assertEqual(doc().querySelector("#checkoutInternalDocumentation").value, "PRIVATE-TEMPLATE-INTERNAL-ÄÖÜ", "Unveränderte Vorlagenkopie ließ sich nicht sicher wechseln");
+            assertDeepEqual((await client.readSettings()).treatmentTemplates, originalTemplates, "Vorlagenauswahl veränderte die gespeicherten Vorlagen");
             click('[data-action="finish-demo"]');
             await waitFor(() => frame.contentWindow.location.hash === "#/receipt-success");
             let receipts = await client.readReceipts();
@@ -1830,6 +1862,8 @@
             assertEqual(receipts.receipts[0].prescriptionAssignment?.prescriptionId, "prescription-one", "UI-Zuordnung fehlt im Beleg");
             let treatmentRecords = await client.readTreatmentRecords();
             assertEqual(treatmentRecords.treatmentRecords.length, 1, "UI-Abschluss erzeugte keine Behandlungsdokumentation");
+            assertEqual(treatmentRecords.treatmentRecords[0].internalDocumentation, "PRIVATE-TEMPLATE-INTERNAL-ÄÖÜ", "Gespeichert wurde nicht der tatsächlich bestätigte interne Text");
+            assertEqual(treatmentRecords.treatmentRecords[0].customerCareAdvice, "PRIVATE-UI-CARE", "Gespeichert wurde nicht der tatsächlich bestätigte Pflegehinweis");
             click('[data-route="receipts"]');
             await waitFor(() => doc().querySelector(`[data-open-receipt="${receipts.receipts[0].number}"]`));
             click(`[data-open-receipt="${receipts.receipts[0].number}"]`);
@@ -1843,7 +1877,7 @@
             noOverflow();
             frame.contentWindow.location.hash = "#/catalog";
             await prepareCheckout();
-            click('[data-apply-treatment-template="treatment-template-internal"]');
+            choose('[data-checkout-treatment-template="internal-documentation"]', "treatment-template-internal");
             const careField = doc().querySelector("#checkoutCustomerCareAdvice");
             careField.value = "PRIVATE-UI-RETRY";
             careField.dispatchEvent(new frame.contentWindow.Event("input", { bubbles: true }));
@@ -1902,6 +1936,37 @@
             }
             noOverflow();
             assertDeepEqual(frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS, [], "PODOLOGY-002-UI-Laufzeitfehler");
+          } finally { frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase(); frame.remove(); }
+        }
+      } },
+      { name: "PODOLOGY-005: Checkout bleibt ohne aktive Vorlagen auf 360 px und großer Ansicht kompakt", run: async () => {
+        const index = await (await fetch("../index.html", { cache: "no-store" })).text();
+        const waitFor = async predicate => {
+          for (let i = 0; i < 160; i += 1) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 50)); }
+          throw new Error(`Vorlagen-Leerzustand wurde nicht rechtzeitig bereit: ${predicate.toString()}`);
+        };
+        for (const width of [360, 768]) {
+          const client = context.makeClient(`treatment-template-empty-ui-${width}`);
+          const initial = treatmentSnapshot(client.tenantId, { templates: [] });
+          await client.restoreTenantSnapshot(initial);
+          const frame = document.createElement("iframe");
+          frame.title = `Behandlungsvorlagen-Leerzustand ${width} px`;
+          frame.style.cssText = `position:fixed;left:-2000px;top:0;width:${width}px;height:807px;border:0`;
+          setIsolatedAppFrame(frame, isolatedAppMarkup(index, client, "catalog", context.databaseName));
+          document.body.append(frame);
+          try {
+            const doc = () => frame.contentDocument;
+            const click = selector => { const element = doc().querySelector(selector); assert(element, `Leerzustands-UI fehlt: ${selector}`); element.click(); };
+            await waitFor(() => doc()?.querySelector('[data-toggle-item="service-cut"]'));
+            click('[data-toggle-item="service-cut"]'); click('[data-route="checkout"]'); click('[data-route="customer-picker"]');
+            await waitFor(() => doc().querySelector('[data-select-customer="customer-anna"]'));
+            click('[data-select-customer="customer-anna"]');
+            await waitFor(() => doc().querySelector("#checkoutInternalDocumentation"));
+            assertEqual(doc().querySelectorAll("[data-checkout-treatment-template]").length, 0, "Leerer Vorlagenbestand erzeugt unnötige Auswahlfelder");
+            assertEqual(doc().querySelectorAll(".treatment-template-actions").length, 0, "Alte große Vorlagenleiste blieb im Checkout");
+            assert(doc().querySelector("#checkoutInternalDocumentation") && doc().querySelector("#checkoutCustomerCareAdvice"), "Freie Texteingabe fehlt ohne Vorlagen");
+            assert(doc().documentElement.scrollWidth <= frame.contentWindow.innerWidth, `Vorlagen-Leerzustand läuft bei ${width} px horizontal über`);
+            assertDeepEqual(frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS, [], "PODOLOGY-005-Leerzustand-Laufzeitfehler");
           } finally { frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase(); frame.remove(); }
         }
       } }
@@ -2525,6 +2590,13 @@
             const button = doc()?.querySelector('[data-new-treatment-template="hair"][data-treatment-template-purpose="internal-documentation"]');
             return button && !button.disabled;
           });
+          const activeTemplateBox = doc().querySelector('[data-business-area-id="hair"] .treatment-template-settings');
+          const disabledTemplateBox = doc().querySelector('[data-business-area-id="coaching"] .treatment-template-settings');
+          assert(activeTemplateBox && disabledTemplateBox, "Vorlagenboxen der Geschäftsbereiche fehlen");
+          assertEqual(activeTemplateBox.querySelectorAll(".treatment-template-capability-note").length, 0, "Aktive Capability zeigt einen unnötigen Sperrhinweis");
+          assertEqual(disabledTemplateBox.querySelectorAll(".treatment-template-capability-note").length, 1, "Deaktivierte Capability zeigt den gemeinsamen Hinweis nicht genau einmal");
+          assert(disabledTemplateBox.querySelector(".treatment-template-capability-note").textContent.includes("Vorhandene Vorlagen bleiben erhalten"), "Gemeinsamer Capability-Hinweis ist unvollständig");
+          assert(!doc().body.textContent.includes("Vorlagen bleiben gespeichert und lesbar"), "Alter widersprüchlicher Capability-Hinweis ist noch sichtbar");
           await new Promise(resolve => setTimeout(resolve, 1000));
           const newInternalButton = doc().querySelector('[data-new-treatment-template="hair"][data-treatment-template-purpose="internal-documentation"]');
           let clickObserved = false;
@@ -2575,6 +2647,38 @@
           noOverflow();
           assertDeepEqual(frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS, [], "PODOLOGY-003-Vorlagen-UI-Laufzeitfehler");
         } finally { frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase(); frame.remove(); }
+      } },
+      { name: "PODOLOGY-005: Vorlagenverwaltung bleibt bei 320/360/390/411 px und großer Ansicht kompakt", run: async () => {
+        const index = await (await fetch("../index.html", { cache: "no-store" })).text();
+        const waitFor = async predicate => {
+          for (let attempt = 0; attempt < 160; attempt += 1) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 50)); }
+          throw new Error(`Responsive Vorlagenverwaltung wurde nicht rechtzeitig bereit: ${predicate.toString()}`);
+        };
+        for (const width of [320, 360, 390, 411, 768]) {
+          const client = context.makeClient(`treatment-template-responsive-${width}`);
+          await client.restoreTenantSnapshot(treatmentSnapshot(client.tenantId, { templates: [
+            treatmentTemplateFixture(),
+            treatmentTemplateFixture({ id: "responsive-care", purpose: "customer-care", title: "Pflege zuhause", text: "Pflegehinweis" }),
+            treatmentTemplateFixture({ id: "responsive-archived", title: "Archivierte Dokumentation", active: false })
+          ] }));
+          const frame = document.createElement("iframe");
+          frame.title = `Vorlagenverwaltung ${width} px`;
+          frame.style.cssText = `position:fixed;left:-2000px;top:0;width:${width}px;height:807px;border:0`;
+          setIsolatedAppFrame(frame, isolatedAppMarkup(index, client, "settings-business-areas", context.databaseName));
+          document.body.append(frame);
+          try {
+            const doc = () => frame.contentDocument;
+            await waitFor(() => doc()?.querySelector('[data-business-area-id="hair"] .treatment-template-item'));
+            const activeBox = doc().querySelector('[data-business-area-id="hair"] .treatment-template-settings');
+            const disabledBox = doc().querySelector('[data-business-area-id="coaching"] .treatment-template-settings');
+            assertEqual(activeBox.querySelectorAll(".treatment-template-item").length, 3, "Kompakte Vorlagenkarten fehlen");
+            assertEqual(activeBox.querySelectorAll(".treatment-template-capability-note").length, 0, "Aktive Vorlagenbox zeigt Sperrhinweis");
+            assertEqual(disabledBox.querySelectorAll(".treatment-template-capability-note").length, 1, "Deaktivierte Vorlagenbox zeigt nicht genau einen gemeinsamen Hinweis");
+            assert([...activeBox.querySelectorAll("button")].every(button => button.getBoundingClientRect().height >= 44), "Vorlagenaktionen unterschreiten das Touch-Ziel");
+            assert(doc().documentElement.scrollWidth <= frame.contentWindow.innerWidth, `Vorlagenverwaltung läuft bei ${width} px horizontal über`);
+            assertDeepEqual(frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS, [], "PODOLOGY-005-Vorlagenverwaltung-Laufzeitfehler");
+          } finally { frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase(); frame.remove(); }
+        }
       } },
       { name: "PODOLOGY-003: Kunden-, Beleg- und Settingsreset sind bei historischer Behandlungsdokumentation gesperrt", run: async () => {
         const client = context.makeClient("treatment-reset");

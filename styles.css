@@ -827,8 +827,9 @@ body.work-mode:not(.catalog-mode) .flow-page {
 .checkout-treatment-field textarea,
 .treatment-template-editor input,
 .treatment-template-editor textarea { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); font: inherit; font-size: max(1rem, 16px); resize: vertical; }
-.treatment-template-actions { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
-.treatment-template-actions .button { flex: 0 0 auto; min-height: 44px; padding: 8px 12px; }
+.treatment-template-select { display: grid; gap: 4px; min-width: 0; }
+.treatment-template-select > span { color: var(--muted); font-size: max(.76rem, 12px); font-weight: 750; }
+.treatment-template-select select { width: 100%; min-width: 0; min-height: 46px; box-sizing: border-box; padding: 10px 36px 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); font: inherit; font-size: max(1rem, 16px); }
 .customer-treatment-history { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
 .customer-treatment-history h2 { margin: 0; font-size: 1.05rem; }
 .treatment-history-list { display: grid; gap: 10px; margin-top: 12px; }
@@ -839,16 +840,17 @@ body.work-mode:not(.catalog-mode) .flow-page {
 .treatment-history-head small,
 .treatment-history-meta { color: var(--muted); font-size: max(.76rem, 12px); }
 .treatment-history-item .button { justify-self: start; }
-.treatment-template-settings { grid-column: 1 / -1; min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface-soft); display: grid; gap: 14px; }
+.treatment-template-settings { grid-column: 1 / -1; min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface-soft); display: grid; gap: 10px; }
 .treatment-template-settings > h3 { margin: 0; font-size: .92rem; }
-.treatment-template-group { min-width: 0; display: grid; gap: 8px; }
+.treatment-template-group { min-width: 0; display: grid; gap: 6px; }
 .treatment-template-group h3 { margin: 0; font-size: max(.82rem, 13px); }
-.treatment-template-list { display: grid; gap: 7px; }
-.treatment-template-item { min-width: 0; padding: 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+.treatment-template-list { display: grid; gap: 6px; }
+.treatment-template-item { min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); display: flex; justify-content: space-between; gap: 8px; align-items: center; }
 .treatment-template-item.is-disabled { opacity: .7; }
 .treatment-template-item > span { min-width: 0; display: grid; gap: 2px; overflow-wrap: anywhere; }
 .treatment-template-item small { color: var(--muted); font-size: max(.76rem, 12px); }
 .treatment-template-item > div { display: flex; flex-wrap: wrap; justify-content: end; gap: 4px; }
+.treatment-template-capability-note { margin: 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--muted); font-size: max(.76rem, 12px); line-height: 1.45; }
 .treatment-template-editor { margin-top: 16px; display: grid; gap: 12px; }
 .treatment-template-editor h2,
 .treatment-template-editor p { margin: 0; }

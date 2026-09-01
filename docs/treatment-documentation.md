@@ -1,6 +1,6 @@
-# PODOLOGY-003/004 – Behandlungsdokumentation und Kundenausgabe
+# PODOLOGY-003/004/005 – Behandlungsdokumentation und Kundenausgabe
 
-Stand: 01.09.2026. PODOLOGY-003 ergänzt auf Basis von v0.11.6 die beleggebundene Behandlungsdokumentation. PODOLOGY-004 projiziert daraus genau den Kundenpflegehinweis und aus dem unveränderlichen Rezeptzuordnungs-Snapshot genau das Rezeptdatum in lokale Kundendokumente. Dieser Entwicklungsstand ist noch kein Release.
+Stand: 01.09.2026. PODOLOGY-003 ergänzt auf Basis von v0.11.6 die beleggebundene Behandlungsdokumentation. PODOLOGY-004 projiziert daraus genau den Kundenpflegehinweis und aus dem unveränderlichen Rezeptzuordnungs-Snapshot genau das Rezeptdatum in lokale Kundendokumente. PODOLOGY-005 poliert ausschließlich Vorlagenauswahl, Hilfetexte und Vorlagenkarten; Datenmodell und Ausgabevertrag bleiben unverändert. Dieser Entwicklungsstand ist noch kein Release.
 
 ## Geltungsbereich
 
@@ -45,7 +45,9 @@ Fehler behalten den Texteingabezustand im Checkout. Erst ein erfolgreich bestät
 
 Vorlagen liegen ausschließlich in `settings.treatmentTemplates`. Sie besitzen stabile ID, Mandant, Geschäftsbereich, Zweck (`internal-documentation` oder `customer-care`), Titel, Text, Aktivstatus und Zeitpunkte. Anlegen, Bearbeiten, Archivieren und Reaktivieren verwenden den bestehenden zentralen Settingswriter. Es gibt kein Harddelete und kein separates Vorlagenmodell.
 
-Im Checkout kopiert eine aktive Vorlage ihren Text in das bearbeitbare Feld. Die Vorlage bleibt unverändert; der gespeicherte Datensatz enthält nur den tatsächlich bestätigten Text. Deaktivierte Capability oder deaktivierter Geschäftsbereich verhindern neue Vorlagen und neue Datensätze, nicht aber das Lesen historischer Inhalte.
+Im Checkout stehen aktive Vorlagen des aktuellen Geschäftsbereichs in zwei getrennten nativen Auswahlfeldern für interne Dokumentation und Kundenpflegehinweis bereit. Ein Platzhalter bleibt auch bei genau einer Vorlage vorausgewählt; ohne passende aktive Vorlage entfällt das Auswahlfeld vollständig. Die Auswahl kopiert den Text in das frei bearbeitbare Feld. Eine unveränderte Vorlagenkopie darf durch eine andere Vorlage ersetzt werden. Wurde der Text manuell bearbeitet, verhindert die Oberfläche ein stilles Überschreiben und verlangt vor einem bewussten Wechsel das Leeren des Feldes. Die Vorlage bleibt unverändert; der gespeicherte Datensatz enthält nur den tatsächlich bestätigten Text.
+
+Die Vorlagenverwaltung zeigt bei aktiver Capability keinen zusätzlichen Sperrhinweis. Bei deaktivierter Capability oder deaktiviertem Geschäftsbereich bleibt genau ein gemeinsamer Hinweis sichtbar: vorhandene Vorlagen bleiben erhalten, neue Vorlagen und deren Verwendung setzen die erneute Aktivierung voraus. Historische Inhalte bleiben lesbar.
 
 ## Kundenverlauf
 
@@ -74,8 +76,8 @@ Es gibt keinen Serverupload und keine zusätzliche lokale Verschlüsselung der I
 
 ## Prüfungen und offene Grenze
 
-Automatisierte Browserfälle decken Schema 7→8, unveränderte Altstores, atomaren Abschluss mit und ohne Rezept, Gutscheinzahlung, Fehler/Rollback, Idempotenz, Vorlagen, Kundenverlauf, Backup/Restore und die Ausgabeisolation ab. Die echte App-Oberfläche wird in isolierten Testdatenbanken bei 320, 390 und 411 Pixeln geprüft; die produktive Datenbank und reale Geschäftsdaten werden nicht verwendet.
+Automatisierte Browserfälle decken Schema 7→8, unveränderte Altstores, atomaren Abschluss mit und ohne Rezept, Gutscheinzahlung, Fehler/Rollback, Idempotenz, Vorlagen, Kundenverlauf, Backup/Restore und die Ausgabeisolation ab. Die PODOLOGY-005-Matrix umfasst keinen, einen und mehrere Treffer, getrennte Zwecke, archivierte und bereichsfremde Vorlagen sowie den nicht destruktiven Wechsel nach manueller Bearbeitung. Die echte App-Oberfläche wird in isolierten Testdatenbanken bei 320, 360, 390 und 411 Pixeln sowie in einer größeren Ansicht geprüft; die produktive Datenbank und reale Geschäftsdaten werden nicht verwendet.
 
-Lokales Ergebnis am 01.09.2026: **249/249 Browserprüfungen bestanden**, Testdatenbank-Cleanup bestanden und keine Konsolen-, Ressourcen- oder Laufzeitfehler. Die eingebettete echte App-Oberfläche und die Kundendokumente blieben bei 320, 360, 390 und 411 Pixeln ohne horizontalen Überlauf. Zusätzlich geprüft sind die echten HTML-/PDF-Ausgaben mit und ohne Rezept/Pflegehinweis, exakt 300 Zeichen, lange Einzelwörter und URLs, mehrseitige 80-mm-PDFs, Korrekturbelege, Public-Viewer-Whitelist, Steuerberater-ZIP, Backup/Restore und unveränderliche historische Snapshots.
+Lokales Ergebnis am 01.09.2026: **251/251 Browserprüfungen bestanden**, Testdatenbank-Cleanup bestanden und keine Konsolen-, Ressourcen- oder Laufzeitfehler. Die eingebettete echte App-Oberfläche und die Kundendokumente blieben bei 320, 360, 390 und 411 Pixeln sowie in der 768-Pixel-Prüfung ohne horizontalen Überlauf. Zusätzlich geprüft sind die echten HTML-/PDF-Ausgaben mit und ohne Rezept/Pflegehinweis, exakt 300 Zeichen, lange Einzelwörter und URLs, mehrseitige 80-mm-PDFs, Korrekturbelege, Public-Viewer-Whitelist, Steuerberater-ZIP, Backup/Restore und unveränderliche historische Snapshots.
 
 Vor einer Beta-Veröffentlichung bleiben Versions-/Cachevorbereitung sowie ein realer iPhone-/Android-In-place-Test mit vorheriger verschlüsselter Sicherung erforderlich. Auf beiden Geräteklassen müssen Belegansicht, PDF, Teilen/Speichern, lange Pflegehinweise und die fortbestehende Public-/Steuerberater-Isolation real bestätigt werden.

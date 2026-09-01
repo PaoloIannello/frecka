@@ -62,6 +62,10 @@
     checkoutPrescriptionPlausibilityConfirmed: false,
     checkoutInternalDocumentation: "",
     checkoutCustomerCareAdvice: "",
+    checkoutInternalTemplateId: "",
+    checkoutCustomerCareTemplateId: "",
+    checkoutInternalTemplateText: "",
+    checkoutCustomerCareTemplateText: "",
     checkoutTreatmentError: "",
     checkoutReceiptId: null,
     checkoutSubmitting: false,
@@ -1501,6 +1505,10 @@
   function resetCheckoutTreatmentDocumentation() {
     state.checkoutInternalDocumentation = "";
     state.checkoutCustomerCareAdvice = "";
+    state.checkoutInternalTemplateId = "";
+    state.checkoutCustomerCareTemplateId = "";
+    state.checkoutInternalTemplateText = "";
+    state.checkoutCustomerCareTemplateText = "";
     state.checkoutTreatmentError = "";
   }
 
@@ -1512,7 +1520,45 @@
 
   function treatmentTemplatesForCheckout(purpose) {
     return data.treatmentTemplates.filter(entry => entry.active !== false
-      && entry.businessAreaId === state.activeBusinessArea && entry.purpose === purpose);
+      && entry.businessAreaId === state.activeBusinessArea && entry.purpose === purpose)
+      .sort((a, b) => a.title.localeCompare(b.title, "de-DE"));
+  }
+
+  function checkoutTreatmentTemplateSelectMarkup(templates, purpose, selectedId) {
+    if (!templates.length) return "";
+    const isCare = purpose === "customer-care";
+    return `<label class="treatment-template-select"><span>Vorlage</span><select data-checkout-treatment-template="${purpose}" aria-label="${isCare ? "Vorlage für Pflegehinweis" : "Vorlage für interne Dokumentation"}" ${state.treatmentRecordsReady ? "" : "disabled"}>
+      <option value="">Vorlage auswählen …</option>
+      ${templates.map(template => `<option value="${escapeHtml(template.id)}" ${template.id === selectedId ? "selected" : ""}>${escapeHtml(template.title)}</option>`).join("")}
+    </select></label>`;
+  }
+
+  function applyCheckoutTreatmentTemplate(purpose, templateId) {
+    if (!treatmentDocumentationAvailable()) return;
+    const isCare = purpose === "customer-care";
+    const templates = treatmentTemplatesForCheckout(purpose);
+    const template = templates.find(entry => entry.id === templateId);
+    const currentText = isCare ? state.checkoutCustomerCareAdvice : state.checkoutInternalDocumentation;
+    const previousTemplateText = isCare ? state.checkoutCustomerCareTemplateText : state.checkoutInternalTemplateText;
+    if (!template) {
+      if (isCare) state.checkoutCustomerCareTemplateId = "";
+      else state.checkoutInternalTemplateId = "";
+      return;
+    }
+    if (currentText.trim() && currentText !== previousTemplateText) {
+      state.checkoutTreatmentError = "Der Text wurde bereits bearbeitet. Leere das Feld, bevor du eine andere Vorlage auswählst.";
+      return;
+    }
+    if (isCare) {
+      state.checkoutCustomerCareAdvice = template.text;
+      state.checkoutCustomerCareTemplateId = template.id;
+      state.checkoutCustomerCareTemplateText = template.text;
+    } else {
+      state.checkoutInternalDocumentation = template.text;
+      state.checkoutInternalTemplateId = template.id;
+      state.checkoutInternalTemplateText = template.text;
+    }
+    state.checkoutTreatmentError = "";
   }
 
   function prescriptionUsageFor(entry) {
@@ -2063,16 +2109,16 @@
       </section>` : ""}
       ${treatmentCapabilityActive ? `<section class="checkout-section checkout-treatment-section" aria-labelledby="checkoutTreatmentTitle">
         <div class="section-title-row"><h2 id="checkoutTreatmentTitle">Behandlungsdokumentation</h2><span>optional</span></div>
-        <label class="checkout-treatment-field"><span><strong>Dokumentation (intern)</strong><small>Nur intern – erscheint nicht auf Beleg, PDF, QR-Code oder Export.</small></span>
-          ${internalTemplates.length ? `<div class="treatment-template-actions" aria-label="Interne Vorlagen">${internalTemplates.map(template => `<button class="button button-secondary" type="button" data-apply-treatment-template="${escapeHtml(template.id)}">${escapeHtml(template.title)}</button>`).join("")}</div>` : ""}
-          <textarea id="checkoutInternalDocumentation" rows="4" maxlength="4000" ${state.treatmentRecordsReady ? "" : "disabled"}>${escapeHtml(state.checkoutInternalDocumentation)}</textarea>
+        <div class="checkout-treatment-field"><span id="checkoutInternalDocumentationLabel"><strong>Dokumentation (intern)</strong><small>Nur intern – erscheint nicht auf Beleg, PDF, QR-Code oder Export.</small></span>
+          ${checkoutTreatmentTemplateSelectMarkup(internalTemplates, "internal-documentation", state.checkoutInternalTemplateId)}
+          <textarea id="checkoutInternalDocumentation" aria-labelledby="checkoutInternalDocumentationLabel" rows="4" maxlength="4000" ${state.treatmentRecordsReady ? "" : "disabled"}>${escapeHtml(state.checkoutInternalDocumentation)}</textarea>
           <small>${state.checkoutInternalDocumentation.length} / 4000 Zeichen</small>
-        </label>
-        <label class="checkout-treatment-field"><span><strong>Pflegehinweis für Kundin/Kunden</strong><small>Wird gespeichert, aber in diesem Stand noch nicht ausgegeben.</small></span>
-          ${careTemplates.length ? `<div class="treatment-template-actions" aria-label="Pflegehinweis-Vorlagen">${careTemplates.map(template => `<button class="button button-secondary" type="button" data-apply-treatment-template="${escapeHtml(template.id)}">${escapeHtml(template.title)}</button>`).join("")}</div>` : ""}
-          <textarea id="checkoutCustomerCareAdvice" rows="3" maxlength="300" ${state.treatmentRecordsReady ? "" : "disabled"}>${escapeHtml(state.checkoutCustomerCareAdvice)}</textarea>
+        </div>
+        <div class="checkout-treatment-field"><span id="checkoutCustomerCareAdviceLabel"><strong>Pflegehinweis für Kundin/Kunden</strong><small>Erscheint auf dem Kundenbeleg und PDF.</small></span>
+          ${checkoutTreatmentTemplateSelectMarkup(careTemplates, "customer-care", state.checkoutCustomerCareTemplateId)}
+          <textarea id="checkoutCustomerCareAdvice" aria-labelledby="checkoutCustomerCareAdviceLabel" rows="3" maxlength="300" ${state.treatmentRecordsReady ? "" : "disabled"}>${escapeHtml(state.checkoutCustomerCareAdvice)}</textarea>
           <small>${state.checkoutCustomerCareAdvice.length} / 300 Zeichen</small>
-        </label>
+        </div>
         ${state.checkoutTreatmentError ? `<p class="checkout-prescription-error" role="alert">${escapeHtml(state.checkoutTreatmentError)}</p>` : ""}
       </section>` : ""}
       <section class="checkout-section"><h2>Zahlungsart <span>nur Simulation</span></h2><div class="payment-grid">${paymentCards}</div></section>
@@ -2133,12 +2179,24 @@
     }
     document.getElementById("checkoutInternalDocumentation")?.addEventListener("input", event => {
       state.checkoutInternalDocumentation = event.target.value;
+      if (!event.target.value) {
+        state.checkoutInternalTemplateId = "";
+        state.checkoutInternalTemplateText = "";
+      }
       state.checkoutTreatmentError = "";
     });
     document.getElementById("checkoutCustomerCareAdvice")?.addEventListener("input", event => {
       state.checkoutCustomerCareAdvice = event.target.value;
+      if (!event.target.value) {
+        state.checkoutCustomerCareTemplateId = "";
+        state.checkoutCustomerCareTemplateText = "";
+      }
       state.checkoutTreatmentError = "";
     });
+    document.querySelectorAll("[data-checkout-treatment-template]").forEach(select => select.addEventListener("change", event => {
+      applyCheckoutTreatmentTemplate(event.target.dataset.checkoutTreatmentTemplate, event.target.value);
+      renderCheckout();
+    }));
   }
 
 
@@ -5678,7 +5736,6 @@
     const enabled = area.active !== false && area.features?.prescriptionDocumentation === true;
     return `<section class="treatment-template-group"><div class="section-title-row"><h3>${escapeHtml(title)}</h3><button class="text-action" type="button" data-new-treatment-template="${escapeHtml(area.id)}" data-treatment-template-purpose="${purpose}" ${enabled ? "" : "disabled"}>＋ Vorlage</button></div>
       ${templates.length ? `<div class="treatment-template-list">${templates.map(template => `<article class="treatment-template-item ${template.active ? "" : "is-disabled"}"><span><strong>${escapeHtml(template.title)}</strong><small>${template.active ? "Aktiv" : "Archiviert"}</small></span><div><button class="text-action" type="button" data-edit-treatment-template="${escapeHtml(template.id)}" ${enabled ? "" : "disabled"}>Bearbeiten</button><button class="text-action" type="button" data-toggle-treatment-template="${escapeHtml(template.id)}" ${enabled ? "" : "disabled"}>${template.active ? "Archivieren" : "Aktivieren"}</button></div></article>`).join("")}</div>` : '<p class="page-copy">Noch keine Vorlagen.</p>'}
-      ${enabled ? "" : '<p class="page-copy">Vorlagen bleiben gespeichert und lesbar. Neue Vorlagen und Verwendung sind erst nach Aktivierung der Rezept- &amp; Behandlungsdokumentation möglich.</p>'}
     </section>`;
   }
 
@@ -5711,7 +5768,7 @@
       <form id="businessAreaSettingsForm" class="settings-form">
         <input type="hidden" name="prescriptionFeaturesForm" value="1">
         <div class="business-area-list">
-          ${data.businessAreas.map(area => `<section class="business-area-row">
+          ${data.businessAreas.map(area => `<section class="business-area-row" data-business-area-id="${escapeHtml(area.id)}">
             <label class="setting-field"><span>Name</span><input name="areaLabel:${escapeHtml(area.id)}" value="${escapeHtml(area.label)}" required></label>
             <div class="business-area-controls">
               <label><input type="checkbox" name="activeBusinessArea" value="${escapeHtml(area.id)}" ${area.active !== false ? "checked" : ""}><span>Aktiv</span></label>
@@ -5719,7 +5776,7 @@
             ${businessAreaServiceLocationField(area)}
             ${businessAreaBrandingFields(area)}
             <label class="prescription-capability"><input type="checkbox" name="prescriptions:${escapeHtml(area.id)}" ${area.features?.prescriptionDocumentation ? "checked" : ""}><span><strong>Rezept- &amp; Behandlungsdokumentation verwenden</strong><small>Aktiviert Rezepte, interne Behandlungsdokumentation und gespeicherte Pflegehinweise.</small></span></label>
-            <div class="treatment-template-settings"><h3>Vorlagen</h3>${treatmentTemplateGroupMarkup(area, "internal-documentation", "Dokumentation (intern)")}${treatmentTemplateGroupMarkup(area, "customer-care", "Pflegehinweise")}</div>
+            <div class="treatment-template-settings"><h3>Vorlagen</h3>${treatmentTemplateGroupMarkup(area, "internal-documentation", "Dokumentation (intern)")}${treatmentTemplateGroupMarkup(area, "customer-care", "Pflegehinweise")}${area.active !== false && area.features?.prescriptionDocumentation === true ? "" : '<p class="treatment-template-capability-note">Vorhandene Vorlagen bleiben erhalten. Neue Vorlagen können nach Aktivierung der Rezept- &amp; Behandlungsdokumentation verwendet werden.</p>'}</div>
           </section>`).join("")}
         </div>
         <button class="button button-secondary business-area-add" type="button" data-action="business-area-add">＋ Geschäftsbereich</button>
@@ -6693,18 +6750,6 @@
       state.checkoutPrescriptionError = "";
       state.checkoutPrescriptionOverrunConfirmed = false;
       state.checkoutPrescriptionPlausibilityConfirmed = false;
-      renderCheckout();
-      return;
-    }
-    const treatmentTemplateButton = event.target.closest("[data-apply-treatment-template]");
-    if (treatmentTemplateButton) {
-      const template = treatmentTemplatesForCheckout("internal-documentation")
-        .concat(treatmentTemplatesForCheckout("customer-care"))
-        .find(entry => entry.id === treatmentTemplateButton.dataset.applyTreatmentTemplate);
-      if (!template || !treatmentDocumentationAvailable()) return;
-      if (template.purpose === "customer-care") state.checkoutCustomerCareAdvice = template.text;
-      else state.checkoutInternalDocumentation = template.text;
-      state.checkoutTreatmentError = "";
       renderCheckout();
       return;
     }
