@@ -9,7 +9,7 @@
 
   const constants = Object.freeze({
     databaseName: "frecka",
-    databaseVersion: 7,
+    databaseVersion: 8,
     storeName: "settings",
     settingsStoreName: "settings",
     catalogStoreName: "catalog",
@@ -17,9 +17,15 @@
     receiptsStoreName: "receipts",
     vouchersStoreName: "vouchers",
     prescriptionsStoreName: "prescriptions",
+    treatmentRecordsStoreName: "treatmentRecords",
     prescriptionsFormatVersion: 1,
+    treatmentRecordsFormatVersion: 1,
+    treatmentTemplateFormatVersion: 1,
     prescriptionTextMaxLength: 200,
     prescriptionNoteMaxLength: 2000,
+    treatmentDocumentationMaxLength: 4000,
+    customerCareAdviceMaxLength: 300,
+    treatmentTemplateTitleMaxLength: 80,
     licenseRuntimeStoreName: "licenseRuntime",
     tenantId: "local-default",
     formatVersion: 1,
@@ -47,19 +53,19 @@
 
   const forbiddenRootKeys = new Set([
     "catalog", "categories", "businessTemplates", "templateImportStatus",
-    "customers", "customerChoices", "receipts", "vouchers", "histories",
+    "customers", "customerChoices", "receipts", "vouchers", "prescriptions", "treatmentRecords", "histories",
     "openReceipt", "drafts", "cancellations", "credits", "licenseRuntime", "licenseRuntimeStatus"
   ]);
   const catalogForbiddenRootKeys = new Set([
     "company", "serviceLocations", "businessAreas", "taxSettings", "receiptSettings",
     "paymentChoices", "setup", "catalog", "businessTemplates", "templateImportStatus",
-    "customers", "customerChoices", "receipts", "vouchers", "histories", "openReceipt",
+    "customers", "customerChoices", "receipts", "vouchers", "prescriptions", "treatmentRecords", "histories", "openReceipt",
     "drafts", "cancellations", "credits", "images", "logos", "license", "licenseRuntime", "licenseRuntimeStatus"
   ]);
   const customersForbiddenRootKeys = new Set([
     "company", "serviceLocations", "businessAreas", "taxSettings", "receiptSettings",
     "paymentChoices", "setup", "catalog", "categories", "businessTemplates",
-    "templateImportStatus", "customerChoices", "receipts", "vouchers", "histories",
+    "templateImportStatus", "customerChoices", "receipts", "vouchers", "prescriptions", "treatmentRecords", "histories",
     "openReceipt", "drafts", "cancellations", "credits", "emailStatus", "license", "licenseRuntime", "licenseRuntimeStatus"
   ]);
   const customerForbiddenKeys = new Set([
@@ -70,7 +76,7 @@
   const receiptsForbiddenRootKeys = new Set([
     "company", "serviceLocations", "businessAreas", "taxSettings", "receiptSettings",
     "paymentChoices", "setup", "catalog", "categories", "businessTemplates",
-    "templateImportStatus", "customers", "customerChoices", "vouchers", "histories",
+    "templateImportStatus", "customers", "customerChoices", "vouchers", "prescriptions", "treatmentRecords", "histories",
     "openReceipt", "drafts", "cancellations", "credits", "images", "logos", "license", "licenseRuntime", "licenseRuntimeStatus"
   ]);
   const receiptForbiddenKeys = new Set([
@@ -80,7 +86,7 @@
   const vouchersForbiddenRootKeys = new Set([
     "company", "serviceLocations", "businessAreas", "taxSettings", "receiptSettings",
     "paymentChoices", "setup", "catalog", "categories", "businessTemplates",
-    "templateImportStatus", "customers", "customerChoices", "receipts", "histories",
+    "templateImportStatus", "customers", "customerChoices", "receipts", "prescriptions", "treatmentRecords", "histories",
     "openReceipt", "drafts", "cancellations", "credits", "images", "logos", "license", "licenseRuntime", "licenseRuntimeStatus"
   ]);
   const voucherForbiddenKeys = new Set([
@@ -115,7 +121,7 @@
     appDataSchemaVersion: constants.databaseVersion,
     minimumReadableSchemaVersion: 5,
     appVersion: "BACKUP-001",
-    storeKeys: Object.freeze(["settings", "catalog", "customers", "receipts", "vouchers", "prescriptions"])
+    storeKeys: Object.freeze(["settings", "catalog", "customers", "receipts", "vouchers", "prescriptions", "treatmentRecords"])
   });
   const integrityDiagnosticConstants = Object.freeze({
     format: "FRECKA_INTEGRITY_DIAGNOSTIC",
@@ -960,6 +966,13 @@
     return migrated;
   }
 
+  function settingsWithLegacyTreatmentTemplates(record) {
+    if (!isPlainObject(record) || Object.prototype.hasOwnProperty.call(record, "treatmentTemplates")) return record;
+    const migrated = cloneSerializable(record);
+    migrated.treatmentTemplates = [];
+    return migrated;
+  }
+
   function addMissingKnownFields(source, normalizedShape) {
     if (Array.isArray(normalizedShape)) {
       if (!Array.isArray(source) || source.length !== normalizedShape.length) return cloneSafe(source);
@@ -1008,6 +1021,7 @@
     candidate = settingsWithLegacyLogoAssetRegister(candidate);
     candidate = settingsWithLegacyCompanyIdentity(candidate);
     candidate = settingsWithLegacyBackupReminder(candidate);
+    candidate = settingsWithLegacyTreatmentTemplates(candidate);
 
     let normalizedCandidate;
     try {
@@ -1064,6 +1078,7 @@
       || trimmedString(original.company?.name) !== trimmedString(completed.company?.name)) {
       compatibilityCodes.push("COMPANY_IDENTITY_CONSOLIDATED");
     }
+    if (original.treatmentTemplates === undefined) compatibilityCodes.push("TREATMENT_TEMPLATES_ADDED");
     if (!sameSerializableValue(candidate, completed)) compatibilityCodes.push("KNOWN_SETTINGS_FIELDS_ADDED");
 
     return Object.freeze({
@@ -1217,6 +1232,10 @@
         isDefault: area.isDefault === true,
         defaultServiceLocationId: nullableStringId(area.defaultServiceLocationId)
       })).filter(area => nullableStringId(area.id)),
+      treatmentTemplates: normalizeTreatmentTemplates(
+        Array.isArray(runtimeData.treatmentTemplates) ? runtimeData.treatmentTemplates : [],
+        runtimeBusinessAreas
+      ),
       backupReminder,
       setup: { status: validSetupStatus(typeof setupStatus === "string" ? setupStatus : setupStatus?.status) }
     };
@@ -1348,8 +1367,137 @@
     return { ...cloneSafe(source || {}), prescriptionDocumentation: source?.prescriptionDocumentation === true };
   }
 
+  const treatmentTemplatePurposes = new Set(["internal-documentation", "customer-care"]);
+
+  function normalizeTreatmentTemplates(input, businessAreas = []) {
+    if (!Array.isArray(input)) {
+      throw prescriptionError("TREATMENT_TEMPLATES_INVALID", "Die Vorlagen für Behandlungsdokumentation sind ungültig.");
+    }
+    const areaIds = new Set((businessAreas || []).map(area => area?.id).filter(Boolean));
+    const seen = new Set();
+    return input.map(entry => {
+      const allowed = new Set(["formatVersion", "id", "businessAreaId", "purpose", "title", "text", "active", "createdAt", "updatedAt"]);
+      if (!isPlainObject(entry) || entry.formatVersion !== constants.treatmentTemplateFormatVersion
+        || Object.keys(entry).some(key => !allowed.has(key))) {
+        throw prescriptionError("TREATMENT_TEMPLATE_FORMAT_INVALID", "Dieses Vorlagenformat wird nicht unterstützt.");
+      }
+      for (const key of ["id", "businessAreaId"]) {
+        if (typeof entry[key] !== "string" || !entry[key].trim() || entry[key] !== entry[key].trim() || entry[key].length > 160) {
+          throw prescriptionError("TREATMENT_TEMPLATE_REFERENCE_INVALID", "Eine Vorlagenreferenz ist ungültig.");
+        }
+      }
+      if (seen.has(entry.id)) throw prescriptionError("TREATMENT_TEMPLATE_ID_DUPLICATE", "Eine Behandlungsvorlage ist doppelt vorhanden.");
+      seen.add(entry.id);
+      if (!areaIds.has(entry.businessAreaId)) {
+        throw prescriptionError("TREATMENT_TEMPLATE_AREA_MISSING", "Zu einer Behandlungsvorlage fehlt der Geschäftsbereich.");
+      }
+      if (!treatmentTemplatePurposes.has(entry.purpose)) {
+        throw prescriptionError("TREATMENT_TEMPLATE_PURPOSE_INVALID", "Der Zweck einer Behandlungsvorlage ist ungültig.");
+      }
+      const title = trimmedString(entry.title);
+      const text = stringValue(entry.text).trim();
+      const textLimit = entry.purpose === "customer-care"
+        ? constants.customerCareAdviceMaxLength
+        : constants.treatmentDocumentationMaxLength;
+      if (!title || title.length > constants.treatmentTemplateTitleMaxLength || !text || text.length > textLimit) {
+        throw prescriptionError("TREATMENT_TEMPLATE_CONTENT_INVALID", "Titel oder Text einer Behandlungsvorlage ist ungültig.");
+      }
+      if (typeof entry.active !== "boolean" || stableIso(entry.createdAt, "") !== entry.createdAt
+        || stableIso(entry.updatedAt, "") !== entry.updatedAt || entry.updatedAt < entry.createdAt) {
+        throw prescriptionError("TREATMENT_TEMPLATE_METADATA_INVALID", "Die Metadaten einer Behandlungsvorlage sind ungültig.");
+      }
+      return cloneSerializable({ ...entry, title, text });
+    });
+  }
+
   function emptyPrescriptionsRecord(tenantId = constants.tenantId) {
     return { formatVersion: constants.prescriptionsFormatVersion, tenantId, updatedAt: epochIso, prescriptions: [] };
+  }
+
+  function emptyTreatmentRecordsRecord(tenantId = constants.tenantId) {
+    return {
+      formatVersion: constants.treatmentRecordsFormatVersion,
+      tenantId,
+      updatedAt: epochIso,
+      treatmentRecords: []
+    };
+  }
+
+  function validateTreatmentRecord(entry, tenantId) {
+    const allowed = new Set(["formatVersion", "id", "tenantId", "customerId", "businessAreaId", "receiptId",
+      "receiptNumber", "prescriptionId", "userId", "performedAt", "internalDocumentation", "customerCareAdvice",
+      "customerSnapshot", "businessAreaSnapshot", "userSnapshot", "prescriptionSnapshot", "createdAt", "updatedAt"]);
+    if (!isPlainObject(entry) || entry.formatVersion !== constants.treatmentRecordsFormatVersion
+      || Object.keys(entry).some(key => !allowed.has(key))) {
+      throw prescriptionError("TREATMENT_RECORD_FORMAT_INVALID", "Dieses Format der Behandlungsdokumentation wird nicht unterstützt.");
+    }
+    if (entry.tenantId !== tenantId) throw prescriptionError("TREATMENT_RECORD_TENANT_INVALID", "Die Behandlungsdokumentation gehört zu einem anderen Mandanten.");
+    for (const key of ["id", "customerId", "businessAreaId", "receiptId", "receiptNumber"]) {
+      if (typeof entry[key] !== "string" || !entry[key].trim() || entry[key] !== entry[key].trim() || entry[key].length > 160) {
+        throw prescriptionError("TREATMENT_RECORD_REFERENCE_INVALID", "Eine Referenz der Behandlungsdokumentation ist ungültig.");
+      }
+    }
+    for (const key of ["prescriptionId", "userId"]) {
+      if (entry[key] != null && (typeof entry[key] !== "string" || !entry[key].trim() || entry[key] !== entry[key].trim() || entry[key].length > 160)) {
+        throw prescriptionError("TREATMENT_RECORD_REFERENCE_INVALID", "Eine optionale Referenz der Behandlungsdokumentation ist ungültig.");
+      }
+    }
+    if (typeof entry.internalDocumentation !== "string"
+      || entry.internalDocumentation.length > constants.treatmentDocumentationMaxLength
+      || typeof entry.customerCareAdvice !== "string"
+      || entry.customerCareAdvice.length > constants.customerCareAdviceMaxLength
+      || (!entry.internalDocumentation.trim() && !entry.customerCareAdvice.trim())) {
+      throw prescriptionError("TREATMENT_RECORD_CONTENT_INVALID", "Die Behandlungsdokumentation ist leer oder überschreitet die zulässige Länge.");
+    }
+    if (stableIso(entry.performedAt, "") !== entry.performedAt || stableIso(entry.createdAt, "") !== entry.createdAt
+      || stableIso(entry.updatedAt, "") !== entry.updatedAt || entry.performedAt !== entry.createdAt
+      || entry.updatedAt !== entry.createdAt || !isPlainObject(entry.customerSnapshot)
+      || !isPlainObject(entry.businessAreaSnapshot) || (entry.userSnapshot != null && !isPlainObject(entry.userSnapshot))
+      || (entry.prescriptionSnapshot != null && !isPlainObject(entry.prescriptionSnapshot))) {
+      throw prescriptionError("TREATMENT_RECORD_METADATA_INVALID", "Die Metadaten der Behandlungsdokumentation sind ungültig.");
+    }
+    return entry;
+  }
+
+  function normalizeTreatmentRecordsRecord(input, expectedTenantId = constants.tenantId) {
+    if (!isPlainObject(input) || input.formatVersion !== constants.treatmentRecordsFormatVersion
+      || input.tenantId !== expectedTenantId || !Array.isArray(input.treatmentRecords)
+      || stableIso(input.updatedAt, "") !== input.updatedAt
+      || Object.keys(input).some(key => !["formatVersion", "tenantId", "updatedAt", "treatmentRecords"].includes(key))) {
+      throw prescriptionError("TREATMENT_RECORDS_RECORD_INVALID", "Der lokale Bestand der Behandlungsdokumentation ist unvollständig oder ungültig.");
+    }
+    const ids = new Set();
+    const receiptIds = new Set();
+    input.treatmentRecords.forEach(entry => {
+      validateTreatmentRecord(entry, expectedTenantId);
+      if (ids.has(entry.id) || receiptIds.has(entry.receiptId)) {
+        throw prescriptionError("TREATMENT_RECORD_DUPLICATE", "Die Behandlungsdokumentation enthält eine doppelte Referenz.");
+      }
+      ids.add(entry.id);
+      receiptIds.add(entry.receiptId);
+    });
+    return { record: cloneSerializable(input), repairs: [] };
+  }
+
+  function validateTreatmentRecordReferences(record, settings, customers, receipts, prescriptions) {
+    const customerIds = new Set(customers.map(entry => entry.id));
+    const areaIds = new Set(settings.businessAreas.map(entry => entry.id));
+    const userIds = new Set((settings.users || []).map(entry => entry.id));
+    const prescriptionIds = new Set(prescriptions.map(entry => entry.id));
+    const receiptById = new Map(receipts.map(entry => [entry.id, entry]));
+    record.treatmentRecords.forEach(entry => {
+      const receipt = receiptById.get(entry.receiptId);
+      if (!customerIds.has(entry.customerId) || !areaIds.has(entry.businessAreaId) || !receipt
+        || !prescriptionOriginal(receipt) || !completedPrescriptionReceipt(receipt)
+        || prescriptionReceiptNumber(receipt) !== entry.receiptNumber
+        || prescriptionReceiptCustomer(receipt) !== entry.customerId
+        || prescriptionReceiptArea(receipt) !== entry.businessAreaId
+        || (entry.userId && !userIds.has(entry.userId))
+        || (entry.prescriptionId && (!prescriptionIds.has(entry.prescriptionId)
+          || receipt.prescriptionAssignment?.prescriptionId !== entry.prescriptionId))) {
+        throw prescriptionError("TREATMENT_RECORD_REFERENCE_INVALID", "Eine Behandlungsdokumentation verweist auf unvollständige historische Daten.");
+      }
+    });
   }
 
   function validatePrescription(entry, tenantId) {
@@ -1564,6 +1712,70 @@
       throw prescriptionError("PRESCRIPTION_CONFIRMATION_REQUIRED", "Die Rezeptzuordnung muss vor dem Abschluss anhand des aktuellen Bestands bewusst bestätigt werden. Es wurde noch nichts gespeichert.");
     }
     return { ...draft, prescriptionAssignment: review.assignment };
+  }
+
+  function prepareTreatmentRecordAtCommit(input, receipt, settings, customersRecord, prescriptionsRecord, currentRecord, tenantId) {
+    const aggregate = normalizeTreatmentRecordsRecord(currentRecord, tenantId).record;
+    const existing = aggregate.treatmentRecords.find(entry => entry.receiptId === receipt?.id) || null;
+    if (input == null) return { record: aggregate, treatmentRecord: existing, created: false };
+    if (!isPlainObject(input) || Object.keys(input).some(key => !["internalDocumentation", "customerCareAdvice"].includes(key))) {
+      throw prescriptionError("TREATMENT_INPUT_INVALID", "Die Behandlungsdokumentation konnte nicht sicher geprüft werden.");
+    }
+    const internalDocumentation = stringValue(input.internalDocumentation).trim();
+    const customerCareAdvice = stringValue(input.customerCareAdvice).trim();
+    if (!internalDocumentation && !customerCareAdvice) return { record: aggregate, treatmentRecord: existing, created: false };
+    if (internalDocumentation.length > constants.treatmentDocumentationMaxLength
+      || customerCareAdvice.length > constants.customerCareAdviceMaxLength) {
+      throw prescriptionError("TREATMENT_RECORD_CONTENT_INVALID", "Die Behandlungsdokumentation überschreitet die zulässige Länge.");
+    }
+    if (existing) {
+      if (existing.internalDocumentation === internalDocumentation && existing.customerCareAdvice === customerCareAdvice) {
+        return { record: aggregate, treatmentRecord: existing, created: false };
+      }
+      throw prescriptionError("TREATMENT_RECORD_IMMUTABLE", "Eine abgeschlossene Behandlungsdokumentation kann nicht überschrieben werden.");
+    }
+    if (!prescriptionOriginal(receipt) || !completedPrescriptionReceipt(receipt)) {
+      throw prescriptionError("TREATMENT_RECEIPT_INVALID", "Behandlungsdokumentation kann nur mit einem erfolgreich abgeschlossenen normalen Beleg gespeichert werden.");
+    }
+    const customerId = prescriptionReceiptCustomer(receipt);
+    const businessAreaId = prescriptionReceiptArea(receipt);
+    const customer = customersRecord?.customers?.find(entry => entry.id === customerId);
+    const area = settings?.businessAreas?.find(entry => entry.id === businessAreaId);
+    if (!customer || customer.active === false || !area || area.active === false
+      || !businessAreaFeatures(area.features).prescriptionDocumentation) {
+      throw prescriptionError("TREATMENT_DOCUMENTATION_DISABLED", "Behandlungsdokumentation ist für diesen Kunden oder Geschäftsbereich nicht verfügbar.");
+    }
+    const user = (settings.users || []).find(entry => entry.id === settings.activeUserId) || null;
+    const prescriptionId = nullableStringId(receipt.prescriptionAssignment?.prescriptionId);
+    if (prescriptionId && !prescriptionsRecord?.prescriptions?.some(entry => entry.id === prescriptionId)) {
+      throw prescriptionError("TREATMENT_PRESCRIPTION_MISSING", "Die optionale Rezeptreferenz der Behandlung ist nicht verfügbar.");
+    }
+    const performedAt = receipt.completedAt;
+    const treatmentRecord = {
+      formatVersion: constants.treatmentRecordsFormatVersion,
+      id: `treatment_${receipt.id}`,
+      tenantId,
+      customerId,
+      businessAreaId,
+      receiptId: receipt.id,
+      receiptNumber: prescriptionReceiptNumber(receipt),
+      prescriptionId,
+      userId: nullableStringId(user?.id),
+      performedAt,
+      internalDocumentation,
+      customerCareAdvice,
+      customerSnapshot: cloneSafe(receipt.customerSnapshot || customer),
+      businessAreaSnapshot: cloneSafe(receipt.businessAreaSnapshot || receipt.contextSnapshot?.businessArea || area),
+      userSnapshot: user ? cloneSafe({ id: user.id, displayName: user.displayName }) : null,
+      prescriptionSnapshot: prescriptionId ? cloneSafe(receipt.prescriptionAssignment) : null,
+      createdAt: performedAt,
+      updatedAt: performedAt
+    };
+    validateTreatmentRecord(treatmentRecord, tenantId);
+    aggregate.treatmentRecords.push(treatmentRecord);
+    aggregate.updatedAt = performedAt;
+    normalizeTreatmentRecordsRecord(aggregate, tenantId);
+    return { record: aggregate, treatmentRecord, created: true };
   }
 
   function normalizeReceiptPosition(position, fallbackTaxRate = 0) {
@@ -2851,6 +3063,11 @@
       repairs.add("DEFAULT_BUSINESS_AREA_REPAIRED");
     }
 
+    const treatmentTemplates = normalizeTreatmentTemplates(
+      Array.isArray(raw.treatmentTemplates) ? raw.treatmentTemplates : [],
+      businessAreas
+    );
+
     const businessAreaIds = new Set(businessAreas.map(area => area.id));
     const defaultLocationById = new Map((defaults.serviceLocations || []).map(location => [location.id, location]));
     const locationSource = Array.isArray(raw.serviceLocations) ? raw.serviceLocations : defaults.serviceLocations || [];
@@ -3016,6 +3233,7 @@
         receiptSettings,
         paymentChoices,
         businessAreas,
+        treatmentTemplates,
         backupReminder,
         setup: { status: setupStatus }
     };
@@ -3144,6 +3362,11 @@
       && !Object.prototype.hasOwnProperty.call(snapshot.stores, "prescriptions")) {
       snapshot.stores.prescriptions = emptyPrescriptionsRecord(safeTenantId);
     }
+    // Schema 8 introduced a new, empty-by-definition treatment aggregate. Historical backups are never reconstructed.
+    if (snapshot.appDataSchemaVersion < 8 && isPlainObject(snapshot.stores)
+      && !Object.prototype.hasOwnProperty.call(snapshot.stores, "treatmentRecords")) {
+      snapshot.stores.treatmentRecords = emptyTreatmentRecordsRecord(safeTenantId);
+    }
     if (!isPlainObject(snapshot.stores)
       || tenantSnapshotConstants.storeKeys.some(key => !isPlainObject(snapshot.stores[key]))) {
       throw new PersistenceError("BACKUP_INCOMPLETE", "Die Sicherung ist unvollständig. Es fehlen lokale FRECKA-Daten.");
@@ -3197,6 +3420,14 @@
     const prescriptions = normalizePrescriptionsRecord(snapshot.stores.prescriptions, safeTenantId).record;
     validatePrescriptionReferences(prescriptions, customers.customers, settings.businessAreas, catalog.items);
     validatePrescriptionAssignments(receipts.receipts, prescriptions.prescriptions);
+    const treatmentRecords = normalizeTreatmentRecordsRecord(snapshot.stores.treatmentRecords, safeTenantId).record;
+    validateTreatmentRecordReferences(
+      treatmentRecords,
+      settings,
+      customers.customers,
+      receipts.receipts,
+      prescriptions.prescriptions
+    );
 
     assertUniqueVoucherSources(vouchers.vouchers);
     validateVoucherReceiptInvariant(receipts, vouchers);
@@ -3345,7 +3576,7 @@
         version: trimmedString(snapshot.app?.version, tenantSnapshotConstants.appVersion),
         build: trimmedString(snapshot.app?.build)
       },
-      stores: { settings, catalog, customers, receipts, vouchers, prescriptions }
+      stores: { settings, catalog, customers, receipts, vouchers, prescriptions, treatmentRecords }
     };
     const identity = companyIdentity(settings.company);
     return {
@@ -3361,7 +3592,8 @@
         customers: customers.customers.length,
         receipts: receipts.receipts.length,
         vouchers: vouchers.vouchers.length,
-        prescriptions: prescriptions.prescriptions.length
+        prescriptions: prescriptions.prescriptions.length,
+        treatmentRecords: treatmentRecords.treatmentRecords.length
       }
     };
   }
@@ -3841,6 +4073,7 @@
     const receiptsStoreName = options.receiptsStoreName || constants.receiptsStoreName;
     const vouchersStoreName = options.vouchersStoreName || constants.vouchersStoreName;
     const prescriptionsStoreName = options.prescriptionsStoreName || constants.prescriptionsStoreName;
+    const treatmentRecordsStoreName = options.treatmentRecordsStoreName || constants.treatmentRecordsStoreName;
     const licenseRuntimeStoreName = options.licenseRuntimeStoreName || constants.licenseRuntimeStoreName;
     const tenantId = nullableStringId(options.tenantId) || constants.tenantId;
     let databasePromise = null;
@@ -3889,6 +4122,18 @@
               cursor.continue();
             };
           }
+          if (!database.objectStoreNames.contains(treatmentRecordsStoreName)) {
+            const treatmentStore = database.createObjectStore(treatmentRecordsStoreName, { keyPath: "tenantId" });
+            treatmentStore.put(emptyTreatmentRecordsRecord(tenantId));
+            const cursorRequest = request.transaction.objectStore(storeName).openCursor();
+            cursorRequest.onsuccess = () => {
+              const cursor = cursorRequest.result;
+              if (!cursor) return;
+              if (typeof cursor.key !== "string" || !cursor.key.trim()) { request.transaction.abort(); return; }
+              treatmentStore.put(emptyTreatmentRecordsRecord(cursor.key));
+              cursor.continue();
+            };
+          }
           if (!database.objectStoreNames.contains(licenseRuntimeStoreName)) {
             database.createObjectStore(licenseRuntimeStoreName, { keyPath: "localTenantId" });
           }
@@ -3905,6 +4150,7 @@
             || !database.objectStoreNames.contains(receiptsStoreName)
             || !database.objectStoreNames.contains(vouchersStoreName)
             || !database.objectStoreNames.contains(prescriptionsStoreName)
+            || !database.objectStoreNames.contains(treatmentRecordsStoreName)
             || !database.objectStoreNames.contains(licenseRuntimeStoreName)) {
             settled = true;
             database.close();
@@ -3994,7 +4240,7 @@
           let transactionFailure = null;
           let transaction;
           try {
-            transaction = database.transaction([storeName, prescriptionsStoreName], "readwrite");
+            transaction = database.transaction([storeName, prescriptionsStoreName, treatmentRecordsStoreName], "readwrite");
             const store = transaction.objectStore(storeName);
             const readRequest = store.get(tenantId);
             readRequest.onerror = () => {
@@ -4008,6 +4254,11 @@
                   const prescriptionRequest = prescriptionStore.get(tenantId);
                   prescriptionRequest.onsuccess = () => {
                     if (!prescriptionRequest.result) prescriptionStore.put(emptyPrescriptionsRecord(tenantId));
+                  };
+                  const treatmentStore = transaction.objectStore(treatmentRecordsStoreName);
+                  const treatmentRequest = treatmentStore.get(tenantId);
+                  treatmentRequest.onsuccess = () => {
+                    if (!treatmentRequest.result) treatmentStore.put(emptyTreatmentRecordsRecord(tenantId));
                   };
                 }
                 if (existing?.formatVersion != null
@@ -4077,17 +4328,22 @@
           let transactionFailure = null;
           let transaction;
           try {
-            transaction = database.transaction([storeName, prescriptionsStoreName], "readwrite");
-            const request = transaction.objectStore(prescriptionsStoreName).get(tenantId);
-            request.onsuccess = () => {
+            transaction = database.transaction([storeName, prescriptionsStoreName, treatmentRecordsStoreName], "readwrite");
+            const prescriptionRequest = transaction.objectStore(prescriptionsStoreName).get(tenantId);
+            const treatmentRequest = transaction.objectStore(treatmentRecordsStoreName).get(tenantId);
+            let ready = 0;
+            const completeCheck = () => {
+              if (++ready !== 2) return;
               try {
-                assertPrescriptionResetAllowed(request.result);
+                assertPrescriptionResetAllowed(prescriptionRequest.result);
+                assertTreatmentResetAllowed(treatmentRequest.result);
                 transaction.objectStore(storeName).delete(tenantId);
               } catch (error) { transactionFailure = error; transaction.abort(); }
             };
-            request.onerror = () => {
-              transactionFailure = new PersistenceError("DELETE_FAILED", "Gespeicherte Einstellungen konnten nicht zurückgesetzt werden.", request.error);
-            };
+            prescriptionRequest.onsuccess = completeCheck;
+            treatmentRequest.onsuccess = completeCheck;
+            prescriptionRequest.onerror = () => { transactionFailure = new PersistenceError("DELETE_FAILED", "Gespeicherte Einstellungen konnten nicht zurückgesetzt werden.", prescriptionRequest.error); };
+            treatmentRequest.onerror = () => { transactionFailure = new PersistenceError("DELETE_FAILED", "Gespeicherte Einstellungen konnten nicht zurückgesetzt werden.", treatmentRequest.error); };
           } catch (cause) {
             reject(new PersistenceError("DELETE_FAILED", "Gespeicherte Einstellungen konnten nicht zurückgesetzt werden.", cause));
             return;
@@ -4559,17 +4815,22 @@
           let transactionFailure = null;
           let transaction;
           try {
-            transaction = database.transaction([customersStoreName, prescriptionsStoreName], "readwrite");
-            const request = transaction.objectStore(prescriptionsStoreName).get(tenantId);
-            request.onsuccess = () => {
+            transaction = database.transaction([customersStoreName, prescriptionsStoreName, treatmentRecordsStoreName], "readwrite");
+            const prescriptionRequest = transaction.objectStore(prescriptionsStoreName).get(tenantId);
+            const treatmentRequest = transaction.objectStore(treatmentRecordsStoreName).get(tenantId);
+            let ready = 0;
+            const completeCheck = () => {
+              if (++ready !== 2) return;
               try {
-                assertPrescriptionResetAllowed(request.result);
+                assertPrescriptionResetAllowed(prescriptionRequest.result);
+                assertTreatmentResetAllowed(treatmentRequest.result);
                 transaction.objectStore(customersStoreName).delete(tenantId);
               } catch (error) { transactionFailure = error; transaction.abort(); }
             };
-            request.onerror = () => {
-              transactionFailure = new PersistenceError("CUSTOMERS_DELETE_FAILED", "Die gespeicherten Kundendaten konnten nicht zurückgesetzt werden.", request.error);
-            };
+            prescriptionRequest.onsuccess = completeCheck;
+            treatmentRequest.onsuccess = completeCheck;
+            prescriptionRequest.onerror = () => { transactionFailure = new PersistenceError("CUSTOMERS_DELETE_FAILED", "Die gespeicherten Kundendaten konnten nicht zurückgesetzt werden.", prescriptionRequest.error); };
+            treatmentRequest.onerror = () => { transactionFailure = new PersistenceError("CUSTOMERS_DELETE_FAILED", "Die gespeicherten Kundendaten konnten nicht zurückgesetzt werden.", treatmentRequest.error); };
           } catch (cause) {
             reject(new PersistenceError("CUSTOMERS_DELETE_FAILED", "Die gespeicherten Kundendaten konnten nicht zurückgesetzt werden.", cause));
             return;
@@ -4596,6 +4857,12 @@
       const validated = normalizePrescriptionsRecord(record, tenantId).record;
       if (validated.prescriptions.length) throw prescriptionError("PRESCRIPTION_RESET_BLOCKED",
         "Zurücksetzen nicht möglich: Vorhandene Rezepte benötigen die Kunden und Geschäftsbereiche. Es wurde nichts gelöscht.");
+    }
+
+    function assertTreatmentResetAllowed(record) {
+      const validated = normalizeTreatmentRecordsRecord(record, tenantId).record;
+      if (validated.treatmentRecords.length) throw prescriptionError("TREATMENT_RECORD_RESET_BLOCKED",
+        "Zurücksetzen nicht möglich: Vorhandene Behandlungsdokumentation benötigt Kunden und Geschäftsbereiche. Es wurde nichts gelöscht.");
     }
 
     async function readPrescriptions() {
@@ -4681,6 +4948,30 @@
           transaction.onabort = () => reject(failure || prescriptionError("PRESCRIPTION_SAVE_FAILED", "Das Rezept konnte nicht lokal gespeichert werden. Bitte erneut versuchen."));
           transaction.onerror = () => {};
         });
+      });
+    }
+
+    async function readTreatmentRecords() {
+      const database = await openDatabase();
+      return new Promise((resolve, reject) => {
+        const storeNames = [treatmentRecordsStoreName, storeName, customersStoreName, receiptsStoreName, prescriptionsStoreName];
+        const transaction = database.transaction(storeNames, "readonly");
+        const requests = storeNames.map(name => transaction.objectStore(name).get(tenantId));
+        transaction.oncomplete = () => {
+          try {
+            const record = normalizeTreatmentRecordsRecord(requests[0].result, tenantId).record;
+            validateTreatmentRecordReferences(
+              record,
+              requests[1].result,
+              requests[2].result?.customers || [],
+              requests[3].result?.receipts || [],
+              requests[4].result?.prescriptions || []
+            );
+            resolve(record);
+          } catch (error) { reject(error); }
+        };
+        transaction.onabort = () => reject(prescriptionError("TREATMENT_RECORDS_READ_FAILED", "Die Behandlungsdokumentation konnte nicht sicher geladen werden."));
+        transaction.onerror = () => {};
       });
     }
 
@@ -4813,10 +5104,19 @@
           let transactionFailure = null;
           let transaction;
           try {
-            transaction = database.transaction(receiptsStoreName, "readwrite");
-            const request = transaction.objectStore(receiptsStoreName).delete(tenantId);
-            request.onerror = () => {
-              transactionFailure = new PersistenceError("RECEIPTS_DELETE_FAILED", "Die gespeicherten Belege konnten nicht zurückgesetzt werden.", request.error);
+            transaction = database.transaction([receiptsStoreName, treatmentRecordsStoreName], "readwrite");
+            const treatmentRequest = transaction.objectStore(treatmentRecordsStoreName).get(tenantId);
+            treatmentRequest.onsuccess = () => {
+              try {
+                assertTreatmentResetAllowed(treatmentRequest.result);
+                const request = transaction.objectStore(receiptsStoreName).delete(tenantId);
+                request.onerror = () => {
+                  transactionFailure = new PersistenceError("RECEIPTS_DELETE_FAILED", "Die gespeicherten Belege konnten nicht zurückgesetzt werden.", request.error);
+                };
+              } catch (error) { transactionFailure = error; transaction.abort(); }
+            };
+            treatmentRequest.onerror = () => {
+              transactionFailure = new PersistenceError("RECEIPTS_DELETE_FAILED", "Die gespeicherten Belege konnten nicht zurückgesetzt werden.", treatmentRequest.error);
             };
           } catch (cause) {
             reject(new PersistenceError("RECEIPTS_DELETE_FAILED", "Die gespeicherten Belege konnten nicht zurückgesetzt werden.", cause));
@@ -5111,16 +5411,18 @@
       }));
     }
 
-    function commitReceipt(receiptDraft, settingsRecord, seedReceiptsRecord, prescriptionInput = null) {
+    function commitReceipt(receiptDraft, settingsRecord, seedReceiptsRecord, prescriptionInput = null, treatmentInput = null) {
       let draft;
       let requestedSettings;
       let seedRecord;
       let prescriptionSelection;
+      let treatmentDraft;
       try {
         draft = cloneSerializable(receiptDraft);
         requestedSettings = stripExcludedData(cloneSerializable(settingsRecord));
         seedRecord = prepareReceiptsRecord(seedReceiptsRecord);
         prescriptionSelection = prescriptionInput == null ? null : cloneSerializable(prescriptionInput);
+        treatmentDraft = treatmentInput == null ? null : cloneSerializable(treatmentInput);
       } catch (error) {
         return Promise.reject(error);
       }
@@ -5145,25 +5447,28 @@
           let committedResult = null;
           let transaction;
           try {
-            transaction = database.transaction([storeName, customersStoreName, prescriptionsStoreName, receiptsStoreName], "readwrite");
+            transaction = database.transaction([storeName, customersStoreName, prescriptionsStoreName, receiptsStoreName, treatmentRecordsStoreName], "readwrite");
             const settingsStore = transaction.objectStore(storeName);
             const customersStore = transaction.objectStore(customersStoreName);
             const prescriptionsStore = transaction.objectStore(prescriptionsStoreName);
             const receiptsStore = transaction.objectStore(receiptsStoreName);
+            const treatmentStore = transaction.objectStore(treatmentRecordsStoreName);
             const settingsRequest = settingsStore.get(tenantId);
             const customersRequest = customersStore.get(tenantId);
             const prescriptionsRequest = prescriptionsStore.get(tenantId);
             const receiptsRequest = receiptsStore.get(tenantId);
+            const treatmentRequest = treatmentStore.get(tenantId);
             let settingsReady = false;
             let customersReady = false;
             let prescriptionsReady = false;
             let receiptsReady = false;
+            let treatmentReady = false;
 
             const fail = (code, message, cause) => {
               if (!transactionFailure) transactionFailure = new PersistenceError(code, message, cause);
             };
             const commitWhenReady = () => {
-              if (!settingsReady || !customersReady || !prescriptionsReady || !receiptsReady || transactionFailure) return;
+              if (!settingsReady || !customersReady || !prescriptionsReady || !receiptsReady || !treatmentReady || transactionFailure) return;
               try {
                 const currentReceipts = receiptsRequest.result
                   ? normalizeReceiptsRecord(receiptsRequest.result, seedRecord, tenantId).record
@@ -5172,17 +5477,35 @@
                 const commitDraft = existing ? draft : applyPrescriptionAtCommit(draft, prescriptionSelection, settingsRequest.result,
                   customersRequest.result, prescriptionsRequest.result, currentReceipts, tenantId);
                 const prepared = prepareReceiptCommit(commitDraft, settingsRequest.result, requestedSettings, currentReceipts);
+                const preparedTreatment = prepareTreatmentRecordAtCommit(
+                  treatmentDraft,
+                  prepared.receipt,
+                  prepared.settingsRecord,
+                  customersRequest.result,
+                  prescriptionsRequest.result,
+                  treatmentRequest.result || (settingsRequest.result ? null : emptyTreatmentRecordsRecord(tenantId)),
+                  tenantId
+                );
+                if (!prepared.created && preparedTreatment.created) {
+                  throw prescriptionError("TREATMENT_ATOMIC_CONFLICT", "Der Beleg ist bereits ohne passende Behandlungsdokumentation vorhanden. Es wurde nichts verändert.");
+                }
                 committedResult = {
                   ...prepared,
                   receipt: cloneSafe(prepared.receipt),
                   receiptsRecord: cloneSafe(prepared.receiptsRecord),
-                  settingsRecord: cloneSafe(prepared.settingsRecord)
+                  settingsRecord: cloneSafe(prepared.settingsRecord),
+                  treatmentRecord: cloneSafe(preparedTreatment.treatmentRecord),
+                  treatmentRecordsRecord: cloneSafe(preparedTreatment.record)
                 };
                 if (!prepared.created) return;
                 const settingsPut = settingsStore.put(prepared.settingsRecord);
                 const receiptsPut = receiptsStore.put(stripExcludedReceiptsData(prepared.receiptsRecord));
+                const treatmentPut = preparedTreatment.created || (!treatmentRequest.result && !settingsRequest.result)
+                  ? treatmentStore.put(preparedTreatment.record)
+                  : null;
                 settingsPut.onerror = () => fail("RECEIPT_COMMIT_FAILED", "Der Belegabschluss konnte nicht lokal gespeichert werden.", settingsPut.error);
                 receiptsPut.onerror = () => fail("RECEIPT_COMMIT_FAILED", "Der Belegabschluss konnte nicht lokal gespeichert werden.", receiptsPut.error);
+                if (treatmentPut) treatmentPut.onerror = () => fail("RECEIPT_COMMIT_FAILED", "Die Behandlungsdokumentation konnte nicht lokal gespeichert werden.", treatmentPut.error);
               } catch (error) {
                 transactionFailure = error instanceof PersistenceError
                   ? error
@@ -5200,10 +5523,12 @@
             customersRequest.onerror = () => fail("RECEIPT_COMMIT_FAILED", "Der Kunde der Rezeptzuordnung konnte nicht gelesen werden.", customersRequest.error);
             prescriptionsRequest.onerror = () => fail("RECEIPT_COMMIT_FAILED", "Das Rezept konnte nicht gelesen werden.", prescriptionsRequest.error);
             receiptsRequest.onerror = () => fail("RECEIPT_COMMIT_FAILED", "Die vorhandenen Belege konnten nicht gelesen werden.", receiptsRequest.error);
+            treatmentRequest.onerror = () => fail("RECEIPT_COMMIT_FAILED", "Die Behandlungsdokumentation konnte nicht gelesen werden.", treatmentRequest.error);
             settingsRequest.onsuccess = () => { settingsReady = true; commitWhenReady(); };
             customersRequest.onsuccess = () => { customersReady = true; commitWhenReady(); };
             prescriptionsRequest.onsuccess = () => { prescriptionsReady = true; commitWhenReady(); };
             receiptsRequest.onsuccess = () => { receiptsReady = true; commitWhenReady(); };
+            treatmentRequest.onsuccess = () => { treatmentReady = true; commitWhenReady(); };
           } catch (cause) {
             reject(new PersistenceError("RECEIPT_COMMIT_FAILED", "Der Belegabschluss konnte nicht lokal gespeichert werden.", cause));
             return;
@@ -5227,10 +5552,11 @@
       });
     }
 
-    function commitVoucherReceiptTransaction(mode, receiptDraft, voucherInput, settingsRecord, seedReceiptsRecord, seedVouchersRecord, prescriptionInput = null) {
+    function commitVoucherReceiptTransaction(mode, receiptDraft, voucherInput, settingsRecord, seedReceiptsRecord, seedVouchersRecord, prescriptionInput = null, treatmentInput = null) {
       let draft;
       let input;
       let prescriptionSelection;
+      let treatmentDraft;
       let requestedSettings;
       let seedReceipts;
       let seedVouchers;
@@ -5238,6 +5564,7 @@
         draft = cloneSerializable(receiptDraft);
         input = cloneSerializable(voucherInput);
         prescriptionSelection = prescriptionInput == null ? null : cloneSerializable(prescriptionInput);
+        treatmentDraft = treatmentInput == null ? null : cloneSerializable(treatmentInput);
         requestedSettings = stripExcludedData(cloneSerializable(settingsRecord));
         seedReceipts = prepareReceiptsRecord(seedReceiptsRecord);
         seedVouchers = prepareVouchersRecord(seedVouchersRecord);
@@ -5281,22 +5608,25 @@
           let committedResult = null;
           let transaction;
           try {
-            transaction = database.transaction([storeName, customersStoreName, prescriptionsStoreName, receiptsStoreName, vouchersStoreName], "readwrite");
+            transaction = database.transaction([storeName, customersStoreName, prescriptionsStoreName, receiptsStoreName, vouchersStoreName, treatmentRecordsStoreName], "readwrite");
             const settingsStore = transaction.objectStore(storeName);
             const customersStore = transaction.objectStore(customersStoreName);
             const prescriptionsStore = transaction.objectStore(prescriptionsStoreName);
             const receiptsStore = transaction.objectStore(receiptsStoreName);
             const vouchersStore = transaction.objectStore(vouchersStoreName);
+            const treatmentStore = transaction.objectStore(treatmentRecordsStoreName);
             const settingsRequest = settingsStore.get(tenantId);
             const customersRequest = customersStore.get(tenantId);
             const prescriptionsRequest = prescriptionsStore.get(tenantId);
             const receiptsRequest = receiptsStore.get(tenantId);
             const vouchersRequest = vouchersStore.get(tenantId);
+            const treatmentRequest = treatmentStore.get(tenantId);
             let settingsReady = false;
             let customersReady = false;
             let prescriptionsReady = false;
             let receiptsReady = false;
             let vouchersReady = false;
+            let treatmentReady = false;
             const fail = (code, message, cause) => {
               if (!transactionFailure) transactionFailure = new PersistenceError(code, message, cause);
             };
@@ -5312,7 +5642,7 @@
               }
             };
             const commitWhenReady = () => {
-              if (!settingsReady || !customersReady || !prescriptionsReady || !receiptsReady || !vouchersReady || transactionFailure) return;
+              if (!settingsReady || !customersReady || !prescriptionsReady || !receiptsReady || !vouchersReady || !treatmentReady || transactionFailure) return;
               try {
                 const currentReceipts = receiptsRequest.result
                   ? normalizeReceiptsRecord(receiptsRequest.result, seedReceipts, tenantId).record
@@ -5397,13 +5727,27 @@
                     }
                     validateVoucherCommitInvariant("redemption", existingReceipt, voucher);
                     const mergedSettings = prepareSettingsForReceiptCommit(settingsRequest.result, requestedSettings);
+                    const preparedExistingTreatment = prepareTreatmentRecordAtCommit(
+                      treatmentDraft,
+                      existingReceipt,
+                      mergedSettings,
+                      customersRequest.result,
+                      prescriptionsRequest.result,
+                      treatmentRequest.result || (settingsRequest.result ? null : emptyTreatmentRecordsRecord(tenantId)),
+                      tenantId
+                    );
+                    if (preparedExistingTreatment.created) {
+                      throw prescriptionError("TREATMENT_ATOMIC_CONFLICT", "Der Beleg ist bereits ohne passende Behandlungsdokumentation vorhanden. Es wurde nichts verändert.");
+                    }
                     committedResult = {
                       created: false,
                       receipt: cloneSafe(existingReceipt),
                       voucher: cloneSafe(voucher),
                       receiptsRecord: cloneSafe(currentReceipts),
                       vouchersRecord: cloneSafe(currentVouchers),
-                      settingsRecord: cloneSafe(mergedSettings)
+                      settingsRecord: cloneSafe(mergedSettings),
+                      treatmentRecord: cloneSafe(preparedExistingTreatment.treatmentRecord),
+                      treatmentRecordsRecord: cloneSafe(preparedExistingTreatment.record)
                     };
                     return;
                   }
@@ -5434,6 +5778,15 @@
                   const prescriptionDraft = applyPrescriptionAtCommit(redemptionDraft, prescriptionSelection, settingsRequest.result,
                     customersRequest.result, prescriptionsRequest.result, currentReceipts, tenantId);
                   const preparedReceipt = prepareReceiptCommit(prescriptionDraft, settingsRequest.result, requestedSettings, currentReceipts);
+                  const preparedTreatment = prepareTreatmentRecordAtCommit(
+                    treatmentDraft,
+                    preparedReceipt.receipt,
+                    preparedReceipt.settingsRecord,
+                    customersRequest.result,
+                    prescriptionsRequest.result,
+                    treatmentRequest.result || (settingsRequest.result ? null : emptyTreatmentRecordsRecord(tenantId)),
+                    tenantId
+                  );
                   const occurredAt = stableIso(input.occurredAt, preparedReceipt.receipt.completedAt);
                   const historyEntry = {
                     id: `voucher_history_${voucher.reference.replace(/[^A-Za-z0-9]+/g, "_")}_${preparedReceipt.receipt.id.replace(/[^A-Za-z0-9]+/g, "_")}`,
@@ -5468,16 +5821,23 @@
                   committedResult = {
                     ...preparedReceipt,
                     voucher,
-                    vouchersRecord: currentVouchers
+                    vouchersRecord: currentVouchers,
+                    treatmentRecord: preparedTreatment.treatmentRecord,
+                    treatmentRecordsRecord: preparedTreatment.record,
+                    treatmentRecordCreated: preparedTreatment.created
                   };
                 }
 
                 const settingsPut = settingsStore.put(committedResult.settingsRecord);
                 const receiptsPut = receiptsStore.put(stripExcludedReceiptsData(committedResult.receiptsRecord));
                 const vouchersPut = vouchersStore.put(stripExcludedVouchersData(committedResult.vouchersRecord));
+                const treatmentPut = committedResult.treatmentRecordCreated || (!treatmentRequest.result && !settingsRequest.result)
+                  ? treatmentStore.put(committedResult.treatmentRecordsRecord || emptyTreatmentRecordsRecord(tenantId))
+                  : null;
                 settingsPut.onerror = () => fail("VOUCHER_COMMIT_FAILED", "Der Nummernstand des Gutscheinvorgangs konnte nicht gespeichert werden.", settingsPut.error);
                 receiptsPut.onerror = () => fail("VOUCHER_COMMIT_FAILED", "Der verknüpfte Beleg konnte nicht gespeichert werden.", receiptsPut.error);
                 vouchersPut.onerror = () => fail("VOUCHER_COMMIT_FAILED", "Der Gutschein und seine Historie konnten nicht gespeichert werden.", vouchersPut.error);
+                if (treatmentPut) treatmentPut.onerror = () => fail("VOUCHER_COMMIT_FAILED", "Die Behandlungsdokumentation konnte nicht gespeichert werden.", treatmentPut.error);
               } catch (error) {
                 abortWith(error);
               }
@@ -5487,11 +5847,13 @@
             prescriptionsRequest.onerror = () => fail("VOUCHER_COMMIT_FAILED", "Das Rezept konnte nicht gelesen werden.", prescriptionsRequest.error);
             receiptsRequest.onerror = () => fail("VOUCHER_COMMIT_FAILED", "Die vorhandenen Belege konnten nicht gelesen werden.", receiptsRequest.error);
             vouchersRequest.onerror = () => fail("VOUCHER_COMMIT_FAILED", "Die vorhandenen Gutscheine konnten nicht gelesen werden.", vouchersRequest.error);
+            treatmentRequest.onerror = () => fail("VOUCHER_COMMIT_FAILED", "Die Behandlungsdokumentation konnte nicht gelesen werden.", treatmentRequest.error);
             settingsRequest.onsuccess = () => { settingsReady = true; commitWhenReady(); };
             customersRequest.onsuccess = () => { customersReady = true; commitWhenReady(); };
             prescriptionsRequest.onsuccess = () => { prescriptionsReady = true; commitWhenReady(); };
             receiptsRequest.onsuccess = () => { receiptsReady = true; commitWhenReady(); };
             vouchersRequest.onsuccess = () => { vouchersReady = true; commitWhenReady(); };
+            treatmentRequest.onsuccess = () => { treatmentReady = true; commitWhenReady(); };
           } catch (cause) {
             reject(new PersistenceError("VOUCHER_COMMIT_FAILED", "Der Gutscheinvorgang konnte nicht lokal gespeichert werden.", cause));
             return;
@@ -5507,7 +5869,9 @@
               voucher: cloneSafe(committedResult.voucher),
               receiptsRecord: cloneSafe(committedResult.receiptsRecord),
               vouchersRecord: cloneSafe(committedResult.vouchersRecord),
-              settingsRecord: cloneSafe(committedResult.settingsRecord)
+              settingsRecord: cloneSafe(committedResult.settingsRecord),
+              treatmentRecord: cloneSafe(committedResult.treatmentRecord),
+              treatmentRecordsRecord: cloneSafe(committedResult.treatmentRecordsRecord)
             });
           };
           transaction.onabort = () => {
@@ -5526,8 +5890,8 @@
       return commitVoucherReceiptTransaction("sale", receiptDraft, voucherDraft, settingsRecord, seedReceiptsRecord, seedVouchersRecord);
     }
 
-    function commitVoucherRedemption(receiptDraft, redemptionInput, settingsRecord, seedReceiptsRecord, seedVouchersRecord, prescriptionInput = null) {
-      return commitVoucherReceiptTransaction("redemption", receiptDraft, redemptionInput, settingsRecord, seedReceiptsRecord, seedVouchersRecord, prescriptionInput);
+    function commitVoucherRedemption(receiptDraft, redemptionInput, settingsRecord, seedReceiptsRecord, seedVouchersRecord, prescriptionInput = null, treatmentInput = null) {
+      return commitVoucherReceiptTransaction("redemption", receiptDraft, redemptionInput, settingsRecord, seedReceiptsRecord, seedVouchersRecord, prescriptionInput, treatmentInput);
     }
 
     function mutateReceipts(seedReceiptsRecord, operation, failureCode, failureMessage) {
@@ -5777,7 +6141,7 @@
     async function readTenantSnapshotCandidate(options = {}) {
       const fallbackRecords = isPlainObject(options.fallbackRecords) ? options.fallbackRecords : {};
       const database = await openDatabase();
-      const storeNames = [storeName, catalogStoreName, customersStoreName, receiptsStoreName, vouchersStoreName, prescriptionsStoreName];
+      const storeNames = [storeName, catalogStoreName, customersStoreName, receiptsStoreName, vouchersStoreName, prescriptionsStoreName, treatmentRecordsStoreName];
       const recordKeys = tenantSnapshotConstants.storeKeys;
       const records = {};
       let persistedSettings = false;
@@ -5791,7 +6155,8 @@
             const request = transaction.objectStore(currentStoreName).get(tenantId);
             request.onsuccess = () => {
               if (recordKeys[index] === "settings") persistedSettings = Boolean(request.result);
-              records[recordKeys[index]] = request.result || (recordKeys[index] === "prescriptions" ? null : cloneSafe(fallbackRecords[recordKeys[index]])) || null;
+              const privateStore = ["prescriptions", "treatmentRecords"].includes(recordKeys[index]);
+              records[recordKeys[index]] = request.result || (privateStore ? null : cloneSafe(fallbackRecords[recordKeys[index]])) || null;
             };
             request.onerror = () => {
               failure = new PersistenceError("BACKUP_READ_FAILED", "Die lokalen Daten konnten nicht vollständig für die Sicherung gelesen werden.", request.error);
@@ -5817,6 +6182,7 @@
         };
       });
       if (!records.prescriptions && !persistedSettings) records.prescriptions = emptyPrescriptionsRecord(tenantId);
+      if (!records.treatmentRecords && !persistedSettings) records.treatmentRecords = emptyTreatmentRecordsRecord(tenantId);
       return {
         backupFormat: tenantSnapshotConstants.backupFormat,
         backupFormatVersion: tenantSnapshotConstants.backupFormatVersion,
@@ -5847,7 +6213,7 @@
 
       return queued(async () => {
         const database = await openDatabase();
-        const storeNames = [storeName, catalogStoreName, customersStoreName, receiptsStoreName, vouchersStoreName, prescriptionsStoreName];
+        const storeNames = [storeName, catalogStoreName, customersStoreName, receiptsStoreName, vouchersStoreName, prescriptionsStoreName, treatmentRecordsStoreName];
         const recordKeys = tenantSnapshotConstants.storeKeys;
         let preflightReport = null;
         let changed = false;
@@ -5863,7 +6229,8 @@
             const requests = storeNames.map((currentStoreName, index) => {
               const request = transaction.objectStore(currentStoreName).get(tenantId);
               request.onsuccess = () => {
-                records[recordKeys[index]] = request.result || (recordKeys[index] === "prescriptions" ? null : cloneSafe(fallbackRecords[recordKeys[index]])) || null;
+                const privateStore = ["prescriptions", "treatmentRecords"].includes(recordKeys[index]);
+                records[recordKeys[index]] = request.result || (privateStore ? null : cloneSafe(fallbackRecords[recordKeys[index]])) || null;
                 requestsReady += 1;
                 if (requestsReady !== storeNames.length || transactionFailure) return;
                 try {
@@ -6017,7 +6384,7 @@
       const validated = validateTenantSnapshot(snapshotInput, tenantId);
       return queued(async () => {
         const database = await openDatabase();
-        const storeNames = [storeName, catalogStoreName, customersStoreName, receiptsStoreName, vouchersStoreName, prescriptionsStoreName];
+        const storeNames = [storeName, catalogStoreName, customersStoreName, receiptsStoreName, vouchersStoreName, prescriptionsStoreName, treatmentRecordsStoreName];
         const recordKeys = tenantSnapshotConstants.storeKeys;
         const allowTestFailure = databaseName.startsWith("frecka-test-")
           || databaseName.startsWith("frecka-backup-test-")
@@ -6122,6 +6489,7 @@
       readPrescriptions,
       savePrescription,
       reviewPrescriptionAssignment,
+      readTreatmentRecords,
       readReceipts,
       writeReceipts,
       deleteReceipts,
@@ -6177,6 +6545,7 @@
     snapshotCustomers,
     normalizeCustomersRecord,
     businessAreaFeatures,
+    normalizeTreatmentTemplates,
     emptyPrescriptionsRecord,
     snapshotPrescriptions,
     normalizePrescriptionsRecord,
@@ -6185,6 +6554,9 @@
     validatePrescriptionAssignments,
     prescriptionUsage,
     prescriptionTreatmentMatches,
+    emptyTreatmentRecordsRecord,
+    normalizeTreatmentRecordsRecord,
+    validateTreatmentRecordReferences,
     snapshotReceipts,
     normalizeReceiptsRecord,
     snapshotVouchers,

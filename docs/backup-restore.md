@@ -1,7 +1,7 @@
 # Verschlüsselte Sicherung und Wiederherstellung
 
 **Stand:** BACKUP-006 auf Basis BACKUP-005, BRANDING-002, BACKUP-004, TSE-002, SETTINGS-002, SETTINGS-001, USER-001, BACKUP-002, BACKUP-001 und PERSISTENCE-007
-**Datenbankschema:** 7 (PODOLOGY-001/002; Backup-Kryptographie und Ausgabeablauf unverändert)
+**Datenbankschema:** 8 (PODOLOGY-003; Backup-Kryptographie und Ausgabeablauf unverändert)
 **Backupformat:** 1
 **Geltungsbereich:** Vollständiger lokaler Datenstand eines Mandanten
 
@@ -15,9 +15,9 @@ BACKUP-001 enthält keine Cloudanbindung, Synchronisation, Automatik, Zeitplanun
 
 `js/persistence.js` stellt die wiederverwendbaren mandantenbezogenen Datenoperationen bereit:
 
-- `exportTenantSnapshot(options)` liest `settings`, `catalog`, `customers`, `receipts`, `vouchers` und `prescriptions` in einer gemeinsamen Readonly-Transaktion. Bestehende Erststart-Fallbacks bleiben auf die zentrale Laufzeitquelle begrenzt. Ein fehlender/beschädigter Rezeptbestand eines bestehenden Schema-7-Mandanten wird niemals durch ein leeres Laufzeitarray ersetzt.
+- `exportTenantSnapshot(options)` liest `settings`, `catalog`, `customers`, `receipts`, `vouchers`, `prescriptions` und `treatmentRecords` in einer gemeinsamen Readonly-Transaktion. Bestehende Erststart-Fallbacks bleiben auf die zentrale Laufzeitquelle begrenzt. Ein fehlender oder beschädigter Rezept- beziehungsweise Behandlungsbestand eines bestehenden Schema-8-Mandanten wird niemals durch ein leeres Laufzeitarray ersetzt.
 - `validateTenantSnapshot(snapshot)` prüft das komplette entschlüsselte Datenpaket, ohne IndexedDB zu verändern.
-- `restoreTenantSnapshot(snapshot)` validiert erneut und ersetzt danach alle sechs Fachstore-Datensätze in genau einer Readwrite-Transaktion.
+- `restoreTenantSnapshot(snapshot)` validiert erneut und ersetzt danach alle sieben Fachstore-Datensätze in genau einer Readwrite-Transaktion.
 
 Die UI besitzt keinen direkten IndexedDB-Zugriff. Das spätere Exportmodul kann `exportTenantSnapshot` wiederverwenden, ohne eine zweite Datenquelle oder Parallelarchitektur einzuführen.
 
@@ -36,7 +36,7 @@ Der verschlüsselte Payload ist ein JSON-Objekt mit:
 
 - `backupFormat: "FRECKA_TENANT_SNAPSHOT"`;
 - `backupFormatVersion: 1`;
-- `appDataSchemaVersion: 7`; unterstützte historische Schema-5/6-Snapshots ohne Rezeptstore bleiben lesbar und erhalten bei erfolgreicher Prüfung einen leeren Rezeptbestand sowie fehlende Capabilities mit `false`;
+- `appDataSchemaVersion: 8`; unterstützte historische Schema-5/6-Snapshots ohne Rezeptstore und Schema-5/6/7-Snapshots ohne Behandlungsstore bleiben lesbar und erhalten bei erfolgreicher Prüfung die jeweils leeren Bestände sowie fehlende Capabilities mit `false`;
 - `tenantId`;
 - `createdAt` als ISO-Zeitstempel;
 - `app.version` und `app.build`;
@@ -45,11 +45,14 @@ Der verschlüsselte Payload ist ein JSON-Objekt mit:
 - `stores.customers`;
 - `stores.receipts`;
 - `stores.vouchers`;
-- `stores.prescriptions` (einschließlich archivierter Rezepte und interner Rezeptnotizen).
+- `stores.prescriptions` (einschließlich archivierter Rezepte und interner Rezeptnotizen);
+- `stores.treatmentRecords` (einschließlich interner Dokumentation, Kundenpflegehinweisen und unveränderlicher Snapshots).
 
 PODOLOGY-002 ergänzt keine zweite Sicherungsstruktur: unveränderliche Rezeptzuordnungen liegen innerhalb der bereits gesicherten Ursprungsbelege. Die Snapshotvalidierung prüft ihre Rezept-, Kunden- und Geschäftsbereichsreferenzen sowie die aus Belegen und Vollstornos abgeleitete Nutzung. Alte Belege ohne Zuordnung bleiben gültig. Reguläre Exporte, PDFs, QR und Public Viewer projizieren diese sensiblen Angaben weiterhin nicht.
 
 Die verschlüsselte Gesamtsicherung enthält damit besonders sensible Rezeptinhalte. Nur der bewusst ausgelöste Vollrestore übernimmt sie; reguläre CSV-/ZIP-Exporte enthalten sie nicht. Ein älteres Backup ersetzt auch den aktuellen Rezeptbestand durch seinen damals leeren Bestand, es ist kein Merge. Ab Schema 7 ist ein fehlender Rezeptstore ein Fehler. Siehe [Rezeptverwaltung](prescriptions.md).
+
+PODOLOGY-003 ergänzt keine zweite Sicherungsstruktur. Behandlungsdatensätze liegen ausschließlich im neuen Fachstore; ihre Vorlagen liegen innerhalb der bereits gesicherten Einstellungen. Ein Schema-5/6/7-Backup erhält bei erfolgreicher Prüfung einen leeren Behandlungsbestand, bei Schema 8 ist `treatmentRecords` Pflicht. Restore ersetzt alle sieben Fachstores atomar. Reguläre Exporte, Dokumente, PDF, QR, Public Viewer und Diagnoseausgaben enthalten weder interne Dokumentation noch Kundenpflegehinweise. Siehe [Behandlungsdokumentation](treatment-documentation.md).
 
 Jeder Store enthält seinen bestehenden versionierten Datensatz einschließlich `tenantId`. Das Snapshotformat erfindet keine zusätzlichen Geschäftsmodelle. Beleg- und Gutscheinsnapshots, Historien, QR-Referenzen, Nummernstand und fachliche Referenzen bleiben Teil ihrer bisherigen Store-Objekte.
 
@@ -108,7 +111,7 @@ Die aktuelle Mindestlänge einer Passphrase beträgt 12 Zeichen. Sie ersetzt kei
 Vor jeder Schreibtransaktion werden mindestens geprüft:
 
 - äußeres und inneres Format sowie unterstützte Versionsstände;
-- vollständige Anwesenheit aller sechs Fachstores (mit der beschriebenen Altformat-Kompatibilität);
+- vollständige Anwesenheit aller sieben Fachstores (mit der beschriebenen Altformat-Kompatibilität);
 - Übereinstimmung sämtlicher `tenantId`-Werte;
 - genau ein aktiver Settings-Benutzer mit derselben `tenantId` und passender `activeUserId`;
 - genau eine vollständige portable Lizenzreferenz Version 2 mit derselben `localTenantId`, gültiger opaker Lizenz-ID, festem Produkt `frecka.core`/Hauptversion 1 und konsistenter optionaler Serververknüpfung;
@@ -172,7 +175,7 @@ Die für einen ausdrücklichen lokalen Download angelegte Objekt-URL bleibt für
 6. Die Vorschau zeigt Erstellungsdatum, Unternehmen sowie Anzahl von Geschäftsbereichen, Kunden, Belegen und Gutscheinen.
 7. Vor dem Überschreiben wird ein verschlüsseltes Sicherheitsbackup des aktuellen Stands angeboten.
 8. Eine ausdrückliche Bestätigung ist erforderlich.
-9. Alle sechs Fachstores werden atomar ersetzt und der zentrale App-Zustand einschließlich Rezepten wird neu geladen.
+9. Alle sieben Fachstores werden atomar ersetzt und der zentrale App-Zustand einschließlich Rezepten und Behandlungsdokumentation wird neu geladen.
 
 ## Fehlerverhalten
 
@@ -208,7 +211,7 @@ Vor einer produktiven Freigabe zusätzlich auf einem realen iPhone in Safari bez
 1. Sicherung mit realistisch großem fiktivem Datenbestand erstellen und an einen vom Nutzer kontrollierten Speicherort sichern.
 2. Datei nach Safari-Neustart in der Dateien-App auswählen; prüfen, dass sie nicht ausgegraut ist, und anschließend falsches sowie richtiges Sicherungskennwort testen.
 3. Vorschau und Sicherheitsbackup prüfen.
-4. Teilzustände dürfen nicht auftreten: nach erfolgreichem Restore alle sechs Fachbereiche und nach absichtlichem Abbruch den unveränderten Altstand prüfen.
+4. Teilzustände dürfen nicht auftreten: nach erfolgreichem Restore alle sieben Fachbereiche und nach absichtlichem Abbruch den unveränderten Altstand prüfen.
 5. App vollständig schließen, erneut öffnen und Einstellungen, Katalog, Kunden, Belege, Gutscheine, Snapshots, Historien und Nummernstand prüfen.
 6. Ablauf offline sowie bei wenig freiem Speicher testen.
 7. 320- und 390-Pixel-Ansichten, Tastatur, Fokus, langer Dateiname und lange Unternehmensbezeichnung prüfen.

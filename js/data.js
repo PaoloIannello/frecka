@@ -14,6 +14,8 @@ window.PROTOTYPE_DATA = Object.freeze({
   ],
   userSettings: { activeUserId: "user-primary" },
   prescriptions: [],
+  treatmentRecords: [],
+  treatmentTemplates: [],
   license: {},
   tseSettings: {},
   backupReminder: {},

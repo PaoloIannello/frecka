@@ -60,6 +60,9 @@
     checkoutPrescriptionError: "",
     checkoutPrescriptionOverrunConfirmed: false,
     checkoutPrescriptionPlausibilityConfirmed: false,
+    checkoutInternalDocumentation: "",
+    checkoutCustomerCareAdvice: "",
+    checkoutTreatmentError: "",
     checkoutReceiptId: null,
     checkoutSubmitting: false,
     checkoutOpenPaymentConfirm: false,
@@ -73,6 +76,8 @@
     customerNotice: "",
     customerNoticeIsError: false,
     prescriptionsReady: false,
+    treatmentRecordsReady: false,
+    treatmentTemplateDraft: null,
     prescriptionDraft: null,
     prescriptionDetailId: null,
     prescriptionNotice: "",
@@ -727,6 +732,7 @@
     Object.assign(data.company, cloneSettingsValue(record.company));
     replaceSettingsArray(data.serviceLocations, record.serviceLocations);
     replaceSettingsArray(data.businessAreas, record.businessAreas);
+    replaceSettingsArray(data.treatmentTemplates, record.treatmentTemplates || []);
     data.businessAreas.forEach(area => {
       if (!Array.isArray(data.catalog[area.id])) data.catalog[area.id] = [];
     });
@@ -811,6 +817,11 @@
   function applyPrescriptionsRecord(record) {
     replaceSettingsArray(data.prescriptions, record.prescriptions);
     state.prescriptionsReady = true;
+  }
+
+  function applyTreatmentRecordsRecord(record) {
+    replaceSettingsArray(data.treatmentRecords, record.treatmentRecords);
+    state.treatmentRecordsReady = true;
   }
 
   function applyVouchersRecord(record) {
@@ -1080,6 +1091,16 @@
     return { firstStart: false, repairs: normalized.repairs };
   }
 
+  async function loadTreatmentRecordsForStart() {
+    if (!persistence?.readTreatmentRecords) {
+      throw Object.assign(new Error("Die Persistenz für Behandlungsdokumentation wurde nicht geladen."), {
+        code: "PERSISTENCE_UNAVAILABLE",
+        userMessage: "Die lokale Behandlungsdokumentation konnte nicht geladen werden. Neue Belegabschlüsse bleiben bis zur Klärung gesperrt."
+      });
+    }
+    applyTreatmentRecordsRecord(await persistence.readTreatmentRecords());
+  }
+
   const catalogCategories = (areaId, activeOnly = false) => data.categories
     .filter(category => category.businessAreaId === areaId && (!activeOnly || category.active !== false))
     .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
@@ -1158,6 +1179,8 @@
         return;
       }
       state.activeBusinessArea = event.target.value;
+      resetCheckoutPrescription();
+      resetCheckoutTreatmentDocumentation();
       state.activeCategory = "favorites";
       state.cart = [];
       state.search = "";
@@ -1467,6 +1490,23 @@
     state.checkoutPrescriptionPlausibilityConfirmed = false;
   }
 
+  function resetCheckoutTreatmentDocumentation() {
+    state.checkoutInternalDocumentation = "";
+    state.checkoutCustomerCareAdvice = "";
+    state.checkoutTreatmentError = "";
+  }
+
+  function treatmentDocumentationAvailable(customer = selectedCustomer()) {
+    const area = data.businessAreas.find(entry => entry.id === state.activeBusinessArea);
+    return Boolean(customer && customer.active !== false && area?.active !== false
+      && area?.features?.prescriptionDocumentation === true && state.treatmentRecordsReady);
+  }
+
+  function treatmentTemplatesForCheckout(purpose) {
+    return data.treatmentTemplates.filter(entry => entry.active !== false
+      && entry.businessAreaId === state.activeBusinessArea && entry.purpose === purpose);
+  }
+
   function prescriptionUsageFor(entry) {
     try {
       return persistence?.prescriptionUsage
@@ -1559,6 +1599,18 @@
       return;
     }
     const customer = selectedCustomer();
+    const treatmentCapabilityActive = Boolean(customer
+      && data.businessAreas.find(area => area.id === state.activeBusinessArea)?.features?.prescriptionDocumentation === true);
+    if (treatmentCapabilityActive && !state.treatmentRecordsReady) {
+      state.checkoutTreatmentError = "Die lokale Behandlungsdokumentation ist noch nicht sicher verfügbar. Es wurde kein Beleg abgeschlossen.";
+      renderCheckout();
+      return;
+    }
+    if (state.checkoutInternalDocumentation.length > 4000 || state.checkoutCustomerCareAdvice.length > 300) {
+      state.checkoutTreatmentError = "Bitte die zulässige Textlänge der Behandlungsdokumentation einhalten.";
+      renderCheckout();
+      return;
+    }
     if (!leavePaymentOpen && !activePaymentChoices().some(choice => choice.id === state.paymentChoice)) {
       state.paymentChoice = preferredNormalPaymentId() || activePaymentChoices()[0]?.id || "cash";
       renderCheckout();
@@ -1773,6 +1825,13 @@
           plausibilityConfirmed: state.checkoutPrescriptionPlausibilityConfirmed
         };
       }
+      const treatmentInput = treatmentCapabilityActive
+        && (state.checkoutInternalDocumentation.trim() || state.checkoutCustomerCareAdvice.trim())
+        ? {
+          internalDocumentation: state.checkoutInternalDocumentation,
+          customerCareAdvice: state.checkoutCustomerCareAdvice
+        }
+        : null;
       const committed = voucher
         ? await persistence.commitVoucherRedemption(
           receipt,
@@ -1786,10 +1845,12 @@
           settingsSnapshot,
           seedReceiptsRecord,
           persistence.snapshotVouchers(data, persistence.tenantId),
-          prescriptionInput
+          prescriptionInput,
+          treatmentInput
         )
-        : await persistence.commitReceipt(receipt, settingsSnapshot, seedReceiptsRecord, prescriptionInput);
+        : await persistence.commitReceipt(receipt, settingsSnapshot, seedReceiptsRecord, prescriptionInput, treatmentInput);
       applyReceiptsRecord(committed.receiptsRecord);
+      if (committed.treatmentRecordsRecord) applyTreatmentRecordsRecord(committed.treatmentRecordsRecord);
       if (voucher) applyVouchersRecord(committed.vouchersRecord);
       data.receiptSettings.nextNumber = committed.settingsRecord.receiptSettings.nextNumber;
       state.receiptCounter = Math.max(0, data.receiptSettings.nextNumber - 1);
@@ -1803,6 +1864,8 @@
         state.checkoutPrescriptionOverrunConfirmed = false;
         state.checkoutPrescriptionPlausibilityConfirmed = false;
         state.checkoutPrescriptionError = `${persistenceErrorMessage(error, "Die Rezeptzuordnung konnte nicht sicher abgeschlossen werden.")} Warenkorb und Nummernstand blieben unverändert.`;
+      } else if (String(error?.code || "").startsWith("TREATMENT_")) {
+        state.checkoutTreatmentError = `${persistenceErrorMessage(error, "Die Behandlungsdokumentation konnte nicht sicher abgeschlossen werden.")} Warenkorb, Eingaben und Nummernstand blieben unverändert.`;
       } else {
         state.checkoutVoucherError = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error, "Der Beleg konnte nicht sicher abgeschlossen werden.")} Warenkorb und Nummernstand blieben unverändert.`;
       }
@@ -1814,6 +1877,7 @@
     state.successNotice = "";
     state.cart = [];
     resetCheckoutPrescription();
+    resetCheckoutTreatmentDocumentation();
     state.checkoutReceiptId = null;
     navigate("receipt-success");
   }
@@ -1961,6 +2025,10 @@
     const checkoutPrescriptionMatches = checkoutPrescription
       ? (persistence?.prescriptionTreatmentMatches?.(checkoutPrescription, state.cart) ?? true)
       : true;
+    const treatmentCapabilityActive = Boolean(checkoutCustomer
+      && data.businessAreas.find(area => area.id === state.activeBusinessArea)?.features?.prescriptionDocumentation === true);
+    const internalTemplates = treatmentTemplatesForCheckout("internal-documentation");
+    const careTemplates = treatmentTemplatesForCheckout("customer-care");
     const checkoutVoucher = selectedCheckoutVoucher();
     const voucherAmounts = checkoutVoucher ? checkoutVoucherAmounts(checkoutVoucher) : null;
     const voucherQuery = normalizeVoucherCode(state.checkoutVoucherCode);
@@ -1984,6 +2052,20 @@
         ${state.checkoutPrescriptionReview?.overrunRequired ? `<label class="checkout-prescription-confirm"><input type="checkbox" data-confirm-prescription-overrun ${state.checkoutPrescriptionOverrunConfirmed ? "checked" : ""}><span>Ich möchte diesen Beleg trotz ausgeschöpftem Rezept zuordnen.</span></label>` : ""}
         ${state.checkoutPrescriptionReview?.plausibilityRequired ? `<label class="checkout-prescription-confirm"><input type="checkbox" data-confirm-prescription-plausibility ${state.checkoutPrescriptionPlausibilityConfirmed ? "checked" : ""}><span>Ich habe die abweichende Behandlung geprüft und bestätige die Zuordnung.</span></label>` : ""}
         ${state.checkoutPrescriptionError ? `<p class="checkout-prescription-error" role="alert">${escapeHtml(state.checkoutPrescriptionError)}</p>` : ""}
+      </section>` : ""}
+      ${treatmentCapabilityActive ? `<section class="checkout-section checkout-treatment-section" aria-labelledby="checkoutTreatmentTitle">
+        <div class="section-title-row"><h2 id="checkoutTreatmentTitle">Behandlungsdokumentation</h2><span>optional</span></div>
+        <label class="checkout-treatment-field"><span><strong>Dokumentation (intern)</strong><small>Nur intern – erscheint nicht auf Beleg, PDF, QR-Code oder Export.</small></span>
+          ${internalTemplates.length ? `<div class="treatment-template-actions" aria-label="Interne Vorlagen">${internalTemplates.map(template => `<button class="button button-secondary" type="button" data-apply-treatment-template="${escapeHtml(template.id)}">${escapeHtml(template.title)}</button>`).join("")}</div>` : ""}
+          <textarea id="checkoutInternalDocumentation" rows="4" maxlength="4000" ${state.treatmentRecordsReady ? "" : "disabled"}>${escapeHtml(state.checkoutInternalDocumentation)}</textarea>
+          <small>${state.checkoutInternalDocumentation.length} / 4000 Zeichen</small>
+        </label>
+        <label class="checkout-treatment-field"><span><strong>Pflegehinweis für Kundin/Kunden</strong><small>Wird gespeichert, aber in diesem Stand noch nicht ausgegeben.</small></span>
+          ${careTemplates.length ? `<div class="treatment-template-actions" aria-label="Pflegehinweis-Vorlagen">${careTemplates.map(template => `<button class="button button-secondary" type="button" data-apply-treatment-template="${escapeHtml(template.id)}">${escapeHtml(template.title)}</button>`).join("")}</div>` : ""}
+          <textarea id="checkoutCustomerCareAdvice" rows="3" maxlength="300" ${state.treatmentRecordsReady ? "" : "disabled"}>${escapeHtml(state.checkoutCustomerCareAdvice)}</textarea>
+          <small>${state.checkoutCustomerCareAdvice.length} / 300 Zeichen</small>
+        </label>
+        ${state.checkoutTreatmentError ? `<p class="checkout-prescription-error" role="alert">${escapeHtml(state.checkoutTreatmentError)}</p>` : ""}
       </section>` : ""}
       <section class="checkout-section"><h2>Zahlungsart <span>nur Simulation</span></h2><div class="payment-grid">${paymentCards}</div></section>
       ${state.checkoutVoucherError && state.paymentChoice !== "voucher" ? `<p class="checkout-voucher-error" role="alert">${escapeHtml(state.checkoutVoucherError)}</p>` : ""}
@@ -2036,6 +2118,18 @@
         input?.focus();
         input?.setSelectionRange(state.checkoutVoucherCode.length, state.checkoutVoucherCode.length);
       }
+    });
+    if (data.businessAreas.find(area => area.id === state.activeBusinessArea)?.features?.prescriptionDocumentation !== true) {
+      resetCheckoutPrescription();
+      resetCheckoutTreatmentDocumentation();
+    }
+    document.getElementById("checkoutInternalDocumentation")?.addEventListener("input", event => {
+      state.checkoutInternalDocumentation = event.target.value;
+      state.checkoutTreatmentError = "";
+    });
+    document.getElementById("checkoutCustomerCareAdvice")?.addEventListener("input", event => {
+      state.checkoutCustomerCareAdvice = event.target.value;
+      state.checkoutTreatmentError = "";
     });
   }
 
@@ -2209,6 +2303,28 @@
         </button>`;
       }).join("") || '<p class="page-copy">Noch keine Rezepte hinterlegt.</p>'}</div>
       ${customer.active !== false && prescriptionAreas().length && state.prescriptionsReady ? '<button class="button button-secondary" type="button" data-prescription-new>Rezept anlegen</button>' : '<p class="page-copy">Vorhandene Rezepte bleiben hier lesbar. Neue Eingaben benötigen einen aktiven Kunden und einen aktivierten Geschäftsbereich.</p>'}
+    </section>`;
+  }
+
+  function customerTreatmentHistoryMarkup(customer) {
+    const records = data.treatmentRecords.filter(entry => entry.customerId === customer.id)
+      .sort((a, b) => b.performedAt.localeCompare(a.performedAt));
+    if (!records.length && !prescriptionAreas().length) return "";
+    return `<section class="customer-treatment-history" aria-labelledby="customerTreatmentHistoryTitle">
+      <div class="section-title-row"><h2 id="customerTreatmentHistoryTitle">Behandlungsverlauf (intern)</h2></div>
+      <p class="page-copy">Nur intern – erscheint nicht auf Beleg, PDF, QR-Code oder Export.</p>
+      <div class="treatment-history-list">${records.map(entry => {
+        const areaLabel = entry.businessAreaSnapshot?.label
+          || data.businessAreas.find(area => area.id === entry.businessAreaId)?.label
+          || "Geschäftsbereich nicht verfügbar";
+        return `<article class="treatment-history-item">
+          <div class="treatment-history-head"><span><strong>${escapeHtml(formatGermanDateTime({ iso: entry.performedAt }))}</strong><small>${escapeHtml(areaLabel)} · ${escapeHtml(entry.receiptNumber)}</small></span><span class="receipt-status is-paid">Abgeschlossen</span></div>
+          ${entry.internalDocumentation ? `<div><strong>Dokumentation (intern)</strong><p>${escapeHtml(entry.internalDocumentation)}</p></div>` : ""}
+          ${entry.customerCareAdvice ? `<div><strong>Pflegehinweis</strong><p>${escapeHtml(entry.customerCareAdvice)}</p></div>` : ""}
+          <p class="treatment-history-meta">${entry.prescriptionId ? "Mit Rezeptzuordnung" : "Ohne Rezeptzuordnung"}${entry.userSnapshot?.displayName ? ` · ${escapeHtml(entry.userSnapshot.displayName)}` : ""}</p>
+          <button class="button button-secondary" type="button" data-open-receipt="${escapeHtml(entry.receiptNumber)}">Beleg öffnen</button>
+        </article>`;
+      }).join("") || '<p class="page-copy">Noch keine abgeschlossene Behandlungsdokumentation vorhanden.</p>'}</div>
     </section>`;
   }
 
@@ -2395,6 +2511,7 @@
 
       ${historyMarkup}
       ${customerPrescriptionsMarkup(c)}
+      ${customerTreatmentHistoryMarkup(c)}
 
       ${c.note ? `<section class="customer-note"><h2>Notiz</h2><p>${escapeHtml(c.note)}</p></section>` : ""}
 
@@ -4553,7 +4670,10 @@
       customers: persistence.snapshotCustomers(data, persistence.tenantId),
       receipts: persistence.snapshotReceipts(data, persistence.tenantId),
       vouchers: persistence.snapshotVouchers(data, persistence.tenantId),
-      prescriptions: persistence.snapshotPrescriptions(data, persistence.tenantId)
+      prescriptions: persistence.snapshotPrescriptions(data, persistence.tenantId),
+      treatmentRecords: state.treatmentRecordsReady
+        ? { formatVersion: 1, tenantId: persistence.tenantId, updatedAt: new Date().toISOString(), treatmentRecords: cloneSettingsValue(data.treatmentRecords) }
+        : persistence.emptyTreatmentRecordsRecord(persistence.tenantId)
     };
   }
 
@@ -5134,6 +5254,7 @@
     applyReceiptsRecord(records.receipts);
     applyVouchersRecord(records.vouchers);
     applyPrescriptionsRecord(records.prescriptions);
+    applyTreatmentRecordsRecord(records.treatmentRecords);
     state.prescriptionDraft = null;
     state.prescriptionDetailId = null;
     state.prescriptionNotice = "";
@@ -5142,6 +5263,7 @@
     state.customerSearch = "";
     state.selectedCustomerId = null;
     state.customerChoice = "none";
+    resetCheckoutTreatmentDocumentation();
     state.finishedReceipt = null;
     state.receiptDetailNumber = null;
     state.voucherDetailReference = null;
@@ -5542,6 +5664,31 @@
     </section>`;
   }
 
+  function treatmentTemplateGroupMarkup(area, purpose, title) {
+    const templates = data.treatmentTemplates.filter(entry => entry.businessAreaId === area.id && entry.purpose === purpose)
+      .sort((a, b) => Number(b.active) - Number(a.active) || a.title.localeCompare(b.title, "de-DE"));
+    const enabled = area.active !== false && area.features?.prescriptionDocumentation === true;
+    return `<section class="treatment-template-group"><div class="section-title-row"><h3>${escapeHtml(title)}</h3><button class="text-action" type="button" data-new-treatment-template="${escapeHtml(area.id)}" data-treatment-template-purpose="${purpose}" ${enabled ? "" : "disabled"}>＋ Vorlage</button></div>
+      ${templates.length ? `<div class="treatment-template-list">${templates.map(template => `<article class="treatment-template-item ${template.active ? "" : "is-disabled"}"><span><strong>${escapeHtml(template.title)}</strong><small>${template.active ? "Aktiv" : "Archiviert"}</small></span><div><button class="text-action" type="button" data-edit-treatment-template="${escapeHtml(template.id)}" ${enabled ? "" : "disabled"}>Bearbeiten</button><button class="text-action" type="button" data-toggle-treatment-template="${escapeHtml(template.id)}" ${enabled ? "" : "disabled"}>${template.active ? "Archivieren" : "Aktivieren"}</button></div></article>`).join("")}</div>` : '<p class="page-copy">Noch keine Vorlagen.</p>'}
+      ${enabled ? "" : '<p class="page-copy">Vorlagen bleiben gespeichert und lesbar. Neue Vorlagen und Verwendung sind erst nach Aktivierung der Rezept- &amp; Behandlungsdokumentation möglich.</p>'}
+    </section>`;
+  }
+
+  function treatmentTemplateEditorMarkup() {
+    const draft = state.treatmentTemplateDraft;
+    if (!draft) return "";
+    const area = data.businessAreas.find(entry => entry.id === draft.businessAreaId);
+    if (!area) return "";
+    const isCare = draft.purpose === "customer-care";
+    return `<section class="settings-form-card treatment-template-editor" aria-labelledby="treatmentTemplateEditorTitle">
+      <p class="eyebrow">${escapeHtml(area.label)}</p><h2 id="treatmentTemplateEditorTitle">${draft.existing ? "Vorlage bearbeiten" : "Vorlage anlegen"}</h2>
+      <p class="page-copy">${isCare ? "Pflegehinweis für Kundin/Kunden" : "Interne Behandlungsdokumentation"}</p>
+      <label class="setting-field full"><span>Titel</span><input id="treatmentTemplateTitle" maxlength="80" value="${escapeHtml(draft.title)}" required></label>
+      <label class="setting-field full"><span>Text</span><textarea id="treatmentTemplateText" rows="${isCare ? 4 : 6}" maxlength="${isCare ? 300 : 4000}" required>${escapeHtml(draft.text)}</textarea><small>Maximal ${isCare ? 300 : 4000} Zeichen. Die Vorlage wird beim Verwenden in den bearbeitbaren Belegentwurf kopiert.</small></label>
+      <div class="catalog-editor-actions"><button class="button button-secondary" type="button" data-action="treatment-template-cancel">Abbrechen</button><button class="button button-primary" type="button" data-action="treatment-template-save">Vorlage speichern</button></div>
+    </section>`;
+  }
+
   function renderBusinessAreaSettings() {
     mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter">
       <div class="flow-head compact-flow-head">
@@ -5563,13 +5710,15 @@
             </div>
             ${businessAreaServiceLocationField(area)}
             ${businessAreaBrandingFields(area)}
-            <label class="prescription-capability"><input type="checkbox" name="prescriptions:${escapeHtml(area.id)}" ${area.features?.prescriptionDocumentation ? "checked" : ""}><span><strong>Rezept- &amp; Behandlungsdokumentation verwenden</strong><small>Aktiviert die Rezeptverwaltung. Weitere Behandlungsfunktionen folgen später.</small></span></label>
+            <label class="prescription-capability"><input type="checkbox" name="prescriptions:${escapeHtml(area.id)}" ${area.features?.prescriptionDocumentation ? "checked" : ""}><span><strong>Rezept- &amp; Behandlungsdokumentation verwenden</strong><small>Aktiviert Rezepte, interne Behandlungsdokumentation und gespeicherte Pflegehinweise.</small></span></label>
+            <div class="treatment-template-settings"><h3>Vorlagen</h3>${treatmentTemplateGroupMarkup(area, "internal-documentation", "Dokumentation (intern)")}${treatmentTemplateGroupMarkup(area, "customer-care", "Pflegehinweise")}</div>
           </section>`).join("")}
         </div>
         <button class="button button-secondary business-area-add" type="button" data-action="business-area-add">＋ Geschäftsbereich</button>
         <p class="prototype-note">Leistungen, Produkte und vorhandene Belege bleiben ihrem bisherigen Bereich zugeordnet. Den Standard-Geschäftsbereich legst du unter Betrieb fest.</p>
         <button class="button button-primary settings-save" type="submit">Geschäftsbereiche speichern</button>
       </form>
+      ${treatmentTemplateEditorMarkup()}
     </section>`;
     attachBusinessBrandingBehavior();
   }
@@ -6079,6 +6228,7 @@
     state.paymentChoice = preferredNormalPaymentId() || activePaymentChoices()[0]?.id || "cash";
     resetCheckoutVoucher();
     resetCheckoutPrescription();
+    resetCheckoutTreatmentDocumentation();
     state.checkoutReceiptId = null;
     state.checkoutSubmitting = false;
     state.checkoutOpenPaymentConfirm = false;
@@ -6333,6 +6483,54 @@
       navigate("settings-catalog");
       return;
     }
+    const newTreatmentTemplate = event.target.closest("[data-new-treatment-template]");
+    if (newTreatmentTemplate) {
+      const area = data.businessAreas.find(entry => entry.id === newTreatmentTemplate.dataset.newTreatmentTemplate);
+      const purpose = newTreatmentTemplate.dataset.treatmentTemplatePurpose;
+      if (!area || area.active === false || area.features?.prescriptionDocumentation !== true
+        || !["internal-documentation", "customer-care"].includes(purpose)) return;
+      state.treatmentTemplateDraft = {
+        existing: false,
+        id: `treatment_template_${crypto.randomUUID?.() || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`}`,
+        businessAreaId: area.id,
+        purpose,
+        title: "",
+        text: ""
+      };
+      state.businessAreaSettingsNotice = "";
+      renderBusinessAreaSettings();
+      document.getElementById("treatmentTemplateTitle")?.focus();
+      return;
+    }
+    const editTreatmentTemplate = event.target.closest("[data-edit-treatment-template]");
+    if (editTreatmentTemplate) {
+      const template = data.treatmentTemplates.find(entry => entry.id === editTreatmentTemplate.dataset.editTreatmentTemplate);
+      const area = data.businessAreas.find(entry => entry.id === template?.businessAreaId);
+      if (!template || !area || area.active === false || area.features?.prescriptionDocumentation !== true) return;
+      state.treatmentTemplateDraft = { ...cloneSettingsValue(template), existing: true };
+      state.businessAreaSettingsNotice = "";
+      renderBusinessAreaSettings();
+      document.getElementById("treatmentTemplateTitle")?.focus();
+      return;
+    }
+    const toggleTreatmentTemplate = event.target.closest("[data-toggle-treatment-template]");
+    if (toggleTreatmentTemplate) {
+      const template = data.treatmentTemplates.find(entry => entry.id === toggleTreatmentTemplate.dataset.toggleTreatmentTemplate);
+      const area = data.businessAreas.find(entry => entry.id === template?.businessAreaId);
+      if (!template || !area || area.active === false || area.features?.prescriptionDocumentation !== true) return;
+      const previousTemplates = cloneSettingsValue(data.treatmentTemplates);
+      template.active = !template.active;
+      template.updatedAt = new Date(Math.max(Date.now(), Date.parse(template.updatedAt) + 1)).toISOString();
+      try {
+        await persistCurrentSettings();
+        state.businessAreaSettingsNotice = `Vorlage wurde ${template.active ? "aktiviert" : "archiviert"}.`;
+      } catch (error) {
+        replaceSettingsArray(data.treatmentTemplates, previousTemplates);
+        state.businessAreaSettingsNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`;
+      }
+      renderBusinessAreaSettings();
+      return;
+    }
     const newCatalogItem = event.target.closest("[data-catalog-new-item]");
     if (newCatalogItem) {
       state.catalogEditingItemId = `new-${newCatalogItem.dataset.catalogNewItem}`;
@@ -6490,6 +6688,18 @@
       renderCheckout();
       return;
     }
+    const treatmentTemplateButton = event.target.closest("[data-apply-treatment-template]");
+    if (treatmentTemplateButton) {
+      const template = treatmentTemplatesForCheckout("internal-documentation")
+        .concat(treatmentTemplatesForCheckout("customer-care"))
+        .find(entry => entry.id === treatmentTemplateButton.dataset.applyTreatmentTemplate);
+      if (!template || !treatmentDocumentationAvailable()) return;
+      if (template.purpose === "customer-care") state.checkoutCustomerCareAdvice = template.text;
+      else state.checkoutInternalDocumentation = template.text;
+      state.checkoutTreatmentError = "";
+      renderCheckout();
+      return;
+    }
     if (event.target.closest("[data-clear-checkout-prescription]")) {
       resetCheckoutPrescription();
       renderCheckout();
@@ -6528,6 +6738,7 @@
       customer.updatedAt = new Date().toISOString();
       if (!customer.active) {
         if (state.selectedCustomerId === customer.id) {
+          resetCheckoutTreatmentDocumentation();
           state.selectedCustomerId = null;
           state.customerChoice = "none";
         }
@@ -6613,6 +6824,7 @@
         state.customerSearch = "";
         navigate("voucher-sale");
       } else {
+        if (state.selectedCustomerId !== selectableCustomer.id) resetCheckoutTreatmentDocumentation();
         state.selectedCustomerId = selectableCustomer.id;
         state.customerChoice = "existing";
         navigate("checkout");
@@ -6625,6 +6837,7 @@
         state.customerSearch = "";
         navigate("voucher-sale");
       } else {
+        resetCheckoutTreatmentDocumentation();
         state.selectedCustomerId = null;
         state.customerChoice = "none";
         if(state.cart.length) navigate("checkout"); else renderCustomers(false);
@@ -6947,7 +7160,10 @@
         state.taxSettingsNotice = "";
         state.paymentSettingsNotice = "";
       }
-      if (route.dataset.route === "settings-business-areas" && state.route !== "settings-business-areas") state.businessAreaSettingsNotice = "";
+      if (route.dataset.route === "settings-business-areas" && state.route !== "settings-business-areas") {
+        state.businessAreaSettingsNotice = "";
+        state.treatmentTemplateDraft = null;
+      }
       if (route.dataset.route === "settings-catalog" && state.route !== "settings-catalog") {
         state.catalogManagerReturnRoute = "settings";
         state.catalogManagerAreaId = state.activeBusinessArea;
@@ -6962,6 +7178,51 @@
       return;
     }
     const action = event.target.closest("[data-action]")?.dataset.action;
+    if (action === "treatment-template-cancel") {
+      state.treatmentTemplateDraft = null;
+      state.businessAreaSettingsNotice = "";
+      renderBusinessAreaSettings();
+      return;
+    }
+    if (action === "treatment-template-save") {
+      const draft = state.treatmentTemplateDraft;
+      const area = data.businessAreas.find(entry => entry.id === draft?.businessAreaId);
+      if (!draft || !area || area.active === false || area.features?.prescriptionDocumentation !== true) return;
+      draft.title = String(document.getElementById("treatmentTemplateTitle")?.value || "").trim();
+      draft.text = String(document.getElementById("treatmentTemplateText")?.value || "").trim();
+      const textLimit = draft.purpose === "customer-care" ? 300 : 4000;
+      if (!draft.title || draft.title.length > 80 || !draft.text || draft.text.length > textLimit) {
+        state.businessAreaSettingsNotice = `Bitte Titel und Text vollständig eingeben. Der Text darf höchstens ${textLimit} Zeichen enthalten.`;
+        renderBusinessAreaSettings();
+        return;
+      }
+      const previousTemplates = cloneSettingsValue(data.treatmentTemplates);
+      const existing = data.treatmentTemplates.find(entry => entry.id === draft.id);
+      const now = new Date(Math.max(Date.now(), existing ? Date.parse(existing.updatedAt) + 1 : 0)).toISOString();
+      const saved = {
+        formatVersion: 1,
+        id: draft.id,
+        businessAreaId: draft.businessAreaId,
+        purpose: draft.purpose,
+        title: draft.title,
+        text: draft.text,
+        active: existing?.active !== false,
+        createdAt: existing?.createdAt || now,
+        updatedAt: now
+      };
+      if (existing) data.treatmentTemplates.splice(data.treatmentTemplates.indexOf(existing), 1, saved);
+      else data.treatmentTemplates.push(saved);
+      try {
+        await persistCurrentSettings();
+        state.treatmentTemplateDraft = null;
+        state.businessAreaSettingsNotice = "Vorlage wurde lokal gespeichert.";
+      } catch (error) {
+        replaceSettingsArray(data.treatmentTemplates, previousTemplates);
+        state.businessAreaSettingsNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)} Deine Eingaben bleiben erhalten.`;
+      }
+      renderBusinessAreaSettings();
+      return;
+    }
     if (action === "update-check") {
       await pwaUpdateController?.check?.();
       return;
@@ -7329,6 +7590,7 @@
       const receipt = receiptByNumber(state.receiptDetailNumber);
       if (receipt && receipt.receiptKind !== "voucher-sale") {
         resetCheckoutPrescription();
+        resetCheckoutTreatmentDocumentation();
         state.checkoutReceiptId = null;
         state.cart = receipt.items.map((item, index) => ({
           id: `copy-${Date.now()}-${index}`,
@@ -7916,6 +8178,7 @@
         const c = { id: createCustomerId(), ...values, active: true, createdAt: now, updatedAt: now };
         data.customers.unshift(c);
         customerForm.dataset.customerId = c.id;
+        resetCheckoutTreatmentDocumentation();
         state.selectedCustomerId = c.id;
         state.customerChoice = "new";
         state.customerDetailId = c.id;
@@ -8233,6 +8496,7 @@
       state.selectedCustomerId = null;
       state.customerChoice = "none";
       resetCheckoutPrescription();
+      resetCheckoutTreatmentDocumentation();
       state.checkoutReceiptId = null;
       closeDiscardDialog();
       renderHome();
@@ -8449,6 +8713,18 @@
     state.settingsStorageNotice = state.settingsStorageNotice ? `${state.settingsStorageNotice} ${message}` : message;
     state.settingsStorageNoticeIsError = true;
     state.receiptsReadyForWrites = false;
+  }
+  if (state.receiptsReadyForWrites) {
+    try {
+      await loadTreatmentRecordsForStart();
+    } catch (error) {
+      logPersistenceError("Behandlungsdokumentation laden fehlgeschlagen", error);
+      state.treatmentRecordsReady = false;
+      state.receiptsReadyForWrites = false;
+      const message = persistenceErrorMessage(error, "Die lokale Behandlungsdokumentation konnte nicht geladen werden. Neue Belegabschlüsse bleiben gesperrt; vorhandene Daten wurden nicht verändert.");
+      state.settingsStorageNotice = [state.settingsStorageNotice, message].filter(Boolean).join(" ");
+      state.settingsStorageNoticeIsError = true;
+    }
   }
   try {
     if (!persistence?.snapshotVouchers) throw new Error("Die Gutscheinpersistenz wurde nicht geladen.");

@@ -513,7 +513,7 @@
       tenantId,
       createdAt: options.createdAt || "2030-02-01T12:00:00.000Z",
       app: { version: "BACKUP-001", build: "test" },
-      stores: { settings, catalog, customers, receipts, vouchers, prescriptions: api.emptyPrescriptionsRecord(tenantId) }
+      stores: { settings, catalog, customers, receipts, vouchers, prescriptions: api.emptyPrescriptionsRecord(tenantId), treatmentRecords: api.emptyTreatmentRecordsRecord(tenantId) }
     };
   }
 
@@ -629,7 +629,7 @@
       tenantId,
       createdAt: "2030-02-01T12:00:00.000Z",
       app: { version: "0.10.7", build: "PERSISTENCE-010-TEST" },
-      stores: { settings, catalog, customers, receipts, vouchers, prescriptions: api.emptyPrescriptionsRecord(tenantId) }
+      stores: { settings, catalog, customers, receipts, vouchers, prescriptions: api.emptyPrescriptionsRecord(tenantId), treatmentRecords: api.emptyTreatmentRecordsRecord(tenantId) }
     };
   }
 
@@ -644,12 +644,15 @@
   async function writeRawSettingsRecord(persistence, settings) {
     const database = await persistence.openDatabase();
     await new Promise((resolve, reject) => {
-      const transaction = database.transaction([api.constants.storeName, api.constants.prescriptionsStoreName], "readwrite");
+      const transaction = database.transaction([api.constants.storeName, api.constants.prescriptionsStoreName, api.constants.treatmentRecordsStoreName], "readwrite");
       transaction.objectStore(api.constants.storeName).put(clone(settings));
       // This helper seeds a historical tenant in an already upgraded test DB.
       const store = transaction.objectStore(api.constants.prescriptionsStoreName);
       const request = store.get(persistence.tenantId);
       request.onsuccess = () => { if (!request.result) store.put(api.emptyPrescriptionsRecord(persistence.tenantId)); };
+      const treatmentStore = transaction.objectStore(api.constants.treatmentRecordsStoreName);
+      const treatmentRequest = treatmentStore.get(persistence.tenantId);
+      treatmentRequest.onsuccess = () => { if (!treatmentRequest.result) treatmentStore.put(api.emptyTreatmentRecordsRecord(persistence.tenantId)); };
       transaction.oncomplete = () => resolve();
       transaction.onabort = () => reject(transaction.error || new Error("Historische Settingsfixture konnte nicht geschrieben werden"));
       transaction.onerror = () => reject(transaction.error || new Error("Historische Settingsfixture konnte nicht geschrieben werden"));
@@ -1048,6 +1051,38 @@
     });
   }
 
+  function createLegacyV7Database(databaseName, records, licenseRuntimeRecord) {
+    return new Promise((resolve, reject) => {
+      const tenantStores = [
+        api.constants.storeName,
+        api.constants.catalogStoreName,
+        api.constants.customersStoreName,
+        api.constants.receiptsStoreName,
+        api.constants.vouchersStoreName,
+        api.constants.prescriptionsStoreName
+      ];
+      const recordKeys = ["settings", "catalog", "customers", "receipts", "vouchers", "prescriptions"];
+      const request = globalThis.indexedDB.open(databaseName, 7);
+      request.onupgradeneeded = () => {
+        tenantStores.forEach(storeName => request.result.createObjectStore(storeName, { keyPath: "tenantId" }));
+        request.result.createObjectStore(api.constants.licenseRuntimeStoreName, { keyPath: "localTenantId" });
+      };
+      request.onerror = () => reject(request.error || new Error("Legacy-v7-Testdatenbank konnte nicht geöffnet werden."));
+      request.onsuccess = () => {
+        const database = request.result;
+        const storeNames = [...tenantStores, api.constants.licenseRuntimeStoreName];
+        const transaction = database.transaction(storeNames, "readwrite");
+        tenantStores.forEach((storeName, index) => transaction.objectStore(storeName).put(records[recordKeys[index]]));
+        transaction.objectStore(api.constants.licenseRuntimeStoreName).put(licenseRuntimeRecord);
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onabort = () => {
+          database.close();
+          reject(transaction.error || new Error("Legacy-v7-Daten konnten nicht geschrieben werden."));
+        };
+      };
+    });
+  }
+
   function prescriptionFixture(tenantId, overrides = {}) {
     return { id: "prescription-one", tenantId, customerId: "customer-anna", businessAreaId: "hair",
       prescribedOn: "2026-08-31", treatmentText: "PRIVATE-TREATMENT-ÄÖÜ", catalogItemId: null,
@@ -1072,6 +1107,41 @@
     });
   }
 
+  function treatmentTemplateFixture(overrides = {}) {
+    return {
+      formatVersion: 1,
+      id: "treatment-template-internal",
+      businessAreaId: "hair",
+      purpose: "internal-documentation",
+      title: "Standarddokumentation",
+      text: "PRIVATE-TEMPLATE-INTERNAL-ÄÖÜ",
+      active: true,
+      createdAt: "2030-01-01T10:00:00.000Z",
+      updatedAt: "2030-01-01T10:00:00.000Z",
+      ...overrides
+    };
+  }
+
+  function treatmentSnapshot(tenantId, options = {}) {
+    const snapshot = prescriptionSnapshot(tenantId, options.prescriptions || []);
+    snapshot.stores.receipts = api.snapshotReceipts({ receipts: options.receipts || [] }, tenantId);
+    snapshot.stores.vouchers = api.snapshotVouchers({ vouchers: [] }, tenantId);
+    snapshot.stores.settings.receiptSettings.nextNumber = options.nextNumber || 1;
+    snapshot.stores.settings.treatmentTemplates = clone(options.templates || []);
+    snapshot.stores.treatmentRecords = options.treatmentRecords || api.emptyTreatmentRecordsRecord(tenantId);
+    return snapshot;
+  }
+
+  async function writeRawTreatmentRecord(client, record) {
+    const database = await client.openDatabase();
+    await new Promise((resolve, reject) => {
+      const tx = database.transaction(api.constants.treatmentRecordsStoreName, "readwrite");
+      tx.objectStore(api.constants.treatmentRecordsStoreName).put(record);
+      tx.oncomplete = resolve;
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+
   function buildPrescriptionTests(context) {
     return [
       { name: "PODOLOGY-001: Capability ist optional, unabhängig vom Namen und historisch standardmäßig aus", run: async () => {
@@ -1089,23 +1159,18 @@
         enabled.businessAreas[0].features.prescriptionDocumentation = "true";
         assertThrows(() => api.normalizeSettingsRecord(enabled, defaults, legacy.tenantId), "PRESCRIPTION_CAPABILITY_INVALID", "Nicht boolesche Capability");
       } },
-      { name: "PODOLOGY-001: Schema 6→7 ergänzt leere Mandantenbestände, alle bisherigen Stores bleiben bytegleich", run: async () => {
+      { name: "PODOLOGY-003: Schema 7→8 ergänzt nur einen leeren Behandlungsstore und lässt alle bisherigen Stores bytegleich", run: async () => {
         const name = createDatabaseName();
         const snapshot = completeTenantSnapshotFixture("test-prescription-upgrade");
         delete snapshot.stores.settings.businessAreas[0].features;
-        await createLegacyV5Database(name, snapshot.stores);
+        delete snapshot.stores.settings.treatmentTemplates;
         const runtime = { localTenantId: snapshot.tenantId, marker: "UNCHANGED-LOCAL-RUNTIME" };
-        await new Promise((resolve, reject) => {
-          const request = indexedDB.open(name, 6);
-          request.onupgradeneeded = () => { request.result.createObjectStore("licenseRuntime", { keyPath: "localTenantId" }).put(runtime); };
-          request.onsuccess = () => { request.result.close(); resolve(); };
-          request.onerror = () => reject(request.error);
-        });
+        await createLegacyV7Database(name, snapshot.stores, runtime);
         const client = api.createSettingsPersistence({ databaseName: name, tenantId: snapshot.tenantId });
         try {
           const database = await client.openDatabase();
-          assertEqual(database.version, 7, "Upgrade fehlt");
-          assertEqual(database.objectStoreNames.length, 7, "Zusätzlicher Store angelegt");
+          assertEqual(database.version, 8, "Upgrade fehlt");
+          assertEqual(database.objectStoreNames.length, 8, "Zusätzlicher Store angelegt");
           for (const key of ["settings", "catalog", "customers", "receipts", "vouchers", "licenseRuntime"]) {
             const record = await new Promise((resolve, reject) => {
               const request = database.transaction(key).objectStore(key).get(snapshot.tenantId);
@@ -1114,17 +1179,14 @@
             assertDeepEqual(record, key === "licenseRuntime" ? runtime : snapshot.stores[key], `Upgrade veränderte ${key}`);
           }
           assertDeepEqual(await client.readPrescriptions(), api.emptyPrescriptionsRecord(snapshot.tenantId), "Initialisierung ist nicht leer");
+          assertDeepEqual(await client.readTreatmentRecords(), api.emptyTreatmentRecordsRecord(snapshot.tenantId), "Behandlungsstore ist nicht leer initialisiert");
         } finally { client.closeDatabase(); await deleteTestDatabase(name); }
       } },
-      { name: "PODOLOGY-001: Abgebrochenes Schema-Upgrade hinterlässt weder Schema 7 noch halbe Daten", run: async () => {
+      { name: "PODOLOGY-003: Abgebrochenes Schema-7→8-Upgrade hinterlässt weder Schema 8 noch halbe Daten", run: async () => {
         const name = createDatabaseName();
         const before = completeTenantSnapshotFixture("test-prescription-upgrade-abort");
-        await createLegacyV5Database(name, before.stores);
-        await new Promise((resolve, reject) => {
-          const request = indexedDB.open(name, 6);
-          request.onupgradeneeded = () => request.result.createObjectStore("licenseRuntime", { keyPath: "localTenantId" });
-          request.onsuccess = () => { request.result.close(); resolve(); }; request.onerror = () => reject(request.error);
-        });
+        delete before.stores.settings.treatmentTemplates;
+        await createLegacyV7Database(name, before.stores, { localTenantId: before.tenantId, marker: "UNCHANGED" });
         const factory = { open(db, version) {
           const request = indexedDB.open(db, version);
           return new Proxy(request, {
@@ -1139,10 +1201,10 @@
         try {
           await assertRejects(() => client.openDatabase(), "OPEN_FAILED", "Upgrade-Abbruch");
           await new Promise((resolve, reject) => {
-            const request = indexedDB.open(name, 6);
+            const request = indexedDB.open(name, 7);
             request.onsuccess = () => {
               const database = request.result;
-              try { assert(!database.objectStoreNames.contains("prescriptions"), "Abgebrochenes Upgrade behielt neuen Store"); }
+              try { assert(!database.objectStoreNames.contains("treatmentRecords"), "Abgebrochenes Upgrade behielt neuen Store"); }
               catch (error) { database.close(); reject(error); return; }
               const tx = database.transaction("settings"); const read = tx.objectStore("settings").get(before.tenantId);
               tx.oncomplete = () => { database.close(); try { assertDeepEqual(read.result, before.stores.settings, "Upgrade-Abbruch veränderte Settings"); resolve(); } catch (error) { reject(error); } };
@@ -1217,7 +1279,7 @@
         assertThrows(() => api.validateTenantSnapshot(duplicate, tenantId), "PRESCRIPTION_ID_DUPLICATE", "Duplikat");
         const incomplete = prescriptionSnapshot(tenantId);
         delete incomplete.stores.prescriptions;
-        assertThrows(() => api.validateTenantSnapshot(incomplete, tenantId), "BACKUP_INCOMPLETE", "Schema 7 ohne Rezeptstore");
+        assertThrows(() => api.validateTenantSnapshot(incomplete, tenantId), "BACKUP_INCOMPLETE", "Schema 8 ohne Rezeptstore");
         const invalid = prescriptionSnapshot(tenantId);
         invalid.stores.prescriptions.prescriptions = "bad";
         assertThrows(() => api.validateTenantSnapshot(invalid, tenantId), "PRESCRIPTIONS_RECORD_INVALID", "Beschädigter Store");
@@ -1287,7 +1349,7 @@
           assert(!(await client.readSettings()).businessAreas[0].features.prescriptionDocumentation, "Alter Restore aktiviert Capability");
         }
       } },
-      { name: "PODOLOGY-001: Restore-Abbruch nach Rezeptstore rollt alle sechs Fachstores zurück", run: async () => {
+      { name: "PODOLOGY-001/003: Restore-Abbruch nach Behandlungsstore rollt alle sieben Fachstores zurück", run: async () => {
         const client = context.makeClient("prescription-rollback");
         const before = prescriptionSnapshot(client.tenantId);
         await client.restoreTenantSnapshot(before);
@@ -1295,7 +1357,7 @@
         const after = clone(before);
         after.stores.prescriptions.prescriptions[0].internalNote = "NEVER-COMMIT";
         after.stores.settings.company.name = "NEVER-COMMIT";
-        await assertRejects(() => client.restoreTenantSnapshot(after, { simulateFailureAfterStore: 5 }), "BACKUP_RESTORE_TEST_ABORT", "Abbruch nach sechstem Store");
+        await assertRejects(() => client.restoreTenantSnapshot(after, { simulateFailureAfterStore: 6 }), "BACKUP_RESTORE_TEST_ABORT", "Abbruch nach siebtem Store");
         assertDeepEqual((await client.exportTenantSnapshot()).stores, stored.stores, "Abbruch hinterließ Teilrestore");
       } },
       { name: "PODOLOGY-001/002: Diagnose, Exporte, PDF-Modelle und Public-QR enthalten weder Rezept- noch Zuordnungsdaten", run: async () => {
@@ -1694,7 +1756,7 @@
           } finally { frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase(); frame.remove(); }
         }
       } },
-      { name: "PODOLOGY-002: Checkout, Ausschöpfungsbestätigung und mobile Einhandansicht funktionieren bei 320/390/411 px", run: async () => {
+      { name: "PODOLOGY-002/003: Checkout, Behandlungsdokumentation, Fehlererhalt und mobile Einhandansicht funktionieren bei 320/390/411 px", run: async () => {
         const index = await (await fetch("../index.html", { cache: "no-store" })).text();
         const waitFor = async predicate => {
           for (let i = 0; i < 200; i += 1) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 50)); }
@@ -1708,6 +1770,10 @@
           initial.stores.receipts.receipts = [];
           initial.stores.vouchers = api.snapshotVouchers({ vouchers: [] }, client.tenantId);
           initial.stores.settings.receiptSettings.nextNumber = 1;
+          initial.stores.settings.treatmentTemplates = [
+            treatmentTemplateFixture(),
+            treatmentTemplateFixture({ id: "checkout-care-template", purpose: "customer-care", title: "Pflege zuhause", text: "PRIVATE-UI-CARE" })
+          ];
           await client.restoreTenantSnapshot(initial);
           const frame = document.createElement("iframe");
           frame.title = `Rezeptcheckout ${width} px`;
@@ -1727,28 +1793,67 @@
               await waitFor(() => doc().querySelector('[data-select-checkout-prescription="prescription-one"]'));
               noOverflow();
               click('[data-select-checkout-prescription="prescription-one"]');
+              assert(doc().querySelector("#checkoutInternalDocumentation") && doc().querySelector("#checkoutCustomerCareAdvice"), "Behandlungsfelder fehlen");
               assert(!doc().body.textContent.includes("PRIVATE-CHECKOUT-NOTE"), "Interne Rezeptnotiz wurde im Checkout ausgegeben");
               noOverflow();
             };
             await prepareCheckout();
+            click('[data-apply-treatment-template="treatment-template-internal"]');
+            click('[data-apply-treatment-template="checkout-care-template"]');
+            assertEqual(doc().querySelector("#checkoutInternalDocumentation").value, "PRIVATE-TEMPLATE-INTERNAL-ÄÖÜ", "Interne Vorlage wurde nicht in den Entwurf kopiert");
+            assertEqual(doc().querySelector("#checkoutCustomerCareAdvice").value, "PRIVATE-UI-CARE", "Pflegevorlage wurde nicht in den Entwurf kopiert");
             click('[data-action="finish-demo"]');
             await waitFor(() => frame.contentWindow.location.hash === "#/receipt-success");
             let receipts = await client.readReceipts();
             assertEqual(receipts.receipts.length, 1, "Erste UI-Zuordnung erzeugte keinen Beleg");
             assertEqual(receipts.receipts[0].prescriptionAssignment?.prescriptionId, "prescription-one", "UI-Zuordnung fehlt im Beleg");
+            let treatmentRecords = await client.readTreatmentRecords();
+            assertEqual(treatmentRecords.treatmentRecords.length, 1, "UI-Abschluss erzeugte keine Behandlungsdokumentation");
             click('[data-action="new-after-finish"]');
             await prepareCheckout();
+            click('[data-apply-treatment-template="treatment-template-internal"]');
+            const careField = doc().querySelector("#checkoutCustomerCareAdvice");
+            careField.value = "PRIVATE-UI-RETRY";
+            careField.dispatchEvent(new frame.contentWindow.Event("input", { bubbles: true }));
             assert(doc().body.textContent.includes("bereits ausgeschöpft"), "Ausgeschöpfter Status fehlt im Checkout");
             click('[data-action="finish-demo"]');
             await waitFor(() => doc().querySelector("[data-confirm-prescription-overrun]"));
             assert(frame.contentWindow.location.hash === "#/checkout", "Unbestätigte Überziehung schloss den Beleg ab");
+            assertEqual(doc().querySelector("#checkoutInternalDocumentation").value, "PRIVATE-TEMPLATE-INTERNAL-ÄÖÜ", "Fehler löschte interne Dokumentation");
+            assertEqual(doc().querySelector("#checkoutCustomerCareAdvice").value, "PRIVATE-UI-RETRY", "Fehler löschte Pflegehinweis");
             click("[data-confirm-prescription-overrun]");
             click('[data-action="finish-demo"]');
             await waitFor(() => frame.contentWindow.location.hash === "#/receipt-success");
             receipts = await client.readReceipts();
+            treatmentRecords = await client.readTreatmentRecords();
+            assertEqual(treatmentRecords.treatmentRecords.length, 2, "Bestätigter zweiter Abschluss verlor Behandlungsdaten");
             const usage = api.prescriptionUsage((await client.readPrescriptions()).prescriptions[0], receipts.receipts);
             assertEqual(usage.usedUnits, 2, "Bestätigte UI-Überziehung wurde nicht real gezählt");
             assertEqual(usage.status, "overdrawn", "UI-Überziehung erhielt falschen Status");
+            if (width === 390) {
+              frame.contentWindow.location.hash = "#/customers";
+              await waitFor(() => doc().querySelector('[data-open-customer="customer-anna"]'));
+              click('[data-open-customer="customer-anna"]');
+              await waitFor(() => doc().querySelector(".customer-treatment-history"));
+              assert(doc().querySelector(".customer-treatment-history").textContent.includes("PRIVATE-TEMPLATE-INTERNAL-ÄÖÜ"),
+                "Interner Behandlungsverlauf fehlt im Kundenprofil");
+              assert(doc().querySelector(".customer-treatment-history").textContent.includes("PRIVATE-UI-RETRY"),
+                "Pflegehinweis fehlt im Kundenprofil");
+              noOverflow();
+              const customers = await client.readCustomers();
+              customers.customers.find(customer => customer.id === "customer-anna").active = false;
+              await client.writeCustomers(customers);
+              frame.contentWindow.FRECKA_PERSISTENCE.closeDatabase();
+              setIsolatedAppFrame(frame, isolatedAppMarkup(index, client, "customers", context.databaseName));
+              await waitFor(() => doc()?.querySelector('[data-customer-filter="all"]'));
+              click('[data-customer-filter="all"]');
+              await waitFor(() => doc()?.querySelector('[data-open-customer="customer-anna"]'));
+              click('[data-open-customer="customer-anna"]');
+              await waitFor(() => doc().querySelector(".customer-treatment-history"));
+              assert(doc().querySelector(".customer-treatment-history").textContent.includes("PRIVATE-UI-RETRY"),
+                "Deaktivierter Kunde verlor lesbare Behandlungshistorie");
+              noOverflow();
+            }
             if (width === 320) {
               const duplicatedSource = receipts.receipts[0];
               click('[data-route="receipts"]');
@@ -1760,11 +1865,422 @@
               click('[data-route="checkout"]');
               await waitFor(() => doc().querySelector('[data-select-checkout-prescription="prescription-one"]'));
               assert(!doc().querySelector(".checkout-prescription-choice.is-selected"), "Duplizierter Beleg übernahm die Rezeptzuordnung");
+              assertEqual(doc().querySelector("#checkoutInternalDocumentation").value, "", "Duplizierter Beleg übernahm interne Dokumentation");
+              assertEqual(doc().querySelector("#checkoutCustomerCareAdvice").value, "", "Duplizierter Beleg übernahm Pflegehinweis");
             }
             noOverflow();
             assertDeepEqual(frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS, [], "PODOLOGY-002-UI-Laufzeitfehler");
           } finally { frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase(); frame.remove(); }
         }
+      } }
+    ];
+  }
+
+  function buildTreatmentTests(context) {
+    async function commitTreatment(client, id, treatmentInput, prescription = null, overrides = {}) {
+      const settings = await client.readSettings();
+      const receipts = await client.readReceipts();
+      const draft = receiptDraftFixture(id, overrides);
+      let prescriptionInput = null;
+      if (prescription) {
+        const review = await client.reviewPrescriptionAssignment(draft, { prescriptionId: prescription.id }, receipts);
+        prescriptionInput = {
+          prescriptionId: prescription.id,
+          reviewToken: review.reviewToken,
+          overrunConfirmed: review.overrunRequired,
+          plausibilityConfirmed: review.plausibilityRequired
+        };
+      }
+      return client.commitReceipt(draft, settings, receipts, prescriptionInput, treatmentInput);
+    }
+
+    return [
+      { name: "PODOLOGY-003: Interne Dokumentation und Pflegehinweis werden atomar mit dem normalen Originalbeleg gespeichert", run: async () => {
+        const client = context.makeClient("treatment-atomic");
+        await client.restoreTenantSnapshot(treatmentSnapshot(client.tenantId));
+        const result = await commitTreatment(client, "treatment-atomic-receipt", {
+          internalDocumentation: "  PRIVATE-INTERNAL-ÄÖÜ  ",
+          customerCareAdvice: "  PRIVATE-CARE-Hinweis  "
+        });
+        assert(result.created && result.treatmentRecord, "Atomarer Abschluss erzeugte keine Behandlungsdokumentation");
+        assertEqual(result.treatmentRecord.internalDocumentation, "PRIVATE-INTERNAL-ÄÖÜ", "Interner Text wurde nicht getrimmt");
+        assertEqual(result.treatmentRecord.customerCareAdvice, "PRIVATE-CARE-Hinweis", "Pflegehinweis wurde nicht getrimmt");
+        assertEqual(result.treatmentRecord.receiptId, result.receipt.id, "Belegreferenz fehlt");
+        assertEqual(result.treatmentRecord.receiptNumber, result.receipt.number, "Belegnummernsnapshot fehlt");
+        assertEqual(result.treatmentRecord.customerId, "customer-anna", "Kundenreferenz fehlt");
+        assertEqual(result.treatmentRecord.businessAreaId, "hair", "Geschäftsbereichsreferenz fehlt");
+        assertEqual(result.treatmentRecord.performedAt, result.receipt.completedAt, "Behandlungszeitpunkt weicht vom Belegabschluss ab");
+        assertDeepEqual(result.treatmentRecord.customerSnapshot, result.receipt.customerSnapshot, "Kundensnapshot stammt nicht aus dem Beleg");
+        assertDeepEqual(result.treatmentRecord.businessAreaSnapshot, result.receipt.businessAreaSnapshot, "Bereichssnapshot stammt nicht aus dem Beleg");
+        assert(!JSON.stringify(result.receipt).includes("PRIVATE-INTERNAL") && !JSON.stringify(result.receipt).includes("PRIVATE-CARE"), "Interne Texte gelangten in den Beleg");
+        client.closeDatabase();
+        const reloaded = await client.readTreatmentRecords();
+        assertEqual(reloaded.treatmentRecords.length, 1, "Reload verlor die Behandlungsdokumentation");
+        assertDeepEqual(reloaded.treatmentRecords[0], result.treatmentRecord, "Reload veränderte den historischen Snapshot");
+      } },
+      { name: "PODOLOGY-003: Dokumentation und Pflegehinweis funktionieren getrennt bis zu ihren exakten Grenzen", run: async () => {
+        const client = context.makeClient("treatment-separate-fields");
+        await client.restoreTenantSnapshot(treatmentSnapshot(client.tenantId));
+        const internalText = `PRIVATE-INTERNAL-LIMIT-${"i".repeat(3977)}`;
+        const careText = `PRIVATE-CARE-LIMIT-${"p".repeat(281)}`;
+        assertEqual(internalText.length, 4000, "Interner Grenztest besitzt falsche Länge");
+        assertEqual(careText.length, 300, "Pflegehinweis-Grenztest besitzt falsche Länge");
+        const internalOnly = await commitTreatment(client, "treatment-internal-only", {
+          internalDocumentation: internalText,
+          customerCareAdvice: ""
+        });
+        const careOnly = await commitTreatment(client, "treatment-care-only", {
+          internalDocumentation: "",
+          customerCareAdvice: careText
+        });
+        assertEqual(internalOnly.treatmentRecord.internalDocumentation.length, 4000, "Interner Text wurde gekürzt");
+        assertEqual(internalOnly.treatmentRecord.customerCareAdvice, "", "Interner Datensatz erhielt einen Pflegehinweis");
+        assertEqual(careOnly.treatmentRecord.internalDocumentation, "", "Pflegedatensatz erhielt interne Dokumentation");
+        assertEqual(careOnly.treatmentRecord.customerCareAdvice.length, 300, "Pflegehinweis wurde gekürzt");
+        assertEqual((await client.readTreatmentRecords()).treatmentRecords.length, 2, "Getrennte Eingaben erzeugten nicht genau zwei Datensätze");
+      } },
+      { name: "PODOLOGY-003: Dokumentation mit Rezept speichert nur die optionale Referenz und den unveränderlichen Zuordnungssnapshot", run: async () => {
+        const client = context.makeClient("treatment-prescription");
+        const prescription = prescriptionFixture(client.tenantId, {
+          treatmentText: "Testhaarschnitt", catalogItemId: "service-cut", prescribedUnits: 2
+        });
+        await client.restoreTenantSnapshot(treatmentSnapshot(client.tenantId, { prescriptions: [prescription] }));
+        const result = await commitTreatment(client, "treatment-prescription-receipt", {
+          internalDocumentation: "PRIVATE-WITH-PRESCRIPTION",
+          customerCareAdvice: ""
+        }, prescription);
+        assertEqual(result.treatmentRecord.prescriptionId, prescription.id, "Rezeptreferenz fehlt");
+        assertDeepEqual(result.treatmentRecord.prescriptionSnapshot, result.receipt.prescriptionAssignment, "Rezeptsnapshot ist nicht identisch zur Belegzuordnung");
+        assert(!hasOwn(result.treatmentRecord.prescriptionSnapshot, "internalNote"), "Interne Rezeptnotiz gelangte in den Behandlungssnapshot");
+        assertEqual(api.prescriptionUsage((await client.readPrescriptions()).prescriptions[0], (await client.readReceipts()).receipts).usedUnits, 1,
+          "Atomarer Abschluss verbrauchte nicht genau eine Rezepteinheit");
+      } },
+      { name: "PODOLOGY-003: Ein normaler Gutschein-Einlösungsbeleg schreibt die Behandlung im selben atomaren Abschluss", run: async () => {
+        const client = context.makeClient("treatment-voucher-redemption");
+        await client.restoreTenantSnapshot(treatmentSnapshot(client.tenantId));
+        await client.writeReceipts(receiptsRecordFixture(client.tenantId));
+        await client.writeVouchers(vouchersRecordFixture(client.tenantId));
+        const settings = await client.readSettings();
+        const receipts = await client.readReceipts();
+        const vouchers = await client.readVouchers();
+        const receipt = receiptDraftFixture("treatment-voucher-receipt", {
+          voucherReference: "vch_existing", total: 30, originalTotal: 30, paymentMethod: "Gutschein"
+        });
+        const result = await client.commitVoucherRedemption(receipt, {
+          voucherReference: "vch_existing", amountCents: 3000, occurredAt: "2030-01-06T10:00:00.000Z",
+          date: "06.01.2030", time: "11:00"
+        }, settings, receipts, vouchers, null, {
+          internalDocumentation: "PRIVATE-VOUCHER-TREATMENT", customerCareAdvice: "PRIVATE-VOUCHER-CARE"
+        });
+        assert(result.created && result.treatmentRecord, "Gutscheineinlösung erzeugte keinen atomaren Behandlungsdatensatz");
+        assertEqual(result.treatmentRecord.receiptId, result.receipt.id, "Gutscheinbeleg und Behandlung sind nicht verknüpft");
+        assertEqual((await client.readTreatmentRecords()).treatmentRecords.length, 1, "Gutscheineinlösung erzeugte nicht genau einen Datensatz");
+      } },
+      { name: "PODOLOGY-003: Leere Eingaben erzeugen keinen Datensatz; Grenzen, Kunde und Capability werden fail closed geprüft", run: async () => {
+        const client = context.makeClient("treatment-validation");
+        await client.restoreTenantSnapshot(treatmentSnapshot(client.tenantId));
+        const empty = await commitTreatment(client, "treatment-empty", { internalDocumentation: "  ", customerCareAdvice: "\n" });
+        assertEqual(empty.treatmentRecord, null, "Leere Eingabe erzeugte Behandlungsdaten");
+        assertEqual((await client.readTreatmentRecords()).treatmentRecords.length, 0, "Leere Eingabe wurde persistiert");
+
+        for (const [id, input] of [
+          ["treatment-internal-too-long", { internalDocumentation: "x".repeat(4001), customerCareAdvice: "" }],
+          ["treatment-care-too-long", { internalDocumentation: "", customerCareAdvice: "x".repeat(301) }]
+        ]) {
+          const beforeSettings = await client.readSettings();
+          const beforeReceipts = await client.readReceipts();
+          await assertRejects(() => client.commitReceipt(receiptDraftFixture(id), beforeSettings, beforeReceipts, null, input),
+            "TREATMENT_RECORD_CONTENT_INVALID", id);
+          assertEqual((await client.readReceipts()).receipts.length, 1, "Ungültige Behandlung erzeugte einen Beleg");
+          assertEqual((await client.readSettings()).receiptSettings.nextNumber, beforeSettings.receiptSettings.nextNumber,
+            "Ungültige Behandlung verbrauchte eine Belegnummer");
+        }
+
+        const noCustomerDraft = receiptDraftFixture("treatment-no-customer", { customerId: null, customerSnapshot: null });
+        const currentSettings = await client.readSettings();
+        const currentReceipts = await client.readReceipts();
+        await assertRejects(() => client.commitReceipt(noCustomerDraft, currentSettings, currentReceipts, null,
+          { internalDocumentation: "Nicht speichern", customerCareAdvice: "" }), "TREATMENT_DOCUMENTATION_DISABLED", "Behandlung ohne Kunde");
+        const inactiveCustomers = await client.readCustomers();
+        inactiveCustomers.customers.find(customer => customer.id === "customer-anna").active = false;
+        await client.writeCustomers(inactiveCustomers);
+        const inactiveCustomerSettings = await client.readSettings();
+        const inactiveCustomerReceipts = await client.readReceipts();
+        await assertRejects(() => client.commitReceipt(receiptDraftFixture("treatment-inactive-customer"), inactiveCustomerSettings, inactiveCustomerReceipts, null,
+          { internalDocumentation: "Nicht speichern", customerCareAdvice: "" }), "TREATMENT_DOCUMENTATION_DISABLED", "Behandlung bei deaktiviertem Kunden");
+        inactiveCustomers.customers.find(customer => customer.id === "customer-anna").active = true;
+        await client.writeCustomers(inactiveCustomers);
+        const disabledSettings = await client.readSettings();
+        disabledSettings.businessAreas[0].features.prescriptionDocumentation = false;
+        await client.writeSettings(disabledSettings);
+        const settingsAfterDisable = await client.readSettings();
+        const receiptsAfterDisable = await client.readReceipts();
+        await assertRejects(() => client.commitReceipt(receiptDraftFixture("treatment-disabled"), settingsAfterDisable, receiptsAfterDisable, null,
+          { internalDocumentation: "Nicht speichern", customerCareAdvice: "" }), "TREATMENT_DOCUMENTATION_DISABLED", "Behandlung bei deaktivierter Capability");
+        assertEqual((await client.readTreatmentRecords()).treatmentRecords.length, 0, "Abgewiesene Eingaben wurden gespeichert");
+      } },
+      { name: "PODOLOGY-003: Mehrfachaufruf ist idempotent, abgeschlossene Dokumentation unveränderlich", run: async () => {
+        const client = context.makeClient("treatment-idempotent");
+        await client.restoreTenantSnapshot(treatmentSnapshot(client.tenantId));
+        const settings = await client.readSettings();
+        const seed = await client.readReceipts();
+        const draft = receiptDraftFixture("treatment-idempotent-receipt");
+        const input = { internalDocumentation: "PRIVATE-IDEMPOTENT", customerCareAdvice: "Pflege" };
+        const first = await client.commitReceipt(draft, settings, seed, null, input);
+        const repeated = await client.commitReceipt(draft, settings, seed, null, input);
+        assertEqual(repeated.created, false, "Mehrfachaufruf erzeugte einen zweiten Beleg");
+        assertEqual((await client.readTreatmentRecords()).treatmentRecords.length, 1, "Mehrfachaufruf erzeugte eine zweite Dokumentation");
+        await assertRejects(() => client.commitReceipt(draft, settings, seed, null,
+          { ...input, internalDocumentation: "PRIVATE-CHANGED" }), "TREATMENT_RECORD_IMMUTABLE", "Nachträgliches Überschreiben");
+        assertDeepEqual((await client.readTreatmentRecords()).treatmentRecords[0], first.treatmentRecord, "Fehlversuch veränderte die Dokumentation");
+      } },
+      { name: "PODOLOGY-003: Defekter Behandlungsstore bricht den gesamten Abschluss ohne Beleg, Nummer oder Teilstand ab", run: async () => {
+        const client = context.makeClient("treatment-write-failure");
+        await client.restoreTenantSnapshot(treatmentSnapshot(client.tenantId));
+        const settings = await client.readSettings();
+        const receipts = await client.readReceipts();
+        await writeRawTreatmentRecord(client, { ...api.emptyTreatmentRecordsRecord(client.tenantId), treatmentRecords: null });
+        await assertRejects(() => client.commitReceipt(receiptDraftFixture("treatment-failed"), settings, receipts, null,
+          { internalDocumentation: "PRIVATE-FAIL", customerCareAdvice: "" }), "TREATMENT_RECORDS_RECORD_INVALID", "Defekter Store");
+        assertEqual((await client.readReceipts()).receipts.length, 0, "Abbruch hinterließ einen Beleg");
+        assertEqual((await client.readSettings()).receiptSettings.nextNumber, settings.receiptSettings.nextNumber, "Abbruch verbrauchte eine Nummer");
+      } },
+      { name: "PODOLOGY-003: Storno, Gutschrift, Kunden- und Capability-Deaktivierung lassen den historischen Datensatz lesbar und bytegleich", run: async () => {
+        const client = context.makeClient("treatment-lifecycle");
+        await client.restoreTenantSnapshot(treatmentSnapshot(client.tenantId));
+        const committed = await commitTreatment(client, "treatment-lifecycle-receipt", {
+          internalDocumentation: "PRIVATE-LIFECYCLE", customerCareAdvice: "Pflegehinweis"
+        });
+        const historical = clone(committed.treatmentRecord);
+        const credit = await client.commitReceiptCorrection(committed.receipt.number, {
+          id: "treatment-credit", type: "credit", total: -10,
+          items: [{ title: "Kulanz", quantity: 1, unitPrice: -10, total: -10 }],
+          completedAt: "2030-01-06T09:00:00.000Z", isFull: false
+        }, committed.receiptsRecord);
+        assertDeepEqual((await client.readTreatmentRecords()).treatmentRecords[0], historical, "Gutschrift veränderte Behandlungssnapshot");
+        await client.commitReceiptCorrection(committed.receipt.number, {
+          id: "treatment-cancellation", type: "cancellation", total: -39,
+          items: committed.receipt.items.map(item => ({ ...item, unitPrice: -39, total: -39 })),
+          completedAt: "2030-01-06T10:00:00.000Z"
+        }, credit.record);
+        const customers = await client.readCustomers();
+        customers.customers.find(customer => customer.id === historical.customerId).active = false;
+        await client.writeCustomers(customers);
+        const settings = await client.readSettings();
+        const historicalArea = settings.businessAreas.find(area => area.id === historical.businessAreaId);
+        historicalArea.features.prescriptionDocumentation = false;
+        historicalArea.active = false;
+        historicalArea.isDefault = false;
+        settings.businessAreas.find(area => area.id === "coaching").isDefault = true;
+        await client.writeSettings(settings);
+        assertDeepEqual((await client.readTreatmentRecords()).treatmentRecords[0], historical,
+          "Lebenszyklus oder Deaktivierung veränderte bzw. versteckte die Historie");
+      } },
+      { name: "PODOLOGY-003: Bereichsvorlagen bleiben nach Zweck getrennt, archiviert erhalten und strikt validiert", run: async () => {
+        const client = context.makeClient("treatment-templates");
+        const templates = [
+          treatmentTemplateFixture(),
+          treatmentTemplateFixture({ id: "treatment-template-care", purpose: "customer-care", title: "Pflege zuhause", text: "PRIVATE-TEMPLATE-CARE" }),
+          treatmentTemplateFixture({ id: "treatment-template-archived", active: false, title: "Archiviert", text: "PRIVATE-TEMPLATE-ARCHIVE" })
+        ];
+        const snapshot = treatmentSnapshot(client.tenantId, { templates });
+        await client.restoreTenantSnapshot(snapshot);
+        let stored = await client.readSettings();
+        assertDeepEqual(stored.treatmentTemplates, templates, "Vorlagen wurden nicht vollständig gespeichert");
+        const historical = (await commitTreatment(client, "treatment-template-snapshot", {
+          internalDocumentation: "PRIVATE-TEMPLATE-CUSTOMIZED", customerCareAdvice: ""
+        })).treatmentRecord;
+        stored = await client.readSettings();
+        stored.treatmentTemplates[0].text = "PRIVATE-TEMPLATE-LATER-CHANGED";
+        stored.treatmentTemplates[0].updatedAt = "2030-02-01T10:00:00.000Z";
+        await client.writeSettings(stored);
+        assertDeepEqual((await client.readTreatmentRecords()).treatmentRecords[0], historical,
+          "Spätere Vorlagenänderung veränderte den tatsächlich gespeicherten Textsnapshot");
+        stored = await client.readSettings();
+        const templatesAfterEdit = clone(stored.treatmentTemplates);
+        stored.businessAreas[0].features.prescriptionDocumentation = false;
+        await client.writeSettings(stored);
+        assertDeepEqual((await client.readSettings()).treatmentTemplates, templatesAfterEdit, "Deaktivierung löschte bestehende Vorlagen");
+        for (const [overrides, code] of [
+          [{ purpose: "diagnosis" }, "TREATMENT_TEMPLATE_PURPOSE_INVALID"],
+          [{ businessAreaId: "missing" }, "TREATMENT_TEMPLATE_AREA_MISSING"],
+          [{ title: "" }, "TREATMENT_TEMPLATE_CONTENT_INVALID"],
+          [{ text: "x".repeat(4001) }, "TREATMENT_TEMPLATE_CONTENT_INVALID"],
+          [{ purpose: "customer-care", text: "x".repeat(301) }, "TREATMENT_TEMPLATE_CONTENT_INVALID"]
+        ]) assertThrows(() => api.normalizeTreatmentTemplates([treatmentTemplateFixture(overrides)], snapshot.stores.settings.businessAreas), code, code);
+        assertThrows(() => api.normalizeTreatmentTemplates([templates[0], clone(templates[0])], snapshot.stores.settings.businessAreas),
+          "TREATMENT_TEMPLATE_ID_DUPLICATE", "Doppelte Vorlagen-ID");
+      } },
+      { name: "PODOLOGY-003: Vollbackup, Restore, Altbackup-Kompatibilität und atomarer Sieben-Store-Rollback sind deterministisch", run: async () => {
+        const client = context.makeClient("treatment-backup");
+        const templates = [treatmentTemplateFixture(), treatmentTemplateFixture({ id: "care", purpose: "customer-care", title: "Pflege", text: "PRIVATE-BACKUP-CARE" })];
+        await client.restoreTenantSnapshot(treatmentSnapshot(client.tenantId, { templates }));
+        await commitTreatment(client, "treatment-backup-receipt", { internalDocumentation: "PRIVATE-BACKUP-INTERNAL", customerCareAdvice: "PRIVATE-BACKUP-ADVICE" });
+        const exported = await client.exportTenantSnapshot();
+        const encrypted = await backupApi.encryptTenantSnapshot(exported, "Sicherer Behandlungsbackup Testsatz 2030");
+        assert(!encrypted.includes("PRIVATE-BACKUP"), "Verschlüsseltes Backup enthält Klartext");
+        const decrypted = await backupApi.decryptTenantSnapshot(encrypted, "Sicherer Behandlungsbackup Testsatz 2030");
+        await client.restoreTenantSnapshot(decrypted);
+        assertDeepEqual(await client.readTreatmentRecords(), exported.stores.treatmentRecords, "Backup/Restore verlor Behandlungsdaten");
+        assertDeepEqual((await client.readSettings()).treatmentTemplates, templates, "Backup/Restore verlor Vorlagen");
+
+        const legacy = clone(exported);
+        legacy.appDataSchemaVersion = 7;
+        delete legacy.stores.treatmentRecords;
+        await client.restoreTenantSnapshot(legacy);
+        assertEqual((await client.readTreatmentRecords()).treatmentRecords.length, 0, "Schema-7-Restore erfand Behandlungsdaten");
+        const incomplete = clone(exported);
+        delete incomplete.stores.treatmentRecords;
+        assertThrows(() => api.validateTenantSnapshot(incomplete, client.tenantId), "BACKUP_INCOMPLETE", "Schema 8 ohne Behandlungstore");
+
+        await client.restoreTenantSnapshot(exported);
+        const before = await client.exportTenantSnapshot();
+        const changed = clone(before);
+        changed.stores.settings.company.name = "NEVER-COMMIT";
+        changed.stores.treatmentRecords.treatmentRecords[0].internalDocumentation = "NEVER-COMMIT";
+        await assertRejects(() => client.restoreTenantSnapshot(changed, { simulateFailureAfterStore: 6 }),
+          "BACKUP_RESTORE_TEST_ABORT", "Abbruch nach siebtem Store");
+        assertDeepEqual((await client.exportTenantSnapshot()).stores, before.stores, "Abbruch hinterließ Teilrestore");
+      } },
+      { name: "PODOLOGY-003: Referenzen und Eindeutigkeit werden im Backup vor jedem Restore fail closed validiert", run: async () => {
+        const client = context.makeClient("treatment-references");
+        await client.restoreTenantSnapshot(treatmentSnapshot(client.tenantId, { prescriptions: [prescriptionFixture(client.tenantId, {
+          treatmentText: "Testhaarschnitt", catalogItemId: "service-cut"
+        })] }));
+        const prescription = (await client.readPrescriptions()).prescriptions[0];
+        await commitTreatment(client, "treatment-reference-receipt", { internalDocumentation: "PRIVATE-REF", customerCareAdvice: "" }, prescription);
+        const valid = await client.exportTenantSnapshot();
+        for (const [field, value] of [["customerId", "missing"], ["businessAreaId", "missing"], ["receiptId", "missing"], ["userId", "missing"], ["prescriptionId", "missing"]]) {
+          const invalid = clone(valid);
+          invalid.stores.treatmentRecords.treatmentRecords[0][field] = value;
+          assertThrows(() => api.validateTenantSnapshot(invalid, client.tenantId), "TREATMENT_RECORD_REFERENCE_INVALID", field);
+        }
+        const duplicate = clone(valid);
+        duplicate.stores.treatmentRecords.treatmentRecords.push({ ...clone(duplicate.stores.treatmentRecords.treatmentRecords[0]), id: "treatment-duplicate" });
+        assertThrows(() => api.validateTenantSnapshot(duplicate, client.tenantId), "TREATMENT_RECORD_DUPLICATE", "Doppelte Belegreferenz");
+      } },
+      { name: "PODOLOGY-003: Diagnose, Steuer-/Eigene-Daten-Export, ZIP, PDF und Public Viewer geben keine Behandlungsdaten aus", run: async () => {
+        const client = context.makeClient("treatment-privacy");
+        await client.restoreTenantSnapshot(treatmentSnapshot(client.tenantId));
+        await commitTreatment(client, "treatment-privacy-receipt", {
+          internalDocumentation: "PRIVATE-TREATMENT-EXPORT-ÄÖÜ",
+          customerCareAdvice: "PRIVATE-CARE-EXPORT"
+        });
+        const snapshot = await client.exportTenantSnapshot();
+        const before = clone(snapshot);
+        const diagnostic = api.diagnoseTenantSnapshot(snapshot, client.tenantId);
+        assertEqual(diagnostic.status, "consistent", "Konsistenter Bestand abgelehnt");
+        assert(!JSON.stringify(diagnostic).includes("PRIVATE-"), "Diagnose verrät Behandlungsdaten");
+        for (const exportType of ["own-data", "tax-advisor"]) {
+          const exported = exportApi.createExportFiles(snapshot, {
+            exportType, includeCustomers: true, periodType: "custom", dateFrom: "2030-01-01", dateTo: "2030-01-31", businessAreaId: "all"
+          });
+          assert(!JSON.stringify(exported).includes("PRIVATE-"), `${exportType} verrät Behandlungsdaten`);
+          assert(!exported.files.some(file => /Behandlung|Pflege|treatment/i.test(file.name)), "Export erzeugte interne Fachdatei");
+        }
+        const packageResult = await exportPackageApi.createTaxAdvisorPackage(snapshot, {
+          periodType: "custom", dateFrom: "2030-01-01", dateTo: "2030-01-31", businessAreaId: "all",
+          generatedAt: "2030-02-01T12:34:00.000Z"
+        });
+        const archive = await globalThis.JSZip.loadAsync(await packageResult.packageFile.content.arrayBuffer(), { checkCRC32: true });
+        for (const [path, file] of Object.entries(archive.files)) {
+          assert(!/Behandlung|Pflege|treatment/i.test(path), "ZIP-Pfad verrät Behandlungsdaten");
+          if (!file.dir) assert(!new TextDecoder().decode(await file.async("uint8array")).includes("PRIVATE-"), `ZIP-Eintrag ${path} verrät Behandlungsdaten`);
+        }
+        for (const receipt of snapshot.stores.receipts.receipts) {
+          const model = documentApi.createReceiptDocumentModel(receipt, documentOptions());
+          assert(!JSON.stringify(model).includes("PRIVATE-"), "Dokumentmodell enthält Behandlungsdaten");
+          assert(!new TextDecoder().decode(await documentApi.createPdfBytes(model)).includes("PRIVATE-"), "PDF enthält Behandlungsdaten");
+          const bundle = await publicDocumentApi.createPublicBundle(model, { baseUrl: "https://app.example.invalid/", qrService: qrApi });
+          assert(!JSON.stringify(await publicDocumentApi.decodePublicLink(bundle.link, { qrService: qrApi })).includes("PRIVATE-"), "Public Viewer enthält Behandlungsdaten");
+        }
+        assertDeepEqual(snapshot, before, "Projektion veränderte den Snapshot");
+      } },
+      { name: "PODOLOGY-003: Vorlagen-UI legt getrennte Zwecke an, bearbeitet, archiviert und reaktiviert ohne horizontalen Überlauf", run: async () => {
+        const index = await (await fetch("../index.html", { cache: "no-store" })).text();
+        const client = context.makeClient("treatment-template-ui");
+        await client.restoreTenantSnapshot(treatmentSnapshot(client.tenantId));
+        const frame = document.createElement("iframe");
+        frame.title = "Behandlungsvorlagen 320 px";
+        frame.style.cssText = "position:fixed;left:-2000px;top:0;width:320px;height:807px;border:0";
+        setIsolatedAppFrame(frame, isolatedAppMarkup(index, client, "settings-business-areas", context.databaseName));
+        document.body.append(frame);
+        const waitFor = async predicate => {
+          for (let index = 0; index < 200; index += 1) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 50)); }
+          throw new Error(`Vorlagenoberfläche wurde nicht rechtzeitig bereit: ${predicate.toString()}`);
+        };
+        try {
+          const doc = () => frame.contentDocument;
+          const click = selector => { const element = doc().querySelector(selector); assert(element, `Vorlagen-UI fehlt: ${selector}`); element.click(); };
+          const fill = (selector, value) => {
+            const element = doc().querySelector(selector); assert(element, `Vorlagenfeld fehlt: ${selector}`);
+            element.value = value; element.dispatchEvent(new frame.contentWindow.Event("input", { bubbles: true }));
+          };
+          const noOverflow = () => assert(doc().documentElement.scrollWidth <= frame.contentWindow.innerWidth, "Vorlagen-UI hat horizontalen Überlauf bei 320 px");
+          await waitFor(() => {
+            const button = doc()?.querySelector('[data-new-treatment-template="hair"][data-treatment-template-purpose="internal-documentation"]');
+            return button && !button.disabled;
+          });
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          const newInternalButton = doc().querySelector('[data-new-treatment-template="hair"][data-treatment-template-purpose="internal-documentation"]');
+          let clickObserved = false;
+          doc().addEventListener("click", () => { clickObserved = true; }, { once: true });
+          newInternalButton.click();
+          try {
+            await waitFor(() => doc().querySelector("#treatmentTemplateTitle"));
+          } catch (error) {
+            throw new Error(`Vorlageneditor blieb geschlossen (click=${clickObserved}, disabled=${newInternalButton.disabled}, purpose=${newInternalButton.dataset.treatmentTemplatePurpose}, errors=${JSON.stringify(frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS)})`);
+          }
+          fill("#treatmentTemplateTitle", "Interner Standard");
+          fill("#treatmentTemplateText", "PRIVATE-UI-TEMPLATE-INTERNAL");
+          click('[data-action="treatment-template-save"]');
+          await waitFor(() => doc().querySelector('[data-edit-treatment-template]'));
+          let stored = await client.readSettings();
+          assertEqual(stored.treatmentTemplates.length, 1, "Interne Vorlage wurde nicht gespeichert");
+          assertEqual(stored.treatmentTemplates[0].purpose, "internal-documentation", "Interne Vorlage erhielt falschen Zweck");
+          click('[data-edit-treatment-template]');
+          await waitFor(() => doc().querySelector("#treatmentTemplateTitle"));
+          fill("#treatmentTemplateTitle", "Interner Standard geändert");
+          click('[data-action="treatment-template-save"]');
+          await waitFor(() => doc().querySelector(".treatment-template-list")?.textContent.includes("geändert"));
+          click('[data-toggle-treatment-template]');
+          await waitFor(() => doc().querySelector(".treatment-template-list")?.textContent.includes("Archiviert"));
+          assertEqual((await client.readSettings()).treatmentTemplates[0].active, false, "Archivierung fehlt");
+          click('[data-toggle-treatment-template]');
+          for (let attempt = 0; attempt < 160; attempt += 1) {
+            if ((await client.readSettings()).treatmentTemplates[0]?.active === true) break;
+            await new Promise(resolve => setTimeout(resolve, 50));
+          }
+          assertEqual((await client.readSettings()).treatmentTemplates[0].active, true, "Reaktivierung fehlt");
+          click('[data-new-treatment-template="hair"][data-treatment-template-purpose="customer-care"]');
+          try {
+            await waitFor(() => doc().querySelector("#treatmentTemplateTitle"));
+          } catch (error) {
+            throw new Error("Pflegevorlageneditor blieb nach der Reaktivierung geschlossen");
+          }
+          fill("#treatmentTemplateTitle", "Pflege zuhause");
+          fill("#treatmentTemplateText", "PRIVATE-UI-TEMPLATE-CARE");
+          click('[data-action="treatment-template-save"]');
+          for (let attempt = 0; attempt < 160; attempt += 1) {
+            stored = await client.readSettings();
+            if (stored.treatmentTemplates.length === 2) break;
+            await new Promise(resolve => setTimeout(resolve, 50));
+          }
+          assertEqual(stored.treatmentTemplates.length, 2, "Pflegevorlage wurde nicht gespeichert");
+          assertEqual(stored.treatmentTemplates.filter(entry => entry.purpose === "customer-care").length, 1, "Pflegezweck wurde vermischt");
+          noOverflow();
+          assertDeepEqual(frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS, [], "PODOLOGY-003-Vorlagen-UI-Laufzeitfehler");
+        } finally { frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase(); frame.remove(); }
+      } },
+      { name: "PODOLOGY-003: Kunden-, Beleg- und Settingsreset sind bei historischer Behandlungsdokumentation gesperrt", run: async () => {
+        const client = context.makeClient("treatment-reset");
+        await client.restoreTenantSnapshot(treatmentSnapshot(client.tenantId));
+        await commitTreatment(client, "treatment-reset-receipt", { internalDocumentation: "PRIVATE-RESET", customerCareAdvice: "" });
+        const before = await client.exportTenantSnapshot();
+        await assertRejects(() => client.deleteCustomers(), "TREATMENT_RECORD_RESET_BLOCKED", "Kundenreset");
+        await assertRejects(() => client.deleteReceipts(), "TREATMENT_RECORD_RESET_BLOCKED", "Belegreset");
+        await assertRejects(() => client.deleteSettings(), "TREATMENT_RECORD_RESET_BLOCKED", "Settingsreset");
+        assertDeepEqual((await client.exportTenantSnapshot()).stores, before.stores, "Resetversuch veränderte Daten");
       } }
     ];
   }
@@ -1814,6 +2330,7 @@
     };
     return [
       ...buildPrescriptionTests(context),
+      ...buildTreatmentTests(context),
       {
         name: "Zentraler QR-Service ist vollständig und versioniert geladen",
         run: async () => {
@@ -3404,7 +3921,7 @@
           const persistence = api.createSettingsPersistence({ databaseName, tenantId });
           try {
             const database = await persistence.openDatabase();
-            assertEqual(database.version, 7, "IndexedDB wurde nicht auf Schema 7 angehoben");
+            assertEqual(database.version, 8, "IndexedDB wurde nicht auf Schema 8 angehoben");
             ["settingsStoreName", "catalogStoreName", "customersStoreName", "receiptsStoreName", "vouchersStoreName", "licenseRuntimeStoreName"].forEach(constantName => {
               assert(database.objectStoreNames.contains(api.constants[constantName]), `Store fehlt nach 5→6: ${constantName}`);
             });
@@ -5296,7 +5813,7 @@
             );
             migratedClient = api.createSettingsPersistence({ databaseName: legacyDatabaseName, tenantId });
             const database = await migratedClient.openDatabase();
-            assertEqual(database.version, 7, "Datenbank wurde nicht auf Schema-Version 7 aktualisiert");
+            assertEqual(database.version, 8, "Datenbank wurde nicht auf Schema-Version 8 aktualisiert");
             assert(database.objectStoreNames.contains(api.constants.vouchersStoreName), "Voucher-Store wurde beim Upgrade nicht ergänzt");
             assert(database.objectStoreNames.contains(api.constants.licenseRuntimeStoreName), "licenseRuntime-Store wurde beim Upgrade nicht ergänzt");
             assertEqual((await migratedClient.readSettings()).company.name, "Teststudio Nord", "Settings gingen beim Upgrade verloren");
@@ -5485,7 +6002,7 @@
           assert(typeof backupApi?.deliverBackup === "function", "Zentrale Backup-Ausgabe fehlt");
           assert(typeof backupApi?.sharePreparedBackup === "function", "Explizite Backup-Share-Aktion fehlt");
           assert(typeof backupApi?.createBackup === "function", "Deterministischer Backup-Workflow fehlt");
-          assertEqual(api.constants.databaseVersion, 7, "Backup verwendet nicht die erwartete Schema-Version");
+          assertEqual(api.constants.databaseVersion, 8, "Backup verwendet nicht die erwartete Schema-Version");
         }
       },
       {
@@ -5911,7 +6428,7 @@
           assertEqual(exportPackageApi?.JSZIP_VERSION, "3.10.1", "ZIP-Paketadapter erwartet eine falsche JSZip-Version");
           assertEqual(globalThis.JSZip?.version, "3.10.1", "Lokal vendorte JSZip-Version ist falsch");
           assertEqual(exportApi.constants.exportFormatVersion, 1, "Falsche Exportformatversion");
-          assertEqual(api.constants.databaseVersion, 7, "Export verwendet nicht die erwartete Schema-Version");
+          assertEqual(api.constants.databaseVersion, 8, "Export verwendet nicht die erwartete Schema-Version");
         }
       },
       {
@@ -6321,7 +6838,7 @@
           const historicalSchemaFive = clone(snapshot);
           historicalSchemaFive.appDataSchemaVersion = 5;
           const migratedSchemaFive = api.validateTenantSnapshot(historicalSchemaFive, tenantId).snapshot;
-          assertEqual(migratedSchemaFive.appDataSchemaVersion, 7, "Historisches Schema-5-Backup wurde nicht auf die aktuelle Snapshotprojektion angehoben");
+          assertEqual(migratedSchemaFive.appDataSchemaVersion, 8, "Historisches Schema-5-Backup wurde nicht auf die aktuelle Snapshotprojektion angehoben");
         }
       },
       {
@@ -6730,7 +7247,7 @@
         }
       },
       {
-        name: "Restore überschreibt alle sechs Fachstores gemeinsam",
+        name: "Restore überschreibt alle sieben Fachstores gemeinsam",
         run: async () => {
           const persistence = context.makeClient("backup-restore-full");
           const before = completeTenantSnapshotFixture(persistence.tenantId, { companyName: "Vorher" });

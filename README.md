@@ -1,6 +1,6 @@
 # FRECKA – 0.11.6 / ANDROID-002
 
-**Arbeitsstand nach v0.11.6: PODOLOGY-002.** Optionale Rezeptverwaltung je Geschäftsbereich, bewusste Zuordnung beim Belegabschluss und ausschließlich aus Belegen abgeleiteter Verbrauch bei unverändertem Schema 7. Vollstorno neutralisiert die zugehörige Nutzung; Gutschriften tun es nicht. Produktversion, Build und App-Shell bleiben bis zur gesonderten Releasevorbereitung unverändert. [Datenmodell, Datenschutz und Prüfungen](docs/prescriptions.md).
+**Arbeitsstand nach v0.11.6: PODOLOGY-003.** Die optionale Rezeptverwaltung und der aus Belegen abgeleitete Verbrauch bleiben unverändert. Schema 8 ergänzt eine interne Behandlungsdokumentation, die ausschließlich atomar zusammen mit einem erfolgreich abgeschlossenen normalen Beleg entsteht. Kundenpflegehinweise werden gespeichert, aber noch nicht auf Belegen oder PDFs ausgegeben. Produktversion, Build und App-Shell bleiben bis zur gesonderten Releasevorbereitung unverändert. [Rezeptverwaltung](docs/prescriptions.md) · [Behandlungsdokumentation und Datenschutz](docs/treatment-documentation.md).
 
 Browserbasierte FRECKA-PWA 0.11.6 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der Build ANDROID-002 bündelt ausschließlich die seit 0.11.5 abgeschlossenen Kompatibilitätsblöcke ANDROID-001, IOS-NAV-001 und ANDROID-002 sowie die notwendigen Versions-, Cache-, Test- und Releaseanpassungen.
 

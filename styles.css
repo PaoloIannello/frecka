@@ -805,6 +805,43 @@ body.work-mode:not(.catalog-mode) .flow-page {
 .prescription-capability input { flex: 0 0 22px; width: 22px; height: 22px; }
 .prescription-capability > span { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
 .prescription-capability strong { font-size: max(.85rem, 14px); }
+.checkout-treatment-section { display: grid; gap: 16px; }
+.checkout-treatment-field { display: grid; gap: 8px; min-width: 0; }
+.checkout-treatment-field > span { display: grid; gap: 3px; }
+.checkout-treatment-field small { color: var(--muted); font-size: max(.76rem, 12px); line-height: 1.45; }
+.checkout-treatment-field textarea,
+.treatment-template-editor input,
+.treatment-template-editor textarea { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); font: inherit; font-size: max(1rem, 16px); resize: vertical; }
+.treatment-template-actions { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+.treatment-template-actions .button { flex: 0 0 auto; min-height: 44px; padding: 8px 12px; }
+.customer-treatment-history { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.customer-treatment-history h2 { margin: 0; font-size: 1.05rem; }
+.treatment-history-list { display: grid; gap: 10px; margin-top: 12px; }
+.treatment-history-item { min-width: 0; padding: 13px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); display: grid; gap: 11px; }
+.treatment-history-item p { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.treatment-history-head { display: flex; justify-content: space-between; gap: 10px; align-items: start; }
+.treatment-history-head > span:first-child { min-width: 0; display: grid; gap: 3px; }
+.treatment-history-head small,
+.treatment-history-meta { color: var(--muted); font-size: max(.76rem, 12px); }
+.treatment-history-item .button { justify-self: start; }
+.treatment-template-settings { grid-column: 1 / -1; min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface-soft); display: grid; gap: 14px; }
+.treatment-template-settings > h3 { margin: 0; font-size: .92rem; }
+.treatment-template-group { min-width: 0; display: grid; gap: 8px; }
+.treatment-template-group h3 { margin: 0; font-size: max(.82rem, 13px); }
+.treatment-template-list { display: grid; gap: 7px; }
+.treatment-template-item { min-width: 0; padding: 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+.treatment-template-item.is-disabled { opacity: .7; }
+.treatment-template-item > span { min-width: 0; display: grid; gap: 2px; overflow-wrap: anywhere; }
+.treatment-template-item small { color: var(--muted); font-size: max(.76rem, 12px); }
+.treatment-template-item > div { display: flex; flex-wrap: wrap; justify-content: end; gap: 4px; }
+.treatment-template-editor { margin-top: 16px; display: grid; gap: 12px; }
+.treatment-template-editor h2,
+.treatment-template-editor p { margin: 0; }
+@media(max-width:390px) {
+  .treatment-history-head,
+  .treatment-template-item { align-items: stretch; flex-direction: column; }
+  .treatment-template-item > div { justify-content: start; }
+}
 .prescription-page { min-width: 0; }
 .prescription-page .form-grid > label { min-width: 0; }
 .prescription-page input, .prescription-page select, .prescription-page textarea { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; font: inherit; font-size: max(1rem, 16px); }
