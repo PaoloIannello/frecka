@@ -1,6 +1,6 @@
 # PODOLOGY-003/004/005 – Behandlungsdokumentation und Kundenausgabe
 
-Stand: 01.09.2026. PODOLOGY-003 ergänzt auf Basis von v0.11.6 die beleggebundene Behandlungsdokumentation. PODOLOGY-004 projiziert daraus genau den Kundenpflegehinweis und aus dem unveränderlichen Rezeptzuordnungs-Snapshot genau das Rezeptdatum in lokale Kundendokumente. PODOLOGY-005 poliert ausschließlich Vorlagenauswahl, Hilfetexte und Vorlagenkarten; Datenmodell und Ausgabevertrag bleiben unverändert. Dieser Entwicklungsstand ist noch kein Release.
+Stand: 01.09.2026. PODOLOGY-003 ergänzt auf Basis von v0.11.6 die beleggebundene Behandlungsdokumentation. PODOLOGY-004 projiziert daraus genau den Kundenpflegehinweis und aus dem unveränderlichen Rezeptzuordnungs-Snapshot genau das Rezeptdatum in lokale Kundendokumente. Version 0.11.8 / PODOLOGY-005 poliert ausschließlich Vorlagenauswahl, Hilfetexte und Vorlagenkarten; Datenmodell und Ausgabevertrag bleiben unverändert.
 
 ## Geltungsbereich
 

@@ -2,7 +2,7 @@
 
 Stand: 26. August 2026
 
-Geltungsbereich: bestätigte Beta-Basis `0.11.6-ee13b12`, gesperrte Releases `0.11.2-a959ec6` und `0.11.3-a8380a0`, vorbereiteter Beta-Stand `0.11.7` / `PODOLOGY-004` und lokaler automatisierter Beta-Release
+Geltungsbereich: bestätigte Beta-Basis `0.11.6-ee13b12`, gesperrte Releases `0.11.2-a959ec6` und `0.11.3-a8380a0`, Release `0.11.7-608257f`, vorbereiteter UX-Patch `0.11.8` / `PODOLOGY-005` und lokaler automatisierter Beta-Release
 
 Der verbindliche Infrastrukturrahmen steht in `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`. Dieses Dokument konkretisiert ausschließlich die statische Laufzeitmenge und ihre spätere Zuordnung zu Synology Web Station.
 
@@ -181,7 +181,9 @@ Der annotierte Tag `v0.11.5` zeigt auf Commit `c80edc7d63042c9f8762a751d376d2d4d
 
 Der annotierte Tag `v0.11.6` zeigt auf Commit `ee13b12ed7cd4763d23d6f4979b83cd5a75ebbef`; das unveränderliche Artefakt `0.11.6-ee13b12` verwendet Build `ANDROID-002`, den HTML-Titel `FRECKA – ANDROID-002`, den Asset-Abfragewert `android002-1` und den App-Shell-Cache `frecka-app-shell-0.11.6-android002-1`. Es ist die bestätigte Beta-Basis vor PODOLOGY-001 bis PODOLOGY-004.
 
-Der noch nicht getaggte Stand `0.11.7 / PODOLOGY-004` verwendet den Asset-Abfragewert `podology004-1` und den App-Shell-Cache `frecka-app-shell-0.11.7-podology004-1`. Er bündelt ausschließlich PODOLOGY-001 bis PODOLOGY-004 und notwendige Versions-, Cache-, Test- und Releaseanpassungen. Tag, Release-ID, Artefakt, Upload und Web-Station-Umschaltung existieren in diesem Vorbereitungsschritt nicht.
+Der annotierte Tag `v0.11.7` zeigt auf Commit `608257fc99b7f1fd93d893cc6104ce55e6e40f44`; das unveränderliche Artefakt `0.11.7-608257f` verwendet Build `PODOLOGY-004`, den HTML-Titel `FRECKA – PODOLOGY-004`, den Asset-Abfragewert `podology004-1` und den App-Shell-Cache `frecka-app-shell-0.11.7-podology004-1`. Es bündelt PODOLOGY-001 bis PODOLOGY-004.
+
+Der noch nicht getaggte Stand `0.11.8 / PODOLOGY-005` verwendet den Asset-Abfragewert `podology005-1` und den App-Shell-Cache `frecka-app-shell-0.11.8-podology005-1`. Er ergänzt ausschließlich UX-Politur an Vorlagenauswahl, Hilfetexten und Vorlagenkarten sowie notwendige Versions-, Cache-, Test- und Releaseanpassungen. Tag, Release-ID, Artefakt, Upload und Web-Station-Umschaltung existieren in diesem Vorbereitungsschritt nicht.
 
 Ein Updateformat für signierte Kanäle und ein Signaturverfahren sind ausdrücklich noch nicht implementiert. SERVICEWORKER-002 erkennt ausschließlich Änderungen des Service Workers innerhalb derselben bereits aufgerufenen Deployment-Origin.
 
@@ -231,9 +233,13 @@ Bewertung: `0.9.1-26dc63f` ist für den Beta-Betrieb freigegeben und gilt als st
 
 `0.11.6-ee13b12` bündelt ANDROID-001, IOS-NAV-001 und ANDROID-002. Die statische App-Shell, der bewusste Updatevertrag, die expliziten PDF-/ZIP-Speichern-Fallbacks sowie die vorhandenen Daten- und Lizenzgrenzen bleiben Grundlage des nachfolgenden Podologie-Pakets. IndexedDB-Schema 6 ist der Ausgangspunkt für das additive Upgrade auf Schema 8.
 
-### 2.18 Vorbereiteter Beta-Stand 0.11.7
+### 2.18 Release-Stand 0.11.7
 
-0.11.7 bündelt PODOLOGY-001 bis PODOLOGY-004. Schema 7 ergänzt `prescriptions`, Schema 8 `treatmentRecords`; vorhandene Mandantendaten werden nicht zurückgesetzt. Lokale Kundendokumente dürfen Rezeptdatum und Pflegehinweis zeigen, Public QR/Public Viewer und Steuerberaterexport bleiben davon isoliert. Reale iPhone- und Android-Abnahmen, Beta-Upload und manuelle Web-Station-Umschaltung bleiben nachgelagerte Freigabegates.
+`0.11.7-608257f` bündelt PODOLOGY-001 bis PODOLOGY-004. Schema 7 ergänzt `prescriptions`, Schema 8 `treatmentRecords`; vorhandene Mandantendaten werden nicht zurückgesetzt. Lokale Kundendokumente dürfen Rezeptdatum und Pflegehinweis zeigen, Public QR/Public Viewer und Steuerberaterexport bleiben davon isoliert.
+
+### 2.19 Vorbereiteter Beta-Stand 0.11.8
+
+0.11.8 ergänzt ausschließlich PODOLOGY-005. IndexedDB-Schema 8, Geschäftsstores, Snapshot-, Backup-, Restore-, Export-, QR-, PDF-, Public-Viewer-, Lizenz- und Websitearchitektur bleiben unverändert. Reale iPhone- und Android-Abnahmen, Release-Automation, Beta-Upload und manuelle Web-Station-Umschaltung bleiben nachgelagerte, ausdrücklich separate Freigabegates.
 
 ## 3. Abgeleitete Deployment-Prinzipien
 

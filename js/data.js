@@ -1,6 +1,6 @@
 window.PROTOTYPE_DATA = Object.freeze({
-  version: "0.11.7",
-  build: "PODOLOGY-004",
+  version: "0.11.8",
+  build: "PODOLOGY-005",
   users: [
     {
       formatVersion: 1,
