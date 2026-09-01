@@ -1430,6 +1430,142 @@
     }, tenantId).record;
   }
 
+  const prescriptionAssignmentKeys = ["formatVersion", "prescriptionId", "units", "prescribedOn", "treatmentText",
+    "prescribedUnits", "businessAreaId", "customerId", "catalogItemId", "overrunConfirmed"];
+
+  function validatePrescriptionAssignment(assignment) {
+    if (!isPlainObject(assignment) || assignment.formatVersion !== 1 || assignment.units !== 1
+      || typeof assignment.overrunConfirmed !== "boolean"
+      || Object.keys(assignment).some(key => !prescriptionAssignmentKeys.includes(key))) {
+      throw prescriptionError("PRESCRIPTION_ASSIGNMENT_INVALID", "Die Rezeptzuordnung eines Belegs ist ungültig. Es wurde nichts verändert.");
+    }
+    validatePrescription({ id: assignment.prescriptionId, tenantId: "assignment", customerId: assignment.customerId,
+      businessAreaId: assignment.businessAreaId, prescribedOn: assignment.prescribedOn, treatmentText: assignment.treatmentText,
+      catalogItemId: assignment.catalogItemId, prescribedUnits: assignment.prescribedUnits, active: true,
+      createdAt: epochIso, updatedAt: epochIso, formatVersion: 1 }, "assignment");
+    return assignment;
+  }
+
+  const prescriptionReceiptType = receipt => receipt?.receiptType || receipt?.type;
+  const prescriptionReceiptNumber = receipt => receipt?.receiptNumber || receipt?.number;
+  const prescriptionReceiptArea = receipt => receipt?.businessAreaId || receipt?.businessAreaSnapshot?.id || receipt?.contextSnapshot?.businessArea?.id;
+  const prescriptionReceiptCustomer = receipt => receipt?.customerId || receipt?.customerSnapshot?.id || receipt?.customer?.id;
+  const prescriptionReceiptTotal = receipt => centsFrom(receipt?.totalCents, receipt?.total);
+  const prescriptionOriginal = receipt => prescriptionReceiptType(receipt) === "receipt"
+    && receipt.receiptKind !== "voucher-sale" && receipt.kind !== "voucher-sale" && receipt.documentKind !== "voucher-sale";
+  const completedPrescriptionReceipt = receipt => Boolean(nullableStringId(receipt?.id) && nullableStringId(prescriptionReceiptNumber(receipt))
+    && stableIso(receipt.completedAt, "") === receipt.completedAt && receipt.completedAt !== epochIso
+    && ["completed", "cancelled", "credited", "partially-credited"].includes(receipt.status));
+
+  function isFullPrescriptionCancellation(correction, original) {
+    return prescriptionReceiptType(correction) === "cancellation" && completedPrescriptionReceipt(correction)
+      && correction.status === "cancelled" && correction.id !== original.id
+      && (correction.reference || correction.references?.originalReceiptNumber) === prescriptionReceiptNumber(original)
+      && prescriptionReceiptArea(correction) === prescriptionReceiptArea(original)
+      && prescriptionReceiptCustomer(correction) === prescriptionReceiptCustomer(original)
+      && prescriptionReceiptTotal(correction) === -prescriptionReceiptTotal(original);
+  }
+
+  // Derived only from completed documents, never from a stored balance or a usage ledger.
+  function prescriptionUsage(prescription, receipts) {
+    const originals = new Map();
+    for (const receipt of receipts || []) {
+      if (!prescriptionOriginal(receipt) || !completedPrescriptionReceipt(receipt)) continue;
+      const assignment = receipt.prescriptionAssignment;
+      if (!assignment) continue;
+      validatePrescriptionAssignment(assignment);
+      if (assignment.prescriptionId !== prescription.id) continue;
+      if (assignment.customerId !== prescription.customerId || assignment.businessAreaId !== prescription.businessAreaId
+        || prescriptionReceiptCustomer(receipt) !== assignment.customerId || prescriptionReceiptArea(receipt) !== assignment.businessAreaId) {
+        throw prescriptionError("PRESCRIPTION_ASSIGNMENT_REFERENCE_INVALID", "Eine Rezeptzuordnung passt nicht zum Kunden oder Geschäftsbereich.");
+      }
+      const previous = originals.get(receipt.id);
+      if (previous && (prescriptionReceiptNumber(previous) !== prescriptionReceiptNumber(receipt)
+        || !sameSerializableValue(previous.prescriptionAssignment, assignment))) {
+        throw prescriptionError("PRESCRIPTION_USAGE_CONFLICT", "Der Belegbestand enthält widersprüchliche Rezeptzuordnungen.");
+      }
+      originals.set(receipt.id, receipt);
+    }
+    const usedReceiptIds = [];
+    const cancelledReceiptIds = [];
+    for (const receipt of originals.values()) {
+      const cancelled = (receipts || []).some(correction => isFullPrescriptionCancellation(correction, receipt));
+      if (receipt.status === "cancelled" && !cancelled) {
+        throw prescriptionError("PRESCRIPTION_CANCELLATION_INVALID", "Zu einer stornierten Rezeptnutzung fehlt ein gültiger Vollstorno.");
+      }
+      (cancelled ? cancelledReceiptIds : usedReceiptIds).push(receipt.id);
+    }
+    const usedUnits = usedReceiptIds.length;
+    return Object.freeze({ prescribedUnits: prescription.prescribedUnits, usedUnits,
+      availableUnits: Math.max(0, prescription.prescribedUnits - usedUnits), historicallyUsed: originals.size > 0,
+      status: prescription.active === false ? "archived" : usedUnits > prescription.prescribedUnits ? "overdrawn"
+        : usedUnits === prescription.prescribedUnits ? "exhausted" : "open",
+      usedReceiptIds: usedReceiptIds.sort(), cancelledReceiptIds: cancelledReceiptIds.sort() });
+  }
+
+  function validatePrescriptionAssignments(receipts, prescriptions) {
+    const byId = new Map(prescriptions.map(entry => [entry.id, entry]));
+    for (const receipt of receipts) {
+      if (receipt.prescriptionAssignment == null) continue;
+      const assignment = validatePrescriptionAssignment(receipt.prescriptionAssignment);
+      const prescription = byId.get(assignment.prescriptionId);
+      if (!prescriptionOriginal(receipt) || !completedPrescriptionReceipt(receipt) || !prescription
+        || prescriptionReceiptCustomer(receipt) !== assignment.customerId || prescriptionReceiptArea(receipt) !== assignment.businessAreaId
+        || prescription.customerId !== assignment.customerId || prescription.businessAreaId !== assignment.businessAreaId) {
+        throw prescriptionError("PRESCRIPTION_ASSIGNMENT_REFERENCE_INVALID", "Eine historische Rezeptzuordnung ist unvollständig oder widersprüchlich.");
+      }
+    }
+    prescriptions.forEach(prescription => { prescriptionUsage(prescription, receipts); });
+  }
+
+  function prescriptionTreatmentMatches(prescription, positions) {
+    const text = value => String(value || "").normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase("de-DE");
+    return (positions || []).some(position => position.type === "service" && Number(position.quantity) > 0
+      && (prescription.catalogItemId ? (position.catalogItemId || position.id) === prescription.catalogItemId
+        : text(position.title || position.name) === text(prescription.treatmentText)));
+  }
+
+  function prescriptionCheckoutReview(draft, input, settings, customers, prescriptionsRecord, receiptsRecord, tenantId) {
+    if (!isPlainObject(input) || !nullableStringId(input.prescriptionId) || !prescriptionOriginal(draft)) {
+      throw prescriptionError("PRESCRIPTION_SELECTION_INVALID", "Bitte eine gültige optionale Rezeptzuordnung wählen.");
+    }
+    const prescriptions = normalizePrescriptionsRecord(prescriptionsRecord, tenantId).record.prescriptions;
+    validatePrescriptionAssignments(receiptsRecord.receipts, prescriptions);
+    const prescription = prescriptions.find(entry => entry.id === input.prescriptionId);
+    const areaId = prescriptionReceiptArea(draft);
+    const customerId = prescriptionReceiptCustomer(draft);
+    const area = settings?.businessAreas?.find(entry => entry.id === areaId);
+    const customer = customers?.customers?.find(entry => entry.id === customerId);
+    if (!prescription || prescription.active === false || prescription.businessAreaId !== areaId || prescription.customerId !== customerId
+      || !area || area.active === false || area.features?.prescriptionDocumentation !== true || !customer || customer.active === false) {
+      throw prescriptionError("PRESCRIPTION_SELECTION_UNAVAILABLE", "Diese Rezeptzuordnung ist nicht mehr verfügbar. Bitte Kunde, Geschäftsbereich und Rezept erneut prüfen oder ohne Rezept fortfahren.");
+    }
+    const usage = prescriptionUsage(prescription, receiptsRecord.receipts);
+    const positions = draft.positions || draft.items || [];
+    const overrunRequired = usage.usedUnits >= prescription.prescribedUnits;
+    const plausibilityRequired = !prescriptionTreatmentMatches(prescription, positions);
+    // Ephemeral approval token, not a persisted counter or exported payload. No note content.
+    const reviewToken = JSON.stringify([prescription.id, prescription.updatedAt, customerId, areaId,
+      usage.usedReceiptIds, usage.cancelledReceiptIds,
+      positions.map(position => [position.catalogItemId || position.id || null, position.type, position.title || position.name, position.quantity])]);
+    const assignment = { formatVersion: 1, prescriptionId: prescription.id, units: 1, prescribedOn: prescription.prescribedOn,
+      treatmentText: prescription.treatmentText, prescribedUnits: prescription.prescribedUnits, businessAreaId: areaId, customerId,
+      catalogItemId: prescription.catalogItemId || null, overrunConfirmed: overrunRequired && input.overrunConfirmed === true };
+    return { usage, overrunRequired, plausibilityRequired, reviewToken, assignment };
+  }
+
+  function applyPrescriptionAtCommit(draft, input, settings, customers, prescriptionsRecord, receiptsRecord, tenantId) {
+    if (draft.prescriptionAssignment != null) throw prescriptionError("PRESCRIPTION_ASSIGNMENT_INPUT_INVALID", "Rezeptzuordnungen werden ausschließlich beim Abschluss aus dem aktuellen Rezept erstellt.");
+    if (!input) return draft;
+    const review = prescriptionCheckoutReview(draft, input, settings, customers, prescriptionsRecord, receiptsRecord, tenantId);
+    if ((input.reviewToken && input.reviewToken !== review.reviewToken)
+      || (review.overrunRequired && (input.reviewToken !== review.reviewToken || input.overrunConfirmed !== true))
+      || (review.plausibilityRequired && (input.reviewToken !== review.reviewToken || input.plausibilityConfirmed !== true))) {
+      throw prescriptionError("PRESCRIPTION_CONFIRMATION_REQUIRED", "Die Rezeptzuordnung muss vor dem Abschluss anhand des aktuellen Bestands bewusst bestätigt werden. Es wurde noch nichts gespeichert.");
+    }
+    return { ...draft, prescriptionAssignment: review.assignment };
+  }
+
   function normalizeReceiptPosition(position, fallbackTaxRate = 0) {
     const source = isPlainObject(position) ? position : {};
     const quantity = Math.max(0, finiteNumber(source.quantity, 1));
@@ -1620,6 +1756,11 @@
       voucherReference,
       voucherPayment
     });
+    if (receipt.prescriptionAssignment != null) {
+      normalized.prescriptionAssignment = cloneSafe(validatePrescriptionAssignment(receipt.prescriptionAssignment));
+    } else {
+      delete normalized.prescriptionAssignment;
+    }
     receiptForbiddenKeys.forEach(key => { delete normalized[key]; });
     return cloneSafe(normalized);
   }
@@ -3055,6 +3196,7 @@
 
     const prescriptions = normalizePrescriptionsRecord(snapshot.stores.prescriptions, safeTenantId).record;
     validatePrescriptionReferences(prescriptions, customers.customers, settings.businessAreas, catalog.items);
+    validatePrescriptionAssignments(receipts.receipts, prescriptions.prescriptions);
 
     assertUniqueVoucherSources(vouchers.vouchers);
     validateVoucherReceiptInvariant(receipts, vouchers);
@@ -4481,10 +4623,11 @@
       return queued(async () => {
         const database = await openDatabase();
         return new Promise((resolve, reject) => {
-          const transaction = database.transaction([prescriptionsStoreName, customersStoreName, storeName, catalogStoreName], "readwrite");
+          const transaction = database.transaction([prescriptionsStoreName, customersStoreName, storeName, catalogStoreName, receiptsStoreName], "readwrite");
           let failure = null;
           let result = null;
-          const requests = [prescriptionsStoreName, customersStoreName, storeName, catalogStoreName].map(name => transaction.objectStore(name).get(tenantId));
+          const requests = [prescriptionsStoreName, customersStoreName, storeName, catalogStoreName, receiptsStoreName]
+            .map(name => transaction.objectStore(name).get(tenantId));
           let ready = 0;
           requests.forEach(request => { request.onsuccess = () => {
             if (++ready !== requests.length) return;
@@ -4493,6 +4636,9 @@
               const customers = requests[1].result?.customers || [];
               const areas = requests[2].result?.businessAreas || [];
               const items = requests[3].result?.items || [];
+              const receipts = requests[4].result
+                ? normalizeReceiptsRecord(requests[4].result, requests[4].result, tenantId).record.receipts
+                : [];
               validatePrescriptionReferences(record, customers, areas, items);
               const existing = record.prescriptions.find(entry => entry.id === draft.id);
               if ((existing && expectedUpdatedAt !== existing.updatedAt) || (!existing && expectedUpdatedAt !== null)) {
@@ -4500,6 +4646,12 @@
               }
               if (existing && (existing.customerId !== draft.customerId || existing.createdAt !== draft.createdAt)) {
                 throw prescriptionError("PRESCRIPTION_IDENTITY_CHANGED", "Die feste Rezeptzuordnung darf nicht verändert werden.");
+              }
+              if (existing && prescriptionUsage(existing, receipts).historicallyUsed) {
+                const protectedKeys = ["customerId", "businessAreaId", "prescribedOn", "treatmentText", "catalogItemId", "prescribedUnits", "internalNote"];
+                if (protectedKeys.some(key => !sameSerializableValue(existing[key], draft[key]))) {
+                  throw prescriptionError("PRESCRIPTION_USED_READ_ONLY", "Ein bereits verwendetes Rezept kann inhaltlich nicht mehr bearbeitet werden. Es kann weiterhin archiviert werden.");
+                }
               }
               const area = areas.find(area => area.id === draft.businessAreaId);
               const customer = customers.find(customer => customer.id === draft.customerId);
@@ -4924,14 +5076,51 @@
       return { created: true, receipt, receiptsRecord: currentReceipts, settingsRecord: mergedSettings };
     }
 
-    function commitReceipt(receiptDraft, settingsRecord, seedReceiptsRecord) {
+    function reviewPrescriptionAssignment(receiptDraft, prescriptionInput, seedReceiptsRecord) {
+      let draft;
+      let input;
+      let seedRecord;
+      try {
+        draft = cloneSerializable(receiptDraft);
+        input = cloneSerializable(prescriptionInput);
+        seedRecord = prepareReceiptsRecord(seedReceiptsRecord);
+      } catch (error) {
+        return Promise.reject(error);
+      }
+      return openDatabase().then(database => new Promise((resolve, reject) => {
+        let transaction;
+        try {
+          transaction = database.transaction([storeName, customersStoreName, prescriptionsStoreName, receiptsStoreName], "readonly");
+          const settingsRequest = transaction.objectStore(storeName).get(tenantId);
+          const customersRequest = transaction.objectStore(customersStoreName).get(tenantId);
+          const prescriptionsRequest = transaction.objectStore(prescriptionsStoreName).get(tenantId);
+          const receiptsRequest = transaction.objectStore(receiptsStoreName).get(tenantId);
+          transaction.oncomplete = () => {
+            try {
+              const currentReceipts = receiptsRequest.result
+                ? normalizeReceiptsRecord(receiptsRequest.result, seedRecord, tenantId).record
+                : normalizeReceiptsRecord(seedRecord, seedRecord, tenantId).record;
+              const review = prescriptionCheckoutReview(draft, input, settingsRequest.result, customersRequest.result,
+                prescriptionsRequest.result, currentReceipts, tenantId);
+              resolve(cloneSerializable(review));
+            } catch (error) { reject(error); }
+          };
+          transaction.onabort = () => reject(prescriptionError("PRESCRIPTION_REVIEW_FAILED", "Die Rezeptzuordnung konnte nicht sicher geprüft werden."));
+          transaction.onerror = () => {};
+        } catch (error) { reject(error); }
+      }));
+    }
+
+    function commitReceipt(receiptDraft, settingsRecord, seedReceiptsRecord, prescriptionInput = null) {
       let draft;
       let requestedSettings;
       let seedRecord;
+      let prescriptionSelection;
       try {
         draft = cloneSerializable(receiptDraft);
         requestedSettings = stripExcludedData(cloneSerializable(settingsRecord));
         seedRecord = prepareReceiptsRecord(seedReceiptsRecord);
+        prescriptionSelection = prescriptionInput == null ? null : cloneSerializable(prescriptionInput);
       } catch (error) {
         return Promise.reject(error);
       }
@@ -4956,24 +5145,33 @@
           let committedResult = null;
           let transaction;
           try {
-            transaction = database.transaction([storeName, receiptsStoreName], "readwrite");
+            transaction = database.transaction([storeName, customersStoreName, prescriptionsStoreName, receiptsStoreName], "readwrite");
             const settingsStore = transaction.objectStore(storeName);
+            const customersStore = transaction.objectStore(customersStoreName);
+            const prescriptionsStore = transaction.objectStore(prescriptionsStoreName);
             const receiptsStore = transaction.objectStore(receiptsStoreName);
             const settingsRequest = settingsStore.get(tenantId);
+            const customersRequest = customersStore.get(tenantId);
+            const prescriptionsRequest = prescriptionsStore.get(tenantId);
             const receiptsRequest = receiptsStore.get(tenantId);
             let settingsReady = false;
+            let customersReady = false;
+            let prescriptionsReady = false;
             let receiptsReady = false;
 
             const fail = (code, message, cause) => {
               if (!transactionFailure) transactionFailure = new PersistenceError(code, message, cause);
             };
             const commitWhenReady = () => {
-              if (!settingsReady || !receiptsReady || transactionFailure) return;
+              if (!settingsReady || !customersReady || !prescriptionsReady || !receiptsReady || transactionFailure) return;
               try {
                 const currentReceipts = receiptsRequest.result
                   ? normalizeReceiptsRecord(receiptsRequest.result, seedRecord, tenantId).record
                   : normalizeReceiptsRecord(seedRecord, seedRecord, tenantId).record;
-                const prepared = prepareReceiptCommit(draft, settingsRequest.result, requestedSettings, currentReceipts);
+                const existing = currentReceipts.receipts.find(receipt => receipt.id === draft.id);
+                const commitDraft = existing ? draft : applyPrescriptionAtCommit(draft, prescriptionSelection, settingsRequest.result,
+                  customersRequest.result, prescriptionsRequest.result, currentReceipts, tenantId);
+                const prepared = prepareReceiptCommit(commitDraft, settingsRequest.result, requestedSettings, currentReceipts);
                 committedResult = {
                   ...prepared,
                   receipt: cloneSafe(prepared.receipt),
@@ -4999,8 +5197,12 @@
             };
 
             settingsRequest.onerror = () => fail("RECEIPT_COMMIT_FAILED", "Der Nummernstand konnte nicht gelesen werden.", settingsRequest.error);
+            customersRequest.onerror = () => fail("RECEIPT_COMMIT_FAILED", "Der Kunde der Rezeptzuordnung konnte nicht gelesen werden.", customersRequest.error);
+            prescriptionsRequest.onerror = () => fail("RECEIPT_COMMIT_FAILED", "Das Rezept konnte nicht gelesen werden.", prescriptionsRequest.error);
             receiptsRequest.onerror = () => fail("RECEIPT_COMMIT_FAILED", "Die vorhandenen Belege konnten nicht gelesen werden.", receiptsRequest.error);
             settingsRequest.onsuccess = () => { settingsReady = true; commitWhenReady(); };
+            customersRequest.onsuccess = () => { customersReady = true; commitWhenReady(); };
+            prescriptionsRequest.onsuccess = () => { prescriptionsReady = true; commitWhenReady(); };
             receiptsRequest.onsuccess = () => { receiptsReady = true; commitWhenReady(); };
           } catch (cause) {
             reject(new PersistenceError("RECEIPT_COMMIT_FAILED", "Der Belegabschluss konnte nicht lokal gespeichert werden.", cause));
@@ -5025,15 +5227,17 @@
       });
     }
 
-    function commitVoucherReceiptTransaction(mode, receiptDraft, voucherInput, settingsRecord, seedReceiptsRecord, seedVouchersRecord) {
+    function commitVoucherReceiptTransaction(mode, receiptDraft, voucherInput, settingsRecord, seedReceiptsRecord, seedVouchersRecord, prescriptionInput = null) {
       let draft;
       let input;
+      let prescriptionSelection;
       let requestedSettings;
       let seedReceipts;
       let seedVouchers;
       try {
         draft = cloneSerializable(receiptDraft);
         input = cloneSerializable(voucherInput);
+        prescriptionSelection = prescriptionInput == null ? null : cloneSerializable(prescriptionInput);
         requestedSettings = stripExcludedData(cloneSerializable(settingsRecord));
         seedReceipts = prepareReceiptsRecord(seedReceiptsRecord);
         seedVouchers = prepareVouchersRecord(seedVouchersRecord);
@@ -5077,14 +5281,20 @@
           let committedResult = null;
           let transaction;
           try {
-            transaction = database.transaction([storeName, receiptsStoreName, vouchersStoreName], "readwrite");
+            transaction = database.transaction([storeName, customersStoreName, prescriptionsStoreName, receiptsStoreName, vouchersStoreName], "readwrite");
             const settingsStore = transaction.objectStore(storeName);
+            const customersStore = transaction.objectStore(customersStoreName);
+            const prescriptionsStore = transaction.objectStore(prescriptionsStoreName);
             const receiptsStore = transaction.objectStore(receiptsStoreName);
             const vouchersStore = transaction.objectStore(vouchersStoreName);
             const settingsRequest = settingsStore.get(tenantId);
+            const customersRequest = customersStore.get(tenantId);
+            const prescriptionsRequest = prescriptionsStore.get(tenantId);
             const receiptsRequest = receiptsStore.get(tenantId);
             const vouchersRequest = vouchersStore.get(tenantId);
             let settingsReady = false;
+            let customersReady = false;
+            let prescriptionsReady = false;
             let receiptsReady = false;
             let vouchersReady = false;
             const fail = (code, message, cause) => {
@@ -5102,7 +5312,7 @@
               }
             };
             const commitWhenReady = () => {
-              if (!settingsReady || !receiptsReady || !vouchersReady || transactionFailure) return;
+              if (!settingsReady || !customersReady || !prescriptionsReady || !receiptsReady || !vouchersReady || transactionFailure) return;
               try {
                 const currentReceipts = receiptsRequest.result
                   ? normalizeReceiptsRecord(receiptsRequest.result, seedReceipts, tenantId).record
@@ -5221,7 +5431,9 @@
                       balanceAfter: balanceAfterCents / 100
                     }
                   };
-                  const preparedReceipt = prepareReceiptCommit(redemptionDraft, settingsRequest.result, requestedSettings, currentReceipts);
+                  const prescriptionDraft = applyPrescriptionAtCommit(redemptionDraft, prescriptionSelection, settingsRequest.result,
+                    customersRequest.result, prescriptionsRequest.result, currentReceipts, tenantId);
+                  const preparedReceipt = prepareReceiptCommit(prescriptionDraft, settingsRequest.result, requestedSettings, currentReceipts);
                   const occurredAt = stableIso(input.occurredAt, preparedReceipt.receipt.completedAt);
                   const historyEntry = {
                     id: `voucher_history_${voucher.reference.replace(/[^A-Za-z0-9]+/g, "_")}_${preparedReceipt.receipt.id.replace(/[^A-Za-z0-9]+/g, "_")}`,
@@ -5271,9 +5483,13 @@
               }
             };
             settingsRequest.onerror = () => fail("VOUCHER_COMMIT_FAILED", "Der Nummernstand konnte nicht gelesen werden.", settingsRequest.error);
+            customersRequest.onerror = () => fail("VOUCHER_COMMIT_FAILED", "Der Kunde der Rezeptzuordnung konnte nicht gelesen werden.", customersRequest.error);
+            prescriptionsRequest.onerror = () => fail("VOUCHER_COMMIT_FAILED", "Das Rezept konnte nicht gelesen werden.", prescriptionsRequest.error);
             receiptsRequest.onerror = () => fail("VOUCHER_COMMIT_FAILED", "Die vorhandenen Belege konnten nicht gelesen werden.", receiptsRequest.error);
             vouchersRequest.onerror = () => fail("VOUCHER_COMMIT_FAILED", "Die vorhandenen Gutscheine konnten nicht gelesen werden.", vouchersRequest.error);
             settingsRequest.onsuccess = () => { settingsReady = true; commitWhenReady(); };
+            customersRequest.onsuccess = () => { customersReady = true; commitWhenReady(); };
+            prescriptionsRequest.onsuccess = () => { prescriptionsReady = true; commitWhenReady(); };
             receiptsRequest.onsuccess = () => { receiptsReady = true; commitWhenReady(); };
             vouchersRequest.onsuccess = () => { vouchersReady = true; commitWhenReady(); };
           } catch (cause) {
@@ -5310,8 +5526,8 @@
       return commitVoucherReceiptTransaction("sale", receiptDraft, voucherDraft, settingsRecord, seedReceiptsRecord, seedVouchersRecord);
     }
 
-    function commitVoucherRedemption(receiptDraft, redemptionInput, settingsRecord, seedReceiptsRecord, seedVouchersRecord) {
-      return commitVoucherReceiptTransaction("redemption", receiptDraft, redemptionInput, settingsRecord, seedReceiptsRecord, seedVouchersRecord);
+    function commitVoucherRedemption(receiptDraft, redemptionInput, settingsRecord, seedReceiptsRecord, seedVouchersRecord, prescriptionInput = null) {
+      return commitVoucherReceiptTransaction("redemption", receiptDraft, redemptionInput, settingsRecord, seedReceiptsRecord, seedVouchersRecord, prescriptionInput);
     }
 
     function mutateReceipts(seedReceiptsRecord, operation, failureCode, failureMessage) {
@@ -5905,6 +6121,7 @@
       deleteCustomers,
       readPrescriptions,
       savePrescription,
+      reviewPrescriptionAssignment,
       readReceipts,
       writeReceipts,
       deleteReceipts,
@@ -5964,6 +6181,10 @@
     snapshotPrescriptions,
     normalizePrescriptionsRecord,
     validatePrescriptionReferences,
+    validatePrescriptionAssignment,
+    validatePrescriptionAssignments,
+    prescriptionUsage,
+    prescriptionTreatmentMatches,
     snapshotReceipts,
     normalizeReceiptsRecord,
     snapshotVouchers,

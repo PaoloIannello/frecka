@@ -786,6 +786,21 @@ body.work-mode:not(.catalog-mode) .flow-page {
 .prescription-list-item > span { min-width: 0; display: grid; gap: 4px; overflow-wrap: anywhere; }
 .prescription-list-item small, .prescription-capability small { font-size: max(.8rem, 12px); color: var(--muted); line-height: 1.45; }
 .prescription-list-item em { margin-left: auto; font-size: max(.75rem, 12px); font-style: normal; }
+.checkout-prescription-list { display: grid; gap: 8px; }
+.checkout-prescription-choice { width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--text); display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; align-items: center; text-align: left; font: inherit; }
+.checkout-prescription-choice.is-selected { border-color: var(--primary); background: var(--primary-soft); box-shadow: 0 0 0 2px rgba(13,107,91,.08); }
+.checkout-prescription-choice > span { min-width: 0; display: grid; gap: 3px; }
+.checkout-prescription-choice > span:last-child { text-align: right; }
+.checkout-prescription-choice small { color: var(--muted); font-size: max(.72rem,12px); line-height: 1.4; overflow-wrap: anywhere; }
+.checkout-prescription-warning,
+.checkout-prescription-error { margin: 10px 0 0; padding: 10px 12px; border: 1px solid #efd49b; border-radius: 12px; background: #fff8e7; color: #745000; font-size: max(.72rem,12px); line-height: 1.45; }
+.checkout-prescription-error { border-color: #e9b8b8; background: #fff2f2; color: #7c2525; }
+.checkout-prescription-confirm { margin-top: 10px; min-height: 48px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; display: grid; grid-template-columns: 22px minmax(0,1fr); gap: 9px; align-items: start; font-size: max(.76rem,12px); line-height: 1.45; }
+.checkout-prescription-confirm input { width: 20px; height: 20px; margin: 0; accent-color: var(--primary); }
+@media(max-width:390px) {
+  .checkout-prescription-choice { grid-template-columns: 1fr; }
+  .checkout-prescription-choice > span:last-child { text-align: left; }
+}
 .prescription-capability { display: flex; align-items: start; gap: 10px; padding-top: 12px; min-width: 0; }
 .prescription-capability input { flex: 0 0 22px; width: 22px; height: 22px; }
 .prescription-capability > span { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }

@@ -1298,8 +1298,14 @@
         await assertRejects(() => client.restoreTenantSnapshot(after, { simulateFailureAfterStore: 5 }), "BACKUP_RESTORE_TEST_ABORT", "Abbruch nach sechstem Store");
         assertDeepEqual((await client.exportTenantSnapshot()).stores, stored.stores, "Abbruch hinterließ Teilrestore");
       } },
-      { name: "PODOLOGY-001: Diagnose, Exporte, PDF-Modelle und Public-QR enthalten keine Rezeptdaten", run: async () => {
+      { name: "PODOLOGY-001/002: Diagnose, Exporte, PDF-Modelle und Public-QR enthalten weder Rezept- noch Zuordnungsdaten", run: async () => {
         const snapshot = prescriptionSnapshot("test-prescription-privacy");
+        const assignedReceipt = snapshot.stores.receipts.receipts.find(receipt => receipt.receiptKind !== "voucher-sale");
+        assignedReceipt.prescriptionAssignment = {
+          formatVersion: 1, prescriptionId: "prescription-one", units: 1, prescribedOn: "2026-08-31",
+          treatmentText: "PRIVATE-TREATMENT-ÄÖÜ", prescribedUnits: 6, businessAreaId: "hair",
+          customerId: "customer-anna", catalogItemId: null, overrunConfirmed: false
+        };
         const before = clone(snapshot);
         const diagnostic = api.diagnoseTenantSnapshot(snapshot, snapshot.tenantId);
         assertEqual(diagnostic.status, "consistent", "Konsistenter Bestand abgelehnt");
@@ -1311,6 +1317,18 @@
           const exported = exportApi.createExportFiles(snapshot, { exportType, includeCustomers: true, periodType: "custom", dateFrom: "2030-01-01", dateTo: "2030-01-31", businessAreaId: "all" });
           assert(!JSON.stringify(exported).includes("PRIVATE-"), `${exportType} verrät Rezepttext`);
           assert(!exported.files.some(file => /Rezept|prescription/i.test(file.name)), "Medizinischer Export erzeugt");
+        }
+        const packageResult = await exportPackageApi.createTaxAdvisorPackage(snapshot, {
+          periodType: "custom", dateFrom: "2030-01-01", dateTo: "2030-01-31",
+          businessAreaId: "all", generatedAt: "2030-02-01T12:34:00.000Z"
+        });
+        const archive = await globalThis.JSZip.loadAsync(await packageResult.packageFile.content.arrayBuffer(), { checkCRC32: true });
+        for (const [path, file] of Object.entries(archive.files)) {
+          assert(!/PRIVATE-|Rezept|prescription/i.test(path), "ZIP-Metadaten verraten Rezeptdaten");
+          if (!file.dir) {
+            const bytes = await file.async("uint8array");
+            assert(!new TextDecoder().decode(bytes).includes("PRIVATE-"), `ZIP-Eintrag ${path} verrät Rezepttext`);
+          }
         }
         for (const receipt of snapshot.stores.receipts.receipts) {
           const model = documentApi.createReceiptDocumentModel(receipt, documentOptions());
@@ -1339,6 +1357,257 @@
         await assertRejects(() => client.readPrescriptions(), "PRESCRIPTIONS_RECORD_INVALID", "Startlesepfad");
         await assertRejects(() => client.exportTenantSnapshot({ fallbackRecords: snapshot.stores }), "PRESCRIPTIONS_RECORD_INVALID", "Snapshot-Fallback");
         await assertRejects(() => client.savePrescription(prescriptionFixture(client.tenantId, { id: "new" })), "PRESCRIPTIONS_RECORD_INVALID", "Schreiben in defekten Store");
+      } },
+      { name: "PODOLOGY-002: Verbrauch 0→1→2→3→4 bleibt nach Rezept, Kunde und Geschäftsbereich getrennt", run: async () => {
+        const tenantId = "test-prescription-derived-usage";
+        const main = prescriptionFixture(tenantId, { prescribedUnits: 3, internalNote: "" });
+        const otherPrescription = prescriptionFixture(tenantId, { id: "prescription-other", prescribedUnits: 2, internalNote: "" });
+        const otherCustomer = prescriptionFixture(tenantId, { id: "prescription-customer-bert", customerId: "customer-bert", prescribedUnits: 2, internalNote: "" });
+        const otherArea = prescriptionFixture(tenantId, { id: "prescription-coaching", businessAreaId: "coaching", prescribedUnits: 2, internalNote: "" });
+        const assignedReceipt = (prescription, id, minute) => receiptDraftFixture(id, {
+          number: `2030-${String(900 + minute).padStart(6, "0")}`,
+          completedAt: `2030-01-05T12:${String(minute).padStart(2, "0")}:00.000Z`,
+          sortKey: `2030-01-05T12:${String(minute).padStart(2, "0")}:00.000Z`,
+          customerId: prescription.customerId,
+          customerSnapshot: { id: prescription.customerId, name: "Historischer Kunde" },
+          businessAreaId: prescription.businessAreaId,
+          businessAreaSnapshot: { id: prescription.businessAreaId, label: "Historischer Bereich" },
+          prescriptionAssignment: {
+            formatVersion: 1, prescriptionId: prescription.id, units: 1,
+            prescribedOn: prescription.prescribedOn, treatmentText: prescription.treatmentText,
+            prescribedUnits: prescription.prescribedUnits, businessAreaId: prescription.businessAreaId,
+            customerId: prescription.customerId, catalogItemId: prescription.catalogItemId,
+            overrunConfirmed: minute > prescription.prescribedUnits
+          }
+        });
+        const receipts = [];
+        assertEqual(api.prescriptionUsage(main, receipts).usedUnits, 0, "Leerer Bestand startet nicht bei 0/3");
+        for (let index = 1; index <= 3; index += 1) {
+          receipts.push(assignedReceipt(main, `prescription-main-${index}`, index));
+          const usage = api.prescriptionUsage(main, receipts);
+          assertEqual(usage.usedUnits, index, `Verbrauch erreichte nicht ${index}/3`);
+          assertEqual(usage.availableUnits, 3 - index, `Verfügbarkeit nach ${index}/3 ist falsch`);
+        }
+        receipts.push({ ...receiptDraftFixture("prescription-unassigned"), number: "2030-000904" });
+        assertEqual(api.prescriptionUsage(main, receipts).usedUnits, 3, "Beleg ohne Rezept verbrauchte eine Einheit");
+        receipts.push(assignedReceipt(otherPrescription, "prescription-other-one", 5));
+        receipts.push(assignedReceipt(otherCustomer, "prescription-customer-one", 6));
+        receipts.push(assignedReceipt(otherArea, "prescription-area-one", 7));
+        assertEqual(api.prescriptionUsage(main, receipts).usedUnits, 3, "Fremdes Rezept, Kunde oder Bereich veränderte den Hauptverbrauch");
+        assertEqual(api.prescriptionUsage(otherPrescription, receipts).usedUnits, 1, "Getrenntes Rezept wurde nicht getrennt gezählt");
+        assertEqual(api.prescriptionUsage(otherCustomer, receipts).usedUnits, 1, "Getrennter Kunde wurde nicht getrennt gezählt");
+        assertEqual(api.prescriptionUsage(otherArea, receipts).usedUnits, 1, "Getrennter Geschäftsbereich wurde nicht getrennt gezählt");
+        receipts.push(assignedReceipt(main, "prescription-main-four", 8));
+        const overdrawn = api.prescriptionUsage(main, receipts);
+        assertEqual(overdrawn.usedUnits, 4, "Bestätigte vierte Nutzung wurde nicht als 4/3 abgeleitet");
+        assertEqual(overdrawn.availableUnits, 0, "Überzogene Verfügbarkeit wurde nicht auf 0 begrenzt");
+        assertEqual(overdrawn.status, "overdrawn", "4/3 wurde nicht als überzogen markiert");
+        assertEqual(api.prescriptionUsage({ ...main, active: false }, receipts).status, "archived", "Archivstatus wird nicht abgeleitet");
+      } },
+      { name: "PODOLOGY-002: Zuordnung verbraucht genau eine Einheit, ist idempotent und speichert nur den unveränderlichen Snapshot", run: async () => {
+        const client = context.makeClient("prescription-use");
+        const snapshot = prescriptionSnapshot(client.tenantId, [prescriptionFixture(client.tenantId, {
+          treatmentText: "Testhaarschnitt", catalogItemId: "service-cut", prescribedUnits: 2
+        })]);
+        snapshot.stores.receipts.receipts = [];
+        snapshot.stores.vouchers = api.snapshotVouchers({ vouchers: [] }, client.tenantId);
+        snapshot.stores.settings.receiptSettings.nextNumber = 1;
+        await client.restoreTenantSnapshot(snapshot);
+        const settings = await client.readSettings();
+        const seed = await client.readReceipts();
+        const draft = receiptDraftFixture("prescription-use-one");
+        const review = await client.reviewPrescriptionAssignment(draft, { prescriptionId: "prescription-one" }, seed);
+        assertEqual(review.usage.usedUnits, 0, "Vorprüfung meldet einen erfundenen Verbrauch");
+        assert(!review.overrunRequired && !review.plausibilityRequired, "Passende offene Zuordnung verlangt Bestätigung");
+        const committed = await client.commitReceipt(draft, settings, seed, {
+          prescriptionId: "prescription-one", reviewToken: review.reviewToken,
+          overrunConfirmed: false, plausibilityConfirmed: false
+        });
+        assertEqual(committed.receipt.prescriptionAssignment.units, 1, "Zuordnung verbraucht nicht exakt eine Einheit");
+        assertEqual(committed.receipt.prescriptionAssignment.treatmentText, "Testhaarschnitt", "Behandlungssnapshot fehlt");
+        assert(!hasOwn(committed.receipt.prescriptionAssignment, "internalNote"), "Interne Notiz gelangte in den Belegsnapshot");
+        const repeated = await client.commitReceipt(draft, settings, seed, {
+          prescriptionId: "prescription-one", reviewToken: review.reviewToken,
+          overrunConfirmed: false, plausibilityConfirmed: false
+        });
+        assertEqual(repeated.created, false, "Wiederholung erzeugte einen zweiten Beleg");
+        const prescription = (await client.readPrescriptions()).prescriptions[0];
+        assertEqual(api.prescriptionUsage(prescription, (await client.readReceipts()).receipts).usedUnits, 1, "Idempotente Wiederholung verbrauchte doppelt");
+        assert(!JSON.stringify(await client.exportTenantSnapshot()).includes('"usedUnits"'), "Abgeleiteter Verbrauch wurde persistiert");
+      } },
+      { name: "PODOLOGY-002: Ausschöpfung, Überziehung und Plausibilitätswarnung erfordern eine aktuelle bewusste Bestätigung", run: async () => {
+        const client = context.makeClient("prescription-overrun");
+        const snapshot = prescriptionSnapshot(client.tenantId, [prescriptionFixture(client.tenantId, {
+          treatmentText: "Testhaarschnitt", catalogItemId: "service-cut", prescribedUnits: 1
+        })]);
+        snapshot.stores.receipts.receipts = [];
+        snapshot.stores.vouchers = api.snapshotVouchers({ vouchers: [] }, client.tenantId);
+        await client.restoreTenantSnapshot(snapshot);
+        const settings = await client.readSettings();
+        const seed = await client.readReceipts();
+        const firstDraft = receiptDraftFixture("prescription-overrun-first");
+        const firstReview = await client.reviewPrescriptionAssignment(firstDraft, { prescriptionId: "prescription-one" }, seed);
+        await client.commitReceipt(firstDraft, settings, seed, { prescriptionId: "prescription-one", reviewToken: firstReview.reviewToken,
+          overrunConfirmed: false, plausibilityConfirmed: false });
+        const overrunDraft = receiptDraftFixture("prescription-overrun-second", { completedAt: "2030-01-05T12:05:00.000Z" });
+        const overrunReview = await client.reviewPrescriptionAssignment(overrunDraft, { prescriptionId: "prescription-one" }, seed);
+        assert(overrunReview.overrunRequired, "Ausgeschöpftes Rezept verlangt keine Bestätigung");
+        await assertRejects(() => client.commitReceipt(overrunDraft, settings, seed, { prescriptionId: "prescription-one",
+          reviewToken: overrunReview.reviewToken, overrunConfirmed: false, plausibilityConfirmed: false }),
+        "PRESCRIPTION_CONFIRMATION_REQUIRED", "Überziehung ohne Bestätigung");
+        await client.commitReceipt(overrunDraft, settings, seed, { prescriptionId: "prescription-one",
+          reviewToken: overrunReview.reviewToken, overrunConfirmed: true, plausibilityConfirmed: false });
+        const prescription = (await client.readPrescriptions()).prescriptions[0];
+        const usage = api.prescriptionUsage(prescription, (await client.readReceipts()).receipts);
+        assertEqual(usage.usedUnits, 2, "Überziehung wurde fälschlich gekappt");
+        assertEqual(usage.availableUnits, 0, "Verfügbarkeit darf nicht negativ dargestellt werden");
+        assertEqual(usage.status, "overdrawn", "Überzogener Status fehlt");
+
+        const mismatchDraft = receiptDraftFixture("prescription-mismatch", { items: [{ ...receiptDraftFixture().items[0], id: "other", catalogItemId: "other", title: "Andere Leistung" }] });
+        const mismatchReview = await client.reviewPrescriptionAssignment(mismatchDraft, { prescriptionId: "prescription-one" }, seed);
+        assert(mismatchReview.plausibilityRequired && mismatchReview.overrunRequired, "Abweichende Behandlung wurde nicht gewarnt");
+        await assertRejects(() => client.commitReceipt(mismatchDraft, settings, seed, { prescriptionId: "prescription-one",
+          reviewToken: mismatchReview.reviewToken, overrunConfirmed: true, plausibilityConfirmed: false }),
+        "PRESCRIPTION_CONFIRMATION_REQUIRED", "Plausibilitätswarnung ohne Bestätigung");
+      } },
+      { name: "PODOLOGY-002: Vollstorno gibt genau eine Nutzung frei, Gutschriften verändern den Verbrauch nicht", run: async () => {
+        const client = context.makeClient("prescription-corrections");
+        const snapshot = prescriptionSnapshot(client.tenantId, [prescriptionFixture(client.tenantId, {
+          treatmentText: "Testhaarschnitt", catalogItemId: "service-cut", prescribedUnits: 2
+        })]);
+        snapshot.stores.receipts.receipts = [];
+        snapshot.stores.vouchers = api.snapshotVouchers({ vouchers: [] }, client.tenantId);
+        await client.restoreTenantSnapshot(snapshot);
+        const settings = await client.readSettings();
+        const seed = await client.readReceipts();
+        const draft = receiptDraftFixture("prescription-cancel-source");
+        const review = await client.reviewPrescriptionAssignment(draft, { prescriptionId: "prescription-one" }, seed);
+        const original = await client.commitReceipt(draft, settings, seed, { prescriptionId: "prescription-one", reviewToken: review.reviewToken,
+          overrunConfirmed: false, plausibilityConfirmed: false });
+        const credit = await client.commitReceiptCorrection(original.receipt.number, {
+          id: "prescription-credit", type: "credit", total: -10,
+          items: [{ title: "Kulanz", quantity: 1, unitPrice: -10, total: -10 }],
+          completedAt: "2030-01-06T09:00:00.000Z", isFull: false
+        }, original.receiptsRecord);
+        const prescription = (await client.readPrescriptions()).prescriptions[0];
+        assertEqual(api.prescriptionUsage(prescription, credit.record.receipts).usedUnits, 1, "Gutschrift gab eine Rezeptnutzung frei");
+        const ignoredCorrections = [
+          receiptDraftFixture("prescription-full-credit", {
+            type: "credit", receiptType: "credit", status: "credited", number: "GS-2030-000998",
+            reference: original.receipt.number, total: -39, totalCents: -3900,
+            completedAt: "2030-01-06T09:10:00.000Z"
+          }),
+          receiptDraftFixture("prescription-product-credit", {
+            type: "credit", receiptType: "credit", status: "credited", number: "GS-2030-000999",
+            reference: original.receipt.number, total: -5, totalCents: -500,
+            items: [{ id: "product-care", type: "product", title: "Pflegeprodukt", quantity: 1, unitPrice: -5, total: -5 }],
+            completedAt: "2030-01-06T09:20:00.000Z"
+          }),
+          receiptDraftFixture("prescription-no-assignment-source", {
+            number: "2030-000997", completedAt: "2030-01-06T09:30:00.000Z"
+          }),
+          receiptDraftFixture("prescription-no-assignment-cancellation", {
+            type: "cancellation", receiptType: "cancellation", status: "cancelled", number: "ST-2030-000997",
+            reference: "2030-000997", total: -39, totalCents: -3900,
+            completedAt: "2030-01-06T09:40:00.000Z"
+          })
+        ];
+        assertEqual(api.prescriptionUsage(prescription, [...credit.record.receipts, ...ignoredCorrections]).usedUnits, 1,
+          "Gesamt-, Produktgutschrift oder Storno ohne Rezept veränderten den Verbrauch");
+        const cancelled = await client.commitReceiptCorrection(original.receipt.number, {
+          id: "prescription-cancellation", type: "cancellation", total: -39,
+          items: original.receipt.items.map(item => ({ ...item, unitPrice: -39, total: -39 })),
+          completedAt: "2030-01-06T10:00:00.000Z"
+        }, credit.record);
+        assertEqual(api.prescriptionUsage(prescription, cancelled.record.receipts).usedUnits, 0, "Vollstorno gab nicht genau eine Nutzung frei");
+        const repeated = await client.commitReceiptCorrection(original.receipt.number, {
+          id: "prescription-cancellation-repeat", type: "cancellation", total: -39,
+          items: original.receipt.items, completedAt: "2030-01-06T10:01:00.000Z"
+        }, cancelled.record);
+        assertEqual(api.prescriptionUsage(prescription, repeated.record.receipts).usedUnits, 0, "Wiederholter Storno veränderte Verbrauch erneut");
+      } },
+      { name: "PODOLOGY-002: Verwendete Stammdaten und interne Notiz sind gesperrt, Archivierung bleibt möglich", run: async () => {
+        const client = context.makeClient("prescription-readonly-used");
+        const snapshot = prescriptionSnapshot(client.tenantId, [prescriptionFixture(client.tenantId, {
+          treatmentText: "Testhaarschnitt", catalogItemId: "service-cut"
+        })]);
+        snapshot.stores.receipts.receipts = [];
+        snapshot.stores.vouchers = api.snapshotVouchers({ vouchers: [] }, client.tenantId);
+        await client.restoreTenantSnapshot(snapshot);
+        const prescription = (await client.readPrescriptions()).prescriptions[0];
+        const draft = receiptDraftFixture("prescription-lock-source");
+        const review = await client.reviewPrescriptionAssignment(draft, { prescriptionId: prescription.id }, await client.readReceipts());
+        await client.commitReceipt(draft, await client.readSettings(), await client.readReceipts(), { prescriptionId: prescription.id,
+          reviewToken: review.reviewToken, overrunConfirmed: false, plausibilityConfirmed: false });
+        const used = (await client.readPrescriptions()).prescriptions[0];
+        const historicalAssignment = clone((await client.readReceipts()).receipts[0].prescriptionAssignment);
+        for (const mutation of [{ treatmentText: "Geändert" }, { prescribedUnits: 99 }, { internalNote: "Neue vertrauliche Notiz" }]) {
+          await assertRejects(() => client.savePrescription({ ...used, ...mutation }, used.updatedAt), "PRESCRIPTION_USED_READ_ONLY", "Verwendetes Rezept bearbeitet");
+        }
+        const catalog = await client.readCatalog();
+        const service = catalog.items.find(item => item.id === "service-cut");
+        service.title = "Später umbenannte Katalogleistung";
+        await client.writeCatalog(catalog);
+        assertDeepEqual((await client.readReceipts()).receipts[0].prescriptionAssignment, historicalAssignment,
+          "Katalogänderung veränderte den historischen Rezept-Snapshot");
+        const archived = (await client.savePrescription({ ...used, active: false }, used.updatedAt)).prescription;
+        assertEqual(archived.active, false, "Verwendetes Rezept konnte nicht archiviert werden");
+        await assertRejects(async () => client.reviewPrescriptionAssignment(receiptDraftFixture("prescription-archived-reuse"),
+          { prescriptionId: archived.id }, await client.readReceipts()), "PRESCRIPTION_SELECTION_UNAVAILABLE", "Archiviertes Rezept neu ausgewählt");
+        const customers = await client.readCustomers();
+        customers.customers.find(customer => customer.id === archived.customerId).active = false;
+        await client.writeCustomers(customers);
+        const settings = await client.readSettings();
+        settings.businessAreas.find(area => area.id === archived.businessAreaId).features.prescriptionDocumentation = false;
+        await client.writeSettings(settings);
+        assertDeepEqual((await client.readReceipts()).receipts[0].prescriptionAssignment, historicalAssignment,
+          "Archivierung, Kundendeaktivierung oder Capability-Änderung veränderte den historischen Rezept-Snapshot");
+      } },
+      { name: "PODOLOGY-002: Zwei parallele Abschlüsse lesen atomar neu und verbrauchen nicht unbestätigt über das Limit", run: async () => {
+        const first = context.makeClient("prescription-race");
+        const second = api.createSettingsPersistence({ databaseName: context.databaseName, tenantId: first.tenantId });
+        const snapshot = prescriptionSnapshot(first.tenantId, [prescriptionFixture(first.tenantId, {
+          treatmentText: "Testhaarschnitt", catalogItemId: "service-cut", prescribedUnits: 1
+        })]);
+        snapshot.stores.receipts.receipts = [];
+        snapshot.stores.vouchers = api.snapshotVouchers({ vouchers: [] }, first.tenantId);
+        await first.restoreTenantSnapshot(snapshot);
+        const settings = await first.readSettings();
+        const seed = await first.readReceipts();
+        const draftA = receiptDraftFixture("prescription-race-a");
+        const draftB = receiptDraftFixture("prescription-race-b", { completedAt: "2030-01-05T12:00:01.000Z" });
+        const [reviewA, reviewB] = await Promise.all([
+          first.reviewPrescriptionAssignment(draftA, { prescriptionId: "prescription-one" }, seed),
+          second.reviewPrescriptionAssignment(draftB, { prescriptionId: "prescription-one" }, seed)
+        ]);
+        const results = await Promise.allSettled([
+          first.commitReceipt(draftA, settings, seed, { prescriptionId: "prescription-one", reviewToken: reviewA.reviewToken, overrunConfirmed: false, plausibilityConfirmed: false }),
+          second.commitReceipt(draftB, settings, seed, { prescriptionId: "prescription-one", reviewToken: reviewB.reviewToken, overrunConfirmed: false, plausibilityConfirmed: false })
+        ]);
+        assertEqual(results.filter(result => result.status === "fulfilled").length, 1, "Parallele Abschlüsse wurden beide unbestätigt gespeichert");
+        assertEqual(results.find(result => result.status === "rejected")?.reason?.code, "PRESCRIPTION_CONFIRMATION_REQUIRED", "Race wurde nicht als neue Bestätigung erkannt");
+        assertEqual(api.prescriptionUsage((await first.readPrescriptions()).prescriptions[0], (await first.readReceipts()).receipts).usedUnits, 1, "Race verbrauchte mehr als eine Einheit");
+        second.closeDatabase();
+      } },
+      { name: "PODOLOGY-002: Fehlgeschlagener atomarer Abschluss hinterlässt weder Beleg, Nummer noch Verbrauch", run: async () => {
+        const client = context.makeClient("prescription-write-failure");
+        const snapshot = prescriptionSnapshot(client.tenantId, [prescriptionFixture(client.tenantId, {
+          treatmentText: "Testhaarschnitt", catalogItemId: "service-cut"
+        })]);
+        snapshot.stores.receipts.receipts = [];
+        snapshot.stores.vouchers = api.snapshotVouchers({ vouchers: [] }, client.tenantId);
+        await client.restoreTenantSnapshot(snapshot);
+        const settings = await client.readSettings();
+        const seed = await client.readReceipts();
+        const draft = receiptDraftFixture("prescription-failed");
+        const review = await client.reviewPrescriptionAssignment(draft, { prescriptionId: "prescription-one" }, seed);
+        (await client.openDatabase()).close();
+        await assertRejects(() => client.commitReceipt(draft, settings, seed, { prescriptionId: "prescription-one",
+          reviewToken: review.reviewToken, overrunConfirmed: false, plausibilityConfirmed: false }), "RECEIPT_COMMIT_FAILED", "Atomarer Schreibabbruch");
+        client.closeDatabase();
+        assertEqual((await client.readReceipts()).receipts.length, 0, "Fehlgeschlagener Abschluss hinterließ einen Beleg");
+        assertEqual((await client.readSettings()).receiptSettings.nextNumber, settings.receiptSettings.nextNumber, "Fehlgeschlagener Abschluss verbrauchte eine Nummer");
+        assertEqual(api.prescriptionUsage((await client.readPrescriptions()).prescriptions[0], []).usedUnits, 0, "Fehlgeschlagener Abschluss verbrauchte ein Rezept");
       } },
       { name: "PODOLOGY-001: Kunden- und Geschäftsbereichsoberfläche bei 320/390/411 px, Reload und Readonly", run: async () => {
         const index = await (await fetch("../index.html", { cache: "no-store" })).text();
@@ -1377,7 +1646,9 @@
             }
             frame.contentWindow.location.hash = "#/customers";
             await waitFor(() => doc().querySelector('[data-open-customer="customer-anna"]'));
-            click('[data-open-customer="customer-anna"]'); click("[data-prescription-new]");
+            click('[data-open-customer="customer-anna"]');
+            assert(doc().body.textContent.includes("Noch keine Rezepte hinterlegt"), "Aktiver Kunde ohne Rezept erhält keinen klaren Leerzustand");
+            click("[data-prescription-new]");
             noOverflow();
             fill("prescribedOn", "2026-08-31"); fill("prescribedUnits", "6");
             const catalogSelect = doc().querySelector('[name="catalogItemId"]'); catalogSelect.value = "service-cut";
@@ -1420,6 +1691,78 @@
             assert(!doc().querySelector("[data-prescription-edit]"), "Readonly-Bearbeitung sichtbar");
             noOverflow();
             assertDeepEqual(frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS, [], "UI-Laufzeitfehler");
+          } finally { frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase(); frame.remove(); }
+        }
+      } },
+      { name: "PODOLOGY-002: Checkout, Ausschöpfungsbestätigung und mobile Einhandansicht funktionieren bei 320/390/411 px", run: async () => {
+        const index = await (await fetch("../index.html", { cache: "no-store" })).text();
+        const waitFor = async predicate => {
+          for (let i = 0; i < 200; i += 1) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 50)); }
+          throw new Error(`PODOLOGY-002-Checkout wurde nicht rechtzeitig bereit: ${predicate.toString()}`);
+        };
+        for (const width of [320, 390, 411]) {
+          const client = context.makeClient(`prescription-checkout-ui-${width}`);
+          const initial = prescriptionSnapshot(client.tenantId, [prescriptionFixture(client.tenantId, {
+            treatmentText: "Testhaarschnitt", catalogItemId: "service-cut", prescribedUnits: 1, internalNote: "PRIVATE-CHECKOUT-NOTE"
+          })]);
+          initial.stores.receipts.receipts = [];
+          initial.stores.vouchers = api.snapshotVouchers({ vouchers: [] }, client.tenantId);
+          initial.stores.settings.receiptSettings.nextNumber = 1;
+          await client.restoreTenantSnapshot(initial);
+          const frame = document.createElement("iframe");
+          frame.title = `Rezeptcheckout ${width} px`;
+          frame.style.cssText = `position:fixed;left:-2000px;top:0;width:${width}px;height:807px;border:0`;
+          setIsolatedAppFrame(frame, isolatedAppMarkup(index, client, "catalog", context.databaseName));
+          document.body.append(frame);
+          try {
+            const doc = () => frame.contentDocument;
+            const click = selector => { const element = doc().querySelector(selector); assert(element, `Checkout-UI fehlt: ${selector}`); element.click(); };
+            const noOverflow = () => assert(doc().documentElement.scrollWidth <= frame.contentWindow.innerWidth, `Checkout hat horizontalen Überlauf bei ${width} px`);
+            const prepareCheckout = async () => {
+              await waitFor(() => doc()?.querySelector('[data-toggle-item="service-cut"]'));
+              click('[data-toggle-item="service-cut"]'); click('[data-route="checkout"]');
+              click('[data-route="customer-picker"]');
+              await waitFor(() => doc().querySelector('[data-select-customer="customer-anna"]'));
+              click('[data-select-customer="customer-anna"]');
+              await waitFor(() => doc().querySelector('[data-select-checkout-prescription="prescription-one"]'));
+              noOverflow();
+              click('[data-select-checkout-prescription="prescription-one"]');
+              assert(!doc().body.textContent.includes("PRIVATE-CHECKOUT-NOTE"), "Interne Rezeptnotiz wurde im Checkout ausgegeben");
+              noOverflow();
+            };
+            await prepareCheckout();
+            click('[data-action="finish-demo"]');
+            await waitFor(() => frame.contentWindow.location.hash === "#/receipt-success");
+            let receipts = await client.readReceipts();
+            assertEqual(receipts.receipts.length, 1, "Erste UI-Zuordnung erzeugte keinen Beleg");
+            assertEqual(receipts.receipts[0].prescriptionAssignment?.prescriptionId, "prescription-one", "UI-Zuordnung fehlt im Beleg");
+            click('[data-action="new-after-finish"]');
+            await prepareCheckout();
+            assert(doc().body.textContent.includes("bereits ausgeschöpft"), "Ausgeschöpfter Status fehlt im Checkout");
+            click('[data-action="finish-demo"]');
+            await waitFor(() => doc().querySelector("[data-confirm-prescription-overrun]"));
+            assert(frame.contentWindow.location.hash === "#/checkout", "Unbestätigte Überziehung schloss den Beleg ab");
+            click("[data-confirm-prescription-overrun]");
+            click('[data-action="finish-demo"]');
+            await waitFor(() => frame.contentWindow.location.hash === "#/receipt-success");
+            receipts = await client.readReceipts();
+            const usage = api.prescriptionUsage((await client.readPrescriptions()).prescriptions[0], receipts.receipts);
+            assertEqual(usage.usedUnits, 2, "Bestätigte UI-Überziehung wurde nicht real gezählt");
+            assertEqual(usage.status, "overdrawn", "UI-Überziehung erhielt falschen Status");
+            if (width === 320) {
+              const duplicatedSource = receipts.receipts[0];
+              click('[data-route="receipts"]');
+              await waitFor(() => doc().querySelector(`[data-open-receipt="${duplicatedSource.number}"]`));
+              click(`[data-open-receipt="${duplicatedSource.number}"]`);
+              await waitFor(() => doc().querySelector('[data-action="copy-receipt"]'));
+              click('[data-action="copy-receipt"]');
+              await waitFor(() => frame.contentWindow.location.hash === "#/edit-cart");
+              click('[data-route="checkout"]');
+              await waitFor(() => doc().querySelector('[data-select-checkout-prescription="prescription-one"]'));
+              assert(!doc().querySelector(".checkout-prescription-choice.is-selected"), "Duplizierter Beleg übernahm die Rezeptzuordnung");
+            }
+            noOverflow();
+            assertDeepEqual(frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS, [], "PODOLOGY-002-UI-Laufzeitfehler");
           } finally { frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase(); frame.remove(); }
         }
       } }

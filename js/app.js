@@ -55,6 +55,12 @@
     checkoutVoucherError: "",
     checkoutVoucherPickerOpen: false,
     checkoutVoucherRemainderPayment: "cash",
+    checkoutPrescriptionId: null,
+    checkoutPrescriptionReview: null,
+    checkoutPrescriptionError: "",
+    checkoutPrescriptionOverrunConfirmed: false,
+    checkoutPrescriptionPlausibilityConfirmed: false,
+    checkoutReceiptId: null,
     checkoutSubmitting: false,
     checkoutOpenPaymentConfirm: false,
     priceEditorId: null,
@@ -1453,6 +1459,46 @@
     state.checkoutVoucherRemainderPayment = preferredNormalPaymentId() || "cash";
   }
 
+  function resetCheckoutPrescription() {
+    state.checkoutPrescriptionId = null;
+    state.checkoutPrescriptionReview = null;
+    state.checkoutPrescriptionError = "";
+    state.checkoutPrescriptionOverrunConfirmed = false;
+    state.checkoutPrescriptionPlausibilityConfirmed = false;
+  }
+
+  function prescriptionUsageFor(entry) {
+    try {
+      return persistence?.prescriptionUsage
+        ? persistence.prescriptionUsage(entry, data.receipts)
+        : { prescribedUnits: entry.prescribedUnits, usedUnits: 0, availableUnits: entry.prescribedUnits,
+          historicallyUsed: false, status: entry.active === false ? "archived" : "open" };
+    } catch (error) {
+      logPersistenceError("Rezeptverbrauch konnte nicht ermittelt werden", error);
+      return null;
+    }
+  }
+
+  const prescriptionUsageStatusLabel = status => ({
+    open: "Offen", exhausted: "Ausgeschöpft", overdrawn: "Überzogen", archived: "Archiviert"
+  }[status] || "Nicht verfügbar");
+
+  function eligibleCheckoutPrescriptions(customer = selectedCustomer()) {
+    if (!customer || !state.prescriptionsReady) return [];
+    const area = data.businessAreas.find(entry => entry.id === state.activeBusinessArea);
+    if (!area || area.active === false || area.features?.prescriptionDocumentation !== true) return [];
+    return data.prescriptions.filter(entry => entry.active !== false && entry.customerId === customer.id
+      && entry.businessAreaId === area.id && prescriptionUsageFor(entry));
+  }
+
+  function validateCheckoutPrescriptionSelection(customer = selectedCustomer()) {
+    if (!state.checkoutPrescriptionId) return;
+    if (!eligibleCheckoutPrescriptions(customer).some(entry => entry.id === state.checkoutPrescriptionId)) {
+      resetCheckoutPrescription();
+      state.checkoutPrescriptionError = "Die bisherige Rezeptzuordnung ist nicht mehr verfügbar und wurde entfernt.";
+    }
+  }
+
   function chooseCheckoutVoucher(voucher) {
     if (!voucher) return false;
     if (voucher.status === "cancelled") {
@@ -1631,7 +1677,7 @@
     } : null;
     const contextSnapshot = buildContextSnapshot(state.activeBusinessArea);
     const receipt = {
-      id: `receipt_${crypto.randomUUID?.() || Date.now()}`,
+      id: state.checkoutReceiptId || (state.checkoutReceiptId = `receipt_${crypto.randomUUID?.() || Date.now()}`),
       number: "",
       type: "receipt",
       status: "completed",
@@ -1694,6 +1740,39 @@
       }
       const settingsSnapshot = persistence.snapshotSettings(data, state.setup.status, persistence.tenantId);
       const seedReceiptsRecord = persistence.snapshotReceipts(data, persistence.tenantId);
+      let prescriptionInput = null;
+      if (state.checkoutPrescriptionId) {
+        if (!persistence?.reviewPrescriptionAssignment) {
+          throw Object.assign(new Error("Die Rezeptzuordnung ist nicht verfügbar."), {
+            code: "PRESCRIPTION_REVIEW_UNAVAILABLE",
+            userMessage: "Die Rezeptzuordnung konnte nicht sicher geprüft werden. Es wurde kein Beleg abgeschlossen."
+          });
+        }
+        const review = await persistence.reviewPrescriptionAssignment(receipt, {
+          prescriptionId: state.checkoutPrescriptionId,
+          overrunConfirmed: false,
+          plausibilityConfirmed: false
+        }, seedReceiptsRecord);
+        const previousToken = state.checkoutPrescriptionReview?.reviewToken || null;
+        if (previousToken !== review.reviewToken) {
+          state.checkoutPrescriptionReview = review;
+          state.checkoutPrescriptionOverrunConfirmed = false;
+          state.checkoutPrescriptionPlausibilityConfirmed = false;
+        }
+        if ((review.overrunRequired && !state.checkoutPrescriptionOverrunConfirmed)
+          || (review.plausibilityRequired && !state.checkoutPrescriptionPlausibilityConfirmed)) {
+          state.checkoutSubmitting = false;
+          state.checkoutPrescriptionError = "Bitte die Hinweise zur Rezeptzuordnung bewusst bestätigen. Der Beleg wurde noch nicht abgeschlossen.";
+          renderCheckout();
+          return;
+        }
+        prescriptionInput = {
+          prescriptionId: state.checkoutPrescriptionId,
+          reviewToken: review.reviewToken,
+          overrunConfirmed: state.checkoutPrescriptionOverrunConfirmed,
+          plausibilityConfirmed: state.checkoutPrescriptionPlausibilityConfirmed
+        };
+      }
       const committed = voucher
         ? await persistence.commitVoucherRedemption(
           receipt,
@@ -1706,9 +1785,10 @@
           },
           settingsSnapshot,
           seedReceiptsRecord,
-          persistence.snapshotVouchers(data, persistence.tenantId)
+          persistence.snapshotVouchers(data, persistence.tenantId),
+          prescriptionInput
         )
-        : await persistence.commitReceipt(receipt, settingsSnapshot, seedReceiptsRecord);
+        : await persistence.commitReceipt(receipt, settingsSnapshot, seedReceiptsRecord, prescriptionInput);
       applyReceiptsRecord(committed.receiptsRecord);
       if (voucher) applyVouchersRecord(committed.vouchersRecord);
       data.receiptSettings.nextNumber = committed.settingsRecord.receiptSettings.nextNumber;
@@ -1718,7 +1798,14 @@
     } catch (error) {
       logPersistenceError("Belegabschluss fehlgeschlagen", error);
       state.checkoutSubmitting = false;
-      state.checkoutVoucherError = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error, "Der Beleg konnte nicht sicher abgeschlossen werden.")} Warenkorb und Nummernstand blieben unverändert.`;
+      if (String(error?.code || "").startsWith("PRESCRIPTION_")) {
+        state.checkoutPrescriptionReview = null;
+        state.checkoutPrescriptionOverrunConfirmed = false;
+        state.checkoutPrescriptionPlausibilityConfirmed = false;
+        state.checkoutPrescriptionError = `${persistenceErrorMessage(error, "Die Rezeptzuordnung konnte nicht sicher abgeschlossen werden.")} Warenkorb und Nummernstand blieben unverändert.`;
+      } else {
+        state.checkoutVoucherError = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error, "Der Beleg konnte nicht sicher abgeschlossen werden.")} Warenkorb und Nummernstand blieben unverändert.`;
+      }
       renderCheckout();
       return;
     }
@@ -1726,6 +1813,8 @@
     state.checkoutOpenPaymentConfirm = false;
     state.successNotice = "";
     state.cart = [];
+    resetCheckoutPrescription();
+    state.checkoutReceiptId = null;
     navigate("receipt-success");
   }
 
@@ -1865,6 +1954,13 @@
 
   function renderCheckout() {
     const checkoutCustomer = selectedCustomer();
+    validateCheckoutPrescriptionSelection(checkoutCustomer);
+    const checkoutPrescriptions = eligibleCheckoutPrescriptions(checkoutCustomer);
+    const checkoutPrescription = checkoutPrescriptions.find(entry => entry.id === state.checkoutPrescriptionId) || null;
+    const checkoutPrescriptionUsage = checkoutPrescription ? prescriptionUsageFor(checkoutPrescription) : null;
+    const checkoutPrescriptionMatches = checkoutPrescription
+      ? (persistence?.prescriptionTreatmentMatches?.(checkoutPrescription, state.cart) ?? true)
+      : true;
     const checkoutVoucher = selectedCheckoutVoucher();
     const voucherAmounts = checkoutVoucher ? checkoutVoucherAmounts(checkoutVoucher) : null;
     const voucherQuery = normalizeVoucherCode(state.checkoutVoucherCode);
@@ -1877,6 +1973,18 @@
       <div class="flow-head compact-work-head"><button class="button button-back" type="button" data-route="catalog"><span aria-hidden="true">←</span> Zurück</button><p class="eyebrow">Neuer Beleg</p><h1 class="flow-title">Beleg abschließen</h1><p class="page-copy">Prüfen, optional Kunde wählen und Zahlungsart simulieren.</p></div>
       <section class="checkout-section"><div class="section-title-row"><h2>Positionen</h2><button class="text-action" type="button" data-route="edit-cart">Bearbeiten</button></div><div class="checkout-items">${state.cart.map(item => `<div class="checkout-item"><span><strong>${escapeHtml(item.title)}</strong><small>${item.quantity} × ${formatCurrency(item.price)}</small></span><strong>${formatCurrency(item.price * item.quantity)}</strong></div>`).join("")}</div></section>
       <section class="checkout-section"><h2>Kunde <span>optional</span></h2><div class="mini-choice-grid">${customerCards}</div></section>
+      ${checkoutCustomer && data.businessAreas.find(area => area.id === state.activeBusinessArea)?.features?.prescriptionDocumentation === true ? `<section class="checkout-section checkout-prescription-section" aria-labelledby="checkoutPrescriptionTitle">
+        <div class="section-title-row"><h2 id="checkoutPrescriptionTitle">Rezept <span>optional</span></h2>${checkoutPrescription ? '<button class="text-action" type="button" data-clear-checkout-prescription>Ohne Rezept</button>' : ""}</div>
+        ${checkoutPrescriptions.length ? `<div class="checkout-prescription-list">${checkoutPrescriptions.map(entry => {
+          const usage = prescriptionUsageFor(entry);
+          return `<button type="button" class="checkout-prescription-choice ${entry.id === state.checkoutPrescriptionId ? "is-selected" : ""}" data-select-checkout-prescription="${escapeHtml(entry.id)}" aria-pressed="${entry.id === state.checkoutPrescriptionId}"><span><strong>${escapeHtml(entry.treatmentText)}</strong><small>Rezept vom ${escapeHtml(formatGermanDate(entry.prescribedOn))}</small></span><span><strong>${usage.usedUnits} von ${usage.prescribedUnits} genutzt</strong><small>${usage.availableUnits} verfügbar · ${escapeHtml(prescriptionUsageStatusLabel(usage.status))}</small></span></button>`;
+        }).join("")}</div>` : '<p class="page-copy">Für diesen Kunden und Geschäftsbereich ist kein aktives Rezept hinterlegt.</p>'}
+        ${checkoutPrescription && checkoutPrescriptionUsage?.usedUnits >= checkoutPrescriptionUsage?.prescribedUnits ? `<p class="checkout-prescription-warning">Dieses Rezept ist bereits ausgeschöpft. Eine weitere Zuordnung ist möglich, muss beim Abschluss aber ausdrücklich bestätigt werden.</p>` : ""}
+        ${checkoutPrescription && !checkoutPrescriptionMatches ? '<p class="checkout-prescription-warning">Die Belegpositionen passen nicht eindeutig zur hinterlegten Behandlung. Bitte prüfe die Zuordnung vor dem Abschluss.</p>' : ""}
+        ${state.checkoutPrescriptionReview?.overrunRequired ? `<label class="checkout-prescription-confirm"><input type="checkbox" data-confirm-prescription-overrun ${state.checkoutPrescriptionOverrunConfirmed ? "checked" : ""}><span>Ich möchte diesen Beleg trotz ausgeschöpftem Rezept zuordnen.</span></label>` : ""}
+        ${state.checkoutPrescriptionReview?.plausibilityRequired ? `<label class="checkout-prescription-confirm"><input type="checkbox" data-confirm-prescription-plausibility ${state.checkoutPrescriptionPlausibilityConfirmed ? "checked" : ""}><span>Ich habe die abweichende Behandlung geprüft und bestätige die Zuordnung.</span></label>` : ""}
+        ${state.checkoutPrescriptionError ? `<p class="checkout-prescription-error" role="alert">${escapeHtml(state.checkoutPrescriptionError)}</p>` : ""}
+      </section>` : ""}
       <section class="checkout-section"><h2>Zahlungsart <span>nur Simulation</span></h2><div class="payment-grid">${paymentCards}</div></section>
       ${state.checkoutVoucherError && state.paymentChoice !== "voucher" ? `<p class="checkout-voucher-error" role="alert">${escapeHtml(state.checkoutVoucherError)}</p>` : ""}
       ${state.paymentChoice === "voucher" ? `<section class="checkout-section checkout-voucher-section" aria-labelledby="checkoutVoucherTitle">
@@ -2094,9 +2202,12 @@
     return `<section class="customer-prescriptions" aria-labelledby="customerPrescriptionsTitle">
       <div class="section-title-row"><h2 id="customerPrescriptionsTitle">Rezepte</h2></div>
       ${prescriptionNoticeMarkup()}
-      <div class="prescription-list">${entries.map(entry => `<button type="button" class="prescription-list-item" data-open-prescription="${escapeHtml(entry.id)}">
-        <span><strong>${escapeHtml(entry.treatmentText)}</strong><small>${escapeHtml(formatGermanDate(entry.prescribedOn))} · ${entry.prescribedUnits} ${entry.prescribedUnits === 1 ? "Behandlung" : "Behandlungen"}</small><small>${escapeHtml(data.businessAreas.find(area => area.id === entry.businessAreaId)?.label || "Geschäftsbereich nicht verfügbar")}</small></span><em>${entry.active ? "Aktiv" : "Archiviert"}</em>
-      </button>`).join("") || '<p class="page-copy">Noch keine Rezepte hinterlegt.</p>'}</div>
+      <div class="prescription-list">${entries.map(entry => {
+        const usage = prescriptionUsageFor(entry);
+        return `<button type="button" class="prescription-list-item" data-open-prescription="${escapeHtml(entry.id)}">
+          <span><strong>${escapeHtml(entry.treatmentText)}</strong><small>${escapeHtml(formatGermanDate(entry.prescribedOn))} · ${usage ? `${usage.usedUnits} von ${usage.prescribedUnits} genutzt · ${usage.availableUnits} verfügbar` : "Verbrauch nicht verfügbar"}</small><small>${escapeHtml(data.businessAreas.find(area => area.id === entry.businessAreaId)?.label || "Geschäftsbereich nicht verfügbar")}</small></span><em>${escapeHtml(prescriptionUsageStatusLabel(usage?.status))}</em>
+        </button>`;
+      }).join("") || '<p class="page-copy">Noch keine Rezepte hinterlegt.</p>'}</div>
       ${customer.active !== false && prescriptionAreas().length && state.prescriptionsReady ? '<button class="button button-secondary" type="button" data-prescription-new>Rezept anlegen</button>' : '<p class="page-copy">Vorhandene Rezepte bleiben hier lesbar. Neue Eingaben benötigen einen aktiven Kunden und einen aktivierten Geschäftsbereich.</p>'}
     </section>`;
   }
@@ -2108,17 +2219,22 @@
   function renderPrescriptionDetail(customer) {
     const entry = data.prescriptions.find(entry => entry.id === state.prescriptionDetailId && entry.customerId === customer.id);
     if (!entry) { state.prescriptionDetailId = null; renderCustomerDetail(); return; }
+    const usage = prescriptionUsageFor(entry);
+    const canManage = prescriptionCanEdit(entry, customer);
     mainContent.innerHTML = `<section class="flow-page prescription-page page-enter">${prescriptionPageHead(customer, "Rezept")}
       <dl class="prescription-details">
         <div><dt>Geschäftsbereich</dt><dd>${escapeHtml(data.businessAreas.find(area => area.id === entry.businessAreaId)?.label || "Nicht verfügbar")}</dd></div>
         <div><dt>Rezept vom</dt><dd>${escapeHtml(formatGermanDate(entry.prescribedOn))}</dd></div>
         <div><dt>Behandlung</dt><dd>${escapeHtml(entry.treatmentText)}</dd></div>
         <div><dt>Verordnet</dt><dd>${entry.prescribedUnits} ${entry.prescribedUnits === 1 ? "Behandlung" : "Behandlungen"}</dd></div>
-        <div><dt>Status</dt><dd>${entry.active ? "Aktiv" : "Archiviert"}</dd></div>
+        <div><dt>Genutzt</dt><dd>${usage ? `${usage.usedUnits} von ${usage.prescribedUnits}` : "Nicht verfügbar"}</dd></div>
+        <div><dt>Verfügbar</dt><dd>${usage ? usage.availableUnits : "–"}</dd></div>
+        <div><dt>Status</dt><dd>${escapeHtml(prescriptionUsageStatusLabel(usage?.status))}</dd></div>
         ${entry.internalNote ? `<div><dt>Interne Rezeptnotiz</dt><dd class="prescription-note">${escapeHtml(entry.internalNote)}</dd></div>` : ""}
       </dl>
       <p class="page-copy">Nur lokal gespeichert und in der verschlüsselten Sicherung enthalten. Keine Ausgabe auf Belegen oder in regulären Exporten.</p>
-      ${prescriptionCanEdit(entry, customer) ? `<div class="prescription-actions"><button class="button button-primary" type="button" data-prescription-edit>Rezept bearbeiten</button><button class="button button-secondary" type="button" data-prescription-archive>${entry.active ? "Archivieren" : "Aktivieren"}</button></div>` : '<p class="page-copy">Dieses Rezept ist derzeit nur lesbar. Der Kunde oder die Funktion im Geschäftsbereich ist deaktiviert.</p>'}
+      ${usage?.historicallyUsed ? '<p class="page-copy">Dieses Rezept wurde bereits einem Beleg zugeordnet. Stammdaten und interne Notiz sind deshalb unveränderlich; Archivieren bleibt möglich.</p>' : ""}
+      ${canManage ? `<div class="prescription-actions">${usage?.historicallyUsed ? "" : '<button class="button button-primary" type="button" data-prescription-edit>Rezept bearbeiten</button>'}<button class="button button-secondary" type="button" data-prescription-archive>${entry.active ? "Archivieren" : "Aktivieren"}</button></div>` : '<p class="page-copy">Dieses Rezept ist derzeit nur lesbar. Der Kunde oder die Funktion im Geschäftsbereich ist deaktiviert.</p>'}
     </section>`;
   }
 
@@ -5962,6 +6078,8 @@
     state.selectedCustomerId = null;
     state.paymentChoice = preferredNormalPaymentId() || activePaymentChoices()[0]?.id || "cash";
     resetCheckoutVoucher();
+    resetCheckoutPrescription();
+    state.checkoutReceiptId = null;
     state.checkoutSubmitting = false;
     state.checkoutOpenPaymentConfirm = false;
     state.activeCategory = "favorites";
@@ -6360,6 +6478,35 @@
     if (decrease) { changeQuantity(decrease.dataset.decreaseItem, -1); return; }
     const remove = event.target.closest("[data-remove-item]");
     if (remove) { removeItem(remove.dataset.removeItem); return; }
+    const selectCheckoutPrescription = event.target.closest("[data-select-checkout-prescription]");
+    if (selectCheckoutPrescription) {
+      const prescription = eligibleCheckoutPrescriptions().find(entry => entry.id === selectCheckoutPrescription.dataset.selectCheckoutPrescription);
+      if (!prescription) return;
+      state.checkoutPrescriptionId = prescription.id;
+      state.checkoutPrescriptionReview = null;
+      state.checkoutPrescriptionError = "";
+      state.checkoutPrescriptionOverrunConfirmed = false;
+      state.checkoutPrescriptionPlausibilityConfirmed = false;
+      renderCheckout();
+      return;
+    }
+    if (event.target.closest("[data-clear-checkout-prescription]")) {
+      resetCheckoutPrescription();
+      renderCheckout();
+      return;
+    }
+    const confirmPrescriptionOverrun = event.target.closest("[data-confirm-prescription-overrun]");
+    if (confirmPrescriptionOverrun) {
+      state.checkoutPrescriptionOverrunConfirmed = confirmPrescriptionOverrun.checked;
+      state.checkoutPrescriptionError = "";
+      return;
+    }
+    const confirmPrescriptionPlausibility = event.target.closest("[data-confirm-prescription-plausibility]");
+    if (confirmPrescriptionPlausibility) {
+      state.checkoutPrescriptionPlausibilityConfirmed = confirmPrescriptionPlausibility.checked;
+      state.checkoutPrescriptionError = "";
+      return;
+    }
     const customerFilter = event.target.closest("[data-customer-filter]");
     if (customerFilter) {
       state.customerFilter = ["all", "active", "disabled"].includes(customerFilter.dataset.customerFilter)
@@ -6450,7 +6597,10 @@
       const customer = data.customers.find(customer => customer.id === state.customerDetailId);
       if (!entry || !customer || !prescriptionCanEdit(entry, customer)) return;
       state.prescriptionNotice = "";
-      if (event.target.closest("[data-prescription-edit]")) { state.prescriptionDraft = cloneSettingsValue(entry); renderCustomerDetail(); }
+      if (event.target.closest("[data-prescription-edit]")) {
+        if (prescriptionUsageFor(entry)?.historicallyUsed) return;
+        state.prescriptionDraft = cloneSettingsValue(entry); renderCustomerDetail();
+      }
       else await persistPrescriptionDraft({ ...entry, active: !entry.active }, entry.updatedAt);
       return;
     }
@@ -7178,6 +7328,8 @@
     if (action === "copy-receipt") {
       const receipt = receiptByNumber(state.receiptDetailNumber);
       if (receipt && receipt.receiptKind !== "voucher-sale") {
+        resetCheckoutPrescription();
+        state.checkoutReceiptId = null;
         state.cart = receipt.items.map((item, index) => ({
           id: `copy-${Date.now()}-${index}`,
           title: item.title,
@@ -8080,6 +8232,8 @@
       state.cartExpanded = false;
       state.selectedCustomerId = null;
       state.customerChoice = "none";
+      resetCheckoutPrescription();
+      state.checkoutReceiptId = null;
       closeDiscardDialog();
       renderHome();
       return;

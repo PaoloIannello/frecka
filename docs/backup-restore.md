@@ -1,7 +1,7 @@
 # Verschlüsselte Sicherung und Wiederherstellung
 
 **Stand:** BACKUP-006 auf Basis BACKUP-005, BRANDING-002, BACKUP-004, TSE-002, SETTINGS-002, SETTINGS-001, USER-001, BACKUP-002, BACKUP-001 und PERSISTENCE-007
-**Datenbankschema:** 7 (PODOLOGY-001; Backup-Kryptographie und Ausgabeablauf unverändert)
+**Datenbankschema:** 7 (PODOLOGY-001/002; Backup-Kryptographie und Ausgabeablauf unverändert)
 **Backupformat:** 1
 **Geltungsbereich:** Vollständiger lokaler Datenstand eines Mandanten
 
@@ -46,6 +46,8 @@ Der verschlüsselte Payload ist ein JSON-Objekt mit:
 - `stores.receipts`;
 - `stores.vouchers`;
 - `stores.prescriptions` (einschließlich archivierter Rezepte und interner Rezeptnotizen).
+
+PODOLOGY-002 ergänzt keine zweite Sicherungsstruktur: unveränderliche Rezeptzuordnungen liegen innerhalb der bereits gesicherten Ursprungsbelege. Die Snapshotvalidierung prüft ihre Rezept-, Kunden- und Geschäftsbereichsreferenzen sowie die aus Belegen und Vollstornos abgeleitete Nutzung. Alte Belege ohne Zuordnung bleiben gültig. Reguläre Exporte, PDFs, QR und Public Viewer projizieren diese sensiblen Angaben weiterhin nicht.
 
 Die verschlüsselte Gesamtsicherung enthält damit besonders sensible Rezeptinhalte. Nur der bewusst ausgelöste Vollrestore übernimmt sie; reguläre CSV-/ZIP-Exporte enthalten sie nicht. Ein älteres Backup ersetzt auch den aktuellen Rezeptbestand durch seinen damals leeren Bestand, es ist kein Merge. Ab Schema 7 ist ein fehlender Rezeptstore ein Fehler. Siehe [Rezeptverwaltung](prescriptions.md).
 

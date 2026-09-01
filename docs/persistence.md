@@ -72,7 +72,7 @@ BETA-HANDOFF-001 trennt den produktiven Erststart zusätzlich von der historisch
 ## Datenbankvertrag
 
 - Datenbankname: `frecka`
-- Datenbankschema-Version: `7` (PODOLOGY-001)
+- Datenbankschema-Version: `7` (PODOLOGY-001; durch PODOLOGY-002 unverändert)
 - Object Stores: `settings`, `catalog`, `customers`, `receipts`, `vouchers`, `prescriptions` und `licenseRuntime`
 - Key Path der sechs Tenant-Stores: `tenantId`; Key Path von `licenseRuntime`: `localTenantId`
 - Standardschlüssel/Instanz: `local-default`
@@ -84,6 +84,8 @@ BETA-HANDOFF-001 trennt den produktiven Erststart zusätzlich von der historisch
 - Rezeptformat-Version: `1`
 
 PODOLOGY-001 ergänzt bei 6→7 ausschließlich den leeren `prescriptions`-Store samt leeren Datensätzen für bestehende Settings-Mandanten und die aktuelle Instanz. Die Versionchange-Transaktion verändert keine bisherigen Store-Datensätze; ein Abbruch rollt das Upgrade zurück. Die bestehende historische Settingsnormalisierung ergänzt anschließend je Geschäftsbereich die fehlende Capability mit `false`. Details, Datenschutz und Grenzen: [Rezeptverwaltung](prescriptions.md).
+
+PODOLOGY-002 erhöht weder Schema noch Rezept- oder Belegformat. Ein optionaler, strikt validierter `prescriptionAssignment`-Snapshot liegt ausschließlich am abgeschlossenen normalen Ursprungsbeleg. Der verwendete Receipt-Writer liest Settings, Kunde, Rezept und aktuellen Belegbestand in derselben Readwrite-Transaktion erneut und schreibt weiterhin nur Settings/Nummernstand und das Receipt-Aggregat. Verfügbarkeit und Status werden aus den stabilen Ursprungsbelegen sowie eindeutig referenzierten Vollstornos abgeleitet; es gibt keinen persistierten Zähler und kein Nutzungsjournal. Alte Belege ohne Zuordnung bleiben gültig.
 
 Das Upgrade von Schema-Version 4 auf 5 legt ausschließlich den neuen `vouchers`-Store an. LICENSE-005 hebt anschließend von 5 auf 6 an und ergänzt ausschließlich `licenseRuntime` mit `localTenantId` als Schlüssel; alle fünf bisherigen Stores und Datensätze bleiben unverändert. Die älteren Upgradepfade ergänzen weiterhin alle später hinzugekommenen Stores. Es werden dabei keine Demo-Geschäftsdaten ungefragt geschrieben. Datenbankschema- und Datenformatversionen werden unabhängig versioniert.
 

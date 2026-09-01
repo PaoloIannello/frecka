@@ -1,6 +1,6 @@
-# PODOLOGY-001 – Rezeptverwaltung
+# PODOLOGY-001/002 – Rezeptverwaltung und Belegzuordnung
 
-Stand: 31.08.2026. Ausgangspunkt `main`, `ee13b12ed7cd4763d23d6f4979b83cd5a75ebbef`, Tag `v0.11.6`, Version 0.11.6 / ANDROID-002; Arbeitsbaum vor Beginn sauber und origin/main identisch. Dieser Entwicklungsblock ist noch kein Release.
+Stand: 01.09.2026. PODOLOGY-002 ergänzt auf Schema 7 die optionale Rezeptzuordnung und ausschließlich aus Belegen abgeleitete Verbrauchslogik. Dieser Entwicklungsblock ist noch kein Release.
 
 ## Umfang und Capability
 
@@ -25,29 +25,39 @@ Ein Rezept enthält:
 | `createdAt`, `updatedAt` | ISO-Zeitpunkte; Erstellung bleibt bei Bearbeitung unverändert |
 | `formatVersion` | `1` |
 
-Es gibt keine Rezeptkopie im Kundenobjekt, keine Verbrauchszahl und keinen Belegbezug. Auswahl aus dem Katalog übernimmt einen separat gespeicherten, bearbeitbaren Text. Spätere Katalogänderung, Deaktivierung oder fehlende historische Leistung verändern diesen Text nicht. Neue Referenzen müssen auf eine aktive Leistung zeigen; Produkte sind ausgeschlossen.
+Es gibt keine Rezeptkopie im Kundenobjekt, keine persistierte Verbrauchszahl und kein Nutzungsjournal. Auswahl aus dem Katalog übernimmt einen separat gespeicherten Text. Spätere Katalogänderung, Deaktivierung oder fehlende historische Leistung verändern diesen Text nicht. Neue Referenzen müssen auf eine aktive Leistung zeigen; Produkte sind ausgeschlossen.
 
-`savePrescription` prüft Bestand, Mandant, Referenzen und Capability in einer Readwrite-Transaktion gemeinsam mit Settings/Kunden/Katalog, schreibt aber ausschließlich den Rezeptstore. Die UI übernimmt erst nach `oncomplete` das Ergebnis. ID-Duplikate und veraltete Bearbeitungen werden mit `expectedUpdatedAt` abgewiesen; Fehler behalten den Entwurf. Kein automatischer Reparatur-, Lösch- oder Deduplizierungspfad.
+`savePrescription` prüft Bestand, Mandant, Referenzen, Capability und vorhandene Belegzuordnungen in einer Readwrite-Transaktion gemeinsam mit Settings/Kunden/Katalog/Belegen, schreibt aber ausschließlich den Rezeptstore. Die UI übernimmt erst nach `oncomplete` das Ergebnis. ID-Duplikate und veraltete Bearbeitungen werden mit `expectedUpdatedAt` abgewiesen; Fehler behalten den Entwurf. Sobald ein Rezept historisch mindestens einmal verwendet wurde, sind Kunden-/Bereichszuordnung, Rezeptdatum, Behandlung, Katalogreferenz, verordnete Anzahl und interne Notiz unveränderlich. Archivieren und Reaktivieren bleiben möglich. Kein automatischer Reparatur-, Lösch- oder Deduplizierungspfad.
+
+## Zuordnung und abgeleiteter Verbrauch
+
+Ein normaler Beleg kann beim Abschluss optional genau einem aktiven Rezept des ausgewählten aktiven Kunden und des aktiven Geschäftsbereichs zugeordnet werden. Die Capability muss dort eingeschaltet sein. Es gibt keine automatische Vorauswahl. Gutscheinverkaufsbelege, Stornos und Gutschriften können keine eigene Rezeptnutzung erzeugen; ein normaler Beleg mit Gutscheinzahlung verwendet denselben Abschlusswriter wie andere Zahlungsarten.
+
+Der Ursprungsbeleg speichert genau einen unveränderlichen `prescriptionAssignment`-Snapshot mit Formatversion 1, Rezept-ID, `units: 1`, Rezeptdatum, Behandlungstext, verordneter Anzahl, Kunden- und Geschäftsbereichs-ID, optionaler Katalogleistungs-ID sowie der Information, ob eine Überziehung bestätigt wurde. Interne Notiz, laufender Verbrauch, Restwert und UI-Bestätigungen gehören nicht in den Snapshot.
+
+Verbrauch wird bei jedem Lesen ausschließlich aus vollständig abgeschlossenen Ursprungsbelegen mit gültiger Zuordnung abgeleitet. Jeder stabile Ursprungsbeleg zählt höchstens einmal. Ein eindeutig referenzierter vollständiger Storno über den gesamten Ursprungsbetrag neutralisiert genau diese eine Nutzung. Teil- und Gesamtgutschriften verändern den Verbrauch nicht. Die Anzeige unterscheidet `Offen`, `Ausgeschöpft`, `Überzogen` und `Archiviert`; der reale Verbrauch wird bei einer bestätigten Überziehung nicht auf die verordnete Anzahl gekappt, die sichtbare Verfügbarkeit jedoch nie negativ dargestellt.
+
+Vor dem Abschluss prüft ein Readonly-Preflight den aktuellen Stand. Die UI zeigt Plausibilitätswarnungen, wenn weder die stabile Katalogleistung noch der Behandlungstext zu einer positiven Leistungsposition passt. Das ist bewusst nur eine Warnung. Bei ausgeschöpften Rezepten ist ebenfalls eine ausdrückliche Bestätigung nötig. Der eigentliche Receipt-Writer liest Settings, Kunden, Rezepte und Belege danach innerhalb derselben Readwrite-Transaktion erneut. Hat sich der relevante Stand verändert, wird ohne Beleg, Nummernfortschreibung oder Rezeptverbrauch abgebrochen und eine neue Bestätigung verlangt. Dialoge und Nutzerinteraktion finden niemals innerhalb der IndexedDB-Transaktion statt.
 
 ## Migration und Integrität
 
 6→7 legt in einer Versionchange-Transaktion leere Rezeptdatensätze für vorhandene Settings-Mandanten und die aktuelle Instanz an. Bisherige Store-Datensätze einschließlich Lizenzruntime bleiben unverändert. Neue Mandanten in einer bereits geöffneten Schema-7-Datenbank erhalten den leeren Rezeptbestand atomar beim ersten Settingsschreiben. Bestehende Settings-Kompatibilität ergänzt die fehlende Capability anschließend mit `false`.
 
-Validiert werden Struktur/Format, Mandant, eindeutige IDs, Pflichttexte, Kalenderdatum, Einheiten, Zeitpunkte und Kunden-/Bereichsreferenzen. Deaktivierte Referenzen bleiben historisch gültig; sie erlauben keine neuen Eingaben. Unbekannte zukünftige Rezeptfelder/Formate werden abgewiesen, nicht entfernt. Fehlende/beschädigte Rezeptbestände bleiben sichtbar fehlerhaft und sperren Rezeptänderungen sowie Vollbackup/Restore; sie werden nicht durch einen leeren UI-Fallback ersetzt. Normale Beleglogik wurde nicht verändert.
+Validiert werden Struktur/Format, Mandant, eindeutige IDs, Pflichttexte, Kalenderdatum, Einheiten, Zeitpunkte, Kunden-/Bereichsreferenzen und alle vorhandenen Belegzuordnungen. Alte Belege ohne `prescriptionAssignment` bleiben unverändert gültig; Datenbankschema und bestehende Storeformate steigen nicht. Deaktivierte Referenzen bleiben historisch gültig; sie erlauben keine neuen Eingaben. Unbekannte zukünftige Rezept- oder Zuordnungsfelder/Formate werden abgewiesen, nicht entfernt. Fehlende/beschädigte Rezeptbestände oder widersprüchliche Zuordnungen bleiben sichtbar fehlerhaft und sperren Vollbackup/Restore; sie werden nicht durch einen leeren UI-Fallback ersetzt.
 
 ## Kundenoberfläche
 
 Vorhandenes Kundenprofil → Rezepte → Anlegen/Detail/Bearbeiten/Archivieren. Keine neue Hauptnavigation. Sichtbar bei mindestens einer aktivierten Capability oder vorhandenen Rezepten, auch nach späterer Deaktivierung. Aktive Kunden können in aktivierten Bereichen mehrere Rezepte anlegen. Deaktivierte Kunden/Bereiche und ausgeschaltete Capabilities lassen vorhandene Rezepte nur lesbar. Archivierte Rezepte bleiben sichtbar und können bei aktivierter Funktion reaktiviert werden.
 
-Die Detailansicht zeigt verordnete Anzahl, nicht verbrauchte/restliche Einheiten. Eine Bearbeitung ist heute zulässig, weil PODOLOGY-001 keine Nutzungen erzeugt. PODOLOGY-002 muss vor Einführung von Nutzungen den zentralen Schreibschutz für tatsächlich benutzte Rezepte ergänzen. Es gibt absichtlich noch keine erfundene Nutzungs- oder Versionierungsengine.
+Liste und Detailansicht zeigen abgeleitet genutzte und verfügbare Einheiten sowie den fachlichen Status. Verwendete Rezepte besitzen keine Bearbeitungsaktion mehr; die Archivaktion bleibt getrennt erreichbar. Im Checkout erscheint die optionale Auswahl nur bei aktivierter Capability und aktivem Kunden. Kunden-, Bereichs-, Capability- oder Archivänderungen entfernen eine nicht mehr zulässige Auswahl. Duplizierte Belege übernehmen niemals die historische Rezeptzuordnung.
 
 ## Snapshot, Backup, Restore und Datenschutz
 
 Alle zentralen Geschäftssnapshot-Pfade lesen jetzt dieselben sechs Fachstores: Backup-/Export-Snapshot, Diagnose, Restore und Kandidat der historischen Vierer-Reparatur. Letztere schreibt weiterhin nur freigegebene historische Receipts. `licenseRuntime` bleibt ausgeschlossen.
 
-Das verschlüsselte Vollbackup enthält Rezepte einschließlich Archiv und interner Notiz. Die Kryptographie und der bestehende Ausgabeablauf bleiben unverändert. Unterstützte ältere Schema-5/6-Backups ohne Rezeptstore erhalten einen leeren Bestand; bei Schema 7 ist der Store Pflicht. Restore ersetzt atomar alle sechs Fachstores, kein Merge. Vorhandene Rezepte gehen bei einem bewussten Vollrestore eines älteren Backups entsprechend dem gesicherten damaligen Stand nicht mit über.
+Das verschlüsselte Vollbackup enthält Rezepte einschließlich Archiv und interner Notiz sowie die Rezeptzuordnungs-Snapshots innerhalb der ohnehin enthaltenen Belege. Es gibt keine zweite Sammlung. Die Kryptographie und der bestehende Ausgabeablauf bleiben unverändert. Unterstützte ältere Schema-5/6-Backups ohne Rezeptstore erhalten einen leeren Bestand; bei Schema 7 ist der Store Pflicht. Restore ersetzt atomar alle sechs Fachstores, kein Merge. Vorhandene Rezepte gehen bei einem bewussten Vollrestore eines älteren Backups entsprechend dem gesicherten damaligen Stand nicht mit über.
 
-Regulärer Kunden-/Eigene-Daten-Export, Steuerberater-CSV/ZIP, Beleg/PDF und Public-QR erhalten keine Rezeptdaten. Diagnose und technische Fehlermeldungen enthalten keine Behandlungstexte oder Rezeptnotizen. Die lokale IndexedDB ist kein zusätzlich verschlüsseltes medizinisches Archiv; die bestehende Geräteschutzgrenze bleibt bestehen. Es gibt keinen Upload und keinen medizinischen Export.
+Regulärer Kunden-/Eigene-Daten-Export, Steuerberater-CSV/ZIP, Beleg/PDF, QR und Public Viewer erhalten weder Rezeptstammdaten noch den Zuordnungs-Snapshot. Diagnose, Logs und technische Fehlermeldungen enthalten keine Behandlungstexte, Rezeptnotizen oder medizinischen Zuordnungen. Die lokale IndexedDB ist kein zusätzlich verschlüsseltes medizinisches Archiv; die bestehende Geräteschutzgrenze bleibt bestehen. Es gibt keinen Upload und keinen medizinischen Export.
 
 ## Entwicklerresets
 
@@ -55,10 +65,10 @@ Kunden- und Settingsreset prüfen den Rezeptstore in derselben Transaktion und b
 
 ## Prüfungen und nächste Gates
 
-Automatisierte Browserfälle stehen in `tests/persistence-smoke.js`; die echte App-UI wird über `tests/app-frame.html` in einer isolierten Testdatenbank geladen, ohne produktive Datenbank oder Service Worker. Abgedeckt sind Capability, Schema-Upgrade, CRUD/Reload/Archiv, Eingabefehler, Konflikte, Referenzen, Deaktivierung, Backup/Restore/Abbruch, Datenschutz, Reset und beschädigte Bestände. Mobile Layouts: 320, 390 und 411 px. Die vorhandenen Kundendaten-, Beleg-, Gutschein-, Lizenz-, Backup-, Export-, PDF-/QR- und Androidregressionen laufen mit.
+Automatisierte Browserfälle stehen in `tests/persistence-smoke.js`; die echte App-UI wird über `tests/app-frame.html` in einer isolierten Testdatenbank geladen, ohne produktive Datenbank oder Service Worker. Zusätzlich abgedeckt sind Auswahl, passender und abweichender Behandlungstext, Ausschöpfung/Überziehung, Bestätigung, idempotente Wiederholung, Vollstorno, Gutschrift, Schreibabbruch, konkurrierende Clients, Schreibschutz verwendeter Rezepte, Backup-/Restore-Rundlauf, Datenschutz und Checkout bei 320, 390 und 411 px. Die vorhandenen Kundendaten-, Beleg-, Gutschein-, Lizenz-, Backup-, Export-, PDF-/QR- und Androidregressionen laufen mit.
 
-Lokales Ergebnis am 31.08.2026: **222/222 Browserprüfungen bestanden**, Testdatenbank-Cleanup bestanden, keine Konsolenfehler im abschließenden Lauf. Public-Viewer-Boot: bestanden, `IndexedDB.open = 0`, Blob-PDF bereit. Service-Worker-/Offline-Fallback, PWA-Update, Sharing (17 Fälle), QR-Messung (6 Profile), Deployment-Smoke und Release-Automation-Smoke bestanden; JavaScript-Syntax und `git diff --check` fehlerfrei. Deployment-/Release-Smokes verwenden ausschließlich temporäre Testfixtures und keinen Netzwerktransfer.
+Lokales Ergebnis am 01.09.2026: **230/230 Browserprüfungen bestanden**, Testdatenbank-Cleanup bestanden, keine Konsolenfehler im abschließenden Lauf. Der PODOLOGY-002-Checkout lief dabei mit der echten App-Oberfläche in isolierten Mandanten bei 320, 390 und 411 px ohne horizontalen Überlauf. Public-Viewer-Boot, Blob-PDF, Service-Worker-/Offline-Fallback, PWA-Update, Sharing (17 Fälle), QR-Messung (6 Profile), Deployment-Smoke und Release-Automation-Smoke bestanden; JavaScript-Syntax und `git diff --check` fehlerfrei. Deployment-/Release-Smokes verwenden ausschließlich temporäre Testfixtures und keinen Netzwerktransfer.
 
 Vor Beta-Veröffentlichung: gesonderte Versions-/Cachevorbereitung und echter iPhone-/Android-In-place-Test mit vorheriger verschlüsselter Sicherung. Ein Downgrade auf einen Schema-6-Client ist kein unterstützter Rückweg nach Schema 7. Noch keine Geräte- oder Produktivfreigabe aus den lokalen Tests ableiten.
 
-PODOLOGY-002 ist separat zu entscheiden/implementieren: Rezeptzuordnung zum Beleg, atomare Nutzung, Schutz benutzter Rezepte und Storno-Freigabe. `treatmentRecords` folgen erst in PODOLOGY-003. Nicht Bestandteil von PODOLOGY-001: Pflegehinweise, Vorlagen, medizinische Exporte sowie Rezeptausgabe in PDF/Bon/QR.
+`treatmentRecords` folgen erst in PODOLOGY-003. Nicht Bestandteil von PODOLOGY-001/002: Pflegehinweise, Vorlagen, medizinische Exporte sowie Rezeptausgabe in PDF/Bon/QR.
