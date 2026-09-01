@@ -8,7 +8,7 @@
 
 PODOLOGY-001 erweitert ausschließlich die zentrale Snapshotquelle: `prescriptions`, Behandlungstext und interne Rezeptnotizen werden weder in „Eigene Daten“/Kundenexport noch in Steuerberater-CSV/ZIP/PDF projiziert. Nur das verschlüsselte Vollbackup enthält den Rezeptbestand. Kein medizinischer Export und keine Änderung der bisherigen Exportdatei-API.
 
-PODOLOGY-003 hält dieselbe Datenschutzgrenze ein: `treatmentRecords`, interne Behandlungsdokumentation, Kundenpflegehinweise und deren Vorlagen werden weder in „Eigene Daten“ noch in Steuerberater-CSV/ZIP/PDF projiziert. Auch Beleg-, Dokument- und Public-Projektionen erhalten diese Inhalte nicht. Die zentrale Exportprojektion bleibt unverändert; nur das verschlüsselte Vollbackup enthält den Behandlungsbestand.
+PODOLOGY-003 hält dieselbe Datenschutzgrenze ein: `treatmentRecords`, interne Behandlungsdokumentation, Kundenpflegehinweise und deren Vorlagen werden weder in „Eigene Daten“ noch in Steuerberater-CSV/ZIP/PDF projiziert. PODOLOGY-004 ändert daran nichts: Die lokale Kundenansicht darf Rezeptdatum und Pflegehinweis anzeigen, der Steuerberater-Paketadapter ruft dieselbe Dokumentenengine jedoch ausdrücklich im Modus `tax-advisor` auf. Dadurch bleiben Rezeptdatum, Pflegehinweis und alle internen medizinischen Inhalte aus CSV, TXT, ZIP-Metadaten und Beleg-PDFs ausgeschlossen. Die zentrale Exportprojektion bleibt unverändert; nur das verschlüsselte Vollbackup enthält den Behandlungsbestand.
 
 Der Exportkern erzeugt fachlich nachvollziehbare Dateien für Steuerberatung und die eigene Weiterverarbeitung. Er ist keine bestätigte DATEV-Importschnittstelle und ersetzt weder das verschlüsselte FRECKA-Backup noch eine steuerliche Prüfung.
 
@@ -92,7 +92,7 @@ FRECKA-Steuerberatung-2030-01.zip
 
 Eigene oder bereichsübergreifende Zeiträume verwenden `YYYY-MM-DD_bis_YYYY-MM-DD`; ein einzelner Geschäftsbereich wird zusätzlich als sicherer Dateinamensbestandteil ausgewiesen. Jedes Beleg-PDF wird aus der unveränderten gespeicherten Belegnummer benannt. Doppelte resultierende Dateinamen führen zu einem klaren Fehler, nicht zu einem Überschreiben.
 
-Normale Belege, offene Belege, Stornos, Gutschriften und Gutscheinverkaufsbelege werden durch `FRECKA_DOCUMENTS` als echte PDFs erzeugt. Sie verwenden denselben gespeicherten Snapshot und dieselbe PDF-Engine wie die Belegansicht. BRANDING-002 reicht dem Dokumentmodell zusätzlich ausschließlich den zentralen Resolver und das Register aus demselben Tenant-Snapshot; dadurch enthält jedes PDF genau die historisch referenzierte Logo-Version. Die Rohbilder werden nicht als eigene ZIP-Dateien oder CSV-/TXT-Inhalte exportiert. PDF-Dateien werden weder in IndexedDB noch dauerhaft im Exportmodul gespeichert.
+Normale Belege, offene Belege, Stornos, Gutschriften und Gutscheinverkaufsbelege werden durch `FRECKA_DOCUMENTS` als echte PDFs erzeugt. Sie verwenden denselben gespeicherten Snapshot und dieselbe PDF-Engine wie die Belegansicht, aber den festen Ausgabemodus `tax-advisor`. BRANDING-002 reicht dem Dokumentmodell zusätzlich ausschließlich den zentralen Resolver und das Register aus demselben Tenant-Snapshot; dadurch enthält jedes PDF genau die historisch referenzierte Logo-Version. Die Rohbilder werden nicht als eigene ZIP-Dateien oder CSV-/TXT-Inhalte exportiert. PDF-Dateien werden weder in IndexedDB noch dauerhaft im Exportmodul gespeichert.
 
 ## Dateien der Version 1
 

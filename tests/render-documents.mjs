@@ -36,6 +36,22 @@ const options = {
   resolveLogoAsset: assetId => logoAssets.find(asset => asset.assetId === assetId) || null
 };
 
+function visiblePdfText(pdf) {
+  const result = [];
+  for (const page of pdf.getPages()) {
+    const contents = page.node.Contents();
+    const references = contents?.asArray ? contents.asArray() : contents ? [contents] : [];
+    for (const reference of references) {
+      const decoded = globalThis.PDFLib.decodePDFRawStream(pdf.context.lookup(reference)).decode();
+      const source = new TextDecoder("latin1").decode(decoded);
+      for (const match of source.matchAll(/<([0-9A-Fa-f]+)>\s*Tj/gu)) {
+        result.push(Buffer.from(match[1], "hex").toString("latin1"));
+      }
+    }
+  }
+  return result.join(" ");
+}
+
 const companySnapshot = {
   name: "Studio Änne & Söhne",
   owner: "Alex Beispiel",
@@ -88,7 +104,19 @@ const receipt = {
   ],
   paymentStatus: "paid",
   paymentMethod: "Bar",
+  prescriptionAssignment: {
+    prescriptionId: "prescription-private-qa",
+    prescribedOn: "2026-08-31",
+    treatmentText: "PRIVATE-PRESCRIPTION-QA"
+  },
   receiptTextSnapshot: { thankYouText: "Vielen Dank für Ihren Besuch.", footerText: "Wir freuen uns auf ein Wiedersehen." }
+};
+
+const treatmentRecord = {
+  receiptId: receipt.id,
+  receiptNumber: receipt.number,
+  customerCareAdvice: "PODOLOGY004-CARE-MARKER",
+  internalDocumentation: "PODOLOGY004-INTERNAL-MARKER"
 };
 
 const voucher = {
@@ -116,7 +144,16 @@ const voucher = {
   saleReceipt: { id: "receipt_voucher_qa", number: "2030-000098" }
 };
 
-const receiptModel = globalThis.FRECKA_DOCUMENTS.createReceiptDocumentModel(receipt, options);
+const receiptModel = globalThis.FRECKA_DOCUMENTS.createReceiptDocumentModel(receipt, {
+  ...options,
+  outputMode: "customer",
+  treatmentRecord
+});
+const taxReceiptModel = globalThis.FRECKA_DOCUMENTS.createReceiptDocumentModel(receipt, {
+  ...options,
+  outputMode: "tax-advisor",
+  treatmentRecord
+});
 const voucherModel = globalThis.FRECKA_DOCUMENTS.createVoucherDocumentModel(voucher, options);
 const [publicReceipt, publicVoucher] = await Promise.all([
   globalThis.FRECKA_PUBLIC_DOCUMENTS.createPublicBundle(receiptModel, { baseUrl: options.baseUrl, qrService: options.qrService }),
@@ -126,14 +163,32 @@ const [publicReceipt, publicVoucher] = await Promise.all([
 await mkdir(outputDirectory, { recursive: true });
 const receiptOutputModel = Object.freeze({ ...receiptModel, qr: publicReceipt.model.qr });
 const voucherOutputModel = Object.freeze({ ...voucherModel, qr: publicVoucher.model.qr });
+const [receiptBytes, taxReceiptBytes, voucherBytes] = await Promise.all([
+  globalThis.FRECKA_DOCUMENTS.createPdfBytes(receiptOutputModel),
+  globalThis.FRECKA_DOCUMENTS.createPdfBytes(taxReceiptModel),
+  globalThis.FRECKA_DOCUMENTS.createPdfBytes(voucherOutputModel)
+]);
+const customerPdfText = visiblePdfText(await globalThis.PDFLib.PDFDocument.load(receiptBytes));
+const taxPdfText = visiblePdfText(await globalThis.PDFLib.PDFDocument.load(taxReceiptBytes));
+if (!customerPdfText.includes("Rezept vom: 31.08.2026") || !customerPdfText.includes("Pflegehinweis: PODOLOGY004-CARE-MARKER")) {
+  throw new Error("PODOLOGY-004-Kundenfelder fehlen im gerenderten Kunden-PDF.");
+}
+if (customerPdfText.includes("PODOLOGY004-INTERNAL-MARKER")) {
+  throw new Error("Interne Behandlungsdokumentation gelangte ins Kunden-PDF.");
+}
+if (taxPdfText.includes("Rezept vom:") || taxPdfText.includes("Pflegehinweis:") || taxPdfText.includes("PODOLOGY004-")) {
+  throw new Error("Medizinische Zusatzfelder gelangten ins Steuerberater-PDF.");
+}
+const taxFilename = "FRECKA-Steuerberater-2030-000099.pdf";
 await Promise.all([
-  writeFile(join(outputDirectory, receiptOutputModel.filename), await globalThis.FRECKA_DOCUMENTS.createPdfBytes(receiptOutputModel)),
-  writeFile(join(outputDirectory, voucherOutputModel.filename), await globalThis.FRECKA_DOCUMENTS.createPdfBytes(voucherOutputModel))
+  writeFile(join(outputDirectory, receiptOutputModel.filename), receiptBytes),
+  writeFile(join(outputDirectory, taxFilename), taxReceiptBytes),
+  writeFile(join(outputDirectory, voucherOutputModel.filename), voucherBytes)
 ]);
 
 console.log(JSON.stringify({
   outputDirectory,
-  files: [receiptOutputModel.filename, voucherOutputModel.filename],
+  files: [receiptOutputModel.filename, taxFilename, voucherOutputModel.filename],
   links: [publicReceipt.link, publicVoucher.link],
   qrVersions: [publicReceipt.qrVersion, publicVoucher.qrVersion]
 }, null, 2));

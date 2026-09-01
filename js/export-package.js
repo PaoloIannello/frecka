@@ -108,7 +108,8 @@
       qrService,
       companyIdentity: dependencies.companyIdentity || globalThis.FRECKA_PERSISTENCE?.companyIdentity,
       resolveLogoAsset,
-      linkedVoucher: linkedVoucherFor(receipt, projection)
+      linkedVoucher: linkedVoucherFor(receipt, projection),
+      outputMode: "tax-advisor"
     });
     let outputModel = model;
     const publicDocuments = dependencies.publicDocumentService || globalThis.FRECKA_PUBLIC_DOCUMENTS;

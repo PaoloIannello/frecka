@@ -359,6 +359,11 @@
     return `<button class="frecka-qr frecka-qr-${escapeHtml(variant)}" type="button" ${target} aria-label="${escapeHtml(label)}">${qr.svg}${caption ? `<span>${escapeHtml(caption)}</span>` : ""}</button>`;
   }
 
+  function treatmentRecordForReceipt(receipt) {
+    if (!receipt?.id) return null;
+    return data.treatmentRecords.find(entry => entry.receiptId === receipt.id) || null;
+  }
+
   function receiptDocumentModel(receipt) {
     if (!documentService?.createReceiptDocumentModel) {
       throw Object.assign(new Error("Document service unavailable"), {
@@ -373,7 +378,9 @@
       companyIdentity: persistence?.companyIdentity,
       company: { ...data.company, street: companyStreetLine(data.company) },
       resolveLogoAsset,
-      linkedVoucher
+      linkedVoucher,
+      outputMode: "customer",
+      treatmentRecord: treatmentRecordForReceipt(receipt)
     });
   }
 
@@ -399,7 +406,8 @@
 
   function publicDocumentKey(kind, record) {
     const reference = kind === "receipt" ? record?.id || record?.number : record?.reference || voucherQrReference(record);
-    const stamp = [record?.updatedAt, record?.status, record?.currentValueCents, record?.currentValue].filter(value => value !== undefined && value !== null).join("|");
+    const treatmentStamp = kind === "receipt" ? treatmentRecordForReceipt(record)?.updatedAt : null;
+    const stamp = [record?.updatedAt, record?.status, record?.currentValueCents, record?.currentValue, treatmentStamp].filter(value => value !== undefined && value !== null).join("|");
     return `${kind}:${reference}:${stamp}`;
   }
 

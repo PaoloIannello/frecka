@@ -86,6 +86,8 @@ Eine Position enthält Bezeichnung, Menge, ursprünglichen Einzelpreis und Posit
 
 Normale Belege enthalten ausdrücklich keinen Leistungsort.
 
+PODOLOGY-004 erweitert dieses Format bewusst nicht. Das in einer lokalen Kundenansicht sichtbare Rezeptdatum und der Kundenpflegehinweis gehören nicht zu den 16 Belegfeldern von `FPD/v1` und werden deshalb weder in den QR-Link noch in einen daraus erzeugten Public-Viewer-Beleg oder dessen PDF transportiert.
+
 ### Gutscheinfelder
 
 Die Gutscheinprojektion enthält:
@@ -111,6 +113,7 @@ Nicht transportiert werden insbesondere:
 - Telefonnummern und E-Mail-Adressen von Unternehmen oder Kunden;
 - Websites und echte Unternehmenslogo-Bilddaten;
 - interne Notizen, Aktivitäten und Historien;
+- Rezept-IDs, Rezeptdatum, Behandlungstext, Einheiten, Verbrauch, interne Rezeptnotizen, Behandlungsdokumentation und Kundenpflegehinweise;
 - Kundenstammdaten außerhalb der tatsächlich sichtbaren Beleganschrift;
 - Verkaufsbeleg- und Einlösungsreferenzen des Gutscheins;
 - Steuernummer, USt-IdNr. und weitere Steuerdaten;
@@ -153,6 +156,8 @@ Eine Route unter `#/p/` wird vor der Initialisierung der Unternehmeranwendung er
 - zeigt bei ungültiger Version, Beschädigung oder nicht unterstützter Dekompression eine verständliche Fehlermeldung.
 
 Das Laden der statischen App-Hülle verursacht normale Asset-Requests. Der Fragmentinhalt wird von FRECKA weder an eine API gesendet noch protokolliert oder analysiert.
+
+Das Public-Viewer-PDF wird aus dem dekodierten Whitelistmodell im restriktiven Dokumentmodus erzeugt. Es ist damit nicht identisch mit dem lokalen, vom Unternehmer ausdrücklich geöffneten PODOLOGY-004-Kundendokument: Rezeptdatum und Pflegehinweis bleiben im zustandslosen Viewer auch dann ausgeschlossen, wenn sie lokal am Ursprungsgerät vorhanden sind.
 
 ## Größen- und Dichtegrenzen
 
@@ -227,6 +232,7 @@ Automatisierte Tests müssen mindestens abdecken:
 - fehlenden Leistungsort beim normalen Beleg;
 - Einlöseort beim Gutschein;
 - Ausschluss von Telefon, E-Mail, Notizen, Historien und internen IDs;
+- Ausschluss von Rezeptdatum, Kundenpflegehinweis, interner Behandlungsdokumentation und sonstigen Rezept-/Behandlungsfeldern;
 - Umlaute und Sonderzeichen;
 - Beschädigung, unbekannte Version und ungültige Payload;
 - 26 Positionen sowie Transport-, Link- und QR-Übergröße;

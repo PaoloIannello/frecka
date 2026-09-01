@@ -3,7 +3,7 @@
 **Status:** implementiert<br>
 **App-Version:** 0.9.0<br>
 **Build:** COMM-001 / QR-002<br>
-**Stand:** 7. August 2026
+**Stand:** 1. September 2026; ergänzt um PODOLOGY-004, noch ohne Releasevorbereitung
 
 ## Zweck
 
@@ -32,6 +32,8 @@ Die beiden Projektionsfunktionen verändern ihre Eingabe nicht. Ihr Ergebnis und
 - `baseUrl`: nur für kontrollierte Tests oder eine ausdrücklich gesetzte App-Basis des internen Verwaltungslinks;
 - `linkedVoucher`: optionales bereits aufgelöstes Gutscheinobjekt für den sichtbaren Code eines Gutscheinverkaufsbelegs.
 - `resolveLogoAsset`: zentraler, lokaler BRANDING-002-Resolver für die im Snapshot gespeicherte Asset-ID.
+- `outputMode`: verbindlicher Ausgabekontext `customer`, `tax-advisor` oder `restricted`; ohne Angabe gilt die restriktive Variante.
+- `treatmentRecord`: nur im Kundenmodus optionaler, bereits zentral aufgelöster historischer Behandlungsdatensatz mit exakter Beleg-ID und Belegnummer.
 
 BRANDING-002 löst Bilddaten ausschließlich für das flüchtige Dokumentmodell auf. Der Geschäftsvorgang enthält nur die historische `assetId` samt neutralen Metadaten. Der Resolver liest das validierte, unveränderliche PNG-/JPEG-Asset aus `settings.logoAssets`; die Data-URL wird weder in Beleg noch Gutschein zurückgeschrieben. Fehlt das Asset oder ist es beschädigt, bleibt die historische Dokumentidentität erhalten und die Ausgabe verwendet den textbasierten Logo-Fallback.
 
@@ -49,9 +51,11 @@ Das Belegmodell übernimmt ausschließlich gespeicherte Geschäftswerte und Snap
 - gespeicherte Belegtexte;
 - QR-Link, QR-Matrix und SVG aus dem zentralen QR-Service.
 
+Nur ein normaler Beleg im ausdrücklichen Kundenmodus darf zusätzlich zwei kompakte Angaben tragen: `Rezept vom` aus dem unveränderlichen Rezeptzuordnungs-Snapshot und `Pflegehinweis` aus dem exakt referenzierten historischen Behandlungsdatensatz. Die Engine liest dafür keine aktuellen Rezeptstammdaten und keine Vorlagen. Interne Dokumentation, Rezept-ID, Behandlungstext, Einheiten, Verbrauch und Status werden nie in das Dokumentmodell projiziert. Korrektur- und Gutscheinverkaufsbelege erhalten diese Angaben in keinem Modus.
+
 Ein normaler Beleg enthält bewusst keinen Leistungserbringungsort. Die Engine führt keine Steuer-, Rabatt- oder Gutscheinberechnung durch. Sie normalisiert nur bereits vorhandene Cent- beziehungsweise Dezimalfelder in das Ausgabeformat.
 
-Das PDF verwendet eine schmale 80-mm-Belegbreite. Lange Positionen werden umgebrochen; lange Belege erhalten Folgeseiten. Am Ende des letzten Blatts steht im Regelfall ein großer, zentrierter Vektor-QR-Code. Er nutzt die volle verfügbare Belegbreite von ungefähr 68,7 mm; darunter steht ausschließlich „Digitaler Beleg“.
+Das PDF verwendet eine schmale 80-mm-Belegbreite. Lange Positionen und Pflegehinweise werden verlustfrei umgebrochen; auch ein einzelnes überbreites Wort oder eine lange URL wird ohne Endlosschleife auf die verfügbare Breite verteilt. Lange Belege erhalten Folgeseiten. Am Ende des letzten Blatts steht im Regelfall ein großer, zentrierter Vektor-QR-Code. Er nutzt die volle verfügbare Belegbreite von ungefähr 68,7 mm; darunter steht ausschließlich „Digitaler Beleg“.
 
 ## Gutscheinmodell
 
@@ -103,6 +107,7 @@ Kundennamen sind nicht Bestandteil des Dateinamens oder der technischen PDF-Schl
 - Es gibt keinen Upload, Serveraufruf, CDN-Zugriff oder zentrale Ablage.
 - Die Engine verwendet kein `localStorage`, `sessionStorage` und keine eigene Persistenz.
 - Geschäftsdaten werden nur in das vom Nutzer ausdrücklich geöffnete PDF geschrieben.
+- Rezeptdatum und Pflegehinweis erscheinen ausschließlich im lokalen Kunden-HTML/PDF eines normalen Belegs. Steuerberater-, Public- und restriktive Modelle enthalten beide Felder nicht; interne Dokumentation wird in keinem Dokumentmodus ausgegeben.
 - Temporäre Blob-URLs werden nach der Anzeige wieder freigegeben.
 - PDF-Blob, `File`, Public-Link und Freigabeergebnis werden nicht dauerhaft gespeichert.
 
@@ -112,7 +117,7 @@ Fehlende stabile Referenzen, fehlende Unternehmerangaben, ungültige Gutscheinwe
 
 ## Prüfungen und offene Abnahme
 
-Automatisierte Browser-Smoke-Tests decken normale Belege, Kundenvarianten, Rabatte, mehrere Steuersätze, offene Zahlungen, Gutschein- und Restzahlung, Storno, Gutschrift, Gutscheinverkauf, Gutscheinstatus, Snapshots, öffentliche QR-Modelle, Datumsformat, echte PDF-Bytes, Blob-/File-Fallbacks und lange Belege ab.
+Automatisierte Browser-Smoke-Tests decken normale Belege, Kundenvarianten, Rabatte, mehrere Steuersätze, offene Zahlungen, Gutschein- und Restzahlung, Storno, Gutschrift, Gutscheinverkauf, Gutscheinstatus, Snapshots, öffentliche QR-Modelle, Datumsformat, echte PDF-Bytes, Blob-/File-Fallbacks und lange Belege ab. PODOLOGY-004 ergänzt Kunden-, Steuerberater- und restriktive Ausgabemodi, echte HTML-/PDF-Textprüfung, Korrekturbelege ohne medizinische Angaben, exakt 300 Zeichen, lange Einzelwörter/URLs, Umlaute und Unicode sowie mehrseitige 80-mm-PDFs.
 
 `tests/render-documents.mjs` projiziert die Testbelege zunächst mit DOCUMENT-001, erzeugt anschließend die Public-Bundles aus QR-002 und rendert genau diese Modelle als Beleg- und Gutschein-PDF. Damit prüft die visuelle QA die tatsächlichen öffentlichen Kunden-QRs statt lokaler Verwaltungslinks.
 

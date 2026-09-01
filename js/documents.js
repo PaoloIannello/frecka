@@ -8,6 +8,12 @@
   const QUIET_ZONE_MODULES = 4;
   const PDF_IMAGE_LOGO_TEXT_GAP = 14;
   const PDF_IMAGE_LOGO_HEIGHT_RESERVE = 64;
+  const RECEIPT_OUTPUT_MODES = Object.freeze({
+    restricted: "restricted",
+    customer: "customer",
+    taxAdvisor: "tax-advisor"
+  });
+  const CUSTOMER_CARE_ADVICE_MAX_LENGTH = 300;
 
   class DocumentError extends Error {
     constructor(code, userMessage, cause = null) {
@@ -214,6 +220,52 @@
     return [formatGermanDate(date || iso), formatGermanTime(time || iso)].filter(Boolean).join(" • ");
   }
 
+  function validSnapshotDate(value) {
+    const source = trimmed(value);
+    const match = source.match(/^(\d{4})-(\d{2})-(\d{2})$/u);
+    if (!match) return "";
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+      ? source
+      : "";
+  }
+
+  function receiptOutputMode(value) {
+    const mode = value == null ? RECEIPT_OUTPUT_MODES.restricted : value;
+    if (!Object.values(RECEIPT_OUTPUT_MODES).includes(mode)) {
+      throw new DocumentError("DOCUMENT_OUTPUT_MODE_INVALID", "Der Ausgabemodus für dieses Dokument ist ungültig.");
+    }
+    return mode;
+  }
+
+  function customerDocumentFields(receipt, number, kind, options) {
+    if (receiptOutputMode(options.outputMode) !== RECEIPT_OUTPUT_MODES.customer || kind.code !== "receipt") {
+      return { prescriptionDate: "", customerCareAdvice: "" };
+    }
+    const prescribedOn = validSnapshotDate(receipt.prescriptionAssignment?.prescribedOn);
+    const treatment = options.treatmentRecord;
+    if (treatment == null) {
+      return {
+        prescriptionDate: prescribedOn ? formatGermanDate(prescribedOn) : "",
+        customerCareAdvice: ""
+      };
+    }
+    if (!treatment || typeof treatment !== "object" || Array.isArray(treatment)
+      || trimmed(treatment.receiptId) !== trimmed(receipt.id)
+      || trimmed(treatment.receiptNumber) !== number
+      || typeof treatment.customerCareAdvice !== "string"
+      || treatment.customerCareAdvice.length > CUSTOMER_CARE_ADVICE_MAX_LENGTH) {
+      throw new DocumentError("DOCUMENT_TREATMENT_INVALID", "Der gespeicherte Pflegehinweis kann diesem Beleg nicht sicher zugeordnet werden.");
+    }
+    return {
+      prescriptionDate: prescribedOn ? formatGermanDate(prescribedOn) : "",
+      customerCareAdvice: treatment.customerCareAdvice.trim()
+    };
+  }
+
   function receiptKind(receipt) {
     if (receipt.receiptKind === "voucher-sale") return { code: "voucher-sale", label: "Gutscheinverkauf", title: "Verkaufsbeleg" };
     if (receipt.type === "credit" || receipt.receiptType === "credit") return { code: "credit", label: "Gutschrift", title: "Gutschrift" };
@@ -289,6 +341,7 @@
     }));
     const sourceTaxes = Array.isArray(receipt.taxBreakdown) ? receipt.taxBreakdown : Array.isArray(receipt.taxGroups) ? receipt.taxGroups : [];
     const kind = receiptKind(receipt);
+    const customerFields = customerDocumentFields(receipt, number, kind, options);
     const voucherPayment = receipt.voucherPayment && typeof receipt.voucherPayment === "object" ? {
       reference: trimmed(receipt.voucherPayment.reference),
       code: trimmed(receipt.voucherPayment.code),
@@ -317,6 +370,8 @@
       businessArea: clone(receipt.businessAreaSnapshot || receipt.contextSnapshot?.businessArea) || null,
       serviceLocation: null,
       customer: normalizeCustomer(receipt.customerSnapshot || receipt.customer),
+      prescriptionDate: customerFields.prescriptionDate,
+      customerCareAdvice: customerFields.customerCareAdvice,
       positions,
       totals: {
         subtotalCents: centsFrom(receipt.subtotalCents, receipt.originalTotal),
@@ -417,20 +472,31 @@
     const words = text.split(/\s+/u);
     const lines = [];
     let current = "";
+    const splitWord = word => {
+      const chunks = [];
+      let chunk = "";
+      Array.from(word).forEach(character => {
+        const candidate = `${chunk}${character}`;
+        if (!chunk || font.widthOfTextAtSize(candidate, size) <= maxWidth) {
+          chunk = candidate;
+          return;
+        }
+        chunks.push(chunk);
+        chunk = character;
+      });
+      if (chunk) chunks.push(chunk);
+      return chunks;
+    };
     words.forEach(word => {
       const candidate = current ? `${current} ${word}` : word;
-      if (!current || font.widthOfTextAtSize(candidate, size) <= maxWidth) {
+      if (font.widthOfTextAtSize(candidate, size) <= maxWidth) {
         current = candidate;
         return;
       }
-      lines.push(current);
-      current = word;
-      while (font.widthOfTextAtSize(current, size) > maxWidth && current.length > 1) {
-        let splitAt = current.length - 1;
-        while (splitAt > 1 && font.widthOfTextAtSize(`${current.slice(0, splitAt)}-`, size) > maxWidth) splitAt -= 1;
-        lines.push(`${current.slice(0, splitAt)}-`);
-        current = current.slice(splitAt);
-      }
+      if (current) lines.push(current);
+      const chunks = splitWord(word);
+      lines.push(...chunks.slice(0, -1));
+      current = chunks[chunks.length - 1] || "";
     });
     if (current) lines.push(current);
     return lines;
@@ -530,6 +596,8 @@
     let height = 32 + logoHeightReserve + 88;
     height += model.positions.reduce((sum, item) => sum + 30 + Math.max(0, wrapText(fonts.bold, item.title, 8.5, contentWidth - 62).length - 1) * 10, 0);
     if (model.customer) height += 45;
+    if (model.prescriptionDate) height += 20;
+    if (model.customerCareAdvice) height += 14 + wrapText(fonts.regular, `Pflegehinweis: ${model.customerCareAdvice}`, 7.5, contentWidth).length * 9;
     height += 65;
     if (model.taxes.length && model.kind.code !== "voucher-sale") height += 28 + model.taxes.length * 13;
     if (model.voucherPayment) height += 24;
@@ -664,6 +732,13 @@
       [model.customer.street, model.customer.cityLine].filter(Boolean).forEach(value => paragraph(value, { size: 7.5, color: colors.muted, gap: 9 }));
       y -= 5;
     }
+    if (model.prescriptionDate) {
+      paragraph(`Rezept vom: ${model.prescriptionDate}`, { font: fonts.bold, size: 7.5, gap: 9 });
+    }
+    if (model.customerCareAdvice) {
+      paragraph(`Pflegehinweis: ${model.customerCareAdvice}`, { size: 7.5, gap: 9 });
+      y -= 3;
+    }
     line("Zahlungsstatus", model.paymentStatusLabel, { bold: true });
     if (model.paymentStatus !== "open") line("Zahlungsart", model.paymentMethod, { bold: true });
     if (model.voucherPayment) {
@@ -791,12 +866,14 @@
 
   globalThis.FRECKA_DOCUMENTS = Object.freeze({
     DOCUMENT_VERSION,
+    RECEIPT_OUTPUT_MODES,
     DocumentError,
     createReceiptDocumentModel,
     createVoucherDocumentModel,
     createPdfBytes,
     createPdfBlob,
     fitLogoDimensions,
+    wrapText,
     formatGermanDateTime,
     formatMoney,
     safeFilenamePart

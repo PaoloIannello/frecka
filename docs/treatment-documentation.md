@@ -1,6 +1,6 @@
-# PODOLOGY-003 – Interne Behandlungsdokumentation
+# PODOLOGY-003/004 – Behandlungsdokumentation und Kundenausgabe
 
-Stand: 01.09.2026. PODOLOGY-003 ergänzt auf Basis von v0.11.6 ausschließlich die interne, beleggebundene Behandlungsdokumentation. Dieser Entwicklungsblock ist noch kein Release.
+Stand: 01.09.2026. PODOLOGY-003 ergänzt auf Basis von v0.11.6 die beleggebundene Behandlungsdokumentation. PODOLOGY-004 projiziert daraus genau den Kundenpflegehinweis und aus dem unveränderlichen Rezeptzuordnungs-Snapshot genau das Rezeptdatum in lokale Kundendokumente. Dieser Entwicklungsstand ist noch kein Release.
 
 ## Geltungsbereich
 
@@ -9,7 +9,7 @@ Die vorhandene Capability `settings.businessAreas[].features.prescriptionDocumen
 - interne Behandlungsdokumentation, höchstens 4000 Zeichen;
 - Kundenpflegehinweis, höchstens 300 Zeichen.
 
-Beide Felder werden getrimmt und niemals still gekürzt. Bleiben beide leer, entsteht kein Behandlungsdatensatz. Der Kundenpflegehinweis wird in diesem Block ausschließlich intern gespeichert; eine Ausgabe auf Beleg, PDF oder anderem Kundendokument folgt frühestens in PODOLOGY-004.
+Beide Felder werden getrimmt und niemals still gekürzt. Bleiben beide leer, entsteht kein Behandlungsdatensatz. Die interne Behandlungsdokumentation bleibt immer intern. Der Kundenpflegehinweis darf seit PODOLOGY-004 ausschließlich im lokalen HTML-/PDF-Kundendokument des exakt referenzierten normalen Ursprungsbelegs erscheinen.
 
 ## Datenmodell und Referenzen
 
@@ -27,7 +27,7 @@ Jeder unveränderliche Behandlungsdatensatz enthält:
 | `userId` | der beim Abschluss aktive Benutzer |
 | `performedAt`, `createdAt`, `updatedAt` | gültige ISO-Zeitpunkte; im read-only V1-Datensatz identisch und unveränderlich |
 | `internalDocumentation` | getrimmter interner Text, höchstens 4000 Zeichen |
-| `customerCareAdvice` | getrimmter interner Pflegehinweis, höchstens 300 Zeichen |
+| `customerCareAdvice` | getrimmter Pflegehinweis für das lokale Kundendokument, höchstens 300 Zeichen |
 | `customerSnapshot` | unveränderliche Kundenanzeige zum Abschlusszeitpunkt |
 | `businessAreaSnapshot` | unveränderliche Bereichsanzeige zum Abschlusszeitpunkt |
 | `userSnapshot` | unveränderliche Benutzeranzeige zum Abschlusszeitpunkt |
@@ -59,13 +59,16 @@ Snapshot, Integritätsdiagnose, verschlüsseltes Vollbackup und Restore umfassen
 
 ## Datenschutz- und Ausgabegrenze
 
-Behandlungsdatensätze, interne Dokumentation, Kundenpflegehinweise und Vorlagen sind ausschließlich in lokaler IndexedDB und im verschlüsselten Vollbackup enthalten. Sie werden nicht in folgende Ausgaben projiziert:
+Behandlungsdatensätze, interne Dokumentation, Kundenpflegehinweise und Vorlagen werden ausschließlich in lokaler IndexedDB und im verschlüsselten Vollbackup dauerhaft gespeichert. PODOLOGY-004 erlaubt nur eine eng begrenzte Laufzeitprojektion: Das lokale Kundendokument eines normalen Belegs erhält den Pflegehinweis aus dem exakt über `receiptId` und `receiptNumber` zugeordneten historischen Behandlungsdatensatz. Die interne Dokumentation wird niemals projiziert. Storno, Gutschrift und Gutscheinverkaufsbeleg erhalten auch lokal weder Rezeptdatum noch Pflegehinweis.
+
+Nicht ausgegeben werden medizinische Inhalte weiterhin in:
 
 - „Eigene Daten“ und Kunden-CSV;
-- Steuerberater-CSV, ZIP und Beleg-PDFs;
-- Beleg- und Gutscheindokumentmodelle;
-- QR, Public Viewer und Share-Payloads;
-- Integritätsdiagnosen, technische Logs und Fehlermeldungen.
+- Steuerberater-CSV, ZIP und Steuerberater-Beleg-PDFs;
+- QR, Public-Payload und zustandslosem Public Viewer;
+- Integritätsdiagnosen, technischen Logs und Fehlermeldungen.
+
+Die zentrale Dokumentenengine erzwingt dafür die Modi `customer`, `tax-advisor` und `restricted`. Ohne ausdrücklichen Kundenmodus bleibt die Projektion restriktiv. Das Rezeptdatum stammt ausschließlich aus dem unveränderlichen `prescriptionAssignment`-Snapshot des Belegs; aktuelle Rezeptstammdaten oder heutige Vorlagen werden für historische Dokumente nicht erneut gelesen.
 
 Es gibt keinen Serverupload und keine zusätzliche lokale Verschlüsselung der IndexedDB. Der vorhandene Geräteschutz bleibt die Schutzgrenze. PODOLOGY-003 führt keine Diagnose-, Therapie-, Abrechnungs- oder Medizinexportlogik ein.
 
@@ -73,6 +76,6 @@ Es gibt keinen Serverupload und keine zusätzliche lokale Verschlüsselung der I
 
 Automatisierte Browserfälle decken Schema 7→8, unveränderte Altstores, atomaren Abschluss mit und ohne Rezept, Gutscheinzahlung, Fehler/Rollback, Idempotenz, Vorlagen, Kundenverlauf, Backup/Restore und die Ausgabeisolation ab. Die echte App-Oberfläche wird in isolierten Testdatenbanken bei 320, 390 und 411 Pixeln geprüft; die produktive Datenbank und reale Geschäftsdaten werden nicht verwendet.
 
-Lokales Ergebnis am 01.09.2026: **244/244 Browserprüfungen bestanden**, Testdatenbank-Cleanup bestanden und keine Konsolen-, Ressourcen- oder Laufzeitfehler. Die eingebettete echte App-Oberfläche blieb bei 320, 390 und 411 Pixeln ohne horizontalen Überlauf. JavaScript- und Shell-Syntax, Manifest, Vendor-Prüfsummen, PWA-Update, Service Worker/Offline-Fallback, Sharing (17 Fälle), QR-Messung (6 Profile), Dokument/PDF, Deployment-Smoke, Release-Automation-Smoke und `git diff --check` bestanden. Deployment- und Release-Smokes verwendeten ausschließlich temporäre lokale Fixtures ohne Netzwerktransfer.
+Lokales Ergebnis am 01.09.2026: **249/249 Browserprüfungen bestanden**, Testdatenbank-Cleanup bestanden und keine Konsolen-, Ressourcen- oder Laufzeitfehler. Die eingebettete echte App-Oberfläche und die Kundendokumente blieben bei 320, 360, 390 und 411 Pixeln ohne horizontalen Überlauf. Zusätzlich geprüft sind die echten HTML-/PDF-Ausgaben mit und ohne Rezept/Pflegehinweis, exakt 300 Zeichen, lange Einzelwörter und URLs, mehrseitige 80-mm-PDFs, Korrekturbelege, Public-Viewer-Whitelist, Steuerberater-ZIP, Backup/Restore und unveränderliche historische Snapshots.
 
-Vor einer Beta-Veröffentlichung bleiben Versions-/Cachevorbereitung sowie ein realer iPhone-/Android-In-place-Test mit vorheriger verschlüsselter Sicherung erforderlich. PODOLOGY-004 muss fachlich entscheiden und gesondert umsetzen, ob und wie ein Kundenpflegehinweis auf einem Kundendokument ausgegeben wird. PODOLOGY-003 nimmt diese Entscheidung nicht vor.
+Vor einer Beta-Veröffentlichung bleiben Versions-/Cachevorbereitung sowie ein realer iPhone-/Android-In-place-Test mit vorheriger verschlüsselter Sicherung erforderlich. Auf beiden Geräteklassen müssen Belegansicht, PDF, Teilen/Speichern, lange Pflegehinweise und die fortbestehende Public-/Steuerberater-Isolation real bestätigt werden.

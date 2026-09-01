@@ -1,6 +1,6 @@
 # FRECKA – 0.11.6 / ANDROID-002
 
-**Arbeitsstand nach v0.11.6: PODOLOGY-003.** Die optionale Rezeptverwaltung und der aus Belegen abgeleitete Verbrauch bleiben unverändert. Schema 8 ergänzt eine interne Behandlungsdokumentation, die ausschließlich atomar zusammen mit einem erfolgreich abgeschlossenen normalen Beleg entsteht. Kundenpflegehinweise werden gespeichert, aber noch nicht auf Belegen oder PDFs ausgegeben. Produktversion, Build und App-Shell bleiben bis zur gesonderten Releasevorbereitung unverändert. [Rezeptverwaltung](docs/prescriptions.md) · [Behandlungsdokumentation und Datenschutz](docs/treatment-documentation.md).
+**Arbeitsstand nach v0.11.6: PODOLOGY-004.** Die optionale Rezeptverwaltung, der aus Belegen abgeleitete Verbrauch und Schema 8 bleiben unverändert. Lokale Kundendokumente normaler Belege zeigen nun kompakt das historische Rezeptdatum und den beleggebundenen Kundenpflegehinweis. Interne Behandlungsdokumentation bleibt immer intern; Public Viewer, QR-Payload, Steuerberaterausgabe und reguläre Datenexporte bleiben frei von diesen Angaben. Produktversion, Build und App-Shell bleiben bis zur gesonderten Releasevorbereitung unverändert. [Rezeptverwaltung](docs/prescriptions.md) · [Behandlungsdokumentation und Datenschutz](docs/treatment-documentation.md).
 
 Browserbasierte FRECKA-PWA 0.11.6 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der Build ANDROID-002 bündelt ausschließlich die seit 0.11.5 abgeschlossenen Kompatibilitätsblöcke ANDROID-001, IOS-NAV-001 und ANDROID-002 sowie die notwendigen Versions-, Cache-, Test- und Releaseanpassungen.
 
@@ -13,6 +13,15 @@ Ein vollständig neuer Mandant startet ohne Kunden, Katalogpositionen, Belege, o
 UX-011 / UPDATE-002 / BACKUP-003/004 ergänzt darauf eine reale Seite **Einstellungen → Update**, bereinigt veraltete „Geplant“-Kennzeichnungen und erinnert nach einem wählbaren Intervall ohne bestätigte Sicherungsdatei nicht blockierend an ein neues lokales Backup. Zur Auswahl stehen 48 Stunden, 5 Tage und wöchentlich; wöchentlich ist der abwärtskompatible Standard. Die manuelle Suche verwendet den vorhandenen Updatecontroller; Restore übernimmt die Intervallwahl, gilt aber niemals als neue Sicherung und bewahrt lokale Frist- und Snooze-Zeitpunkte.
 
 ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzeit aufrufbare Installationshilfe für iPhone/iPad und Android. Sie priorisiert die passende Anleitung ausschließlich anhand lokaler Browsermerkmale, zeigt im Standalone-Modus den bereits installierten Zustand und bleibt vollständig offline verfügbar. Beide Plattformen können immer manuell gewählt werden. Der kompakte Ablauf und die abweichenden Android-Bezeichnungen sind in [`docs/installation.md`](docs/installation.md) dokumentiert.
+
+## Neu in PODOLOGY-004
+
+- genau eine zentrale Dokumentenprojektion mit den Ausgabemodi `customer`, `tax-advisor` und `restricted`; ohne ausdrücklichen Kundenmodus gilt die restriktive Ausgabe
+- lokaler normaler Kundenbeleg mit deutschem Rezeptdatum aus dem unveränderlichen Belegsnapshot und Kundenpflegehinweis aus dem exakt referenzierten historischen Behandlungsdatensatz
+- keine Ausgabe auf Storno, Gutschrift oder Gutscheinverkaufsbeleg; keine interne Dokumentation, Rezept-ID, Behandlung, Einheiten, Verbrauchs- oder Statusdaten im Kundendokument
+- unveränderte `FPD/v1`-Whitelist: Public Viewer, QR-Payload, Steuerberater-PDF/ZIP, CSV/TXT, Diagnose und Logs bleiben frei von Rezeptdatum und Pflegehinweis
+- verlustfreier 80-mm-PDF-Umbruch auch für exakt 300 Zeichen, lange Einzelwörter, URLs, Umlaute und Unicode
+- keine Schema-, Persistenz-, Backupformat-, Versions-, Cache- oder Abhängigkeitsänderung; 249/249 native Browserprüfungen bestanden
 
 ## Neu in 0.11.6
 

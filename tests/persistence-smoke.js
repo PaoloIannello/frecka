@@ -876,6 +876,27 @@
     return new TextDecoder("ascii").decode(bytes.slice(0, 8));
   }
 
+  function visiblePdfText(pdf) {
+    const hexText = [];
+    pdf.getPages().forEach(page => {
+      const contents = page.node.Contents();
+      const references = contents?.asArray ? contents.asArray() : contents ? [contents] : [];
+      references.forEach(reference => {
+        const stream = pdf.context.lookup(reference);
+        const decoded = globalThis.PDFLib.decodePDFRawStream(stream).decode();
+        const source = new TextDecoder("latin1").decode(decoded);
+        source.matchAll(/<([0-9A-Fa-f]+)>\s*Tj/gu).forEach(match => {
+          let text = "";
+          for (let index = 0; index < match[1].length; index += 2) {
+            text += String.fromCharCode(Number.parseInt(match[1].slice(index, index + 2), 16));
+          }
+          hexText.push(text);
+        });
+      });
+    });
+    return hexText.join(" ");
+  }
+
   function resultMarkup(name, passed, error = null) {
     const item = document.createElement("li");
     item.className = `result ${passed ? "is-pass" : "is-fail"}`;
@@ -1809,7 +1830,18 @@
             assertEqual(receipts.receipts[0].prescriptionAssignment?.prescriptionId, "prescription-one", "UI-Zuordnung fehlt im Beleg");
             let treatmentRecords = await client.readTreatmentRecords();
             assertEqual(treatmentRecords.treatmentRecords.length, 1, "UI-Abschluss erzeugte keine Behandlungsdokumentation");
-            click('[data-action="new-after-finish"]');
+            click('[data-route="receipts"]');
+            await waitFor(() => doc().querySelector(`[data-open-receipt="${receipts.receipts[0].number}"]`));
+            click(`[data-open-receipt="${receipts.receipts[0].number}"]`);
+            await waitFor(() => doc().querySelector(`[data-preview-receipt="${receipts.receipts[0].number}"]`));
+            click(`[data-preview-receipt="${receipts.receipts[0].number}"]`);
+            await waitFor(() => doc().querySelector(".receipt-paper-customer-supplements"));
+            const customerDocument = doc().querySelector(".receipt-paper").textContent;
+            assert(customerDocument.includes("Rezept vom:") && customerDocument.includes("31.08.2026"), "App-Belegvorschau enthält das historische Rezeptdatum nicht");
+            assert(customerDocument.includes("Pflegehinweis:") && customerDocument.includes("PRIVATE-UI-CARE"), "App-Belegvorschau enthält den Pflegehinweis nicht");
+            assert(!customerDocument.includes("PRIVATE-TEMPLATE-INTERNAL-ÄÖÜ"), "App-Belegvorschau enthält interne Behandlungsdokumentation");
+            noOverflow();
+            frame.contentWindow.location.hash = "#/catalog";
             await prepareCheckout();
             click('[data-apply-treatment-template="treatment-template-internal"]');
             const careField = doc().querySelector("#checkoutCustomerCareAdvice");
@@ -2158,6 +2190,278 @@
         const duplicate = clone(valid);
         duplicate.stores.treatmentRecords.treatmentRecords.push({ ...clone(duplicate.stores.treatmentRecords.treatmentRecords[0]), id: "treatment-duplicate" });
         assertThrows(() => api.validateTenantSnapshot(duplicate, client.tenantId), "TREATMENT_RECORD_DUPLICATE", "Doppelte Belegreferenz");
+      } },
+      { name: "PODOLOGY-004: Kundendokumentprojektion gibt ausschließlich historisches Rezeptdatum und Pflegehinweis frei", run: async () => {
+        const receipt = receiptDocumentFixture({
+          id: "receipt-podology-document",
+          number: "2030-000151",
+          prescriptionAssignment: {
+            formatVersion: 1,
+            prescriptionId: "prescription-document-private",
+            prescribedOn: "2026-08-31",
+            treatmentText: "PRIVATE-PRESCRIPTION-TEXT",
+            units: 1,
+            prescribedUnits: 3,
+            overrunConfirmed: false
+          }
+        });
+        const treatment = {
+          receiptId: receipt.id,
+          receiptNumber: receipt.number,
+          customerCareAdvice: "Zweimal wöchentlich Fußbad und Zehenzwischenräume trocken halten.",
+          internalDocumentation: "PRIVATE-INTERNAL-DOCUMENTATION"
+        };
+        const customerModel = documentApi.createReceiptDocumentModel(receipt, {
+          ...documentOptions(), outputMode: "customer", treatmentRecord: treatment
+        });
+        assertEqual(customerModel.prescriptionDate, "31.08.2026", "Historisches Rezeptdatum fehlt oder ist nicht deutsch formatiert");
+        assertEqual(customerModel.customerCareAdvice, treatment.customerCareAdvice, "Historischer Pflegehinweis fehlt");
+        const customerJson = JSON.stringify(customerModel);
+        ["PRIVATE-INTERNAL-DOCUMENTATION", "PRIVATE-PRESCRIPTION-TEXT", "prescription-document-private", "prescribedUnits", "overrunConfirmed"].forEach(secret => {
+          assert(!customerJson.includes(secret), `Nicht freigegebenes Rezept-/Behandlungsfeld gelangte ins Kundendokument: ${secret}`);
+        });
+        const markup = documentViewApi.renderReceipt(customerModel, { interactiveQr: false });
+        assert(markup.includes("Rezept vom:") && markup.includes("31.08.2026"), "Rezeptdatum fehlt in der internen Belegansicht");
+        assert(markup.includes("Pflegehinweis:") && markup.includes("Zweimal wöchentlich"), "Pflegehinweis fehlt in der internen Belegansicht");
+        assert(!markup.includes("PRIVATE-"), "Interne Dokumentation gelangte in die interne Kundenbelegansicht");
+
+        const pdf = await globalThis.PDFLib.PDFDocument.load(await documentApi.createPdfBytes(customerModel));
+        const pdfText = visiblePdfText(pdf);
+        assert(pdfText.includes("Rezept vom: 31.08.2026"), "Rezeptdatum fehlt im tatsächlich erzeugten Kunden-PDF");
+        assert(pdfText.includes("Pflegehinweis:"), "Pflegehinweis fehlt im tatsächlich erzeugten Kunden-PDF");
+        assert(!pdfText.includes("PRIVATE-INTERNAL") && !pdfText.includes("PRIVATE-PRESCRIPTION"), "Internes Feld gelangte ins Kunden-PDF");
+
+        const careOnlyReceipt = receiptDocumentFixture({ id: "receipt-care-only", number: "2030-000152" });
+        const careOnly = documentApi.createReceiptDocumentModel(careOnlyReceipt, {
+          ...documentOptions(), outputMode: "customer",
+          treatmentRecord: { receiptId: careOnlyReceipt.id, receiptNumber: careOnlyReceipt.number, customerCareAdvice: "Nur Pflegehinweis", internalDocumentation: "PRIVATE-ONLY" }
+        });
+        assertEqual(careOnly.prescriptionDate, "", "Beleg ohne Rezept erhielt ein Rezeptdatum");
+        assertEqual(careOnly.customerCareAdvice, "Nur Pflegehinweis", "Pflegehinweis ohne Rezept wurde unterdrückt");
+
+        const internalOnly = documentApi.createReceiptDocumentModel(careOnlyReceipt, {
+          ...documentOptions(), outputMode: "customer",
+          treatmentRecord: { receiptId: careOnlyReceipt.id, receiptNumber: careOnlyReceipt.number, customerCareAdvice: "", internalDocumentation: "PRIVATE-ONLY" }
+        });
+        assertEqual(internalOnly.customerCareAdvice, "", "Nur interne Dokumentation erzeugte eine Kundenausgabe");
+
+        const restricted = documentApi.createReceiptDocumentModel(receipt, { ...documentOptions(), outputMode: "restricted", treatmentRecord: treatment });
+        const taxAdvisor = documentApi.createReceiptDocumentModel(receipt, { ...documentOptions(), outputMode: "tax-advisor", treatmentRecord: treatment });
+        for (const model of [restricted, taxAdvisor]) {
+          assertEqual(model.prescriptionDate, "", "Eingeschränkter Dokumentmodus enthält ein Rezeptdatum");
+          assertEqual(model.customerCareAdvice, "", "Eingeschränkter Dokumentmodus enthält einen Pflegehinweis");
+        }
+
+        const correction = documentApi.createReceiptDocumentModel({ ...receipt, id: "credit-podology-document", number: "GS-2030-000151", type: "credit" }, {
+          ...documentOptions(), outputMode: "customer",
+          treatmentRecord: { ...treatment, receiptId: "credit-podology-document", receiptNumber: "GS-2030-000151" }
+        });
+        assertEqual(correction.prescriptionDate, "", "Gutschrift wiederholt das Rezeptdatum");
+        assertEqual(correction.customerCareAdvice, "", "Gutschrift wiederholt den Pflegehinweis");
+
+        const brokenDate = documentApi.createReceiptDocumentModel({ ...receipt, prescriptionAssignment: { ...receipt.prescriptionAssignment, prescribedOn: "2026-02-31" } }, {
+          ...documentOptions(), outputMode: "customer", treatmentRecord: treatment
+        });
+        assertEqual(brokenDate.prescriptionDate, "", "Ungültiges Snapshotdatum wurde erfunden oder ausgegeben");
+        assertThrows(() => documentApi.createReceiptDocumentModel(receipt, { ...documentOptions(), outputMode: "public" }), "DOCUMENT_OUTPUT_MODE_INVALID", "Unbekannter Dokumentmodus");
+        assertThrows(() => documentApi.createReceiptDocumentModel(receipt, {
+          ...documentOptions(), outputMode: "customer", treatmentRecord: { ...treatment, receiptId: "wrong-receipt" }
+        }), "DOCUMENT_TREATMENT_INVALID", "Falsch zugeordneter Pflegehinweis");
+      } },
+      { name: "PODOLOGY-004: Zentraler PDF-Textumbruch zerlegt auch das erste überlange Einzelwort verlustfrei", run: async () => {
+        const font = {
+          encodeText() { return {}; },
+          widthOfTextAtSize(value, size) { return Array.from(value).length * size; }
+        };
+        const cases = [
+          "Kurzer Pflegehinweis mit mehreren Sätzen. Alles bleibt lesbar.",
+          "x".repeat(300),
+          "SehrLangesErstesEinzelwortOhneTrennmoeglichkeitUndOhneLeerzeichen",
+          "https://beispiel.invalid/pflege/hinweis?abschnitt=sehr-langer-wert",
+          "Hornhaut-Pflege-Zehenzwischenräume-trocken-halten",
+          "ÄÖÜ äöü ß Fußpflege Übergröße",
+          "Zehenpflege 👣 Unicode bleibt deterministisch",
+          "Erster Satz. Zweiter kurzer Satz. Dritter kurzer Satz."
+        ];
+        cases.forEach((source, index) => {
+          const lines = documentApi.wrapText(font, source, 1, 20);
+          assert(lines.length > 0, `Textfall ${index + 1} erzeugte keine Zeile`);
+          assert(lines.every(line => font.widthOfTextAtSize(line, 1) <= 20), `Textfall ${index + 1} überschreitet die PDF-Breite`);
+          assertEqual(lines.join("").replace(/\s/gu, ""), source.replace(/\s/gu, ""), `Textfall ${index + 1} wurde gekürzt oder verändert`);
+        });
+        assert(documentApi.wrapText(font, cases[2], 1, 20).length > 1, "Überlanges erstes Einzelwort wurde nicht umgebrochen");
+      } },
+      { name: "PODOLOGY-004: 300-Zeichen-Pflegehinweis bleibt in HTML und mehrseitigem 80-mm-PDF vollständig", run: async () => {
+        const customerCareAdvice = `START ${"x".repeat(289)} ENDE`;
+        assertEqual(customerCareAdvice.length, 300, "Layoutfixture besitzt nicht exakt 300 Zeichen");
+        const items = Array.from({ length: 35 }, (_, index) => ({
+          id: `podology-layout-${index}`,
+          title: `Ausführliche Fußpflege mit Umlaut ÄÖÜ Nummer ${index + 1}`,
+          type: "service",
+          quantity: 1,
+          originalUnitPrice: 10,
+          unitPrice: 10,
+          total: 10,
+          netTotal: 8.4,
+          taxAmount: 1.6,
+          taxRate: 19
+        }));
+        const receipt = receiptDocumentFixture({
+          id: "receipt-podology-layout",
+          number: "2030-000153",
+          customerSnapshot: {
+            id: "customer-anna",
+            name: "Anna Maria Mustermann mit einem ungewöhnlich langen Kundennamen",
+            street: "Sehr lange Beispielstraße 123",
+            zip: "93047",
+            city: "Regensburg"
+          },
+          brandingSnapshot: { logoMode: "custom", visibleName: "Podologie Änne", logo: { assetId: "business-logo-hair", source: "business-area", label: "Bereichslogo" } },
+          prescriptionAssignment: { prescriptionId: "prescription-layout", prescribedOn: "2026-08-31" },
+          items,
+          originalTotal: 350,
+          netTotal: 294,
+          taxTotal: 56,
+          total: 350,
+          taxGroups: [{ rate: 19, net: 294, tax: 56, gross: 350 }]
+        });
+        const model = documentApi.createReceiptDocumentModel(receipt, {
+          ...documentOptions(), outputMode: "customer",
+          treatmentRecord: { receiptId: receipt.id, receiptNumber: receipt.number, customerCareAdvice, internalDocumentation: "LAYOUT-INTERNAL-SECRET" }
+        });
+        const markup = documentViewApi.renderReceipt(model, { interactiveQr: false });
+        assert(markup.includes(customerCareAdvice), "HTML kürzt den 300-Zeichen-Pflegehinweis");
+        assert(!markup.includes("LAYOUT-INTERNAL-SECRET"), "HTML enthält interne Dokumentation");
+
+        const measure = width => new Promise((resolve, reject) => {
+          const frame = document.createElement("iframe");
+          const timeout = window.setTimeout(() => { frame.remove(); reject(new Error(`PODOLOGY-004-Layout ${width}px Timeout`)); }, 8000);
+          frame.title = `PODOLOGY-004 Kundendokument ${width} Pixel`;
+          frame.style.cssText = `position:fixed;left:-2000px;top:0;width:${width}px;height:900px;border:0`;
+          frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="../styles.css"><style>body{margin:0;padding:8px;background:#eef3f1}</style></head><body>${markup}</body></html>`;
+          frame.addEventListener("load", () => window.requestAnimationFrame(() => {
+            try {
+              const root = frame.contentDocument.documentElement;
+              const supplement = frame.contentDocument.querySelector(".receipt-paper-customer-supplements");
+              const result = {
+                viewportWidth: frame.contentWindow.innerWidth,
+                scrollWidth: root.scrollWidth,
+                clientWidth: root.clientWidth,
+                overflowWrap: frame.contentWindow.getComputedStyle(supplement).overflowWrap,
+                text: supplement.textContent
+              };
+              window.clearTimeout(timeout);
+              frame.remove();
+              resolve(result);
+            } catch (error) {
+              window.clearTimeout(timeout);
+              frame.remove();
+              reject(error);
+            }
+          }), { once: true });
+          document.body.append(frame);
+        });
+        for (const width of [320, 360, 390, 411]) {
+          const layout = await measure(width);
+          assertEqual(layout.viewportWidth, width, `Falscher Dokumentviewport bei ${width} px`);
+          assert(layout.scrollWidth <= layout.clientWidth, `Kundendokument läuft bei ${width} px horizontal über`);
+          assertEqual(layout.overflowWrap, "anywhere", `Pflegehinweis wird bei ${width} px nicht robust umgebrochen`);
+          assert(layout.text.includes("START") && layout.text.includes("ENDE"), `Pflegehinweis ist bei ${width} px unvollständig`);
+        }
+
+        const pdf = await globalThis.PDFLib.PDFDocument.load(await documentApi.createPdfBytes(model));
+        assert(pdf.getPageCount() > 1, "Langer 80-mm-Kundenbeleg wurde nicht sauber umgebrochen");
+        pdf.getPages().forEach(page => assert(Math.abs(page.getWidth() - 226.77) < 0.02, "PDF-Seite besitzt nicht 80-mm-Breite"));
+        const text = visiblePdfText(pdf);
+        assert(text.includes("Rezept vom: 31.08.2026"), "Mehrseitiges PDF verlor das Rezeptdatum");
+        assert(text.includes("Pflegehinweis: START") && text.includes("ENDE"), "Mehrseitiges PDF verlor den Pflegehinweis");
+        assert(text.includes("Digitaler Beleg"), "Mehrseitiges PDF verlor den QR-Abschluss");
+        assert(!text.includes("LAYOUT-INTERNAL-SECRET"), "Mehrseitiges PDF enthält interne Dokumentation");
+      } },
+      { name: "PODOLOGY-004: Public-Projektion und Steuerberater-PDF bleiben medizinisch restriktiv", run: async () => {
+        const client = context.makeClient("podology-document-privacy");
+        await client.restoreTenantSnapshot(treatmentSnapshot(client.tenantId, { prescriptions: [prescriptionFixture(client.tenantId)] }));
+        const prescription = (await client.readPrescriptions()).prescriptions[0];
+        const committed = await commitTreatment(client, "podology-document-private-receipt", {
+          internalDocumentation: "PODOLOGY004-INTERNAL-MARKER",
+          customerCareAdvice: "PODOLOGY004-CARE-MARKER"
+        }, prescription);
+        const exportedSnapshot = await client.exportTenantSnapshot();
+        const receipt = committed.receipt;
+        const customerModel = documentApi.createReceiptDocumentModel(receipt, {
+          ...documentOptions(), outputMode: "customer", treatmentRecord: committed.treatmentRecord
+        });
+        const publicProjection = JSON.stringify(publicDocumentApi.projectDocument(customerModel));
+        const publicBundle = await publicDocumentApi.createPublicBundle(customerModel, { baseUrl: "https://app.example.invalid/", qrService: qrApi });
+        const publicDecoded = JSON.stringify(await publicDocumentApi.decodePublicLink(publicBundle.link, { qrService: qrApi }));
+        ["31.08.2026", "PODOLOGY004-CARE-MARKER", "PODOLOGY004-INTERNAL-MARKER", "prescription-one", "prescriptionDate", "customerCareAdvice"].forEach(secret => {
+          assert(!publicProjection.includes(secret), `Public-Projektion enthält medizinischen Marker: ${secret}`);
+          assert(!publicDecoded.includes(secret), `Public-Link/Public Viewer enthält medizinischen Marker: ${secret}`);
+          assert(!publicBundle.link.includes(secret), `QR-Link enthält medizinischen Klartext: ${secret}`);
+        });
+
+        const packageResult = await exportPackageApi.createTaxAdvisorPackage(exportedSnapshot, {
+          periodType: "custom", dateFrom: "2030-01-01", dateTo: "2030-01-31", businessAreaId: "all",
+          generatedAt: "2030-02-01T12:34:00.000Z"
+        });
+        const archive = await globalThis.JSZip.loadAsync(await packageResult.packageFile.content.arrayBuffer(), { checkCRC32: true });
+        for (const [path, file] of Object.entries(archive.files)) {
+          if (file.dir) continue;
+          const bytes = await file.async("uint8array");
+          if (path.endsWith(".pdf")) {
+            const text = visiblePdfText(await globalThis.PDFLib.PDFDocument.load(bytes));
+            assert(!text.includes("Rezept vom:") && !text.includes("Pflegehinweis:"), `Steuerberater-PDF ${path} enthält medizinische Zusatzfelder`);
+          } else {
+            const text = new TextDecoder().decode(bytes);
+            ["PODOLOGY004-CARE-MARKER", "PODOLOGY004-INTERNAL-MARKER", "31.08.2026"].forEach(secret => {
+              assert(!text.includes(secret), `Steuerberaterdatei ${path} enthält medizinischen Marker: ${secret}`);
+            });
+          }
+        }
+        for (const exportType of ["own-data", "tax-advisor"]) {
+          const exported = exportApi.createExportFiles(exportedSnapshot, {
+            exportType, includeCustomers: true, periodType: "custom", dateFrom: "2030-01-01", dateTo: "2030-01-31", businessAreaId: "all"
+          });
+          const serialized = JSON.stringify(exported);
+          assert(!serialized.includes("PODOLOGY004-CARE-MARKER") && !serialized.includes("PODOLOGY004-INTERNAL-MARKER"), `${exportType} enthält Behandlungsmarker`);
+        }
+        assert(!JSON.stringify(api.diagnoseTenantSnapshot(exportedSnapshot, client.tenantId)).includes("PODOLOGY004-"), "Diagnose enthält Behandlungsmarker");
+      } },
+      { name: "PODOLOGY-004: Backup/Restore rekonstruiert dasselbe historische Kundendokument ohne Liveauflösung", run: async () => {
+        const client = context.makeClient("podology-document-restore");
+        await client.restoreTenantSnapshot(treatmentSnapshot(client.tenantId, {
+          prescriptions: [prescriptionFixture(client.tenantId)],
+          templates: [treatmentTemplateFixture({ id: "care-restore", purpose: "customer-care", title: "Pflege", text: "Ursprüngliche Vorlage" })]
+        }));
+        const prescription = (await client.readPrescriptions()).prescriptions[0];
+        const committed = await commitTreatment(client, "podology-document-restore-receipt", {
+          internalDocumentation: "RESTORE-INTERNAL-MARKER",
+          customerCareAdvice: "Historischer Pflegehinweis nach Restore"
+        }, prescription);
+        const beforeModel = documentApi.createReceiptDocumentModel(committed.receipt, {
+          ...documentOptions(), outputMode: "customer", treatmentRecord: committed.treatmentRecord
+        });
+        const encrypted = await backupApi.encryptTenantSnapshot(await client.exportTenantSnapshot(), "Sicherer PODOLOGY-004 Restore Testsatz");
+        const restoredSnapshot = await backupApi.decryptTenantSnapshot(encrypted, "Sicherer PODOLOGY-004 Restore Testsatz");
+        await client.restoreTenantSnapshot(restoredSnapshot);
+        const storedPrescription = (await client.readPrescriptions()).prescriptions[0];
+        await client.savePrescription({ ...storedPrescription, active: false }, storedPrescription.updatedAt);
+        const settings = await client.readSettings();
+        settings.treatmentTemplates[0].text = "SPÄTERE-VORLAGE";
+        settings.treatmentTemplates[0].updatedAt = "2031-01-01T10:00:00.000Z";
+        settings.businessAreas[0].active = false;
+        await client.writeSettings(settings);
+        const customers = await client.readCustomers();
+        customers.customers[0].active = false;
+        await client.writeCustomers(customers);
+        const restoredReceipt = (await client.readReceipts()).receipts.find(entry => entry.id === committed.receipt.id);
+        const restoredTreatment = (await client.readTreatmentRecords()).treatmentRecords.find(entry => entry.receiptId === committed.receipt.id);
+        const afterModel = documentApi.createReceiptDocumentModel(restoredReceipt, {
+          ...documentOptions(), outputMode: "customer", treatmentRecord: restoredTreatment
+        });
+        assertEqual(afterModel.prescriptionDate, beforeModel.prescriptionDate, "Restore/Archivierung änderte das historische Rezeptdatum");
+        assertEqual(afterModel.customerCareAdvice, beforeModel.customerCareAdvice, "Restore/Vorlagenänderung änderte den historischen Pflegehinweis");
+        assert(!JSON.stringify(afterModel).includes("RESTORE-INTERNAL-MARKER"), "Interne Dokumentation gelangte nach Restore ins Kundendokument");
       } },
       { name: "PODOLOGY-003: Diagnose, Steuer-/Eigene-Daten-Export, ZIP, PDF und Public Viewer geben keine Behandlungsdaten aus", run: async () => {
         const client = context.makeClient("treatment-privacy");

@@ -777,6 +777,21 @@ body.work-mode:not(.catalog-mode) .flow-page {
   padding: 13px 0;
   border-top: 1px dashed #9ba8a4;
 }
+.receipt-paper-customer-supplements {
+  display: grid;
+  gap: 5px;
+  padding: 0 0 13px;
+  font-size: max(.72rem, 12px);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.receipt-paper-customer-supplements p {
+  min-width: 0;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
 /* PODOLOGY-001: private customer subview, not part of document/public layouts. */
 .customer-prescriptions { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
