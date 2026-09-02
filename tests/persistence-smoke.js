@@ -1901,6 +1901,9 @@
               await waitFor(() => doc().querySelector('[data-open-customer="customer-anna"]'));
               click('[data-open-customer="customer-anna"]');
               await waitFor(() => doc().querySelector(".customer-treatment-history"));
+              assert(!doc().querySelector(".customer-treatment-history").innerText.includes("PRIVATE-UI-RETRY"),
+                "Geschlossene Behandlung zeigt medizinischen Freitext");
+              doc().querySelectorAll("[data-toggle-treatment-history]").forEach(button => button.click());
               assert(doc().querySelector(".customer-treatment-history").textContent.includes("PRIVATE-TEMPLATE-INTERNAL-ÄÖÜ"),
                 "Interner Behandlungsverlauf fehlt im Kundenprofil");
               assert(doc().querySelector(".customer-treatment-history").textContent.includes("PRIVATE-UI-RETRY"),
@@ -1916,7 +1919,8 @@
               await waitFor(() => doc()?.querySelector('[data-open-customer="customer-anna"]'));
               click('[data-open-customer="customer-anna"]');
               await waitFor(() => doc().querySelector(".customer-treatment-history"));
-              assert(doc().querySelector(".customer-treatment-history").textContent.includes("PRIVATE-UI-RETRY"),
+              doc().querySelectorAll("[data-toggle-treatment-history]").forEach(button => button.click());
+              assert(doc().querySelector(".customer-treatment-history").innerText.includes("PRIVATE-UI-RETRY"),
                 "Deaktivierter Kunde verlor lesbare Behandlungshistorie");
               noOverflow();
             }
@@ -2678,6 +2682,191 @@
             assert(doc().documentElement.scrollWidth <= frame.contentWindow.innerWidth, `Vorlagenverwaltung läuft bei ${width} px horizontal über`);
             assertDeepEqual(frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS, [], "PODOLOGY-005-Vorlagenverwaltung-Laufzeitfehler");
           } finally { frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase(); frame.remove(); }
+        }
+      } },
+      { name: "PODOLOGY-006: 10/20 Behandlungen bleiben bei 320/360/390/411/768/1280 px kompakt, unabhängig aufklappbar und unverändert", run: async () => {
+        const index = await (await fetch("../index.html", { cache: "no-store" })).text();
+        const waitFor = async predicate => {
+          for (let attempt = 0; attempt < 160; attempt += 1) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 50)); }
+          throw new Error(`Behandlungsverlauf wurde nicht rechtzeitig bereit: ${predicate.toString()}`);
+        };
+        for (const count of [10, 20]) {
+          const client = context.makeClient(`treatment-disclosure-${count}`);
+          const prescription = prescriptionFixture(client.tenantId, { prescribedUnits: 30, catalogItemId: "service-cut", treatmentText: "Testhaarschnitt" });
+          await client.restoreTenantSnapshot(treatmentSnapshot(client.tenantId, { prescriptions: [prescription] }));
+          for (let number = 0; number < count; number += 1) {
+            await commitTreatment(client, `treatment-disclosure-receipt-${number}`, {
+              internalDocumentation: number % 3 === 0 ? "" : `PRIVATE-INTERNAL-${number}\n${"Lange Dokumentation ÄÖÜ <b>nur Text</b> ".repeat(75)}`,
+              customerCareAdvice: number % 3 === 1 ? "" : `PRIVATE-CARE-${number} ${"LangerPflegehinweisOhneTrennzeichen".repeat(7)}`
+            }, number % 2 === 0 ? prescription : null, {
+              completedAt: new Date(Date.UTC(2030, 0, number + 1, 10, 16)).toISOString(),
+              businessAreaSnapshot: { id: "hair", label: "Podologie und unterstützende Fußbehandlungen im historischen Geschäftsbereich", visibleName: "Teststudio" }
+            });
+          }
+          const before = (await client.exportTenantSnapshot()).stores;
+          const expected = [...before.treatmentRecords.treatmentRecords].sort((a, b) => b.performedAt.localeCompare(a.performedAt));
+          for (const width of [320, 360, 390, 411, 768, 1280]) {
+            const frame = document.createElement("iframe");
+            frame.title = `Behandlungsverlauf ${count} Einträge ${width} px`;
+            frame.style.cssText = `position:fixed;left:-2000px;top:0;width:${width}px;height:807px;border:0`;
+            setIsolatedAppFrame(frame, isolatedAppMarkup(index, client, "customers", context.databaseName));
+            document.body.append(frame);
+            try {
+              const doc = () => frame.contentDocument;
+              const click = selector => { const element = doc().querySelector(selector); assert(element, `Behandlungs-UI fehlt: ${selector}`); element.click(); };
+              const noOverflow = () => assert(doc().documentElement.scrollWidth <= frame.contentWindow.innerWidth, `Behandlungsverlauf läuft bei ${width} px über`);
+              const openCustomer = async () => {
+                frame.contentWindow.location.hash = "#/customers";
+                await waitFor(() => doc()?.querySelector('[data-open-customer="customer-anna"]'));
+                click('[data-open-customer="customer-anna"]');
+                await waitFor(() => doc()?.querySelector("[data-toggle-treatment-history]"));
+              };
+              await openCustomer();
+              const list = doc().querySelector(".treatment-history-list");
+              const toggles = [...list.querySelectorAll("[data-toggle-treatment-history]")];
+              assertEqual(toggles.length, count, "Behandlungen fehlen im Verlauf");
+              assertEqual(new Set(toggles.map(toggle => toggle.id)).size, count, "Disclosure-IDs sind nicht eindeutig");
+              toggles.forEach((toggle, position) => {
+                const panel = doc().getElementById(toggle.getAttribute("aria-controls"));
+                assert(toggle.tagName === "BUTTON" && toggle.type === "button" && toggle.tabIndex === 0, "Header ist kein nativer Tastaturbutton");
+                assert(toggle.getBoundingClientRect().height >= 44, "Disclosure-Touchfläche ist kleiner als 44 px");
+                assertEqual(toggle.getAttribute("aria-expanded"), "false", "Eintrag startet geöffnet");
+                assert(panel?.hidden && frame.contentWindow.getComputedStyle(panel).display === "none", "Detailbereich ist nicht verborgen");
+                assertEqual(panel.getAttribute("aria-labelledby"), toggle.id, "Zuordnung des Detailbereichs fehlt");
+                assert(toggle.innerText.includes(expected[position].receiptNumber), "Chronologie oder Belegreferenz geändert");
+                assert(toggle.innerText.includes(expected[position].businessAreaSnapshot.label), "Historischer Geschäftsbereich fehlt");
+                assert(toggle.innerText.includes(expected[position].prescriptionId ? "Mit Rezeptzuordnung" : "Ohne Rezeptzuordnung"), "Rezeptstatus fehlt");
+                assert(toggle.innerText.includes("Abgeschlossen"), "Abschlussstatus fehlt");
+                assert(!toggle.innerText.includes("PRIVATE-") && !toggle.innerText.includes("prescription-one"), "Header zeigt medizinischen Text oder interne ID");
+                assert(!toggle.querySelector("[data-open-receipt]"), "Belegaktion steht im geschlossenen Header");
+                assert(toggle.querySelector('[aria-hidden="true"]'), "Dekorativer Chevron fehlt");
+              });
+              assert(!list.innerText.includes("PRIVATE-") && !list.innerText.includes("Beleg öffnen"), "Geschlossener Verlauf zeigt Details");
+              const closedHeight = list.getBoundingClientRect().height;
+              noOverflow();
+              // No rerender: focus, existing DOM nodes and the clicked header position survive.
+              toggles[0].focus();
+              toggles[0].scrollIntoView({ block: "start" });
+              await new Promise(resolve => frame.contentWindow.requestAnimationFrame(resolve));
+              const topBefore = toggles[0].getBoundingClientRect().top;
+              toggles[0].click();
+              assertEqual(doc().activeElement, toggles[0], "Aufklappen verliert Tastaturfokus");
+              assertEqual(toggles[0].getAttribute("aria-expanded"), "true", "Öffnungszustand fehlt");
+              assert(Math.abs(toggles[0].getBoundingClientRect().top - topBefore) < 2, "Aufklappen verschiebt den angeklickten Header");
+              assert(parseFloat(frame.contentWindow.getComputedStyle(toggles[0]).outlineWidth) >= 3, "Sichtbarer Tastaturfokus fehlt");
+              toggles[1].click();
+              assertEqual(list.querySelectorAll('[aria-expanded="true"]').length, 2, "Vergleich zweier Behandlungen ist nicht möglich");
+              toggles[0].click();
+              assertEqual(toggles[1].getAttribute("aria-expanded"), "true", "Schließen verändert einen anderen Eintrag");
+              toggles.forEach(toggle => { if (toggle.getAttribute("aria-expanded") === "false") toggle.click(); });
+              toggles.forEach((toggle, position) => {
+                const panel = doc().getElementById(toggle.getAttribute("aria-controls"));
+                const record = expected[position];
+                assert(!panel.hidden, "Geöffneter Detailbereich bleibt verborgen");
+                const headings = [...panel.querySelectorAll("div > strong")].map(element => element.textContent);
+                assertEqual(headings.includes("Dokumentation (intern)"), Boolean(record.internalDocumentation), "Interner Leerblock oder fehlende Überschrift");
+                assertEqual(headings.includes("Pflegehinweis"), Boolean(record.customerCareAdvice), "Pflege-Leerblock oder fehlende Überschrift");
+                if (record.internalDocumentation) assert(panel.innerText.includes(record.internalDocumentation), "Interne Dokumentation wurde verändert oder gekürzt");
+                if (record.customerCareAdvice) assert(panel.innerText.includes(record.customerCareAdvice), "Pflegehinweis wurde verändert oder gekürzt");
+                assert(!panel.querySelector("b"), "Gespeicherter Text wird als HTML interpretiert");
+                assertEqual(panel.querySelector("[data-open-receipt]").dataset.openReceipt, record.receiptNumber, "Belegaktion ist falsch zugeordnet");
+              });
+              assert(closedHeight < list.getBoundingClientRect().height * .6, "Zusammenklappen spart nicht mindestens 40 Prozent Listenhöhe");
+              noOverflow();
+              const started = performance.now();
+              toggles.forEach(toggle => { toggle.click(); toggle.click(); toggle.click(); });
+              assert(performance.now() - started < 1500, "Disclosure-Wechsel ist ungewöhnlich langsam");
+              assertEqual(list.querySelectorAll('[aria-expanded="true"]').length, 0, "Erneutes Schließen ist unvollständig");
+              assertEqual(doc().querySelector(".treatment-history-list"), list, "Disclosure ersetzte das Profil-DOM");
+              // The first and last item must continue to open their own stored receipt.
+              for (const position of [0, count - 1]) {
+                const current = doc().querySelectorAll("[data-toggle-treatment-history]")[position];
+                current.click();
+                doc().getElementById(current.getAttribute("aria-controls")).querySelector("[data-open-receipt]").click();
+                await waitFor(() => frame.contentWindow.location.hash === "#/receipt-detail");
+                assert(doc().body.innerText.includes(expected[position].receiptNumber), "Falscher Beleg wurde geöffnet");
+                await openCustomer();
+                assertEqual(doc().querySelectorAll('[data-toggle-treatment-history][aria-expanded="true"]').length, 0, "Erneutes Profilöffnen behält Disclosure-Zustände");
+              }
+              if (width === 390) {
+                click("[data-toggle-customer-history-section]");
+                assert(doc().querySelector(".customer-history-panel"), "Belegverlauf regressiert");
+                click('[data-edit-customer="customer-anna"]');
+                assert(doc().querySelector("#customerForm"), "Kundenbearbeitung regressiert");
+                await openCustomer();
+                click('[data-open-prescription="prescription-one"]');
+                assert(doc().querySelector(".prescription-details"), "Rezeptübersicht regressiert");
+                click("[data-prescription-back]");
+                click("[data-prescription-new]");
+                assert(doc().querySelector("#prescriptionForm"), "Rezept anlegen regressiert");
+              }
+              assertDeepEqual(frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS, [], "Behandlungsverlauf-Laufzeitfehler");
+            } finally { frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase(); frame.remove(); }
+          }
+          assertDeepEqual((await client.exportTenantSnapshot()).stores, before, "Disclosure oder Profilnavigation veränderte gespeicherte Daten");
+        }
+      } },
+      { name: "PODOLOGY-006: Leere Teilinhalte, lange Belegnummern und deaktivierte Kontexte bleiben rein lesbar", run: async () => {
+        const index = await (await fetch("../index.html", { cache: "no-store" })).text();
+        for (const mode of ["active", "customer", "area", "capability"]) {
+          const client = context.makeClient(`treatment-disclosure-readonly-${mode}`);
+          await client.restoreTenantSnapshot(treatmentSnapshot(client.tenantId));
+          for (let number = 0; number < 4; number += 1) await commitTreatment(client, `readonly-${mode}-${number}`, {
+            internalDocumentation: number === 2 ? "" : "PRIVATE-INTERNAL-EDGE",
+            customerCareAdvice: number === 1 ? "" : "PRIVATE-CARE-EDGE"
+          }, null, { completedAt: new Date(Date.UTC(2030, 0, number + 1)).toISOString() });
+          if (mode === "customer") {
+            const customers = await client.readCustomers();
+            customers.customers.find(customer => customer.id === "customer-anna").active = false;
+            await client.writeCustomers(customers);
+          }
+          if (mode === "area" || mode === "capability") {
+            const settings = await client.readSettings();
+            const area = settings.businessAreas.find(entry => entry.id === "hair");
+            if (mode === "area") { area.active = false; area.isDefault = false; settings.businessAreas.find(entry => entry.id === "coaching").isDefault = true; }
+            else area.features.prescriptionDocumentation = false;
+            await client.writeSettings(settings);
+          }
+          const before = (await client.exportTenantSnapshot()).stores;
+          // Read-only UI edge fixture: empty/whitespace texts and an overlong reference are
+          // never written to IndexedDB and do not weaken the real writer/validation rules.
+          const fixture = `<script>
+            const readHistoryForTest = window.FRECKA_PERSISTENCE.readTreatmentRecords;
+            window.FRECKA_PERSISTENCE = Object.freeze({ ...window.FRECKA_PERSISTENCE, readTreatmentRecords: async () => {
+              const record = await readHistoryForTest();
+              record.treatmentRecords[3].internalDocumentation = '   ';
+              record.treatmentRecords[3].customerCareAdvice = '';
+              record.treatmentRecords[3].receiptNumber = 'TEST-VERY-LONG-RECEIPT-REFERENCE-2030-000000000000000000000000000001';
+              return record;
+            }});
+          <\/script>`;
+          const marker = `<script src="${new URL("../js/app.js", window.location.href).href}`;
+          const markup = isolatedAppMarkup(index, client, "customers", context.databaseName);
+          assert(markup.includes(marker), "UI-Test-Injection findet App-Skript nicht");
+          const frame = document.createElement("iframe");
+          frame.title = `Behandlungsverlauf Teilinhalte ${mode}`;
+          frame.style.cssText = "position:fixed;left:-2000px;top:0;width:320px;height:807px;border:0";
+          setIsolatedAppFrame(frame, markup.replace(marker, fixture + marker));
+          document.body.append(frame);
+          try {
+            const doc = () => frame.contentDocument;
+            for (let attempt = 0; attempt < 160 && !doc()?.querySelector('[data-customer-filter="all"]'); attempt += 1) await new Promise(resolve => setTimeout(resolve, 50));
+            doc().querySelector('[data-customer-filter="all"]').click();
+            doc().querySelector('[data-open-customer="customer-anna"]').click();
+            const items = [...doc().querySelectorAll(".treatment-history-item")];
+            assertEqual(items.length, 4, "Historische Behandlungen sind nicht lesbar");
+            assert(!doc().querySelector(".treatment-history-list").innerText.includes("PRIVATE-"), "Geschlossener Readonly-Verlauf zeigt Freitext");
+            items.forEach(item => item.querySelector("[data-toggle-treatment-history]").click());
+            assertEqual(items[0].querySelectorAll(".treatment-history-detail > div").length, 0, "Leere Texte erzeugen Überschriften");
+            assertEqual(items[1].querySelectorAll(".treatment-history-detail > div").length, 1, "Nur Pflegehinweis erzeugt falsche Blöcke");
+            assertEqual(items[2].querySelectorAll(".treatment-history-detail > div").length, 1, "Nur Dokumentation erzeugt falsche Blöcke");
+            assertEqual(items[3].querySelectorAll(".treatment-history-detail > div").length, 2, "Vollständige Texte fehlen");
+            assert(items[0].innerText.includes("TEST-VERY-LONG-RECEIPT-REFERENCE"), "Lange Referenz fehlt");
+            assertEqual(Boolean(doc().querySelector("[data-prescription-new]")), mode === "active", "Bearbeitungsfreigabe hat sich geändert");
+            assert(doc().documentElement.scrollWidth <= frame.contentWindow.innerWidth, "Teilinhalt oder lange Referenz läuft horizontal über");
+            assertDeepEqual(frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS, [], "Readonly-Verlauf-Laufzeitfehler");
+          } finally { frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase(); frame.remove(); }
+          assertDeepEqual((await client.exportTenantSnapshot()).stores, before, "UI-Grenzfall hat gespeicherte Daten verändert");
         }
       } },
       { name: "PODOLOGY-003: Kunden-, Beleg- und Settingsreset sind bei historischer Behandlungsdokumentation gesperrt", run: async () => {

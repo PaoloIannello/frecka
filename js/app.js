@@ -2379,16 +2379,27 @@
     return `<section class="customer-treatment-history" aria-labelledby="customerTreatmentHistoryTitle">
       <div class="section-title-row"><h2 id="customerTreatmentHistoryTitle">Behandlungsverlauf (intern)</h2></div>
       <p class="page-copy">Nur intern – erscheint nicht auf Beleg, PDF, QR-Code oder Export.</p>
-      <div class="treatment-history-list">${records.map(entry => {
+      <div class="treatment-history-list">${records.map((entry, index) => {
         const areaLabel = entry.businessAreaSnapshot?.label
           || data.businessAreas.find(area => area.id === entry.businessAreaId)?.label
           || "Geschäftsbereich nicht verfügbar";
+        const toggleId = `customer-treatment-toggle-${index}`;
+        const panelId = `customer-treatment-panel-${index}`;
         return `<article class="treatment-history-item">
-          <div class="treatment-history-head"><span><strong>${escapeHtml(formatGermanDateTime({ iso: entry.performedAt }))}</strong><small>${escapeHtml(areaLabel)} · ${escapeHtml(entry.receiptNumber)}</small></span><span class="receipt-status is-paid">Abgeschlossen</span></div>
-          ${entry.internalDocumentation ? `<div><strong>Dokumentation (intern)</strong><p>${escapeHtml(entry.internalDocumentation)}</p></div>` : ""}
-          ${entry.customerCareAdvice ? `<div><strong>Pflegehinweis</strong><p>${escapeHtml(entry.customerCareAdvice)}</p></div>` : ""}
-          <p class="treatment-history-meta">${entry.prescriptionId ? "Mit Rezeptzuordnung" : "Ohne Rezeptzuordnung"}${entry.userSnapshot?.displayName ? ` · ${escapeHtml(entry.userSnapshot.displayName)}` : ""}</p>
-          <button class="button button-secondary" type="button" data-open-receipt="${escapeHtml(entry.receiptNumber)}">Beleg öffnen</button>
+          <h3 class="treatment-history-heading"><button class="treatment-history-toggle" type="button" id="${toggleId}" data-toggle-treatment-history aria-expanded="false" aria-controls="${panelId}">
+            <span class="treatment-history-summary">
+              <span class="treatment-history-head"><strong>${escapeHtml(formatGermanDateTime({ iso: entry.performedAt }))}</strong><span class="receipt-status is-paid">Abgeschlossen</span></span>
+              <span class="treatment-history-context">${escapeHtml(areaLabel)} · Beleg ${escapeHtml(entry.receiptNumber)}</span>
+              <span class="treatment-history-meta">${entry.prescriptionId ? "Mit Rezeptzuordnung" : "Ohne Rezeptzuordnung"}</span>
+            </span>
+            <span class="customer-history-chevron" aria-hidden="true">⌄</span>
+          </button></h3>
+          <div class="treatment-history-detail" id="${panelId}" aria-labelledby="${toggleId}" hidden>
+            ${entry.internalDocumentation?.trim() ? `<div><strong>Dokumentation (intern)</strong><p>${escapeHtml(entry.internalDocumentation)}</p></div>` : ""}
+            ${entry.customerCareAdvice?.trim() ? `<div><strong>Pflegehinweis</strong><p>${escapeHtml(entry.customerCareAdvice)}</p></div>` : ""}
+            <p class="treatment-history-meta">${entry.prescriptionId ? "Mit Rezeptzuordnung" : "Ohne Rezeptzuordnung"}${entry.userSnapshot?.displayName ? ` · ${escapeHtml(entry.userSnapshot.displayName)}` : ""}</p>
+            <button class="button button-secondary" type="button" data-open-receipt="${escapeHtml(entry.receiptNumber)}">Beleg öffnen</button>
+          </div>
         </article>`;
       }).join("") || '<p class="page-copy">Noch keine abgeschlossene Behandlungsdokumentation vorhanden.</p>'}</div>
     </section>`;
@@ -6938,6 +6949,16 @@
     if (creditMode) {
       state.creditMode = creditMode.dataset.creditMode;
       renderReceiptCredit();
+      return;
+    }
+    const treatmentToggle = event.target.closest("[data-toggle-treatment-history]");
+    if (treatmentToggle) {
+      const panel = document.getElementById(treatmentToggle.getAttribute("aria-controls"));
+      if (!panel) return;
+      const isOpen = treatmentToggle.getAttribute("aria-expanded") === "true";
+      // Disclosure state belongs only to this rendered profile; no rerender or persistence.
+      treatmentToggle.setAttribute("aria-expanded", String(!isOpen));
+      panel.hidden = isOpen;
       return;
     }
     if (event.target.closest("[data-toggle-customer-history-section]")) {
