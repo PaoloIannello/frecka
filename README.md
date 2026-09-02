@@ -1,18 +1,28 @@
-# FRECKA – 0.11.8 / PODOLOGY-005
+# FRECKA – 0.11.9 / PODOLOGY-006
 
-**Vorbereiteter Beta-Stand:** 0.11.8 ergänzt auf Basis von 0.11.7 ausschließlich PODOLOGY-005. Die vorhandene Rezept- und Behandlungsfunktion erhält eine klarere Vorlagenauswahl, kontextbezogene Hilfetexte und kompaktere Vorlagenkarten; Datenmodell, Persistenz, Dokumentprojektion und Datenschutzgrenzen bleiben unverändert. [Rezeptverwaltung](docs/prescriptions.md) · [Behandlungsdokumentation und Datenschutz](docs/treatment-documentation.md).
+**Vorbereiteter Beta-Stand:** 0.11.9 ergänzt auf Basis von 0.11.8 ausschließlich PODOLOGY-006. Der interne Behandlungsverlauf zeigt kompakte, initial geschlossene und unabhängig aufklappbare Einträge; Datenmodell, Persistenz, Dokumentprojektion und Datenschutzgrenzen bleiben unverändert. [Rezeptverwaltung](docs/prescriptions.md) · [Behandlungsdokumentation und Datenschutz](docs/treatment-documentation.md).
 
-Browserbasierte FRECKA-PWA 0.11.8 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der Build PODOLOGY-005 verwendet unverändert IndexedDB-Schema 8 mit den mandantenbezogenen Stores `prescriptions` und `treatmentRecords`; die getrennte gerätelokale `licenseRuntime` bleibt unverändert außerhalb von Tenant-Snapshot, Backup und Export.
+Browserbasierte FRECKA-PWA 0.11.9 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der Build PODOLOGY-006 verwendet unverändert IndexedDB-Schema 8 mit den mandantenbezogenen Stores `prescriptions` und `treatmentRecords`; die getrennte gerätelokale `licenseRuntime` bleibt unverändert außerhalb von Tenant-Snapshot, Backup und Export.
 
 ANDROID-001 sichert die mobile Skalierung und Touch-Ziele auch für Android-nahe Darstellungsprofile ab. IOS-NAV-001 verankert die Bottom-Navigation außerhalb der scrollenden App-Shell direkt am Viewport. ANDROID-002 behandelt den tatsächlichen File-Share nicht mehr als durch `canShare()` garantiert, klassifiziert Fehler neutral und bietet PDF- sowie ZIP-Speichern ausschließlich als bewusste Folgeaktion an. Der erfolgreiche iPhone-Datei-Share bleibt ohne Plattformweiche erhalten.
 
-0.11.7 / PODOLOGY-004 ist die unmittelbare Beta-Vorgängerbasis. 0.11.8 benötigt vor einer weitergehenden Freigabe eine reale In-place-Abnahme auf iPhone/Home-Screen-PWA und Android. Lizenzserver, Trial, Kauf, Payment, neue TSE-Logik und ein allgemeiner Medizinexport sind nicht enthalten.
+0.11.8-d9093e7 / PODOLOGY-005 ist die unmittelbare veröffentlichte Beta-Vorgängerbasis. 0.11.9 benötigt vor einer weitergehenden Freigabe eine reale In-place-Abnahme auf iPhone/Home-Screen-PWA und Android. Lizenzserver, Trial, Kauf, Payment, neue TSE-Logik und ein allgemeiner Medizinexport sind nicht enthalten.
 
 Ein vollständig neuer Mandant startet ohne Kunden, Katalogpositionen, Belege, offene Zahlungen, Korrekturen, Gutscheine, Umsätze oder Logoassets. Neutrale technische Defaults, optionale Vorlagen und die ausschließlich für PERSISTENCE-010 erlaubte historische Vierer-Reparaturquelle sind strikt getrennt. Die verbindliche Erststartinventur und die 15-Punkte-Übergabecheckliste stehen in [`docs/beta-handoff.md`](docs/beta-handoff.md).
 
 UX-011 / UPDATE-002 / BACKUP-003/004 ergänzt darauf eine reale Seite **Einstellungen → Update**, bereinigt veraltete „Geplant“-Kennzeichnungen und erinnert nach einem wählbaren Intervall ohne bestätigte Sicherungsdatei nicht blockierend an ein neues lokales Backup. Zur Auswahl stehen 48 Stunden, 5 Tage und wöchentlich; wöchentlich ist der abwärtskompatible Standard. Die manuelle Suche verwendet den vorhandenen Updatecontroller; Restore übernimmt die Intervallwahl, gilt aber niemals als neue Sicherung und bewahrt lokale Frist- und Snooze-Zeitpunkte.
 
 ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzeit aufrufbare Installationshilfe für iPhone/iPad und Android. Sie priorisiert die passende Anleitung ausschließlich anhand lokaler Browsermerkmale, zeigt im Standalone-Modus den bereits installierten Zustand und bleibt vollständig offline verfügbar. Beide Plattformen können immer manuell gewählt werden. Der kompakte Ablauf und die abweichenden Android-Bezeichnungen sind in [`docs/installation.md`](docs/installation.md) dokumentiert.
+
+## Neu in 0.11.9
+
+- kompakter interner Behandlungsverlauf; alle Einträge initial geschlossen, mehrere unabhängig aufklappbar
+- Datum/Uhrzeit, Geschäftsbereich, Belegnummer, Rezeptstatus und Abschlussstatus sofort sichtbar
+- medizinische Freitexte und „Beleg öffnen“ ausschließlich im aufgeklappten Detailbereich
+- native Buttons mit ARIA-Zuordnung, sichtbarem Fokus und mindestens 44 Pixeln Touchhöhe
+- flüchtiger Disclosure-Zustand ohne Datenmigration; reine visuelle Diskretion, keine Zugriffskontrolle
+- Regressionen mit 0, 1, 10 und 20 Einträgen bei 320, 360, 390, 411, 768 und 1280 Pixeln
+- einheitliche Release-, Asset- und App-Shell-Kennung `0.11.9 / PODOLOGY-006 / podology006-1`; [Release-Freigabenachweis](docs/releases/0.11.9.md), reale Geräteabnahme ausstehend
 
 ## Neu in 0.11.8
 

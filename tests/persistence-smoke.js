@@ -2684,13 +2684,13 @@
           } finally { frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase(); frame.remove(); }
         }
       } },
-      { name: "PODOLOGY-006: 10/20 Behandlungen bleiben bei 320/360/390/411/768/1280 px kompakt, unabhängig aufklappbar und unverändert", run: async () => {
+      { name: "PODOLOGY-006: 0/1/10/20 Behandlungen bleiben bei 320/360/390/411/768/1280 px kompakt, unabhängig aufklappbar und unverändert", run: async () => {
         const index = await (await fetch("../index.html", { cache: "no-store" })).text();
         const waitFor = async predicate => {
           for (let attempt = 0; attempt < 160; attempt += 1) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 50)); }
           throw new Error(`Behandlungsverlauf wurde nicht rechtzeitig bereit: ${predicate.toString()}`);
         };
-        for (const count of [10, 20]) {
+        for (const count of [0, 1, 10, 20]) {
           const client = context.makeClient(`treatment-disclosure-${count}`);
           const prescription = prescriptionFixture(client.tenantId, { prescribedUnits: 30, catalogItemId: "service-cut", treatmentText: "Testhaarschnitt" });
           await client.restoreTenantSnapshot(treatmentSnapshot(client.tenantId, { prescriptions: [prescription] }));
@@ -2719,12 +2719,19 @@
                 frame.contentWindow.location.hash = "#/customers";
                 await waitFor(() => doc()?.querySelector('[data-open-customer="customer-anna"]'));
                 click('[data-open-customer="customer-anna"]');
-                await waitFor(() => doc()?.querySelector("[data-toggle-treatment-history]"));
+                await waitFor(() => doc()?.querySelector(".customer-treatment-history"));
               };
               await openCustomer();
               const list = doc().querySelector(".treatment-history-list");
               const toggles = [...list.querySelectorAll("[data-toggle-treatment-history]")];
               assertEqual(toggles.length, count, "Behandlungen fehlen im Verlauf");
+              if (count === 0) {
+                assert(list.innerText.includes("Noch keine abgeschlossene Behandlungsdokumentation vorhanden."), "Leerer Behandlungsverlauf ist nicht erklärt");
+                assert(!list.querySelector(".treatment-history-item, [data-open-receipt]"), "Leerer Verlauf zeigt eine Behandlung oder Belegaktion");
+                assertDeepEqual(frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS, [], "Leerer Behandlungsverlauf-Laufzeitfehler");
+                noOverflow();
+                continue;
+              }
               assertEqual(new Set(toggles.map(toggle => toggle.id)).size, count, "Disclosure-IDs sind nicht eindeutig");
               toggles.forEach((toggle, position) => {
                 const panel = doc().getElementById(toggle.getAttribute("aria-controls"));
@@ -2754,10 +2761,12 @@
               assertEqual(toggles[0].getAttribute("aria-expanded"), "true", "Öffnungszustand fehlt");
               assert(Math.abs(toggles[0].getBoundingClientRect().top - topBefore) < 2, "Aufklappen verschiebt den angeklickten Header");
               assert(parseFloat(frame.contentWindow.getComputedStyle(toggles[0]).outlineWidth) >= 3, "Sichtbarer Tastaturfokus fehlt");
-              toggles[1].click();
-              assertEqual(list.querySelectorAll('[aria-expanded="true"]').length, 2, "Vergleich zweier Behandlungen ist nicht möglich");
-              toggles[0].click();
-              assertEqual(toggles[1].getAttribute("aria-expanded"), "true", "Schließen verändert einen anderen Eintrag");
+              if (count > 1) {
+                toggles[1].click();
+                assertEqual(list.querySelectorAll('[aria-expanded="true"]').length, 2, "Vergleich zweier Behandlungen ist nicht möglich");
+                toggles[0].click();
+                assertEqual(toggles[1].getAttribute("aria-expanded"), "true", "Schließen verändert einen anderen Eintrag");
+              }
               toggles.forEach(toggle => { if (toggle.getAttribute("aria-expanded") === "false") toggle.click(); });
               toggles.forEach((toggle, position) => {
                 const panel = doc().getElementById(toggle.getAttribute("aria-controls"));
@@ -4122,7 +4131,7 @@
           ["is-share", "is-menu", "is-home", "is-app", "is-confirm"].forEach(icon => assert(css.includes(icon), `Lokales Piktogramm fehlt: ${icon}`));
           assert(css.includes("@media(max-width:390px)") && css.includes("@media(max-width:350px)"), "Mobile Installationsdarstellung ist nicht abgesichert");
           assert(!index.includes('data-route="installation"'), "Installationshilfe wurde fälschlich zur Hauptnavigation hinzugefügt");
-          assert(worker.includes('\"./js/app.js?v=podology005-1\"') && worker.includes('\"./styles.css?v=podology005-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
+          assert(worker.includes('\"./js/app.js?v=podology006-1\"') && worker.includes('\"./styles.css?v=podology006-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
 
           const measureInstallationLayout = width => new Promise((resolve, reject) => {
             const frame = document.createElement("iframe");
@@ -4181,7 +4190,7 @@
           const css = await cssResponse.text();
           const index = await indexResponse.text();
           assert(index.includes('content="width=device-width, initial-scale=1, viewport-fit=cover"'), "Mobiler Viewport-Vertrag fehlt");
-          assert(index.includes('href="styles.css?v=podology005-1"'), "Die weiterhin wirksamen ANDROID-001-Styles fehlen im aktuellen Cache-Schlüssel");
+          assert(index.includes('href="styles.css?v=podology006-1"'), "Die weiterhin wirksamen ANDROID-001-Styles fehlen im aktuellen Cache-Schlüssel");
           assert(!css.includes("text-size-adjust") && !css.includes("font-size: 16px !important"), "Browserpräferenz wird aggressiv überschrieben");
           ["renderHome", "renderSettings", "renderReceiptDetail", "renderReceiptPreview"].forEach(renderer => {
             assert(appSource.includes(`function ${renderer}(`), `Produktive Ansicht fehlt: ${renderer}`);
