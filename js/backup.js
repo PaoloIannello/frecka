@@ -252,18 +252,17 @@
     return `FRECKA-Backup-${stamp}${safeSuffix ? `-${safeSuffix}` : ""}${constants.fileExtension}`;
   }
 
-  function downloadBackup(serializedBackup, filename) {
+  function downloadBackup(serializedBackup, filename, options = {}) {
     if (typeof serializedBackup !== "string") throw new BackupError("BACKUP_DATA_INVALID", "Die Sicherungsdatei ist nicht verfügbar.");
+    const shareService = Object.prototype.hasOwnProperty.call(options, "shareService")
+      ? options.shareService
+      : globalThis.FRECKA_SHARING;
+    if (!shareService?.downloadFallback) {
+      throw new BackupError("BACKUP_DOWNLOAD_UNAVAILABLE", "Die Sicherungsdatei kann in diesem Browser momentan nicht zum Speichern übergeben werden.");
+    }
     const blob = new Blob([serializedBackup], { type: constants.downloadMimeType });
-    const objectUrl = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = objectUrl;
-    link.download = filename || backupFilename();
-    link.hidden = true;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 300000);
+    Object.defineProperty(blob, "name", { value: filename || backupFilename() });
+    return shareService.downloadFallback(blob);
   }
 
   async function deliverBackup(serializedBackup, filename, options = {}) {
@@ -271,7 +270,9 @@
     const shareService = Object.prototype.hasOwnProperty.call(options, "shareService")
       ? options.shareService
       : globalThis.FRECKA_SHARING;
-    const download = typeof options.download === "function" ? options.download : downloadBackup;
+    const download = typeof options.download === "function"
+      ? options.download
+      : (serialized, name) => downloadBackup(serialized, name, { shareService });
     if (shareService?.createFile && shareService?.canShareFiles && shareService?.shareFiles) {
       let file = null;
       try {

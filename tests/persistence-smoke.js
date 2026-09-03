@@ -4131,7 +4131,7 @@
           ["is-share", "is-menu", "is-home", "is-app", "is-confirm"].forEach(icon => assert(css.includes(icon), `Lokales Piktogramm fehlt: ${icon}`));
           assert(css.includes("@media(max-width:390px)") && css.includes("@media(max-width:350px)"), "Mobile Installationsdarstellung ist nicht abgesichert");
           assert(!index.includes('data-route="installation"'), "Installationshilfe wurde fälschlich zur Hauptnavigation hinzugefügt");
-          assert(worker.includes('\"./js/app.js?v=podology006-1\"') && worker.includes('\"./styles.css?v=podology006-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
+          assert(worker.includes('\"./js/app.js?v=android004-1\"') && worker.includes('\"./styles.css?v=podology006-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
 
           const measureInstallationLayout = width => new Promise((resolve, reject) => {
             const frame = document.createElement("iframe");
@@ -6885,7 +6885,7 @@
           const busyHelperStart = source.indexOf("function setBackupCreateFormBusy", errorMessageStart);
           const handlerStart = source.indexOf('const backupCreateForm = event.target.closest("#backupCreateForm")');
           const handlerEnd = source.indexOf('const backupUnlockForm = event.target.closest("#backupUnlockForm")', handlerStart);
-          const outputActionStart = source.indexOf('if (action === "backup-output-ready")');
+          const outputActionStart = source.indexOf('if (action === "backup-output-ready" || action === "backup-output-save")');
           const outputActionEnd = source.indexOf('if (action === "backup-restore-cancel")', outputActionStart);
           const navigateStart = source.indexOf("function navigate(route, pushHistory = true)");
           const navigateEnd = source.indexOf("function startNewReceipt", navigateStart);
@@ -6919,7 +6919,9 @@
           assert(outputActionBlock.includes("discardPendingBackupOutput()"), "Explizite Ausgabe nimmt den Pending-State nicht vor dem Systemdialog aus dem UI-State");
           assert(outputActionBlock.includes("backup.deliverBackup(prepared.serializedBackup, prepared.filename)"), "Datei-/Share-Ausgabe ist nicht auf die explizite Nutzeraktion begrenzt");
           assert(outputActionBlock.indexOf("discardPendingBackupOutput()") < outputActionBlock.indexOf("backup.deliverBackup"), "Pending-State wird erst nach Öffnen des Systemdialogs verworfen");
-          assert(!outputActionBlock.includes("downloadBackup"), "Share-Abbruch besitzt weiterhin einen separaten Download-Fallback");
+          assert(outputActionBlock.includes('action === "backup-output-save"\n          ? backup.downloadBackup'), "Direktes Speichern ist nicht an die eigene Nutzeraktion gebunden");
+          assert(outputActionBlock.includes("isCurrentBackupCreation(outputEpoch, form)"), "Verspätete Ausgabeergebnisse können einen neuen Eingabezustand überschreiben");
+          assert(outputActionBlock.includes('result.status === "fallback-required"'), "ANDROID-002-Share-Fehler werden weiterhin als Totalfehler behandelt");
           const cancelledResultStart = outputActionBlock.indexOf('if (result.status === "cancelled")');
           const successfulResultStart = outputActionBlock.indexOf('if (!["shared", "downloaded"].includes(result.status))');
           const successfulRenderStart = outputActionBlock.indexOf("renderSettingsBackup()", successfulResultStart);
@@ -6927,6 +6929,7 @@
           assert(cancelledResultStart >= 0 && successfulResultStart > cancelledResultStart, "Share-Abbruch wird nicht vor der Erfolgsbehandlung beendet");
           assert(outputActionBlock.slice(cancelledResultStart, successfulResultStart).includes("return"), "Share-Abbruch kann bis zum Leeren der Kennwortfelder weiterlaufen");
           assert(!outputActionBlock.slice(cancelledResultStart, successfulResultStart).includes("recordSuccessfulBackup"), "Share-Abbruch setzt fälschlich den Sicherungszeitpunkt zurück");
+          assert(!outputActionBlock.slice(cancelledResultStart, successfulResultStart).includes("downloadBackup"), "Share-Abbruch oder Share-Fehler löst automatisch einen Download aus");
           assert(outputActionBlock.slice(successfulResultStart).includes("recordSuccessfulBackup"), "Bestätigte Backup-Ausgabe setzt den Sicherungszeitpunkt nicht zurück");
           assert(successfulRenderStart > successfulResultStart, "Kennwortfelder werden nicht ausschließlich nach bestätigter Ausgabe neu gerendert");
           assert(outputCatchStart > successfulRenderStart && !outputActionBlock.slice(outputCatchStart).includes("renderSettingsBackup"), "Ausgabefehler leeren weiterhin die Kennwortfelder");

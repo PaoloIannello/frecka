@@ -92,7 +92,8 @@ assert.ok(addedUrls.includes(`${baseUrl}vendor/jszip-v3.10.1.min.js?v=podology00
 assert.ok(addedUrls.includes(`${baseUrl}js/export-package.js?v=podology006-1`));
 assert.ok(addedUrls.includes(`${baseUrl}js/license-runtime.js?v=podology006-1`));
 assert.ok(addedUrls.includes(`${baseUrl}js/pwa-update.js?v=podology006-1`));
-assert.ok(addedUrls.includes(`${baseUrl}js/app.js?v=podology006-1`));
+assert.ok(addedUrls.includes(`${baseUrl}js/app.js?v=android004-1`));
+assert.ok(addedUrls.includes(`${baseUrl}js/backup.js?v=android004-1`));
 assert.ok(addedUrls.every(url => url.startsWith(baseUrl)), "Alle URLs müssen relativ zum Release-Unterpfad bleiben.");
 
 const htmlRuntimeReferences = [...indexSource.matchAll(/(?:src|href)="([^"]+)"/g)]
@@ -121,7 +122,7 @@ assert.doesNotMatch(source, /LEGACY_AUTO_ACTIVATION_FOR_SERVICEWORKER_002/, "Die
 assert.doesNotMatch(source, /clients\.claim\s*\(/, "Der Worker darf laufende Clients nicht automatisch übernehmen.");
 assert.doesNotMatch(source, /indexedDB|localStorage|sessionStorage/, "Der Worker darf keine Geschäftsdaten berühren.");
 
-const currentCache = [...cacheNames].find(name => name === "frecka-app-shell-0.11.9-podology006-1");
+const currentCache = [...cacheNames].find(name => name === "frecka-app-shell-0.11.9-android004-1");
 assert.ok(currentCache, "Der versionsgebundene Cache wurde nicht angelegt.");
 assert.ok(cacheNames.has("frecka-app-shell-0.11.8-podology005-1"), "Installation darf den Vorgängercache nicht vor bewusster Aktivierung entfernen.");
 

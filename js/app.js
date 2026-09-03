@@ -4919,25 +4919,32 @@
     notice.scrollIntoView({ block: "nearest" });
   }
 
-  function showBackupShareAction(form) {
-    let button = form.querySelector('[data-action="backup-output-ready"]');
-    if (button) return button;
-    button = document.createElement("button");
-    button.type = "button";
-    button.className = "button button-secondary";
-    button.dataset.action = "backup-output-ready";
-    button.textContent = "Sicherung speichern oder teilen";
-    form.querySelector('button[type="submit"]')?.after(button);
-    return button;
+  function removeBackupOutputActions(form) {
+    form.querySelectorAll('[data-action="backup-output-ready"], [data-action="backup-output-save"]').forEach(button => button.remove());
+  }
+
+  function showBackupShareAction(form, { saveOnly = false } = {}) {
+    removeBackupOutputActions(form);
+    const actions = [["backup-output-save", "Auf Gerät speichern"]];
+    if (!saveOnly) actions.push(["backup-output-ready", "Sicherung speichern oder teilen"]);
+    for (const [action, label] of actions) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "button button-secondary";
+      button.dataset.action = action;
+      button.textContent = label;
+      form.append(button);
+    }
   }
 
   function attachBackupCreateBehavior() {
     const form = document.getElementById("backupCreateForm");
     form?.addEventListener("input", () => {
-      if (!pendingBackupOutput) return;
+      const hadPreparedOutput = Boolean(pendingBackupOutput);
+      // Auch während eines Systemdialogs machen neue Eingaben dessen Ergebnis ungültig.
       discardPendingBackupOutput();
-      form.querySelector('[data-action="backup-output-ready"]')?.remove();
-      showBackupCreateNotice(form, "Das Sicherungskennwort wurde geändert. Bitte erstelle die Sicherung erneut.", false);
+      removeBackupOutputActions(form);
+      if (hadPreparedOutput) showBackupCreateNotice(form, "Das Sicherungskennwort wurde geändert. Bitte erstelle die Sicherung erneut.", false);
     });
   }
 
@@ -7398,24 +7405,37 @@
       }
       return;
     }
-    if (action === "backup-output-ready") {
+    if (action === "backup-output-ready" || action === "backup-output-save") {
       const form = document.getElementById("backupCreateForm");
-      const button = event.target.closest('[data-action="backup-output-ready"]');
+      const button = event.target.closest('[data-action="backup-output-ready"], [data-action="backup-output-save"]');
       if (!form || !button || !pendingBackupOutput) return;
       const prepared = pendingBackupOutput;
       discardPendingBackupOutput();
+      const outputEpoch = backupCreationEpoch;
       button.disabled = true;
-      button.remove();
+      removeBackupOutputActions(form);
       try {
         if (!backup?.deliverBackup) throw new Error("Backup output unavailable");
-        const result = await backup.deliverBackup(prepared.serializedBackup, prepared.filename);
-        if (!form.isConnected || state.route !== "settings-backup") return;
+        const result = action === "backup-output-save"
+          ? backup.downloadBackup(prepared.serializedBackup, prepared.filename)
+          : await backup.deliverBackup(prepared.serializedBackup, prepared.filename);
+        if (!isCurrentBackupCreation(outputEpoch, form)) return;
         if (result.status === "cancelled") {
+          pendingBackupOutput = prepared;
+          showBackupShareAction(form);
           showBackupCreateNotice(form, "Das Teilen wurde abgebrochen. Es wurde keine Sicherungsdatei gespeichert.", false);
+          return;
+        }
+        if (result.status === "fallback-required" || result.status === "unsupported") {
+          recordBackupFailure("output", result);
+          pendingBackupOutput = prepared;
+          showBackupShareAction(form, { saveOnly: true });
+          showBackupCreateNotice(form, "Die vorbereitete Sicherung konnte nicht direkt geteilt werden. Tippe auf „Auf Gerät speichern“, um sie stattdessen herunterzuladen.", false);
           return;
         }
         if (!["shared", "downloaded"].includes(result.status)) throw new Error("Backup output failed");
         const reminderRecorded = await recordSuccessfulBackup();
+        if (!isCurrentBackupCreation(outputEpoch, form)) return;
         state.backupNotice = result.status === "shared"
           ? "Die verschlüsselte Gesamtsicherung wurde an den Teilen-Dialog übergeben."
           : "Die verschlüsselte Gesamtsicherung wurde zum Speichern bereitgestellt.";
@@ -7424,8 +7444,15 @@
         renderSettingsBackup();
       } catch (error) {
         recordBackupFailure("output", error);
-        if (form.isConnected && state.route === "settings-backup") {
-          showBackupCreateNotice(form, backupOutputErrorMessage(error), true);
+        if (isCurrentBackupCreation(outputEpoch, form)) {
+          pendingBackupOutput = prepared;
+          showBackupShareAction(form, { saveOnly: true });
+          const saving = action === "backup-output-save"
+            || error?.code?.startsWith("SHARE_DOWNLOAD_")
+            || error?.code === "BACKUP_DOWNLOAD_UNAVAILABLE";
+          showBackupCreateNotice(form, saving
+            ? backupOutputErrorMessage(error)
+            : "Die vorbereitete Sicherung konnte nicht geteilt werden. Du kannst sie stattdessen über „Auf Gerät speichern“ herunterladen.", saving);
         }
       } finally {
         if (button.isConnected) button.disabled = false;
@@ -7806,7 +7833,7 @@
       }
       state.backupBusy = true;
       state.backupNotice = "";
-      backupCreateForm.querySelector('[data-action="backup-output-ready"]')?.remove();
+      removeBackupOutputActions(backupCreateForm);
       mainContent.querySelector(".backup-page > .settings-save-notice")?.remove();
       setBackupCreateFormBusy(backupCreateForm, true);
       try {
@@ -7817,7 +7844,7 @@
         });
         if (!isCurrentBackupCreation(creationEpoch, backupCreateForm)) return;
         pendingBackupOutput = prepared;
-        showBackupCreateNotice(backupCreateForm, "Die Sicherung ist verschlüsselt vorbereitet. Tippe jetzt auf „Sicherung speichern oder teilen“.", false);
+        showBackupCreateNotice(backupCreateForm, "Die Sicherung ist verschlüsselt vorbereitet. Wähle „Auf Gerät speichern“ oder „Sicherung speichern oder teilen“.", false);
         showBackupShareAction(backupCreateForm);
       } catch (error) {
         if (!isCurrentBackupCreation(creationEpoch, backupCreateForm)) return;

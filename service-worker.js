@@ -1,7 +1,7 @@
 "use strict";
 
 const APP_SHELL_CACHE_PREFIX = "frecka-app-shell-";
-const APP_SHELL_CACHE = `${APP_SHELL_CACHE_PREFIX}0.11.9-podology006-1`;
+const APP_SHELL_CACHE = `${APP_SHELL_CACHE_PREFIX}0.11.9-android004-1`;
 const APP_ENTRY_URL = new URL("./index.html", self.location.href).href;
 const APP_SHELL_PATHS = Object.freeze([
   "./index.html",
@@ -22,11 +22,11 @@ const APP_SHELL_PATHS = Object.freeze([
   "./js/data.js?v=podology006-1",
   "./js/license-runtime.js?v=podology006-1",
   "./js/persistence.js?v=podology006-1",
-  "./js/backup.js?v=podology006-1",
+  "./js/backup.js?v=android004-1",
   "./js/export.js?v=podology006-1",
   "./js/export-package.js?v=podology006-1",
   "./js/pwa-update.js?v=podology006-1",
-  "./js/app.js?v=podology006-1"
+  "./js/app.js?v=android004-1"
 ]);
 const APP_SHELL_URLS = APP_SHELL_PATHS.map(path => new URL(path, self.location.href).href);
 
