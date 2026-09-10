@@ -1,12 +1,12 @@
-# FRECKA – 0.11.9 / PODOLOGY-006
+# FRECKA – 0.11.10 / BETA-PREVIEW-001
 
-**Vorbereiteter Beta-Stand:** 0.11.9 ergänzt auf Basis von 0.11.8 ausschließlich PODOLOGY-006. Der interne Behandlungsverlauf zeigt kompakte, initial geschlossene und unabhängig aufklappbare Einträge; Datenmodell, Persistenz, Dokumentprojektion und Datenschutzgrenzen bleiben unverändert. [Rezeptverwaltung](docs/prescriptions.md) · [Behandlungsdokumentation und Datenschutz](docs/treatment-documentation.md).
+**Vorbereiteter Zwischen-Beta-Stand:** 0.11.10 bündelt den seit der veröffentlichten Beta 0.11.9 auf `main` aufgelaufenen Stand aus ANDROID-004, COMPLIANCE-002 und DOCUMENT-002. Unmittelbarer Zweck ist die reale iPhone-Sicht- und Funktionsprüfung der neuen history-sicheren Leistungsort- und Steuernummerndarstellung. Die reale Android-Akzeptanz von ANDROID-004 bleibt ausdrücklich offen. [Release-Freigabenachweis](docs/releases/0.11.10.md).
 
-Browserbasierte FRECKA-PWA 0.11.9 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der Build PODOLOGY-006 verwendet unverändert IndexedDB-Schema 8 mit den mandantenbezogenen Stores `prescriptions` und `treatmentRecords`; die getrennte gerätelokale `licenseRuntime` bleibt unverändert außerhalb von Tenant-Snapshot, Backup und Export.
+Browserbasierte FRECKA-PWA 0.11.10 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der Build BETA-PREVIEW-001 verwendet unverändert IndexedDB-Schema 8; es gibt weder eine Store- noch eine Datenmigration. Die getrennte gerätelokale `licenseRuntime` bleibt unverändert außerhalb von Tenant-Snapshot, Backup und Export.
 
 ANDROID-001 sichert die mobile Skalierung und Touch-Ziele auch für Android-nahe Darstellungsprofile ab. IOS-NAV-001 verankert die Bottom-Navigation außerhalb der scrollenden App-Shell direkt am Viewport. ANDROID-002 behandelt den tatsächlichen File-Share nicht mehr als durch `canShare()` garantiert, klassifiziert Fehler neutral und bietet PDF- sowie ZIP-Speichern ausschließlich als bewusste Folgeaktion an. Der erfolgreiche iPhone-Datei-Share bleibt ohne Plattformweiche erhalten.
 
-0.11.8-d9093e7 / PODOLOGY-005 ist die unmittelbare veröffentlichte Beta-Vorgängerbasis. 0.11.9 benötigt vor einer weitergehenden Freigabe eine reale In-place-Abnahme auf iPhone/Home-Screen-PWA und Android. Lizenzserver, Trial, Kauf, Payment, neue TSE-Logik und ein allgemeiner Medizinexport sind nicht enthalten.
+0.11.9-2d6b2d4 / PODOLOGY-006 ist die unmittelbare veröffentlichte Beta-Vorgängerbasis. 0.11.10 benötigt vor einer weitergehenden Freigabe eine reale In-place-Abnahme auf iPhone/Home-Screen-PWA. Die reale Android-Prüfung von ANDROID-004 folgt separat, sobald ein Testgerät verfügbar ist. Lizenzserver, Trial, Kauf, Payment, neue TSE-Logik und ein allgemeiner Medizinexport sind nicht enthalten.
 
 Ein vollständig neuer Mandant startet ohne Kunden, Katalogpositionen, Belege, offene Zahlungen, Korrekturen, Gutscheine, Umsätze oder Logoassets. Neutrale technische Defaults, optionale Vorlagen und die ausschließlich für PERSISTENCE-010 erlaubte historische Vierer-Reparaturquelle sind strikt getrennt. Die verbindliche Erststartinventur und die 15-Punkte-Übergabecheckliste stehen in [`docs/beta-handoff.md`](docs/beta-handoff.md).
 
@@ -17,6 +17,15 @@ FRECKA V1.0 ist im definierten Einsatz ein lokales Beleg- und Dokumentationstool
 UX-011 / UPDATE-002 / BACKUP-003/004 ergänzt darauf eine reale Seite **Einstellungen → Update**, bereinigt veraltete „Geplant“-Kennzeichnungen und erinnert nach einem wählbaren Intervall ohne bestätigte Sicherungsdatei nicht blockierend an ein neues lokales Backup. Zur Auswahl stehen 48 Stunden, 5 Tage und wöchentlich; wöchentlich ist der abwärtskompatible Standard. Die manuelle Suche verwendet den vorhandenen Updatecontroller; Restore übernimmt die Intervallwahl, gilt aber niemals als neue Sicherung und bewahrt lokale Frist- und Snooze-Zeitpunkte.
 
 ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzeit aufrufbare Installationshilfe für iPhone/iPad und Android. Sie priorisiert die passende Anleitung ausschließlich anhand lokaler Browsermerkmale, zeigt im Standalone-Modus den bereits installierten Zustand und bleibt vollständig offline verfügbar. Beide Plattformen können immer manuell gewählt werden. Der kompakte Ablauf und die abweichenden Android-Bezeichnungen sind in [`docs/installation.md`](docs/installation.md) dokumentiert.
+
+## Neu in 0.11.10
+
+- ANDROID-004: vorbereitete Sicherungen werden erst durch eine ausdrückliche Nutzeraktion über den zentralen Share-/Download-Pfad ausgegeben; Abbruch, Ausgabefehler, Doppelaktionen und veralteter asynchroner Zustand sind abgesichert
+- reale Android-Akzeptanz von ANDROID-004 weiterhin offen; automatisierte Tests ersetzen keinen Test auf einem echten Android-Gerät
+- COMPLIANCE-002: definiertes lokales Betriebsmodell und TSE-Abgrenzung dokumentiert, ohne eine pauschale allgemeine TSE-Befreiung zu behaupten
+- DOCUMENT-002: history-sicherer Leistungsort auf neuen Belegen und PDFs, optionale abweichende Leistungsort-Steuernummer und zentrale Unternehmens-Steuernummer als Fallback
+- Bestandsbelege bleiben unverändert; Public-QR bleibt restriktiv, der Steuerberaterexport erhält ausschließlich gesnapshotte Leistungsort-/Steuernummerinformationen
+- einheitliche Release-, Asset- und App-Shell-Kennung `0.11.10 / BETA-PREVIEW-001 / betapreview001-1`; reale iPhone-Sichtprüfung und Android-Abnahme bleiben nachgelagerte Gates
 
 ## Neu in 0.11.9
 

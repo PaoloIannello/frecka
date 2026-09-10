@@ -1,8 +1,8 @@
 # FRECKA: Deployment- und Infrastrukturkonzept für Synology Web Station
 
-Stand: 2. September 2026
+Stand: 10. September 2026
 
-Geltungsbereich: bestätigte Beta-Basis `0.11.6-ee13b12`, gesperrte Releases `0.11.2-a959ec6` und `0.11.3-a8380a0`, Releases `0.11.7-608257f` und `0.11.8-d9093e7`, vorbereiteter UX-Patch `0.11.9` / `PODOLOGY-006` und lokaler automatisierter Beta-Release
+Geltungsbereich: historische Beta-Stände bis `0.11.9-2d6b2d4`, vorbereiteter Zwischen-Beta-Stand `0.11.10` / `BETA-PREVIEW-001` und lokaler automatisierter Beta-Release
 
 Der verbindliche Infrastrukturrahmen steht in `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`. Dieses Dokument konkretisiert ausschließlich die statische Laufzeitmenge und ihre spätere Zuordnung zu Synology Web Station.
 
@@ -183,7 +183,7 @@ Der annotierte Tag `v0.11.6` zeigt auf Commit `ee13b12ed7cd4763d23d6f4979b83cd5a
 
 Der annotierte Tag `v0.11.7` zeigt auf Commit `608257fc99b7f1fd93d893cc6104ce55e6e40f44`; das unveränderliche Artefakt `0.11.7-608257f` verwendet Build `PODOLOGY-004`, den HTML-Titel `FRECKA – PODOLOGY-004`, den Asset-Abfragewert `podology004-1` und den App-Shell-Cache `frecka-app-shell-0.11.7-podology004-1`. Es bündelt PODOLOGY-001 bis PODOLOGY-004.
 
-Der annotierte Tag `v0.11.8` und das veröffentlichte Artefakt `0.11.8-d9093e7 / PODOLOGY-005` bleiben unverändert. Der vorbereitete Stand `0.11.9 / PODOLOGY-006` verwendet den Asset-Abfragewert `podology006-1` und den App-Shell-Cache `frecka-app-shell-0.11.9-podology006-1`. Er ergänzt ausschließlich den kompakten internen Behandlungsverlauf sowie notwendige Versions-, Cache-, Test- und Releaseanpassungen. Für 0.11.9 werden in diesem Vorbereitungsschritt weder Tag noch Artefakt, Upload oder Web-Station-Umschaltung erzeugt.
+Der annotierte Tag `v0.11.9` und das veröffentlichte Artefakt `0.11.9-2d6b2d4 / PODOLOGY-006` bleiben unverändert. Der vorbereitete Stand `0.11.10 / BETA-PREVIEW-001` verwendet den Asset-Abfragewert `betapreview001-1` und den App-Shell-Cache `frecka-app-shell-0.11.10-betapreview001-1`. Er bündelt ANDROID-004, COMPLIANCE-002 und DOCUMENT-002 sowie ausschließlich notwendige Versions-, Cache-, Test- und Releaseanpassungen. Für 0.11.10 werden in diesem Vorbereitungsschritt weder Tag noch Artefakt, Upload oder Web-Station-Umschaltung erzeugt.
 
 Ein Updateformat für signierte Kanäle und ein Signaturverfahren sind ausdrücklich noch nicht implementiert. SERVICEWORKER-002 erkennt ausschließlich Änderungen des Service Workers innerhalb derselben bereits aufgerufenen Deployment-Origin.
 
@@ -241,9 +241,13 @@ Bewertung: `0.9.1-26dc63f` ist für den Beta-Betrieb freigegeben und gilt als st
 
 Das veröffentlichte Release `0.11.8-d9093e7` ergänzt ausschließlich PODOLOGY-005 und ist die unmittelbare Basis von 0.11.9. IndexedDB-Schema 8, Geschäftsstores, Snapshot-, Backup-, Restore-, Export-, QR-, PDF-, Public-Viewer-, Lizenz- und Websitearchitektur bleiben unverändert.
 
-### 2.20 Vorbereiteter Beta-Stand 0.11.9
+### 2.20 Release-Stand 0.11.9
 
-0.11.9 ergänzt ausschließlich PODOLOGY-006: kompakte, initial geschlossene Behandlungseinträge im internen Kundenprofil mit unabhängiger Disclosure-Bedienung. Schema 8, Stores, Fachlogik und Ausgabeverträge bleiben unverändert; keine Datenmigration. Die strukturierte technische Freigabe steht in `docs/releases/0.11.9.md`. Reale iPhone-/Android-Abnahme und manuelle Web-Station-Umschaltung bleiben separate Gates; keine Produktivfreigabe.
+Das veröffentlichte Release `0.11.9-2d6b2d4` ergänzt ausschließlich PODOLOGY-006: kompakte, initial geschlossene Behandlungseinträge im internen Kundenprofil mit unabhängiger Disclosure-Bedienung. Schema 8, Stores, Fachlogik und Ausgabeverträge bleiben unverändert; keine Datenmigration. Die strukturierte technische Freigabe steht in `docs/releases/0.11.9.md`. Eine Produktivfreigabe folgt daraus nicht.
+
+### 2.21 Vorbereiteter Zwischen-Beta-Stand 0.11.10
+
+0.11.10 bündelt den seit 0.11.9 auf `main` aufgelaufenen Stand aus ANDROID-004, COMPLIANCE-002 und DOCUMENT-002. Der Stand dient insbesondere der realen iPhone-Prüfung von Leistungsort, effektiver Steuernummer und Dokumentdarstellung. Die automatisierte ANDROID-004-Prüfung ist bestanden; eine reale Android-Abnahme wird ausdrücklich nicht vorweggenommen. Die strukturierte technische Freigabe steht in `docs/releases/0.11.10.md`. Tag, Artefakt, Upload, Web-Station-Umschaltung, Geräteabnahme und Produktion bleiben separate Gates.
 
 ## 3. Abgeleitete Deployment-Prinzipien
 

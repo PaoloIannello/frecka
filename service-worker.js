@@ -1,32 +1,32 @@
 "use strict";
 
 const APP_SHELL_CACHE_PREFIX = "frecka-app-shell-";
-const APP_SHELL_CACHE = `${APP_SHELL_CACHE_PREFIX}0.11.9-android004-1`;
+const APP_SHELL_CACHE = `${APP_SHELL_CACHE_PREFIX}0.11.10-betapreview001-1`;
 const APP_ENTRY_URL = new URL("./index.html", self.location.href).href;
 const APP_SHELL_PATHS = Object.freeze([
   "./index.html",
-  "./styles.css?v=podology006-1",
-  "./manifest.webmanifest?v=podology006-1",
+  "./styles.css?v=betapreview001-1",
+  "./manifest.webmanifest?v=betapreview001-1",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
-  "./vendor/qrcodegen-v1.8.0-es6.js?v=podology006-1",
-  "./vendor/pdf-lib-v1.17.1.min.js?v=podology006-1",
-  "./vendor/jszip-v3.10.1.min.js?v=podology006-1",
-  "./js/config.js?v=podology006-1",
-  "./js/qr.js?v=podology006-1",
-  "./js/documents.js?v=podology006-1",
-  "./js/public-documents.js?v=podology006-1",
-  "./js/sharing.js?v=podology006-1",
-  "./js/document-view.js?v=podology006-1",
-  "./js/public-viewer.js?v=podology006-1",
-  "./js/data.js?v=podology006-1",
-  "./js/license-runtime.js?v=podology006-1",
-  "./js/persistence.js?v=podology006-1",
-  "./js/backup.js?v=android004-1",
-  "./js/export.js?v=podology006-1",
-  "./js/export-package.js?v=podology006-1",
-  "./js/pwa-update.js?v=podology006-1",
-  "./js/app.js?v=android004-1"
+  "./vendor/qrcodegen-v1.8.0-es6.js?v=betapreview001-1",
+  "./vendor/pdf-lib-v1.17.1.min.js?v=betapreview001-1",
+  "./vendor/jszip-v3.10.1.min.js?v=betapreview001-1",
+  "./js/config.js?v=betapreview001-1",
+  "./js/qr.js?v=betapreview001-1",
+  "./js/documents.js?v=betapreview001-1",
+  "./js/public-documents.js?v=betapreview001-1",
+  "./js/sharing.js?v=betapreview001-1",
+  "./js/document-view.js?v=betapreview001-1",
+  "./js/public-viewer.js?v=betapreview001-1",
+  "./js/data.js?v=betapreview001-1",
+  "./js/license-runtime.js?v=betapreview001-1",
+  "./js/persistence.js?v=betapreview001-1",
+  "./js/backup.js?v=betapreview001-1",
+  "./js/export.js?v=betapreview001-1",
+  "./js/export-package.js?v=betapreview001-1",
+  "./js/pwa-update.js?v=betapreview001-1",
+  "./js/app.js?v=betapreview001-1"
 ]);
 const APP_SHELL_URLS = APP_SHELL_PATHS.map(path => new URL(path, self.location.href).href);
 
