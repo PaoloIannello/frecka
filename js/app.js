@@ -3059,6 +3059,8 @@
     const usesCompanyAddress = location.addressMode === "company";
     const streetName = usesCompanyAddress ? data.company.street || "" : location.street || "";
     const houseNumber = usesCompanyAddress ? data.company.houseNumber || "" : location.houseNumber || "";
+    const locationTaxNumber = String(location.taxNumber || "").trim();
+    const companyTaxNumber = String(data.company.taxNumber || "").trim();
     return {
       id: location.id || "",
       name: location.name || (usesCompanyAddress ? companyDisplayName(data.company) : "Leistungsort"),
@@ -3069,7 +3071,10 @@
       zip: usesCompanyAddress ? data.company.zip || "" : location.zip || "",
       city: usesCompanyAddress ? data.company.city || "" : location.city || "",
       phone: location.phone || (usesCompanyAddress ? data.company.phone || "" : ""),
-      voucherNote: location.voucherNote || ""
+      voucherNote: location.voucherNote || "",
+      taxNumber: locationTaxNumber,
+      effectiveTaxNumber: locationTaxNumber || companyTaxNumber,
+      taxNumberSource: locationTaxNumber ? "service-location" : "company"
     };
   }
 
@@ -3150,6 +3155,7 @@
       if (location.city === undefined) location.city = "";
       if (location.phone === undefined) location.phone = "";
       if (location.voucherNote === undefined) location.voucherNote = "";
+      if (location.taxNumber === undefined) location.taxNumber = "";
       if (location.active === undefined) location.active = true;
       if (!Array.isArray(location.businessAreaIds)) location.businessAreaIds = [...allAreaIds];
       delete location.mode;
@@ -4113,7 +4119,7 @@
   function applyServiceLocationForm(formData, validate = true) {
     const existingId = String(formData.get("locationId") || state.serviceLocationEditingId || "");
     const existing = existingId === "new"
-      ? { id: "new", name: "", addressMode: data.company.useAsServiceLocation !== false ? "company" : "own", street: "", houseNumber: "", zip: "", city: "", phone: "", voucherNote: "", active: true, businessAreaIds: [state.activeBusinessArea].filter(Boolean) }
+      ? { id: "new", name: "", addressMode: data.company.useAsServiceLocation !== false ? "company" : "own", street: "", houseNumber: "", zip: "", city: "", phone: "", voucherNote: "", taxNumber: "", active: true, businessAreaIds: [state.activeBusinessArea].filter(Boolean) }
       : data.serviceLocations.find(location => location.id === existingId) ?? currentServiceLocation();
     const editorForm = formData.get("_locationEditor") === "true";
     const rawMode = String(formData.get("addressMode") || formData.get("mode") || existing.addressMode || "company");
@@ -4130,12 +4136,14 @@
       city: addressMode === "own" ? String(formData.get("city") || "").trim() : "",
       phone: String(formData.get("phone") || "").trim(),
       voucherNote: String(formData.get("voucherNote") || "").trim(),
+      taxNumber: String(formData.has("taxNumber") ? formData.get("taxNumber") || "" : existing.taxNumber || "").trim(),
       active: editorForm ? formData.get("active") === "on" : existing.active !== false,
       businessAreaIds
     };
     if (validate && !location.name) return "Bitte eine Bezeichnung für den Leistungsort eingeben.";
     if (validate && addressMode === "company" && data.company.useAsServiceLocation === false) return "Bitte die Nutzung der Unternehmensanschrift aktivieren oder eine eigene Adresse eingeben.";
     if (validate && addressMode === "own" && [location.street, location.houseNumber, location.zip, location.city].some(value => !value)) return "Bitte die eigene Adresse vollständig eingeben.";
+    if (validate && location.taxNumber.length > 50) return "Bitte die abweichende Steuernummer auf höchstens 50 Zeichen kürzen.";
     if (validate && !businessAreaIds.length) return "Bitte mindestens einen Geschäftsbereich zuordnen.";
 
     const nextLocations = data.serviceLocations.filter(entry => entry.id !== location.id);
@@ -5625,7 +5633,7 @@
   function renderServiceLocationEditor() {
     const isNew = state.serviceLocationEditingId === "new";
     const location = isNew ? {
-      id: "new", name: "", addressMode: data.company.useAsServiceLocation !== false ? "company" : "own", street: "", houseNumber: "", zip: "", city: "", phone: "", voucherNote: "", active: true, businessAreaIds: [state.activeBusinessArea].filter(Boolean)
+      id: "new", name: "", addressMode: data.company.useAsServiceLocation !== false ? "company" : "own", street: "", houseNumber: "", zip: "", city: "", phone: "", voucherNote: "", taxNumber: "", active: true, businessAreaIds: [state.activeBusinessArea].filter(Boolean)
     } : data.serviceLocations.find(entry => entry.id === state.serviceLocationEditingId);
     if (!location) {
       state.serviceLocationEditingId = null;
@@ -5649,7 +5657,7 @@
           <label class="setting-field"><span>Straße</span><input name="street" value="${escapeHtml(location.street)}"></label><label class="setting-field"><span>Hausnummer</span><input name="houseNumber" value="${escapeHtml(location.houseNumber)}"></label>
           <label class="setting-field"><span>PLZ</span><input name="zip" inputmode="numeric" value="${escapeHtml(location.zip)}"></label><label class="setting-field"><span>Ort</span><input name="city" value="${escapeHtml(location.city)}"></label>
         </fieldset>
-        <section class="settings-form-card"><h2>Kontakt und Gutschein</h2><label class="setting-field full"><span>Telefon <small>optional</small></span><input name="phone" type="tel" value="${escapeHtml(location.phone)}"></label><label class="setting-field full"><span>Hinweis für Gutscheine <small>optional</small></span><textarea name="voucherNote" rows="3" placeholder="z. B. Einlösbar nach Terminvereinbarung">${escapeHtml(location.voucherNote)}</textarea></label></section>
+        <section class="settings-form-card"><h2>Kontakt, Steuer und Gutschein</h2><label class="setting-field full"><span>Telefon <small>optional</small></span><input name="phone" type="tel" value="${escapeHtml(location.phone)}"></label><label class="setting-field full"><span>Abweichende Steuernummer <small>optional</small></span><input name="taxNumber" autocomplete="off" maxlength="50" value="${escapeHtml(location.taxNumber || "")}"><small>Leer lassen, wenn die Steuernummer des Unternehmens gilt.</small></label><label class="setting-field full"><span>Hinweis für Gutscheine <small>optional</small></span><textarea name="voucherNote" rows="3" placeholder="z. B. Einlösbar nach Terminvereinbarung">${escapeHtml(location.voucherNote)}</textarea></label></section>
         <section class="settings-form-card settings-single-column"><h2>Gilt für folgende Geschäftsbereiche</h2><div class="service-location-area-options">${activeBusinessAreas().map(area => `<label><input type="checkbox" name="businessAreaIds" value="${escapeHtml(area.id)}" ${location.businessAreaIds.includes(area.id) ? "checked" : ""}><span>${escapeHtml(area.label)}</span></label>`).join("")}</div><p class="settings-neutral-note">Mindestens ein Geschäftsbereich muss gewählt sein.</p></section>
         <label class="service-location-active-toggle"><input type="checkbox" name="active" ${location.active !== false ? "checked" : ""}><span><strong>Leistungsort aktiv</strong><small>Deaktivierte Orte werden nicht als Standard angeboten.</small></span></label>
         <button class="button button-primary settings-save" type="submit">Leistungsort speichern</button>

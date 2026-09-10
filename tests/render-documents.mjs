@@ -82,6 +82,19 @@ const receipt = {
   time: "13:34",
   companySnapshot,
   brandingSnapshot: receiptBrandingSnapshot,
+  serviceLocationSnapshot: {
+    id: "location-receipt-qa",
+    name: "Podologie Prüfeninger Straße",
+    addressMode: "own",
+    streetName: "Prüfeninger Straße",
+    houseNumber: "20",
+    street: "Prüfeninger Straße 20",
+    zip: "93049",
+    city: "Regensburg",
+    taxNumber: "987/654/32109",
+    effectiveTaxNumber: "987/654/32109",
+    taxNumberSource: "service-location"
+  },
   customerSnapshot: {
     id: "customer-qa",
     name: "Anna Muster",
@@ -173,11 +186,17 @@ const taxPdfText = visiblePdfText(await globalThis.PDFLib.PDFDocument.load(taxRe
 if (!customerPdfText.includes("Rezept vom: 31.08.2026") || !customerPdfText.includes("Pflegehinweis: PODOLOGY004-CARE-MARKER")) {
   throw new Error("PODOLOGY-004-Kundenfelder fehlen im gerenderten Kunden-PDF.");
 }
+if (!customerPdfText.includes("Leistungsort") || !customerPdfText.includes("Podologie Prüfeninger Straße") || !customerPdfText.includes("Steuernummer: 987/654/32109")) {
+  throw new Error("DOCUMENT-002-Leistungsort oder effektive Steuernummer fehlt im gerenderten Kunden-PDF.");
+}
 if (customerPdfText.includes("PODOLOGY004-INTERNAL-MARKER")) {
   throw new Error("Interne Behandlungsdokumentation gelangte ins Kunden-PDF.");
 }
 if (taxPdfText.includes("Rezept vom:") || taxPdfText.includes("Pflegehinweis:") || taxPdfText.includes("PODOLOGY004-")) {
   throw new Error("Medizinische Zusatzfelder gelangten ins Steuerberater-PDF.");
+}
+if (!taxPdfText.includes("Leistungsort") || !taxPdfText.includes("Podologie Prüfeninger Straße") || !taxPdfText.includes("Steuernummer: 987/654/32109")) {
+  throw new Error("DOCUMENT-002-Leistungsort oder effektive Steuernummer fehlt im Steuerberater-PDF.");
 }
 const taxFilename = "FRECKA-Steuerberater-2030-000099.pdf";
 await Promise.all([

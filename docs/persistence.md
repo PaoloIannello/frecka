@@ -241,7 +241,9 @@ Vorlagen verwenden deterministische IDs aus Geschäftsbereich, Typ und Vorlagens
 
 Die Unternehmensanschrift bleibt ausschließlich Bestandteil von `company`. `company.useAsServiceLocation` bestimmt, ob ein Leistungsort mit `addressMode: "company"` diese Anschrift verwenden darf.
 
-Leistungsorte bleiben eine Liste. Jeder Ort besitzt eine stabile String-ID und enthält seine Zuordnungen zu Geschäftsbereichen als `businessAreaIds`. Damit bleibt die n:m-Beziehung erhalten. Der Standard-Leistungsort liegt nicht global, sondern je Geschäftsbereich in `businessAreas[].defaultServiceLocationId`.
+Leistungsorte bleiben eine Liste. Jeder Ort besitzt eine stabile String-ID und enthält seine Zuordnungen zu Geschäftsbereichen als `businessAreaIds`. Damit bleibt die n:m-Beziehung erhalten. Der Standard-Leistungsort liegt nicht global, sondern je Geschäftsbereich in `businessAreas[].defaultServiceLocationId`. DOCUMENT-002 ergänzt am selben Objekt ausschließlich `taxNumber` als optionale abweichende Steuernummer. Ein leerer Wert verwendet weiterhin die zentrale Unternehmens-Steuernummer; daraus entsteht weder ein zweites Unternehmen noch ein weiterer Mandant.
+
+Beim Abschluss fixiert der bestehende Leistungsortsnapshot neben ID, Name und Anschrift auch `effectiveTaxNumber` sowie `taxNumberSource` (`company` oder `service-location`). Neue Belege lassen sich dadurch unabhängig von späteren Änderungen vollständig reproduzieren. Bestandsbelege ohne diese Felder bleiben gültig und verwenden ausschließlich ihre bereits gespeicherte Unternehmens-Steuernummer; aktuelle Leistungsort-Stammdaten werden niemals rückwirkend ergänzt. Das additive Feld benötigt weder einen neuen Store noch einen IndexedDB-Schema-Bump.
 
 Beim Laden werden verwaiste Zuordnungen entfernt. Ein Standardort ist nur gültig, wenn er existiert, aktiv, dem Geschäftsbereich zugeordnet und bei Verwendung der Unternehmensanschrift verfügbar ist. Andernfalls wird der erste geeignete zugeordnete Ort verwendet oder der Standard sicher auf `null` gesetzt. Es wird keine fachliche Zuordnung erfunden.
 

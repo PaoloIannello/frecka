@@ -131,6 +131,9 @@ button,select{font:inherit} button{-webkit-tap-highlight-color:transparent} butt
 .receipt-paper-items span{display:grid;gap:3px}
 .receipt-paper-items small{color:#66726e}
 .receipt-paper-row{padding:10px 0;display:flex;justify-content:space-between;gap:14px}
+.receipt-paper-location{padding:11px 0;display:grid;gap:3px;border-bottom:1px dashed #9da9a5;overflow-wrap:anywhere}
+.receipt-paper-location>span,.receipt-paper-location>small{font-size:.72rem;color:#66726e}
+.receipt-paper-location>strong{font-size:.9rem}
 .receipt-paper-total{margin-top:5px;padding:15px 0;border-top:2px solid #1c2623;display:flex;justify-content:space-between;align-items:center;font-size:1.2rem}
 .receipt-paper footer{padding-top:22px;text-align:center;font-size:.72rem;color:#66726e}
 .preview-download{max-width:560px;margin:16px auto 0}

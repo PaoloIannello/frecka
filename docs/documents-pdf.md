@@ -44,6 +44,7 @@ Das Belegmodell übernimmt ausschließlich gespeicherte Geschäftswerte und Snap
 - stabile ID, Belegnummer und Belegart;
 - deutsches Datum und Uhrzeit ohne sichtbaren ISO-Zeitstempel;
 - Unternehmens- und Branding-Snapshot;
+- den historischen Leistungsortsnapshot und die beim Abschluss fixierte effektive Steuernummer;
 - optionalen Kundensnapshot;
 - gespeicherte Positionen, Rabatte, Steuergruppen und Summen in Cent;
 - Zahlungsstatus, Zahlungsart, Gutschein- und Restzahlung;
@@ -53,7 +54,9 @@ Das Belegmodell übernimmt ausschließlich gespeicherte Geschäftswerte und Snap
 
 Nur ein normaler Beleg im ausdrücklichen Kundenmodus darf zusätzlich zwei kompakte Angaben tragen: `Rezept vom` aus dem unveränderlichen Rezeptzuordnungs-Snapshot und `Pflegehinweis` aus dem exakt referenzierten historischen Behandlungsdatensatz. Die Engine liest dafür keine aktuellen Rezeptstammdaten und keine Vorlagen. Interne Dokumentation, Rezept-ID, Behandlungstext, Einheiten, Verbrauch und Status werden nie in das Dokumentmodell projiziert. Korrektur- und Gutscheinverkaufsbelege erhalten diese Angaben in keinem Modus.
 
-Ein normaler Beleg enthält bewusst keinen Leistungserbringungsort. Die Engine führt keine Steuer-, Rabatt- oder Gutscheinberechnung durch. Sie normalisiert nur bereits vorhandene Cent- beziehungsweise Dezimalfelder in das Ausgabeformat.
+Ein Beleg zeigt einen vom Unternehmenssitz abweichenden, historisch gesicherten Leistungsort kompakt mit Name und Anschrift. Verwendet der Leistungsort eindeutig die Unternehmensanschrift oder stimmt seine gespeicherte Anschrift vollständig mit ihr überein, wird die doppelte Ortsanschrift unterdrückt. Die im Ausstellerblock sichtbare Steuernummer ist genau die beim Abschluss fixierte effektive Nummer: eine optionale Leistungsort-Steuernummer oder andernfalls die zentrale Unternehmens-Steuernummer. Es werden niemals zwei konkurrierende Steuernummern gleichzeitig dargestellt. Bestandsbelege ohne Leistungsortsnapshot erhalten keine nachträglich erfundenen Ortsdaten.
+
+Die Engine führt keine Steuer-, Rabatt- oder Gutscheinberechnung durch. Sie normalisiert nur bereits vorhandene Cent- beziehungsweise Dezimalfelder in das Ausgabeformat.
 
 Das PDF verwendet eine schmale 80-mm-Belegbreite. Lange Positionen und Pflegehinweise werden verlustfrei umgebrochen; auch ein einzelnes überbreites Wort oder eine lange URL wird ohne Endlosschleife auf die verfügbare Breite verteilt. Lange Belege erhalten Folgeseiten. Am Ende des letzten Blatts steht im Regelfall ein großer, zentrierter Vektor-QR-Code. Er nutzt die volle verfügbare Belegbreite von ungefähr 68,7 mm; darunter steht ausschließlich „Digitaler Beleg“.
 
@@ -69,7 +72,7 @@ Das Gutscheinmodell übernimmt:
 - Verkaufsbelegreferenz;
 - QR-Link, QR-Matrix und SVG aus dem zentralen QR-Service.
 
-Im Gegensatz zum normalen Beleg zeigt der Gutschein immer seinen gespeicherten Einlöse- beziehungsweise Leistungserbringungsort. Änderungen an heutigen Stammdaten verändern ein bereits projiziertes oder neu aus seinem historischen Snapshot erzeugtes Dokument nicht.
+Der Gutschein zeigt weiterhin immer seinen gespeicherten Einlöse- beziehungsweise Leistungserbringungsort. Änderungen an heutigen Stammdaten verändern ein bereits projiziertes oder neu aus seinem historischen Snapshot erzeugtes Dokument nicht.
 
 ## QR-Vertrag
 

@@ -64,6 +64,7 @@
       </header>
       <div class="receipt-paper-meta"><span>Beleg ${escapeHtml(model.number)}</span><span>${escapeHtml(model.dateTime)}</span></div>
       <div class="receipt-paper-kind"><span>Belegart</span><strong>${escapeHtml(model.kind.label)}</strong></div>
+      ${model.serviceLocation ? `<div class="receipt-paper-location"><span>Leistungsort</span><strong>${escapeHtml(model.serviceLocation.name)}</strong>${model.serviceLocation.street ? `<small>${escapeHtml(model.serviceLocation.street)}</small>` : ""}${model.serviceLocation.cityLine ? `<small>${escapeHtml(model.serviceLocation.cityLine)}</small>` : ""}</div>` : ""}
       <div class="receipt-paper-items">
         ${model.positions.map(item => `<div class="receipt-paper-item"><span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.quantity)} × ${formatCurrency(item.originalUnitCents)}</small>${item.discountCents > 0 ? `<em>${escapeHtml(item.discountLabel)} <b>−${formatCurrency(item.discountCents)}</b></em>` : ""}</span><strong>${formatCurrency(item.totalCents)}</strong></div>`).join("")}
       </div>

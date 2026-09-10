@@ -22,6 +22,9 @@
         ["Datum", "date"],
         ["Uhrzeit", "time"],
         ["Geschäftsbereich", "businessArea"],
+        ["Leistungsort", "serviceLocation"],
+        ["Leistungsort-Anschrift", "serviceLocationAddress"],
+        ["Verwendete Steuernummer", "taxNumber"],
         ["Kunde", "customer"],
         ["Netto", "net"],
         ["Steuer", "tax"],
@@ -417,6 +420,28 @@
     return source?.businessAreaSnapshot || source?.contextSnapshot?.businessArea || null;
   }
 
+  function locationSnapshot(source) {
+    return source?.serviceLocationSnapshot || source?.contextSnapshot?.serviceLocation || null;
+  }
+
+  function locationStreetLine(location) {
+    const streetName = text(location?.streetName);
+    const houseNumber = text(location?.houseNumber);
+    return streetName ? [streetName, houseNumber].filter(Boolean).join(" ") : text(location?.street);
+  }
+
+  function locationAddress(location) {
+    if (!isPlainObject(location)) return "";
+    const cityLine = [text(location.zip || location.postalCode), text(location.city)].filter(Boolean).join(" ");
+    return [locationStreetLine(location), cityLine].filter(Boolean).join(", ");
+  }
+
+  function receiptTaxNumber(receipt) {
+    const location = locationSnapshot(receipt);
+    const company = receipt?.companySnapshot || receipt?.contextSnapshot?.company || null;
+    return text(location?.effectiveTaxNumber) || text(company?.taxNumber);
+  }
+
   function areaId(source) {
     return text(source?.businessAreaId) || text(areaSnapshot(source)?.id);
   }
@@ -516,6 +541,9 @@
       date: formatDateKey(receiptDateValue(receipt)),
       time: formatTime(receiptTimeValue(receipt)),
       businessArea: areaLabel(receipt, settingsAreaById),
+      serviceLocation: text(locationSnapshot(receipt)?.name),
+      serviceLocationAddress: locationAddress(locationSnapshot(receipt)),
+      taxNumber: receiptTaxNumber(receipt),
       customer: customerLabel(receipt.customerSnapshot || receipt.customer),
       net: moneyFromCents(cents(receipt, "netTotalCents", "netTotal")),
       tax: moneyFromCents(cents(receipt, "taxTotalCents", "taxTotal")),

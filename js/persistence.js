@@ -1195,6 +1195,7 @@
         city: stringValue(location.city),
         phone: stringValue(location.phone),
         voucherNote: stringValue(location.voucherNote),
+        taxNumber: stringValue(location.taxNumber),
         active: location.active !== false,
         businessAreaIds: uniqueStrings(location.businessAreaIds)
       })).filter(location => nullableStringId(location.id)),
@@ -3093,6 +3094,7 @@
         city: stringValue(entry.city, stringValue(fallback.city)),
         phone: stringValue(entry.phone, stringValue(fallback.phone)),
         voucherNote: stringValue(entry.voucherNote, stringValue(fallback.voucherNote)),
+        taxNumber: stringValue(entry.taxNumber, stringValue(fallback.taxNumber)),
         active: booleanValue(entry.active, fallback.active !== false),
         businessAreaIds: normalizedAreaIds
       }];

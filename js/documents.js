@@ -98,15 +98,31 @@
 
   function normalizeLocation(source) {
     const location = source && typeof source === "object" ? source : {};
-    const street = [trimmed(location.street), trimmed(location.houseNumber)].filter(Boolean).join(" ");
+    const streetName = trimmed(location.streetName);
+    const houseNumber = trimmed(location.houseNumber);
+    const street = streetName
+      ? [streetName, houseNumber].filter(Boolean).join(" ")
+      : trimmed(location.street);
     return {
       id: trimmed(location.id),
       name: trimmed(location.name),
-      street: street || trimmed(location.street),
+      addressMode: location.addressMode === "company" ? "company" : "own",
+      street,
       cityLine: addressCityLine(location),
       phone: trimmed(location.phone),
-      voucherNote: trimmed(location.voucherNote)
+      voucherNote: trimmed(location.voucherNote),
+      taxNumber: trimmed(location.taxNumber),
+      effectiveTaxNumber: trimmed(location.effectiveTaxNumber),
+      taxNumberSource: location.taxNumberSource === "service-location" ? "service-location" : "company"
     };
+  }
+
+  function locationMatchesIssuer(location, issuer) {
+    if (!location?.name) return false;
+    if (location.addressMode === "company") return true;
+    return Boolean(location.street && location.cityLine && issuer.street && issuer.cityLine)
+      && sameDisplayText(location.street, issuer.street)
+      && sameDisplayText(location.cityLine, issuer.cityLine);
   }
 
   function normalizeResolvedLogoAsset(asset, expectedAssetId) {
@@ -315,7 +331,17 @@
     const id = trimmed(receipt.id) || (number ? `receipt_${safeFilenamePart(number).replaceAll("-", "_")}` : "");
     if (!id || !number) throw new DocumentError("DOCUMENT_RECEIPT_INVALID", "Dem Beleg fehlt eine stabile Referenz oder Belegnummer.");
     const issuerSource = receipt.companySnapshot || receipt.contextSnapshot?.company || receipt.presentationSnapshot?.issuer || options.company;
-    const issuer = normalizeCompany(issuerSource, options.companyIdentity);
+    const baseIssuer = normalizeCompany(issuerSource, options.companyIdentity);
+    const locationSource = receipt.serviceLocationSnapshot || receipt.contextSnapshot?.serviceLocation || null;
+    const normalizedLocation = locationSource ? normalizeLocation(locationSource) : null;
+    const effectiveTaxNumber = trimmed(locationSource?.effectiveTaxNumber);
+    const issuer = {
+      ...baseIssuer,
+      taxNumber: effectiveTaxNumber || baseIssuer.taxNumber,
+      taxNumberSource: effectiveTaxNumber
+        ? normalizedLocation.taxNumberSource
+        : "company"
+    };
     if (!issuer.owner) throw new DocumentError("DOCUMENT_ISSUER_INVALID", "Für das Dokument fehlt die verpflichtende Unternehmerangabe.");
     const branding = normalizeBranding(
       receipt.brandingSnapshot || receipt.contextSnapshot?.branding || receipt.presentationSnapshot?.branding,
@@ -368,7 +394,9 @@
       issuer,
       branding,
       businessArea: clone(receipt.businessAreaSnapshot || receipt.contextSnapshot?.businessArea) || null,
-      serviceLocation: null,
+      serviceLocation: normalizedLocation?.name && !locationMatchesIssuer(normalizedLocation, baseIssuer)
+        ? normalizedLocation
+        : null,
       customer: normalizeCustomer(receipt.customerSnapshot || receipt.customer),
       prescriptionDate: customerFields.prescriptionDate,
       customerCareAdvice: customerFields.customerCareAdvice,
@@ -596,6 +624,13 @@
     let height = 32 + logoHeightReserve + 88;
     height += model.positions.reduce((sum, item) => sum + 30 + Math.max(0, wrapText(fonts.bold, item.title, 8.5, contentWidth - 62).length - 1) * 10, 0);
     if (model.customer) height += 45;
+    if (model.serviceLocation) {
+      height += 32;
+      height += wrapText(fonts.bold, model.serviceLocation.name, 8, contentWidth).length * 10;
+      height += [model.serviceLocation.street, model.serviceLocation.cityLine]
+        .filter(Boolean)
+        .reduce((sum, value) => sum + wrapText(fonts.regular, value, 7.5, contentWidth).length * 9, 0);
+    }
     if (model.prescriptionDate) height += 20;
     if (model.customerCareAdvice) height += 14 + wrapText(fonts.regular, `Pflegehinweis: ${model.customerCareAdvice}`, 7.5, contentWidth).length * 9;
     height += 65;
@@ -706,6 +741,17 @@
     drawText(page, fonts.bold, `${model.kind.label} ${model.number}`, { x: margin, y, size: 8.5, color: colors.ink });
     drawRight(page, fonts.regular, model.dateTime, 7.5, right, y, colors.muted);
     y -= 18;
+
+    if (model.serviceLocation) {
+      paragraph("Leistungsort", { size: 7, color: colors.muted, gap: 9 });
+      paragraph(model.serviceLocation.name, { font: fonts.bold, size: 8, gap: 10 });
+      [model.serviceLocation.street, model.serviceLocation.cityLine].filter(Boolean).forEach(value => {
+        paragraph(value, { size: 7.5, color: colors.muted, gap: 9 });
+      });
+      y -= 4;
+      drawRule(page, margin, right, y, colors.line);
+      y -= 14;
+    }
 
     model.positions.forEach(item => {
       const titleLines = wrapText(fonts.bold, item.title, 8.5, contentWidth - 64);

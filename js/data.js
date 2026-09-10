@@ -50,6 +50,7 @@ window.PROTOTYPE_DATA = Object.freeze({
       city: "",
       phone: "",
       voucherNote: "",
+      taxNumber: "",
       active: true,
       businessAreaIds: ["general"]
     }

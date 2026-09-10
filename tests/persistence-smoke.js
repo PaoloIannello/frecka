@@ -225,6 +225,7 @@
           city: "",
           phone: "0123 456789",
           voucherNote: "Nur nach Termin",
+          taxNumber: "",
           active: true,
           businessAreaIds: ["hair", "coaching"]
         },
@@ -238,6 +239,7 @@
           city: "Nebenstadt",
           phone: "",
           voucherNote: "",
+          taxNumber: "LOCATION-200",
           active: true,
           businessAreaIds: ["hair", "coaching"]
         }
@@ -397,8 +399,8 @@
       businessAreaId: "hair",
       businessAreaSnapshot: { id: "hair", label: "Friseur", visibleName: "Snapshot Studio" },
       serviceLocationId: "location-company",
-      serviceLocationSnapshot: { id: "location-company", name: "Hauptstudio", street: "Testweg 10", zip: "12345", city: "Teststadt" },
-      companySnapshot: { name: "Teststudio Nord", owner: "Testperson", street: "Testweg 10", zip: "12345", city: "Teststadt" },
+      serviceLocationSnapshot: { id: "location-company", name: "Hauptstudio", addressMode: "company", street: "Testweg 10", zip: "12345", city: "Teststadt", taxNumber: "", effectiveTaxNumber: "TEST-100", taxNumberSource: "company" },
+      companySnapshot: { name: "Teststudio Nord", owner: "Testperson", street: "Testweg 10", zip: "12345", city: "Teststadt", taxNumber: "TEST-100" },
       brandingSnapshot: { logoMode: "none", visibleName: "Snapshot Studio", logo: null },
       customerId: "customer-anna",
       customerSnapshot: { id: "customer-anna", name: "Anna Muster", email: "anna@example.invalid", street: "Altstraße 1", zip: "93047", city: "Regensburg" },
@@ -3078,12 +3080,13 @@
             internalNote: "INTERN-NOTIZ-SECRET",
             activity: [{ label: "HISTORY-SECRET" }],
             companySnapshot: { name: "Studio", owner: "Testperson", phone: "COMPANY-PHONE-SECRET", email: "COMPANY-MAIL-SECRET@example.invalid", website: "https://COMPANY-WEBSITE-SECRET.invalid", logo: { dataUrl: "COMPANY-LOGO-DATA-SECRET" }, street: "Testweg 1", zip: "12345", city: "Teststadt" },
+            serviceLocationSnapshot: { id: "LOCATION-ID-SECRET", name: "LOCATION-NAME-SECRET", addressMode: "own", street: "LOCATION-STREET-SECRET", zip: "99999", city: "LOCATION-CITY-SECRET", taxNumber: "LOCATION-TAX-SECRET", effectiveTaxNumber: "LOCATION-TAX-SECRET", taxNumberSource: "service-location" },
             customerSnapshot: { id: "CUSTOMER-ID-SECRET", name: "Sichtbarer Name", phone: "CUSTOMER-PHONE-SECRET", email: "CUSTOMER-MAIL-SECRET@example.invalid", street: "Sichtweg 1", zip: "12345", city: "Teststadt" }
           });
           const model = documentApi.createReceiptDocumentModel(source, documentOptions());
           const publicModel = { ...model, issuer: { ...model.issuer, taxNumber: "COMPANY-TAX-SECRET", vatId: "COMPANY-VAT-SECRET" } };
           const serialized = JSON.stringify(publicDocumentApi.projectDocument(publicModel));
-          ["receipt-secret-internal-id", "INTERN-NOTIZ-SECRET", "HISTORY-SECRET", "COMPANY-PHONE-SECRET", "COMPANY-MAIL-SECRET", "COMPANY-WEBSITE-SECRET", "COMPANY-TAX-SECRET", "COMPANY-VAT-SECRET", "COMPANY-LOGO-DATA-SECRET", "CUSTOMER-ID-SECRET", "CUSTOMER-PHONE-SECRET", "CUSTOMER-MAIL-SECRET", "contextSnapshot", "history", "internalNote"].forEach(secret => {
+          ["receipt-secret-internal-id", "INTERN-NOTIZ-SECRET", "HISTORY-SECRET", "COMPANY-PHONE-SECRET", "COMPANY-MAIL-SECRET", "COMPANY-WEBSITE-SECRET", "COMPANY-TAX-SECRET", "COMPANY-VAT-SECRET", "COMPANY-LOGO-DATA-SECRET", "LOCATION-ID-SECRET", "LOCATION-NAME-SECRET", "LOCATION-STREET-SECRET", "LOCATION-CITY-SECRET", "LOCATION-TAX-SECRET", "CUSTOMER-ID-SECRET", "CUSTOMER-PHONE-SECRET", "CUSTOMER-MAIL-SECRET", "contextSnapshot", "history", "internalNote"].forEach(secret => {
             assert(!serialized.includes(secret), `Nicht öffentliche Information gelangte in die Payload: ${secret}`);
           });
           const bundle = await publicDocumentApi.createPublicBundle(publicModel, { baseUrl: "https://app.example.invalid/frecka/", qrService: qrApi });
@@ -3329,11 +3332,88 @@
         }
       },
       {
-        name: "Normale Belege enthalten keinen Leistungserbringungsort",
+        name: "DOCUMENT-002 zeigt abweichende Leistungsorte kompakt und unterdrückt nur eindeutig doppelte Anschriften",
         run: async () => {
-          const model = documentApi.createReceiptDocumentModel(receiptDocumentFixture(), documentOptions());
-          assertEqual(model.serviceLocation, null, "Leistungsort gelangte in das Belegdokument");
-          assert(!JSON.stringify(model).includes("Hauptstudio"), "Leistungsort wurde an anderer Stelle des Belegmodells ausgegeben");
+          const companyLocation = documentApi.createReceiptDocumentModel(receiptDocumentFixture(), documentOptions());
+          assertEqual(companyLocation.serviceLocation, null, "Unternehmensanschrift wurde unnötig als Leistungsort wiederholt");
+          assertEqual(companyLocation.issuer.taxNumber, "TEST-100", "Unternehmens-Steuernummer fehlt im Standardfall");
+          assertEqual(companyLocation.issuer.taxNumberSource, "company", "Quelle der Unternehmens-Steuernummer ist falsch");
+
+          const externalReceipt = receiptDocumentFixture({
+            serviceLocationId: "location-podology",
+            serviceLocationSnapshot: {
+              id: "location-podology", name: "Studio Beispiel · Podologie", addressMode: "own",
+              streetName: "Prüfeninger Straße", houseNumber: "20", street: "Prüfeninger Straße 20",
+              zip: "93049", city: "Regensburg", taxNumber: "", effectiveTaxNumber: "TEST-100", taxNumberSource: "company"
+            }
+          });
+          const external = documentApi.createReceiptDocumentModel(externalReceipt, documentOptions());
+          assertEqual(external.serviceLocation.name, "Studio Beispiel · Podologie", "Abweichender Leistungsortname fehlt");
+          assertEqual(external.serviceLocation.street, "Prüfeninger Straße 20", "Leistungsortstraße ist falsch oder doppelt");
+          assertEqual(external.serviceLocation.cityLine, "93049 Regensburg", "Leistungsort fehlt");
+          assertEqual(external.issuer.taxNumber, "TEST-100", "Leerer Leistungsort-Fallback verwendet nicht die Unternehmens-Steuernummer");
+          const markup = documentViewApi.renderReceipt(external, { interactiveQr: false });
+          assert(markup.includes("Leistungsort") && markup.includes("Studio Beispiel · Podologie") && markup.includes("Prüfeninger Straße 20"), "Bildschirmbeleg zeigt den Leistungsort nicht vollständig");
+          const pdfText = visiblePdfText(await globalThis.PDFLib.PDFDocument.load(await documentApi.createPdfBytes(external)));
+          assert(pdfText.includes("Leistungsort") && pdfText.includes("Studio Beispiel · Podologie") && pdfText.includes("Prüfeninger Straße 20"), "PDF zeigt den Leistungsort nicht vollständig");
+
+          const measureLocationLayout = width => new Promise((resolve, reject) => {
+            const frame = document.createElement("iframe");
+            const timeout = window.setTimeout(() => {
+              frame.remove();
+              reject(new Error(`Leistungsort wurde bei ${width} px nicht rechtzeitig gerendert`));
+            }, 8000);
+            frame.title = `Beleg-Leistungsort bei ${width} Pixel`;
+            frame.style.cssText = `position:fixed;left:-2000px;top:0;width:${width}px;height:760px;border:0;`;
+            frame.srcdoc = `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="../styles.css"></head><body>${markup}</body></html>`;
+            frame.addEventListener("load", () => {
+              const root = frame.contentDocument.documentElement;
+              const location = frame.contentDocument.querySelector(".receipt-paper-location");
+              const paper = frame.contentDocument.querySelector(".receipt-paper");
+              const result = {
+                clientWidth: root.clientWidth,
+                scrollWidth: root.scrollWidth,
+                locationWidth: location?.getBoundingClientRect().width || 0,
+                paperWidth: paper?.getBoundingClientRect().width || 0
+              };
+              window.clearTimeout(timeout);
+              frame.remove();
+              resolve(result);
+            }, { once: true });
+            document.body.append(frame);
+          });
+          for (const width of [320, 390]) {
+            const layout = await measureLocationLayout(width);
+            assert(layout.scrollWidth <= layout.clientWidth, `Leistungsort-Beleg läuft bei ${width} px horizontal über`);
+            assert(layout.locationWidth > 0 && layout.locationWidth <= layout.paperWidth, `Leistungsort passt bei ${width} px nicht in den Beleg`);
+          }
+        }
+      },
+      {
+        name: "DOCUMENT-002 verwendet die gesnapshotte abweichende Steuernummer und bleibt nach Stammdatenänderung unverändert",
+        run: async () => {
+          const receipt = receiptDocumentFixture({
+            serviceLocationId: "location-podology",
+            serviceLocationSnapshot: {
+              id: "location-podology", name: "Podologie Süd", addressMode: "own", streetName: "Südweg", houseNumber: "7",
+              street: "Südweg 7", zip: "93051", city: "Regensburg", taxNumber: "LOCATION-200",
+              effectiveTaxNumber: "LOCATION-200", taxNumberSource: "service-location"
+            }
+          });
+          const model = documentApi.createReceiptDocumentModel(receipt, documentOptions());
+          assertEqual(model.issuer.taxNumber, "LOCATION-200", "Abweichende Leistungsort-Steuernummer wurde nicht verwendet");
+          assertEqual(model.issuer.taxNumberSource, "service-location", "Quelle der abweichenden Steuernummer fehlt");
+          receipt.serviceLocationSnapshot.name = "Nachträglich geändert";
+          receipt.serviceLocationSnapshot.street = "Anderer Weg 99";
+          receipt.serviceLocationSnapshot.effectiveTaxNumber = "CHANGED-300";
+          receipt.companySnapshot.taxNumber = "CHANGED-COMPANY";
+          assertEqual(model.serviceLocation.name, "Podologie Süd", "Leistungsortname änderte sich nach Projektion rückwirkend");
+          assertEqual(model.serviceLocation.street, "Südweg 7", "Leistungsortanschrift änderte sich nach Projektion rückwirkend");
+          assertEqual(model.issuer.taxNumber, "LOCATION-200", "Beleg-Steuernummer änderte sich nach Projektion rückwirkend");
+
+          const historical = documentApi.createReceiptDocumentModel(receiptDocumentFixture({ serviceLocationId: null, serviceLocationSnapshot: null }), documentOptions());
+          assertEqual(historical.serviceLocation, null, "Altbeleg ohne Leistungsortsnapshot erhielt erfundene Ortsdaten");
+          assertEqual(historical.issuer.taxNumber, "TEST-100", "Altbeleg verlor die historische Unternehmens-Steuernummer");
         }
       },
       {
@@ -3674,13 +3754,16 @@
       {
         name: "Bereits projizierte Dokumente ändern sich nicht durch spätere Stammdatenänderungen",
         run: async () => {
-          const receipt = receiptDocumentFixture();
+          const receipt = receiptDocumentFixture({
+            serviceLocationSnapshot: { id: "location-snapshot", name: "Historischer Ort", addressMode: "own", street: "Altweg 4", zip: "93047", city: "Regensburg", effectiveTaxNumber: "ALT-TAX", taxNumberSource: "service-location" }
+          });
           const model = documentApi.createReceiptDocumentModel(receipt, documentOptions());
           receipt.companySnapshot.name = "Nachträglich geändert";
           receipt.customerSnapshot.name = "Andere Person";
           receipt.serviceLocationSnapshot.name = "Anderer Ort";
           receipt.brandingSnapshot = { logoMode: "company", logo: { assetId: "new-logo", source: "company" } };
           assertEqual(model.issuer.displayName, "Teststudio Nord", "Dokumentmodell änderte den Aussteller rückwirkend");
+          assertEqual(model.issuer.taxNumber, "ALT-TAX", "Dokumentmodell änderte die effektive Steuernummer rückwirkend");
           assertEqual(model.customer.name, "Anna Muster", "Dokumentmodell änderte den Kunden rückwirkend");
           assert(!JSON.stringify(model).includes("Anderer Ort"), "Dokumentmodell änderte den Leistungsort rückwirkend");
           assert(!JSON.stringify(model).includes("new-logo"), "Dokumentmodell änderte das Logo rückwirkend");
@@ -3807,6 +3890,28 @@
           assert(source.includes("company: { ...data.company, street: companyStreetLine(data.company)"), "PDF-/Beleg-Fallback kombiniert getrennte Adressfelder nicht verlustfrei");
           assert(source.includes("async function saveBusinessAreaLogo") && source.includes("data-business-logo-input"), "Persistenter Geschäftsbereichslogo-Upload fehlt");
           assert(!source.includes("business-logo-simulation"), "Alte Geschäftsbereichslogo-Simulation ist noch aktiv");
+        }
+      },
+      {
+        name: "DOCUMENT-002 ergänzt eine optionale Leistungsort-Steuernummer ohne Parallelmodell",
+        run: async () => {
+          const response = await fetch("../js/app.js", { cache: "no-store" });
+          assert(response.ok, "App-Quelle für DOCUMENT-002 konnte nicht geladen werden");
+          const source = await response.text();
+          const snapshotStart = source.indexOf("function serviceLocationContextSnapshot");
+          const snapshotEnd = source.indexOf("function businessAreaContextSnapshot", snapshotStart);
+          const applyStart = source.indexOf("function applyServiceLocationForm");
+          const applyEnd = source.indexOf("function applyBusinessAreaForm", applyStart);
+          const editorStart = source.indexOf("function renderServiceLocationEditor");
+          const editorEnd = source.indexOf("function renderOperatingSettings", editorStart);
+          const snapshotSource = source.slice(snapshotStart, snapshotEnd);
+          const applySource = source.slice(applyStart, applyEnd);
+          const editorSource = source.slice(editorStart, editorEnd);
+          assert(editorSource.includes("Abweichende Steuernummer") && editorSource.includes("Leer lassen, wenn die Steuernummer des Unternehmens gilt."), "Optionales Steuernummernfeld oder Hilfetext fehlt");
+          assert(editorSource.includes('name="taxNumber"') && editorSource.includes('maxlength="50"'), "Steuernummernfeld ist nicht begrenzt");
+          assert(applySource.includes('formData.has("taxNumber")') && applySource.includes("location.taxNumber.length > 50"), "Steuernummer wird nicht verlustfrei validiert und übernommen");
+          assert(snapshotSource.includes("effectiveTaxNumber") && snapshotSource.includes('taxNumberSource: locationTaxNumber ? "service-location" : "company"'), "Effektive Beleg-Steuernummer wird nicht im Leistungsortsnapshot fixiert");
+          assert(!editorSource.includes("Mandant") && !editorSource.includes("Unternehmensprofil"), "Leistungsorteditor behauptet eine zweite Unternehmensidentität");
         }
       },
       {
@@ -4822,6 +4927,7 @@
           assertDeepEqual(stored.paymentChoices.map(choice => choice.id), ["cash", "ec", "voucher"], "Zahlungsarten oder Reihenfolge fehlen");
           assertEqual(stored.businessAreas.length, 2, "Geschäftsbereiche fehlen");
           assertEqual(stored.businessAreas.find(area => area.isDefault)?.id, "hair", "Standard-Geschäftsbereich fehlt");
+          assertEqual(stored.serviceLocations.find(location => location.id === "location-mobile")?.taxNumber, "LOCATION-200", "Abweichende Leistungsort-Steuernummer fehlt");
           assertDeepEqual(stored.businessAreas.find(area => area.id === "hair")?.logo, logoReferenceFixture(businessAreaLogoFixture()), "Geschäftsbereichslogo-Referenz fehlt");
           assertDeepEqual(stored.logoAssets.find(asset => asset.assetId === "business-logo-hair"), logoAssetFixture(businessAreaLogoFixture()), "Geschäftsbereichslogo-Asset fehlt");
           assertEqual(stored.setup.status, "started", "Einrichtungsstatus fehlt");
@@ -4849,6 +4955,7 @@
           assertEqual(normalized.businessAreas.find(area => area.id === "hair")?.defaultServiceLocationId, "location-company", "Standardort Friseur falsch");
           assertEqual(normalized.businessAreas.find(area => area.id === "coaching")?.defaultServiceLocationId, "location-mobile", "Standardort Coaching falsch");
           assertEqual(normalized.serviceLocations[1].street, "Nebenstraße", "Eigene Leistungsortadresse fehlt");
+          assertEqual(normalized.serviceLocations[1].taxNumber, "LOCATION-200", "Optionale Leistungsort-Steuernummer ging verloren");
           assertEqual(normalized.company.street, "Testweg 10", "Unternehmensanschrift wurde mit Leistungsort vermischt");
         }
       },
@@ -4884,6 +4991,7 @@
           assert(normalized.record.businessAreas.some(area => area.active), "Kein aktiver Geschäftsbereich wiederhergestellt");
           assertEqual(normalized.record.businessAreas.filter(area => area.active && area.isDefault).length, 1, "Aktiver Standardbereich nicht eindeutig");
           assertDeepEqual(normalized.record.serviceLocations[0].businessAreaIds, ["hair"], "Verwaiste Geschäftsbereichsreferenz blieb erhalten");
+          assertEqual(normalized.record.serviceLocations[0].taxNumber, "", "Historischer Leistungsort ohne Steuernummer ist nicht abwärtskompatibel");
           assertEqual(hair.defaultServiceLocationId, "location-repair", "Verwaister Standard-Leistungsort wurde nicht repariert");
           assert(normalized.record.taxSettings.rates.length > 0, "Fehlende Steuersätze nicht ergänzt");
           assert(normalized.record.paymentChoices.some(choice => choice.id !== "voucher" && choice.active), "Keine normale Zahlungsart wiederhergestellt");
@@ -5420,6 +5528,8 @@
           assertEqual(receipt.positions[0].unitPriceCents, 3900, "Positionspreis wurde nicht als Centwert gespeichert");
           assertEqual(receipt.businessAreaSnapshot.label, "Friseur", "Geschäftsbereichssnapshot fehlt");
           assertEqual(receipt.serviceLocationSnapshot.name, "Hauptstudio", "Leistungsortsnapshot fehlt");
+          assertEqual(receipt.serviceLocationSnapshot.effectiveTaxNumber, "TEST-100", "Effektive Beleg-Steuernummer fehlt im Snapshot");
+          assertEqual(receipt.serviceLocationSnapshot.taxNumberSource, "company", "Quelle der effektiven Beleg-Steuernummer fehlt");
           assertEqual(receipt.companySnapshot.name, "Teststudio Nord", "Unternehmenssnapshot fehlt");
           assertEqual(receipt.companySnapshot.owner, "Testperson", "Unternehmer fehlt im Belegsnapshot");
           assertEqual(receipt.customerSnapshot.name, "Anna Muster", "Kundensnapshot fehlt");
@@ -5462,12 +5572,17 @@
           await persistence.writeCustomers(customer);
           const changedSettings = clone(settings);
           changedSettings.company.name = "Neuer Unternehmensname";
+          changedSettings.company.taxNumber = "NEW-COMPANY-TAX";
+          changedSettings.serviceLocations[0].name = "Neuer Leistungsort";
+          changedSettings.serviceLocations[0].taxNumber = "NEW-LOCATION-TAX";
           await persistence.writeSettings(changedSettings);
           const catalog = catalogRecordFixture(persistence.tenantId);
           catalog.items[0].name = "Neuer Leistungsname";
           await persistence.writeCatalog(catalog);
           const stored = (await persistence.readReceipts()).receipts.find(receipt => receipt.id === committed.receipt.id);
           assertEqual(stored.companySnapshot.name, "Teststudio Nord", "Unternehmenssnapshot änderte sich rückwirkend");
+          assertEqual(stored.serviceLocationSnapshot.name, "Hauptstudio", "Leistungsortsnapshot änderte sich rückwirkend");
+          assertEqual(stored.serviceLocationSnapshot.effectiveTaxNumber, "TEST-100", "Effektive Steuernummer änderte sich rückwirkend");
           assertEqual(stored.customerSnapshot.name, "Anna Muster", "Kundensnapshot änderte sich rückwirkend");
           assertEqual(stored.positions[0].name, "Testhaarschnitt", "Positionssnapshot änderte sich rückwirkend");
         }
@@ -7115,6 +7230,33 @@
           assertEqual(credit.receiptType, "Gutschrift", "Gutschriftbelegart fehlt");
           assertEqual(credit.credit, "Gutschrift", "Gutschriftkennzeichnung fehlt");
           assertEqual(credit.gross, "-10,00", "Negativer Gutschriftsbetrag ist falsch");
+        }
+      },
+      {
+        name: "DOCUMENT-002 exportiert Leistungsort und effektive Steuernummer ausschließlich aus dem Belegsnapshot",
+        run: async () => {
+          const snapshot = completeExportSnapshotFixture("test-export-location-tax");
+          const source = snapshot.stores.receipts.receipts.find(receipt => receipt.number === "2030-000101");
+          source.serviceLocationId = "location-export";
+          source.serviceLocationSnapshot = {
+            id: "location-export", name: "Podologie Export", addressMode: "own", streetName: "Exportweg", houseNumber: "12",
+            street: "Exportweg 12", zip: "93049", city: "Regensburg", taxNumber: "EXPORT-TAX-200",
+            effectiveTaxNumber: "EXPORT-TAX-200", taxNumberSource: "service-location"
+          };
+          source.contextSnapshot.serviceLocation = clone(source.serviceLocationSnapshot);
+          source.companySnapshot.taxNumber = "COMPANY-TAX-100";
+          source.contextSnapshot.company = clone(source.companySnapshot);
+          const projection = exportApi.createExportProjection(snapshot, {
+            exportType: "tax-advisor", periodType: "custom", dateFrom: "2030-01-01", dateTo: "2030-01-31", businessAreaId: "all"
+          });
+          const row = projection.receipts.find(receipt => receipt.receiptNumber === "2030-000101");
+          assertEqual(row.serviceLocation, "Podologie Export", "Leistungsortname fehlt im Steuerberaterexport");
+          assertEqual(row.serviceLocationAddress, "Exportweg 12, 93049 Regensburg", "Leistungsortanschrift fehlt im Steuerberaterexport");
+          assertEqual(row.taxNumber, "EXPORT-TAX-200", "Verwendete Beleg-Steuernummer fehlt im Steuerberaterexport");
+          source.serviceLocationSnapshot.name = "HEUTIGER-ORT";
+          source.serviceLocationSnapshot.effectiveTaxNumber = "HEUTIGE-TAX";
+          assertEqual(row.serviceLocation, "Podologie Export", "Exportzeile löst den Leistungsort nachträglich live auf");
+          assertEqual(row.taxNumber, "EXPORT-TAX-200", "Exportzeile änderte die historische Steuernummer");
         }
       },
       {

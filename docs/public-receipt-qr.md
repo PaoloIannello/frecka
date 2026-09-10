@@ -84,7 +84,7 @@ Die Belegprojektion enthält in dieser Reihenfolge:
 
 Eine Position enthält Bezeichnung, Menge, ursprünglichen Einzelpreis und Positionssumme. Bei einem sichtbaren Rabatt kommen Rabattbetrag und Rabattbezeichnung hinzu. Geldbeträge werden als ganzzahlige Centwerte transportiert; es findet keine erneute Steuer- oder Preisberechnung statt.
 
-Normale Belege enthalten ausdrücklich keinen Leistungsort.
+Die lokale Bildschirm- und PDF-Ausgabe kann seit DOCUMENT-002 den historischen Leistungsort und die effektive Steuernummer zeigen. `FPD/v1` wird in diesem Block bewusst nicht erweitert: Normale Public-Belege enthalten weiterhin weder Leistungsort noch Steuerkennungen. Damit bleiben bestehende Links, Formatversion, QR-Größengrenzen und die mit SETTINGS-001 festgelegte Datenschutz-Whitelist unverändert.
 
 PODOLOGY-004 erweitert dieses Format bewusst nicht. Das in einer lokalen Kundenansicht sichtbare Rezeptdatum und der Kundenpflegehinweis gehören nicht zu den 16 Belegfeldern von `FPD/v1` und werden deshalb weder in den QR-Link noch in einen daraus erzeugten Public-Viewer-Beleg oder dessen PDF transportiert.
 
@@ -229,7 +229,7 @@ Automatisierte Tests müssen mindestens abdecken:
 - Beleg- und Gutschein-Roundtrip ohne vorhandene IndexedDB-Daten;
 - Formatkennzeichen, Version, Dokumenttyp und Codec;
 - identische sichtbare Beträge zum DOCUMENT-001-Modell;
-- fehlenden Leistungsort beim normalen Beleg;
+- Ausschluss von Leistungsort und Steuerkennungen beim normalen Public-Beleg trotz vollständiger lokaler Dokumentausgabe;
 - Einlöseort beim Gutschein;
 - Ausschluss von Telefon, E-Mail, Notizen, Historien und internen IDs;
 - Ausschluss von Rezeptdatum, Kundenpflegehinweis, interner Behandlungsdokumentation und sonstigen Rezept-/Behandlungsfeldern;

@@ -106,9 +106,9 @@ Bereichs- und Gesamtsummen verwenden ausschließlich die gespeicherten Netto-, S
 
 ### `Belege.csv`
 
-Spalten: Belegnummer, Belegart, Datum, Uhrzeit, Geschäftsbereich, Kunde, Netto, Steuer, Brutto, Zahlungsstatus, Zahlungsart, Storno und Gutschrift.
+Spalten: Belegnummer, Belegart, Datum, Uhrzeit, Geschäftsbereich, Leistungsort, Leistungsort-Anschrift, verwendete Steuernummer, Kunde, Netto, Steuer, Brutto, Zahlungsstatus, Zahlungsart, Storno und Gutschrift.
 
-Normale Belege, Gutscheinverkaufsbelege, offene Zahlungen, Stornobelege und Gutschriften bleiben über eigene skalare Kennzeichnungen unterscheidbar.
+DOCUMENT-002 ergänzt die drei Leistungsort-/Steuernummernspalten ausschließlich aus dem unveränderlichen Belegsnapshot. Historische Belege ohne Leistungsortdaten bleiben leer und werden nicht aus heutigen Einstellungen angereichert. Normale Belege, Gutscheinverkaufsbelege, offene Zahlungen, Stornobelege und Gutschriften bleiben über eigene skalare Kennzeichnungen unterscheidbar.
 
 ### `Belegpositionen.csv`
 

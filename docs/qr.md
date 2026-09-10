@@ -74,7 +74,7 @@ Eine Änderung der Gerätehelligkeit ist nicht implementiert. Die Webplattform b
 
 - Interne QR-Inhalte bestehen nur aus App-Ursprung, Route und opaker stabiler Referenz.
 - Public-QRs enthalten ausschließlich die sichtbare, ausdrücklich freigegebene `FPD/v1`-Dokumentprojektion. Wer QR oder Link besitzt, kann diesen Inhalt lesen.
-- Telefon, E-Mail, interne IDs, Notizen, Historien, Rohsnapshots und Leistungsorte normaler Belege werden nicht in Public-Links aufgenommen.
+- Telefon, E-Mail, Steuerkennungen, interne IDs, Notizen, Historien, Rohsnapshots und Leistungsorte normaler Belege werden nicht in Public-Links aufgenommen. DOCUMENT-002 ändert ausschließlich die lokale Bildschirm-/PDF-Darstellung und lässt `FPD/v1` unverändert.
 - Geschäftsdaten bleiben in IndexedDB auf dem Unternehmergerät; der Public Viewer greift nicht darauf zu.
 - QR-Matrix und SVG werden immer neu im Arbeitsspeicher erzeugt.
 - Backup und Export enthalten weiterhin keine QR-Grafiken.

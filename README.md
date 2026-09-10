@@ -406,4 +406,4 @@ Die kompakte POS-Darstellung wurde auf die wichtigsten Arbeitsseiten übertragen
 
 ## UX-012
 
-Die Belegvorschau enthält Unternehmensdaten, Steuernummer, Netto-/MwSt.-Aufschlüsselung und sichtbare Rabatte. Ohne Kundenzuordnung wird keine Kundenzeile ausgegeben.
+Die Belegvorschau enthält Unternehmensdaten, die für den Vorgang gesnapshotte effektive Steuernummer, Netto-/MwSt.-Aufschlüsselung und sichtbare Rabatte. Ein vom Unternehmenssitz abweichender gespeicherter Leistungsort wird kompakt und eindeutig getrennt vom Aussteller dargestellt; bei identischer Unternehmensanschrift wird keine doppelte Adresse ausgegeben. Ohne Kundenzuordnung wird keine Kundenzeile ausgegeben.
