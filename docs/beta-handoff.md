@@ -1,7 +1,7 @@
 # FRECKA – Produktiver Erststart und Beta-Übergabe
 
-Stand: 15. August 2026  
-Block: BETA-HANDOFF-001  
+Stand: 8. September 2026
+Block: BETA-HANDOFF-001, ergänzt durch COMPLIANCE-002
 Geltungsbereich: zukünftige, vollständig neue Mandanten; vorhandene Beta-/iPhone-Daten bleiben unverändert
 
 ## Ergebnis des Erststart-Audits
@@ -38,7 +38,7 @@ Es findet keine automatische Löschung, Migration, Reparatur oder Rücksetzung v
 | Belegnummer | produktiver Start | aktuelles Kalenderjahr, nächster Stand `000001` |
 | Storno/Gutschrift | produktiver Start | je Dokumentart erste automatisch abgeleitete Nummer `000101`; kein Eingriff in vorhandene Nummernfolgen |
 | Gutscheinreferenz/-code | produktiver Start | wird erst beim Verkauf stabil und zufällig erzeugt; kein Seed verbraucht eine Referenz |
-| TSE | technischer Default | optional vorbereitet, deaktiviert, nicht eingerichtet, nicht verbunden; keine TSE und keine Fiskalisierung |
+| TSE | technischer Default | vorbereitet, deaktiviert, nicht eingerichtet und nicht verbunden; für das definierte V1.0-Betriebsmodell nach individueller steuerberaterlicher Einordnung nicht aktiv, ohne allgemeine TSE-Befreiung |
 | Logos/Logoassets | produktiv leer | keine Zuordnung, 0 Assets; Textfallback aktiv |
 | Sicherungserinnerung | technischer Default | lokale Schonfrist wird beim ersten Settings-Snapshot initialisiert; keine Sicherung wird automatisch erzeugt |
 | Testbeleg im Assistenten | Onboarding-Beispiel | reine Vorschau; nicht persistiert, keine produktive Nummer, kein Umsatz |
@@ -60,7 +60,7 @@ Folgende Punkte bleiben bewusst außerhalb des Assistenten und sind vor dem prod
 - Unternehmenslogo unter **Unternehmen** und optionale Bereichslogos unter **Geschäftsbereiche**;
 - erste verschlüsselte Sicherung unter **Sicherung & Wiederherstellung**.
 
-Der Assistent darf bei `Noch nicht sicher` und beim optionalen, nicht eingerichteten TSE-Status fortfahren. Das ist keine fachliche Freigabe: Steuerstatus und eine gegebenenfalls erforderliche TSE-Nutzung müssen vor dem ersten echten Geschäftsvorfall extern geklärt sein.
+Der Assistent darf bei `Noch nicht sicher` und beim nicht eingerichteten TSE-Status fortfahren. COMPLIANCE-002 dokumentiert für das konkret definierte V1.0-Betriebsmodell die mitgeteilte individuelle steuerberaterliche Einordnung ohne aktive TSE. Das ist keine allgemeine TSE-Befreiung. Der Steuerstatus und die übrigen offenen Compliance-Punkte müssen vor dem ersten echten Geschäftsvorfall geklärt sein; bei einer vom dokumentierten Betriebsmodell abweichenden Nutzung ist auch die TSE-Einordnung erneut zu prüfen.
 
 ## Branding-Bewertung
 
@@ -76,14 +76,14 @@ BRANDING-001/002 bleibt unverändert: Unternehmen und Geschäftsbereiche akzepti
 6. **Benutzer:** unter Einstellungen den Anzeigenamen der tatsächlich arbeitenden Person setzen; V1.0 bleibt bei genau einem lokalen Benutzer.
 7. **Logos:** optional Unternehmenslogo und abweichende Geschäftsbereichslogos als PNG/JPEG bis 1 MB hochladen; Fallback und Dokumentvorschau prüfen.
 8. **Nummernkreis:** vor dem ersten echten Abschluss prüfen, dass Jahr und nächste Nummer `000001` zum Betrieb passen; danach nicht zurücksetzen.
-9. **TSE-Status:** `nicht eingerichtet`, `deaktiviert` und `nicht verbunden` bewusst zur Kenntnis nehmen und vor produktiver Nutzung klären, ob beziehungsweise wann eine echte TSE erforderlich ist.
+9. **Betriebsmodell/TSE:** prüfen, dass der tatsächliche Einsatz dem unter `docs/compliance-v1.md` definierten und individuell eingeordneten V1.0-Betriebsmodell entspricht; bei Abweichung erneut steuerlich prüfen.
 10. **Erste Sicherung:** nach vollständiger Einrichtung eine verschlüsselte Sicherung erzeugen, Sicherungskennwort getrennt sicher verwahren und die Datei außerhalb des Geräts ablegen.
-11. **Testbeleg:** zuerst die Assistentenvorschau prüfen; einen echten Beleg nur dann erzeugen, wenn Nummern-, Steuer- und TSE-Fragen geklärt sind. Ein echter Testbeleg ist steuerlich nicht automatisch folgenlos.
+11. **Testbeleg:** zuerst die Assistentenvorschau prüfen; einen echten Beleg nur dann erzeugen, wenn Nummern-, Steuer-, Beleg- und gegebenenfalls Gutscheinfragen geklärt sind. Ein echter Testbeleg ist steuerlich nicht automatisch folgenlos.
 12. **PDF/QR:** Text, Unternehmerdarstellung, Logo/Fallback, Positionen, Beträge und QR eines geeigneten Belegs sowie eines Gutscheins auf dem Zielgerät prüfen.
 13. **Steuerberaterexport:** lokalen Steuerberater-ZIP für einen begrenzten Prüfzeitraum erzeugen, Geschäftsbereichs-/Steuersummen und Beleg-PDFs kontrollieren; keine Kundenstammdaten erwarten.
 14. **Offline-Test:** Home-Screen-PWA einmal online vollständig laden, schließen, im Flugmodus kalt starten, lokale Daten öffnen und erst in einem ausdrücklich freigegebenen Test einen Offline-Beleg erzeugen.
-15. **Produktiver Start:** erst nach bestandener Checkliste, gesicherter Konfiguration und geklärten Steuer-/TSE-Fragen den ersten echten Geschäftsvorfall abschließen; anschließend Beleg und Sicherungsstatus kontrollieren.
+15. **Produktiver Start:** erst nach bestandener Checkliste, gesicherter Konfiguration, bestätigtem V1.0-Betriebsmodell und geklärten offenen Compliance-Punkten den ersten echten Geschäftsvorfall abschließen; anschließend Beleg und Sicherungsstatus kontrollieren.
 
 ## Freigabegrenze
 
-Die Codebasis ist nach bestandener Regression für einen neuen, bewusst eingerichteten Beta-Mandanten vorbereitet. Der reale Übergang bleibt ein manuelles Gate: neuer iPhone-/Home-Screen-Erststart, vollständige Checkliste, verschlüsselte Erstsicherung und Zielgerätetest. Daraus folgt weder eine automatische Produktivfreigabe noch eine TSE-/Steuerfreigabe.
+Die Codebasis ist nach bestandener Regression für einen neuen, bewusst eingerichteten Beta-Mandanten vorbereitet. Der reale Übergang bleibt ein manuelles Gate: neuer iPhone-/Home-Screen-Erststart, vollständige Checkliste, verschlüsselte Erstsicherung und Zielgerätetest. Die individuelle TSE-Einordnung des definierten Betriebsmodells ist keine allgemeine Steuerfreigabe und keine Produktivfreigabe. Kleinunternehmer-/Steuerbefreiungslogik, Rechnungsangaben, Gutscheine, Teilkorrekturen sowie GoBD-/Restore-/Aufbewahrungsgrenzen bleiben nach `docs/compliance-v1.md` eigenständige V1-Gates.

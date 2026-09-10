@@ -10,6 +10,10 @@ ANDROID-001 sichert die mobile Skalierung und Touch-Ziele auch für Android-nahe
 
 Ein vollständig neuer Mandant startet ohne Kunden, Katalogpositionen, Belege, offene Zahlungen, Korrekturen, Gutscheine, Umsätze oder Logoassets. Neutrale technische Defaults, optionale Vorlagen und die ausschließlich für PERSISTENCE-010 erlaubte historische Vierer-Reparaturquelle sind strikt getrennt. Die verbindliche Erststartinventur und die 15-Punkte-Übergabecheckliste stehen in [`docs/beta-handoff.md`](docs/beta-handoff.md).
 
+## Betriebsmodell V1.0
+
+FRECKA V1.0 ist im definierten Einsatz ein lokales Beleg- und Dokumentationstool für Geschäftsvorfälle, Einnahmen und Zahlungsarten. Es ersetzt weder Kassenbuch, vollständige Kassenführung, Kassenbericht, Kassensturz noch Buchhaltung. Nach der mitgeteilten individuellen steuerberaterlichen Einordnung ist für genau dieses Betriebsmodell keine TSE vorgesehen; daraus folgt keine allgemeine TSE-Befreiung für FRECKA oder andere Betriebe. Abweichende Nutzung oder erweiterter Funktionsumfang muss erneut steuerlich eingeordnet werden. Die verbindliche Reichweite, Grenze zur offenen Ladenkasse und weiterhin offenen V1-Compliance-Punkte stehen in [`docs/compliance-v1.md`](docs/compliance-v1.md).
+
 UX-011 / UPDATE-002 / BACKUP-003/004 ergänzt darauf eine reale Seite **Einstellungen → Update**, bereinigt veraltete „Geplant“-Kennzeichnungen und erinnert nach einem wählbaren Intervall ohne bestätigte Sicherungsdatei nicht blockierend an ein neues lokales Backup. Zur Auswahl stehen 48 Stunden, 5 Tage und wöchentlich; wöchentlich ist der abwärtskompatible Standard. Die manuelle Suche verwendet den vorhandenen Updatecontroller; Restore übernimmt die Intervallwahl, gilt aber niemals als neue Sicherung und bewahrt lokale Frist- und Snooze-Zeitpunkte.
 
 ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzeit aufrufbare Installationshilfe für iPhone/iPad und Android. Sie priorisiert die passende Anleitung ausschließlich anhand lokaler Browsermerkmale, zeigt im Standalone-Modus den bereits installierten Zustand und bleibt vollständig offline verfügbar. Beide Plattformen können immer manuell gewählt werden. Der kompakte Ablauf und die abweichenden Android-Bezeichnungen sind in [`docs/installation.md`](docs/installation.md) dokumentiert.
@@ -100,13 +104,13 @@ ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzei
 - unveränderter Bestandsvorrang: vorhandene Mandanten- und Beta-Daten werden beim Update weder automatisch gelöscht, repariert noch auf Erststartwerte zurückgesetzt
 - lokale PNG-/JPEG-Logos bis 1 MB für Unternehmen und Geschäftsbereiche mit der Priorität Bereichslogo, Unternehmenslogo, Textfallback
 - versioniertes, unveränderliches Logo-Asset-Register; historische interne Ansichten und PDFs lösen weiterhin exakt die beim Geschäftsvorgang referenzierte Bildversion auf
-- Public Viewer und QR-Payload bleiben frei von Bildrohdaten; TSE bleibt optional vorbereitet und ohne Aktivierung, Anbieterkommunikation oder Fiskalisierung
+- Public Viewer und QR-Payload bleiben frei von Bildrohdaten; TSE bleibt technisch vorbereitet, im definierten V1.0-Betriebsmodell jedoch ohne Aktivierung, Anbieterkommunikation oder Fiskalisierung
 - verbindliches Erststartinventar und manuelle Beta-Übergabecheckliste in [`docs/beta-handoff.md`](docs/beta-handoff.md)
 
 ## Neu in TSE-002
 
 - eine reale, rein lesende Seite **Einstellungen → TSE-Vorbereitung** mit dem verbindlichen Anbieter `fiskaly SIGN DE`
-- optionale Nutzung; standardmäßig weder eingerichtet noch aktiviert oder verbunden
+- neutrale technische Vorbereitung; standardmäßig weder eingerichtet noch aktiviert oder verbunden und keine allgemeine Aussage zur TSE-Pflicht oder -Befreiung
 - ausschließlich lokale Konfigurationsmetadaten im bestehenden Settings-Datensatz sowie in Backup, Restore und dem Exporttyp **Eigene Daten**
 - keine Zugangsdaten, Anbieterkommunikation, TSE-Transaktionen, Belegfelder, Signaturen oder simulierte Fiskalisierung
 - unveränderter Steuerberaterexport; TSE-003 und Folgeblöcke bleiben für Aktivierung, Verbindung und echte Fiskaldaten zuständig
