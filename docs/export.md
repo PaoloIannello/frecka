@@ -1,7 +1,7 @@
 # FRECKA-Exportkern Version 1
 
-**Stand:** TSE-002 auf Basis SETTINGS-002, SETTINGS-001, USER-001 und EXPORT-003
-**Datenbankschema:** Version 8; zentrale Snapshotquelle mit sieben Fachstores, reguläre Exportprojektion weiterhin ausschließlich aus den bisherigen fünf Bereichen
+**Stand:** MULTI-COMPANY-002 auf Basis TSE-002, SETTINGS-002, SETTINGS-001, USER-001 und EXPORT-003
+**Datenbankschema:** Version 9; zentrale Snapshotquelle mit sieben Fachstores, weiterhin genau ein exportierbares Unternehmensprofil
 **Exportformat:** `FRECKA_EXPORT`, Version 1
 
 ## Zweck und Abgrenzung
@@ -26,6 +26,8 @@ Der Steuerberaterexport wird als ein einziges lokales ZIP-Gesamtpaket mit CSV-Da
 4. CSV, Übersicht, Beleg-PDFs und ZIP-Adapter verwenden ausschließlich diese Projektion.
 
 Das Modul liest weder IndexedDB noch Laufzeitlisten der Oberfläche. Es kennt keine Dialoge, Routen oder gerenderten Elemente. Eine zweite Datensammlung und parallele Fachlogik entstehen dadurch nicht.
+
+Ab Schema 9 löst die Projektion Unternehmensidentität, Steuer-/Betriebseinstellungen, TSE-Vorbereitung und portable Lizenzreferenz ausschließlich über das aktive, in dieser Phase einzige Profil in `settings.companies[]` auf. Geschäftsbereiche bleiben per direkter `companyId` eindeutig zugeordnet. Die Filter-, CSV-, PDF- und ZIP-Verträge ändern sich dadurch nicht; es gibt weder eine Profilwahl noch einen profilweisen Export. Historische Dokumente verwenden weiterhin nur ihre unveränderten Snapshots.
 
 Vor jeder Projektion wird die zentrale Persistenz-Invariante für Gutschein und Verkaufsbeleg erneut auf dem tatsächlich übergebenen Snapshot ausgeführt. Der Export akzeptiert einen Gutscheinverkauf nur, wenn stabile Receipt-ID, Belegnummer, Belegart `voucher-sale` und `voucherReference` in beiden Richtungen exakt zusammenpassen. Fehlende oder widersprüchliche Gegenobjekte stoppen den gesamten Export mit einer verständlichen Meldung. Der Export ergänzt, errät oder rekonstruiert keinen Verkaufsbeleg.
 
@@ -59,7 +61,7 @@ Der Geschäftsbereich wird über die stabile ID gefiltert. Standard für Steuerb
 
 USER-001 ergänzt ausschließlich den strukturierten Projektionskontext `activeUser` für den Exporttyp `Eigene Daten`; `Export-Info.txt` nennt dort den Anzeigenamen des aktiven Benutzers. Im Steuerberaterexport ist `activeUser` ausdrücklich `null`. Es entsteht keine Benutzer-CSV und der bestehende Steuerberater-Dateisatz bleibt unverändert.
 
-LICENSE-005 projiziert entsprechend ausschließlich die portable `settings.license`-Referenz Version 2 für `Eigene Daten`: lokale Tenant- und Lizenzreferenz, optionale Server-Tenant- und Verknüpfungsreferenz sowie Produkt/Hauptversion. `Export-Info.txt` nennt Lizenz-ID, Produkt und den nicht verknüpften beziehungsweise verknüpften Referenzstand. `licenseRuntime`, Geräte-ID, CryptoKeys, Thumbprint, Token, Zeitanker, Bindungsversion und gecachte Entitlements werden von keiner Exportprojektion gelesen. Im Steuerberaterexport ist `license` weiterhin ausdrücklich `null`; CSV-Dateien, ZIP-Struktur und Beleg-PDFs enthalten keine Lizenz- oder Gerätedaten.
+LICENSE-005 projiziert entsprechend ausschließlich die portable `settings.companies[0].license`-Referenz Version 2 für `Eigene Daten`: lokale Tenant- und Lizenzreferenz, optionale Server-Tenant- und Verknüpfungsreferenz sowie Produkt/Hauptversion. `Export-Info.txt` nennt Lizenz-ID, Produkt und den nicht verknüpften beziehungsweise verknüpften Referenzstand. `licenseRuntime`, Geräte-ID, CryptoKeys, Thumbprint, Token, Zeitanker, Bindungsversion und gecachte Entitlements werden von keiner Exportprojektion gelesen. Im Steuerberaterexport ist `license` weiterhin ausdrücklich `null`; CSV-Dateien, ZIP-Struktur und Beleg-PDFs enthalten keine Lizenz- oder Gerätedaten.
 
 SETTINGS-001 ergänzt nur für `Eigene Daten` die zentralen Unternehmensangaben in der Projektion und in `Export-Info.txt`: Ansprechpartner, getrennte Anschrift, Land, Kontaktwege, Website, optionale Steuerkennungen und eigener Änderungszeitpunkt. BRANDING-002 ergänzt dort je aktiver Zuordnung und Registereintrag ausschließlich Asset-ID, Dateiname, MIME-Type, Bytegröße, Format- und Zeitmetadaten. Data-URLs und andere Bildrohdaten werden nicht projiziert. Der Steuerberaterexport erhält weder diese Stammdatenprojektion noch Bildrohdaten oder einen veränderten Datei-/ZIP-Vertrag.
 

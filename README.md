@@ -2,7 +2,7 @@
 
 **Vorbereiteter Zwischen-Beta-Stand:** 0.11.10 bündelt den seit der veröffentlichten Beta 0.11.9 auf `main` aufgelaufenen Stand aus ANDROID-004, COMPLIANCE-002 und DOCUMENT-002. Unmittelbarer Zweck ist die reale iPhone-Sicht- und Funktionsprüfung der neuen history-sicheren Leistungsort- und Steuernummerndarstellung. Die reale Android-Akzeptanz von ANDROID-004 bleibt ausdrücklich offen. [Release-Freigabenachweis](docs/releases/0.11.10.md).
 
-Browserbasierte FRECKA-PWA 0.11.10 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der Build BETA-PREVIEW-001 verwendet unverändert IndexedDB-Schema 8; es gibt weder eine Store- noch eine Datenmigration. Die getrennte gerätelokale `licenseRuntime` bleibt unverändert außerhalb von Tenant-Snapshot, Backup und Export.
+Browserbasierte FRECKA-PWA 0.11.10 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Der noch nicht veröffentlichte Implementierungsblock MULTI-COMPANY-002 hebt das IndexedDB-Schema von 8 auf 9 an und führt eine kanonische Unternehmensprofilgrenze ein. Sichtbar und produktiv nutzbar bleibt exakt ein Profil. Die getrennte gerätelokale `licenseRuntime` bleibt unverändert außerhalb von Tenant-Snapshot, Backup und Export.
 
 ANDROID-001 sichert die mobile Skalierung und Touch-Ziele auch für Android-nahe Darstellungsprofile ab. IOS-NAV-001 verankert die Bottom-Navigation außerhalb der scrollenden App-Shell direkt am Viewport. ANDROID-002 behandelt den tatsächlichen File-Share nicht mehr als durch `canShare()` garantiert, klassifiziert Fehler neutral und bietet PDF- sowie ZIP-Speichern ausschließlich als bewusste Folgeaktion an. Der erfolgreiche iPhone-Datei-Share bleibt ohne Plattformweiche erhalten.
 
@@ -26,6 +26,15 @@ ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzei
 - DOCUMENT-002: history-sicherer Leistungsort auf neuen Belegen und PDFs, optionale abweichende Leistungsort-Steuernummer und zentrale Unternehmens-Steuernummer als Fallback
 - Bestandsbelege bleiben unverändert; Public-QR bleibt restriktiv, der Steuerberaterexport erhält ausschließlich gesnapshotte Leistungsort-/Steuernummerinformationen
 - einheitliche Release-, Asset- und App-Shell-Kennung `0.11.10 / BETA-PREVIEW-001 / betapreview001-1`; reale iPhone-Sichtprüfung und Android-Abnahme bleiben nachgelagerte Gates
+
+## Implementierungsstand nach 0.11.10: MULTI-COMPANY-002
+
+- IndexedDB-Schema 9 mit `settings.companies[]` als einziger persistierter Wahrheit für Unternehmensidentität, Steuer-, Beleg-, Zahlungs-, TSE-, portable Lizenz- und Einrichtungsdaten
+- deterministische Migration eines vollständigen Schema-8-Bestands in exakt Profil 1; Kunden, IDs, Nummern, Zeitpunkte, Beträge und historische Snapshots bleiben unverändert
+- direkte, hart validierte `companyId` an Geschäftsbereichen, Leistungsorten, Belegen, Gutscheinen, Rezepten und Behandlungsdatensätzen
+- Kunden, V1-Benutzer, Logo-Asset-Register, Backup-Erinnerung, Behandlungsvorlagen, eingebettete Positionen und Gutscheinhistorien bleiben installationsweit gemeinsam
+- noch keine Mehr-Unternehmens-UI, kein Profilwechsel, keine neue Nummernkreisarchitektur und keine Multi-Binding-Lizenzruntime
+- zentrale Auflösung statt verstreuter `companies[0]`-Annahmen; nach Schema 9 gibt es keinen stillen Profil-1-Fallback für fehlende Referenzen
 
 ## Neu in 0.11.9
 
@@ -337,7 +346,7 @@ Der vollständige Exportvertrag steht in `docs/export.md`.
 - vollständige Prüfung von Format, Mandant, Stores, IDs, Referenzen, Werten und Nummernstand vor jedem Restore
 - Vorschau des Sicherungsinhalts vor dem Überschreiben
 - angebotenes verschlüsseltes Sicherheitsbackup des aktuellen Stands
-- atomarer Restore aller sechs fachlichen IndexedDB-Stores ohne Teilzustände
+- atomarer Restore aller sieben fachlichen IndexedDB-Stores ohne Teilzustände
 - keine Passphrase, Schlüssel, Geschäftsdaten oder Sicherungsdatei in zentraler Speicherung
 - zentrale und validierte Tenant-Snapshot-API für Backup, Restore und Export
 

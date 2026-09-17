@@ -1,7 +1,7 @@
 # Verschlüsselte Sicherung und Wiederherstellung
 
-**Stand:** BACKUP-006 auf Basis BACKUP-005, BRANDING-002, BACKUP-004, TSE-002, SETTINGS-002, SETTINGS-001, USER-001, BACKUP-002, BACKUP-001 und PERSISTENCE-007
-**Datenbankschema:** 8 (PODOLOGY-003; Backup-Kryptographie und Ausgabeablauf unverändert)
+**Stand:** MULTI-COMPANY-002 auf Basis BACKUP-006, PODOLOGY-006, BRANDING-002, TSE-002, SETTINGS-002, USER-001 und PERSISTENCE-007
+**Datenbankschema:** 9 (Ein-Profil-Migration; Backup-Kryptographie, Dateiformat und Ausgabeablauf unverändert)
 **Backupformat:** 1
 **Geltungsbereich:** Vollständiger lokaler Datenstand eines Mandanten
 
@@ -36,7 +36,7 @@ Der verschlüsselte Payload ist ein JSON-Objekt mit:
 
 - `backupFormat: "FRECKA_TENANT_SNAPSHOT"`;
 - `backupFormatVersion: 1`;
-- `appDataSchemaVersion: 8`; unterstützte historische Schema-5/6-Snapshots ohne Rezeptstore und Schema-5/6/7-Snapshots ohne Behandlungsstore bleiben lesbar und erhalten bei erfolgreicher Prüfung die jeweils leeren Bestände sowie fehlende Capabilities mit `false`;
+- `appDataSchemaVersion: 9`; unterstützte historische Schema-5/6-Snapshots ohne Rezeptstore, Schema-5/6/7-Snapshots ohne Behandlungsstore und vollständige Schema-8-Snapshots bleiben lesbar. Schema 8 wird vor der Restore-Transaktion kontrolliert in genau Profil 1 überführt;
 - `tenantId`;
 - `createdAt` als ISO-Zeitstempel;
 - `app.version` und `app.build`;
@@ -52,15 +52,19 @@ PODOLOGY-002 ergänzt keine zweite Sicherungsstruktur: unveränderliche Rezeptzu
 
 Die verschlüsselte Gesamtsicherung enthält damit besonders sensible Rezeptinhalte. Nur der bewusst ausgelöste Vollrestore übernimmt sie; reguläre CSV-/ZIP-Exporte enthalten sie nicht. Ein älteres Backup ersetzt auch den aktuellen Rezeptbestand durch seinen damals leeren Bestand, es ist kein Merge. Ab Schema 7 ist ein fehlender Rezeptstore ein Fehler. Siehe [Rezeptverwaltung](prescriptions.md).
 
-PODOLOGY-003 ergänzt keine zweite Sicherungsstruktur. Behandlungsdatensätze liegen ausschließlich im neuen Fachstore; ihre Vorlagen liegen innerhalb der bereits gesicherten Einstellungen. Ein Schema-5/6/7-Backup erhält bei erfolgreicher Prüfung einen leeren Behandlungsbestand, bei Schema 8 ist `treatmentRecords` Pflicht. Restore ersetzt alle sieben Fachstores atomar. PODOLOGY-004 rekonstruiert nach Restore den lokalen Kundenpflegehinweis nur aus dem exakt referenzierten historischen Behandlungsdatensatz. Interne Dokumentation bleibt ausgeschlossen; reguläre Exporte, Steuerberater-PDF, QR, Public Viewer und Diagnoseausgaben erhalten weder Pflegehinweis noch Rezeptdatum. Siehe [Behandlungsdokumentation](treatment-documentation.md).
+PODOLOGY-003 ergänzt keine zweite Sicherungsstruktur. Behandlungsdatensätze liegen ausschließlich im eigenen Fachstore; ihre Vorlagen liegen innerhalb der bereits gesicherten Einstellungen. Ein Schema-5/6/7-Backup erhält bei erfolgreicher Prüfung einen leeren Behandlungsbestand, ab Schema 8 ist `treatmentRecords` Pflicht. Restore ersetzt alle sieben Fachstores atomar. PODOLOGY-004 rekonstruiert nach Restore den lokalen Kundenpflegehinweis nur aus dem exakt referenzierten historischen Behandlungsdatensatz. Interne Dokumentation bleibt ausgeschlossen; reguläre Exporte, Steuerberater-PDF, QR, Public Viewer und Diagnoseausgaben erhalten weder Pflegehinweis noch Rezeptdatum. Siehe [Behandlungsdokumentation](treatment-documentation.md).
+
+Bei einem unterstützten Schema-8-Backup ist die fehlende Profilzuordnung eindeutig: Es existierte fachlich genau ein Unternehmen. Die Validierung bildet daraus deterministisch Profil 1, verschiebt die bisher globalen Unternehmens-, Steuer-, Beleg-, Zahlungs-, TSE-, Lizenz- und Setup-Einstellungen in dieses Profil und ergänzt dessen `companyId` an allen profilgebundenen Fachentitäten. Kunden, Katalog und alle historischen Snapshots bleiben unverändert. Erst der vollständig als Schema 9 validierte Kandidat darf in die atomare Restore-Transaktion gelangen; ein teilweise oder widersprüchlich bereits gebundener Altbestand wird abgelehnt.
 
 Jeder Store enthält seinen bestehenden versionierten Datensatz einschließlich `tenantId`. Das Snapshotformat erfindet keine zusätzlichen Geschäftsmodelle. Beleg- und Gutscheinsnapshots, Historien, QR-Referenzen, Nummernstand und fachliche Referenzen bleiben Teil ihrer bisherigen Store-Objekte.
 
+MULTI-COMPANY-002 liegt vollständig innerhalb der vorhandenen Storestruktur. `stores.settings.companies[]` enthält in dieser Phase exakt Profil 1; `businessAreas` und `serviceLocations` sowie Belege, Gutscheine, Rezepte und Behandlungsdatensätze tragen dessen direkte `companyId`. Kunden, Benutzer, Logo-Asset-Register, Backup-Erinnerung, Behandlungsvorlagen, eingebettete Positionen und Gutscheinhistorien erhalten keine `companyId`. Das äußere Backupformat bleibt Version 1.
+
 USER-001 liegt innerhalb von `stores.settings` als `users` und `activeUserId`. Dadurch wird der lokale Benutzer ohne zusätzliche Sammlung oder Änderung des äußeren Backupformats vollständig mitgesichert.
 
-LICENSE-005 führt `stores.settings.license` als portable, nicht autoritative Referenz der Formatversion 2 fort. Nur diese Referenz wird verschlüsselt mitgesichert und atomar wiederhergestellt. Der getrennte Store `licenseRuntime`, Geräte-ID, private und öffentliche CryptoKeys, Thumbprint, Lizenz-Token, Validierungs- und Zeitanker sowie gecachte Entitlements gehören ausdrücklich nicht zum Tenant-Snapshot und können durch Restore weder importiert noch ersetzt werden.
+LICENSE-005 führt die ab Schema 9 unter `stores.settings.companies[0].license` liegende portable, nicht autoritative Referenz der Formatversion 2 fort. Nur diese Referenz wird verschlüsselt mitgesichert und atomar wiederhergestellt. Der getrennte Store `licenseRuntime`, Geräte-ID, private und öffentliche CryptoKeys, Thumbprint, Lizenz-Token, Validierungs- und Zeitanker sowie gecachte Entitlements gehören ausdrücklich nicht zum Tenant-Snapshot und können durch Restore weder importiert noch ersetzt werden.
 
-TSE-002 liegt als `tseSettings` ebenfalls innerhalb von `stores.settings`. Anbieter sowie deaktivierter Einrichtungs- und Verbindungsstatus werden dadurch verschlüsselt mitgesichert und atomar wiederhergestellt. Zugangsdaten, Tokens, Schlüssel und TSE-Transaktionen existieren in diesem Modell nicht.
+TSE-002 liegt als `companies[0].tseSettings` ebenfalls innerhalb von `stores.settings`. Anbieter sowie deaktivierter Einrichtungs- und Verbindungsstatus werden dadurch verschlüsselt mitgesichert und atomar wiederhergestellt. Zugangsdaten, Tokens, Schlüssel und TSE-Transaktionen existieren in diesem Modell nicht.
 
 SETTINGS-002 verwendet ausschließlich die bereits enthaltenen `taxSettings`, `receiptSettings`, `paymentChoices` und `businessAreas`. Betriebliche Vorgaben, geschützter Nummernstand und Standard-Geschäftsbereich werden deshalb ohne neue Sammelroutine, Schemaerhöhung oder Backupformatänderung vollständig verschlüsselt gesichert und wiederhergestellt.
 
@@ -113,6 +117,9 @@ Vor jeder Schreibtransaktion werden mindestens geprüft:
 - äußeres und inneres Format sowie unterstützte Versionsstände;
 - vollständige Anwesenheit aller sieben Fachstores (mit der beschriebenen Altformat-Kompatibilität);
 - Übereinstimmung sämtlicher `tenantId`-Werte;
+- genau ein Unternehmensprofil mit eindeutiger opaker ID und passender `activeCompanyId`;
+- gültige, profilgleiche `companyId` an Geschäftsbereichen, Leistungsorten, Belegen, Gutscheinen, Rezepten und Behandlungsdatensätzen;
+- profilgleiche Standard-/Mehrfachzuordnungen, Korrekturen und relevante Beleg-/Gutschein-/Behandlungsreferenzen;
 - genau ein aktiver Settings-Benutzer mit derselben `tenantId` und passender `activeUserId`;
 - genau eine vollständige portable Lizenzreferenz Version 2 mit derselben `localTenantId`, gültiger opaker Lizenz-ID, festem Produkt `frecka.core`/Hauptversion 1 und konsistenter optionaler Serververknüpfung;
 - ausschließlich die erlaubte TSE-002-Vorbereitung mit Anbieter `fiskaly SIGN DE`, deaktivierter Nutzung sowie nicht eingerichtetem und nicht verbundenem Status;
@@ -134,7 +141,7 @@ Unvollständige, beschädigte, manipulierte, mandantenfremde oder inkompatible D
 
 ## Atomare Wiederherstellung
 
-Nach positiver Vollvalidierung öffnet die Persistenzschicht eine gemeinsame Readwrite-Transaktion über die sechs Snapshot-Stores. Jeder fachliche Store erhält genau den geprüften Datensatz des aktuellen Mandanten; `licenseRuntime` ist nicht Teil dieser Transaktion. Eine bestehende Runtime auf demselben Gerät bleibt unverändert und muss nachfolgend zur restaurierten portablen Referenz passen, eine neue Installation bleibt ohne Runtime. Beim BACKUP-004-Vertrag wird die gesicherte Intervallwahl als Einstellung übernommen; der gerätelokale Fristbeginn, der Zeitpunkt der letzten erfolgreichen Ausgabe und ein laufender Snooze bleiben aus dem bisherigen Settings-Datensatz erhalten. Eine alte Sicherungsdatei kann damit weder die lokale Erinnerungsfrist zurücksetzen noch einen Snooze umgehen. Erst `transaction.oncomplete` bestätigt den Erfolg.
+Nach positiver Vollvalidierung öffnet die Persistenzschicht eine gemeinsame Readwrite-Transaktion über die sieben Snapshot-Stores. Jeder fachliche Store erhält genau den geprüften Datensatz des aktuellen Mandanten; `licenseRuntime` ist nicht Teil dieser Transaktion. Eine bestehende Runtime auf demselben Gerät bleibt unverändert und muss nachfolgend zur restaurierten portablen Referenz passen, eine neue Installation bleibt ohne Runtime. Beim BACKUP-004-Vertrag wird die gesicherte Intervallwahl als Einstellung übernommen; der gerätelokale Fristbeginn, der Zeitpunkt der letzten erfolgreichen Ausgabe und ein laufender Snooze bleiben aus dem bisherigen Settings-Datensatz erhalten. Eine alte Sicherungsdatei kann damit weder die lokale Erinnerungsfrist zurücksetzen noch einen Snooze umgehen. Erst `transaction.oncomplete` bestätigt den Erfolg.
 
 Schlägt irgendein Put-Vorgang fehl oder wird die Transaktion abgebrochen, rollt IndexedDB alle Änderungen zurück. Es gibt keinen Teil-Restore. Die App übernimmt die neuen Laufzeitdaten erst nach erfolgreichem Transaktionsabschluss, verwirft offene UI-Auswahlen und leitet Zähler sowie Standards neu ab.
 

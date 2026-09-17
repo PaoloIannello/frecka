@@ -1,7 +1,7 @@
 # Lokale Settings-, Katalog-, Kunden-, Beleg- und Gutscheinpersistenz
 
-**Stand:** LICENSE-005 auf Basis TSE-002, SETTINGS-002, SETTINGS-001, USER-002, PERSISTENCE-007, PERSIST-005, BACKUP-001 und EXPORT-003
-**Geltungsbereich:** Vollständige FRECKA-Einstellungen einschließlich Unternehmen, lokalem Benutzer und portabler Lizenzreferenz, gerätelokale Lizenzruntime, Katalog, Kundenstammdaten, abgeschlossene Belege, offene Zahlungen, Stornos, Gutschriften, Gutscheine und Gutschein-Historien
+**Stand:** MULTI-COMPANY-002 auf Basis PODOLOGY-006, LICENSE-005, TSE-002, SETTINGS-002, USER-002, PERSISTENCE-007, BACKUP-001 und EXPORT-003
+**Geltungsbereich:** Kanonisches Ein-Unternehmensprofil, vollständige FRECKA-Einstellungen, lokaler Benutzer und portable Lizenzreferenz, gerätelokale Lizenzruntime, Katalog, gemeinsame Kundenstammdaten, abgeschlossene Belege, offene Zahlungen, Stornos, Gutschriften, Gutscheine, Rezepte und Behandlungsdokumentation
 **Nicht enthalten:** Entwürfe, QR-Grafiken, E-Mail-, Kamera- und Druckstatus, PDF-Dateien sowie eine dauerhafte Ablage von Backup-Dateien
 
 ## Ausgangsfluss vor PERSIST-001a
@@ -67,16 +67,18 @@ Gutscheine und ihre Historien liegen in `data.vouchers`. Verkauf, Teil- und Voll
 
 UI- und Renderfunktionen greifen niemals direkt auf `indexedDB` zu. Nur `js/persistence.js` kennt die Browser-Datenbank-API.
 
+MULTI-COMPANY-002 setzt vor dem fachlichen Laden eine zentrale Profilgrenze. Ein Schema-8-Datensatz wird beim ersten Schema-9-Start vollständig gelesen, zu genau einem Profil 1 migriert und in einer gemeinsamen Readwrite-Transaktion validiert. Erst danach werden die bestehenden Ein-Unternehmens-Laufzeitobjekte aus dem kanonischen Profil befüllt. Nicht enumerable Kompatibilitätszugriffe wie `settings.company` sind ausschließlich Laufzeitadapter für vorhandenen UI-Code; sie werden weder serialisiert noch als zweite persistierte Wahrheit gespeichert.
+
 BETA-HANDOFF-001 trennt den produktiven Erststart zusätzlich von der historischen Reparaturquelle: aktive Laufzeitarrays enthalten keine Katalogpositionen, Kunden, Belege, offenen Zahlungen, Korrekturen, Gutscheine, Umsätze oder Logoassets. Genau ein neutraler Geschäftsbereich und Leistungsort halten nur die Settings-Invariante erfüllbar. Die vier kanonischen PERSISTENCE-010-Paare liegen in eigenen, inaktiven Feldern und werden von normalen Snapshot-, Backup- und Exportprojektionen nicht erfasst. Persistierte Mandantendaten haben unverändert Vorrang.
 
 ## Datenbankvertrag
 
 - Datenbankname: `frecka`
-- Datenbankschema-Version: `8` (PODOLOGY-003)
+- Datenbankschema-Version: `9` (MULTI-COMPANY-002)
 - Object Stores: `settings`, `catalog`, `customers`, `receipts`, `vouchers`, `prescriptions`, `treatmentRecords` und `licenseRuntime`
 - Key Path der sieben Tenant-Stores: `tenantId`; Key Path von `licenseRuntime`: `localTenantId`
 - Standardschlüssel/Instanz: `local-default`
-- Einstellungsformat-Version: `1`
+- Einstellungsformat-Version: `2`; Unternehmensprofilformat-Version: `1`
 - Katalogformat-Version: `1`
 - Kundenformat-Version: `1`
 - Belegformat-Version: `1`
@@ -94,6 +96,10 @@ Der bestehende Receipt-Writer liest und schreibt Settings/Nummernstand, Belege, 
 
 Das Upgrade von Schema-Version 4 auf 5 legt ausschließlich den neuen `vouchers`-Store an. LICENSE-005 hebt anschließend von 5 auf 6 an und ergänzt ausschließlich `licenseRuntime` mit `localTenantId` als Schlüssel; alle fünf bisherigen Stores und Datensätze bleiben unverändert. Die älteren Upgradepfade ergänzen weiterhin alle später hinzugekommenen Stores. Es werden dabei keine Demo-Geschäftsdaten ungefragt geschrieben. Datenbankschema- und Datenformatversionen werden unabhängig versioniert.
 
+MULTI-COMPANY-002 hebt 8→9 ohne neuen Store an. `companies[]` wird im Settings-Datensatz kanonisch; in dieser Phase sind exakt ein Eintrag und eine passende `activeCompanyId` zulässig. Die stabile Profil-1-ID wird für den vorhandenen lokalen Namespace deterministisch als opake Referenz erzeugt. Unternehmensidentität, Anschrift/Kontakt, Brandingreferenz, `taxSettings`, `receiptSettings` samt Nummernstand, `paymentChoices`, `tseSettings`, portable `license`-Referenz und `setup` liegen ausschließlich im Profil. Benutzer, Logo-Asset-Register, Geschäftsbereiche, Leistungsorte, Behandlungsvorlagen und Backup-Erinnerung bleiben auf Installationsebene; Bereiche und Orte tragen eine direkte `companyId`.
+
+Die IndexedDB-`versionchange`-Transaktion und die fachliche Datenmigration sind technisch zwei Transaktionen. Deshalb ist der Zwischenzustand „IDB-Version 9 mit Settingsformat 1“ ausdrücklich wiederanlauffähig: Jeder Datenbankstart prüft ihn erneut. Die Fachmigration liest alle sieben Tenant-Stores und schreibt Settings, Belege, Gutscheine, Rezepte und Behandlungen ausschließlich in einer gemeinsamen Readwrite-Transaktion. Kunden, Katalog und `licenseRuntime` bleiben bytegleich. Abbruch oder Browserende vor `transaction.oncomplete` hinterlassen keine Teilmigration; inkonsistente oder mehrdeutige Referenzen stoppen `fail closed`. Ein kanonischer Schema-9-Datensatz ohne gültige `companyId` erhält keinen Profil-1-Fallback.
+
 Die zentrale Persistenzschicht verwendet `exportTenantSnapshot`, `validateTenantSnapshot` und `restoreTenantSnapshot`. Seit PODOLOGY-003 lesen Snapshot und Integritätsdiagnose alle sieben Fachstores konsistent; Restore ersetzt sie nach vollständiger Vorabprüfung in einer einzigen Readwrite-Transaktion. Auch der Kandidat der historischen Vierer-Reparatur enthält Rezept- und Behandlungsstore, schreibt aber weiterhin ausschließlich zulässige historische Receipts. `licenseRuntime` bleibt ausgeschlossen. Das verschlüsselte Dateiformat und der Ablauf sind in [Backup/Restore](backup-restore.md) beschrieben.
 
 EXPORT-001 verändert das Datenbankschema ebenfalls nicht. Der fachliche Export ruft dieselbe Funktion `exportTenantSnapshot` auf und übergibt den validierten Snapshot an die reine Projektion in `js/export.js`. Das Exportmodul öffnet keine Datenbank, liest keine UI-Listen und schreibt keine Daten. Der CSV-Vertrag und die Datenschutzgrenzen sind in `docs/export.md` dokumentiert.
@@ -104,18 +110,15 @@ Der Settings-Datensatz enthält ausschließlich:
 
 - `formatVersion`, `tenantId`, `updatedAt`;
 - `users` mit genau einem aktiven, versionierten und mandantenbezogenen Benutzer sowie `activeUserId` als stabile Referenz;
-- `license` Version 2 mit `localTenantId`, Lizenz-ID, optionaler Server-Mandantenreferenz, Produkt/Hauptversion und optionalem Verknüpfungszeitpunkt; keine Geräte-ID, Schlüssel, Tokens, Zeitanker, Status oder Berechtigungen;
-- `tseSettings` mit Formatversion, Anbieter, deaktiviertem Nutzungsstatus sowie Einrichtungs- und Verbindungsstatus;
-- `company` einschließlich getrennter Anschrift, Kontakt- und Steuerangaben, Website, validiertem Unternehmenslogo, eigenem `updatedAt` und `useAsServiceLocation`;
-- `serviceLocations` als Liste;
-- `businessAreas` einschließlich Aktivstatus, Standardbereich und Standard-Leistungsort;
-- `taxSettings`;
-- `receiptSettings` einschließlich Nummernkreis und Belegtexten;
-- `paymentChoices` in ihrer fachlichen Reihenfolge;
+- `logoAssets` als gemeinsames unveränderliches Asset-Register;
+- `companies` mit in dieser Phase genau einem Profil aus `id`, `formatVersion`, `company`, `taxSettings`, `receiptSettings`, `paymentChoices`, `tseSettings`, portabler `license`-Referenz und `setup` sowie die passende `activeCompanyId`;
+- `serviceLocations` als Liste mit direkter `companyId`;
+- `businessAreas` einschließlich direkter `companyId`, Aktivstatus, Standardbereich und Standard-Leistungsort;
+- `treatmentTemplates` als über den Geschäftsbereich eindeutig ableitbare gemeinsame Vorlagen;
 - `backupReminder` mit Formatversion, genau einer Intervallwahl (`48-hours`, `5-days` oder `weekly`), lokalem Fristbeginn, Zeitpunkt der letzten bestätigten Sicherung und optionalem 24-Stunden-Snooze;
-- `setup.status` mit `not-started`, `started` oder `completed`.
+- keine zweite globale Kopie der im Profil liegenden Einstellungen.
 
-Der Datensatz im Store `licenseRuntime` besitzt Formatversion 1 und enthält ausschließlich die gerätelokale Lizenzruntime gemäß LICENSE-004: lokale Tenant- und Lizenzreferenz, optionale Serverreferenz, opake Geräte-ID, privater und öffentlicher P-256-`CryptoKey`, Public-Key-Thumbprint sowie optionale signierte Token-, Validierungs-, Zeitanker-, Bindungs- und Entitlementprojektionen. Der Initialzustand enthält weder Token noch Trial-/Active-Status oder wirksame Entitlements und meldet intern höchstens `activation_required`. Private Schlüssel sind nicht exportierbar. Dieser Store wird niemals in den sechs-Fachstore-Tenant-Snapshot, Backup, Restore, Export oder die lokale Integritätsdiagnose aufgenommen.
+Der Datensatz im Store `licenseRuntime` besitzt Formatversion 1 und enthält ausschließlich die gerätelokale Lizenzruntime gemäß LICENSE-004: lokale Tenant- und Lizenzreferenz, optionale Serverreferenz, opake Geräte-ID, privater und öffentlicher P-256-`CryptoKey`, Public-Key-Thumbprint sowie optionale signierte Token-, Validierungs-, Zeitanker-, Bindungs- und Entitlementprojektionen. Der Initialzustand enthält weder Token noch Trial-/Active-Status oder wirksame Entitlements und meldet intern höchstens `activation_required`. Private Schlüssel sind nicht exportierbar. Dieser Store wird niemals in den Sieben-Fachstore-Tenant-Snapshot, Backup, Restore, Export oder die lokale Integritätsdiagnose aufgenommen. MULTI-COMPANY-002 verschiebt nur die portable Lizenzreferenz in Profil 1; es führt weder mehrere Bindings noch eine neue Runtime ein.
 
 BACKUP-003 verändert weder Datenbankschema noch Settings-Formatversion. Fehlen die Reminder-Metadaten bei Erstinstallation oder historischem Bestand, wird lokal der Zeitpunkt der ersten kompatiblen Initialisierung als Fristbeginn gespeichert; dadurch erscheint keine sofortige Erinnerung. Der Status enthält keine personenbezogenen Daten. Beim atomaren Restore werden Unternehmen und alle fachlichen Stores aus der Sicherung übernommen, `backupReminder` bleibt jedoch vom aktuellen Gerät erhalten. Eine alte Sicherungsdatei kann damit weder die Wochenfrist fälschlich zurücksetzen noch einen lokalen Snooze überschreiben.
 
@@ -125,15 +128,15 @@ SETTINGS-001 speichert genau ein optionales Unternehmenslogo im bestehenden Sett
 
 Der zentrale Resolver `resolveLogoAsset(assetId)` prüft das gefundene Asset erneut und liefert eine isolierte Kopie. Fehlende oder beschädigte Einträge liefern `null` und damit den bestehenden Textfallback. Geschäftsvorgänge enthalten weiterhin ausschließlich Asset-ID, Quelle und neutrale Metadaten, niemals die Data-URL. Vor BRANDING-002 erzeugte Dokumente ohne rekonstruierbare Asset-ID werden nicht migriert und nicht mit einem aktuellen Logo nachgerüstet.
 
-SETTINGS-002 führt keinen neuen Store, kein neues Feld und keine Schema- oder Formatversion ein. Die Seite **Betrieb** bearbeitet direkt `taxSettings`, `receiptSettings`, `paymentChoices` und den eindeutigen Eintrag `businessAreas[].isDefault`. EUR und Deutsch bleiben feste V1.0-Werte. `receiptSettings.yearPrefix` und `receiptSettings.nextNumber` werden nur angezeigt; Storno- und Gutschriftnummern bleiben wie bisher ausschließlich aus den vorhandenen Korrekturbelegen abgeleitet. Auch ein erneut gestarteter Einrichtungsassistent darf diese Nummern nicht zurücksetzen. Bei einem fehlgeschlagenen Speichervorgang werden die in der Betriebsseite versuchten Laufzeitänderungen auf den zuletzt bestätigten Stand zurückgesetzt.
+SETTINGS-002 führt keinen neuen Store ein. Die Seite **Betrieb** bearbeitet die profilgebundenen `taxSettings`, `receiptSettings` und `paymentChoices` sowie den eindeutigen Eintrag `businessAreas[].isDefault`. EUR und Deutsch bleiben feste V1.0-Werte. `receiptSettings.yearPrefix` und `receiptSettings.nextNumber` werden nur angezeigt; Storno- und Gutschriftnummern bleiben wie bisher ausschließlich aus den vorhandenen Korrekturbelegen abgeleitet. Auch ein erneut gestarteter Einrichtungsassistent darf diese Nummern nicht zurücksetzen. Bei einem fehlgeschlagenen Speichervorgang werden die in der Betriebsseite versuchten Laufzeitänderungen auf den zuletzt bestätigten Stand zurückgesetzt.
 
 Geschäftsbezeichnung und `Unternehmer/in` bleiben getrennte Felder. Ein Ansprechpartner ist optional. Bestehende kombinierte Werte in `company.street` werden beim Laden nicht automatisch zerlegt; `houseNumber` bleibt dann leer. Neue oder bearbeitete Anschriften können beide Werte getrennt führen, während Dokument-Snapshots weiterhin eine verlustfreie kombinierte Straßenzeile erhalten. `company.updatedAt` ändert sich nur zusammen mit einer tatsächlichen Änderung dieser Unternehmensdaten oder des Logos; der allgemeine Settings-Zeitpunkt bleibt davon unabhängig.
 
 USER-001 verändert weder Datenbankschema noch Store- oder Settings-Formatversion. Das Listenmodell bereitet spätere Mehrbenutzerfähigkeit vor, ohne sie in V1.0 freizuschalten. Historische Settings ohne Benutzer werden deterministisch aus `Unternehmer/in` und der aktuellen `tenantId` ergänzt; mehrere oder neuere Benutzerdaten werden von V1.0 nicht reduziert. Der vollständige Vertrag steht in `docs/users.md`.
 
-LICENSE-005 migriert die historische LICENSE-001-Referenz deterministisch zu Formatversion 2 und erhöht das Datenbankschema auf 6. Die alte Lizenz-ID bleibt in `settings.license`, die alte Geräte-ID wird nur beim eindeutigen Upgrade in den separaten Runtime-Store übernommen. Dieser speichert ein nicht exportierbares P-256-Privatkey, den exportierbaren Public Key und dessen Thumbprint sowie ausschließlich die im Lizenzvertrag vorgesehenen optionalen Token- und Zeitmetadaten. Runtime und Schlüssel sind kein Geschäftsmodell und stehen in keiner Tenant-Snapshot-Allowlist. Der vollständige Vertrag steht in `docs/licensing.md`.
+LICENSE-005 migriert die historische LICENSE-001-Referenz deterministisch zu Formatversion 2 und erhöht das Datenbankschema auf 6. Die alte Lizenz-ID bleibt ab Schema 9 in `settings.companies[0].license`, die alte Geräte-ID wird nur beim eindeutigen Upgrade in den separaten Runtime-Store übernommen. Dieser speichert ein nicht exportierbares P-256-Privatkey, den exportierbaren Public Key und dessen Thumbprint sowie ausschließlich die im Lizenzvertrag vorgesehenen optionalen Token- und Zeitmetadaten. Runtime und Schlüssel sind kein Geschäftsmodell und stehen in keiner Tenant-Snapshot-Allowlist. Der vollständige Vertrag steht in `docs/licensing.md`.
 
-TSE-002 verändert ebenfalls weder Datenbankschema noch Storeanzahl oder Settings-Formatversion. Das erlaubnislistenbasierte Objekt `tseSettings` enthält ausschließlich `formatVersion`, `provider`, `enabled`, `setupStatus` und `connectionStatus`. Historische Settings ohne dieses Objekt erhalten den sicheren Standard „nicht eingerichtet / nicht aktiviert / nicht verbunden“. Teilweise, widersprüchliche, zukünftige oder um Zugangsdaten erweiterte TSE-Daten gelten in Backups nicht als kompatible Konfiguration. Beleg- und Gutscheinmodelle bleiben unverändert frei von TSE-Platzhaltern. Der Vertrag steht in `docs/tse.md`.
+TSE-002 verändert weder Storeanzahl noch Beleg- oder Gutscheinformat. Das ab Schema 9 im Unternehmensprofil liegende, erlaubnislistenbasierte Objekt `tseSettings` enthält ausschließlich `formatVersion`, `provider`, `enabled`, `setupStatus` und `connectionStatus`. Historische Settings ohne dieses Objekt erhalten den sicheren Standard „nicht eingerichtet / nicht aktiviert / nicht verbunden“. Teilweise, widersprüchliche, zukünftige oder um Zugangsdaten erweiterte TSE-Daten gelten in Backups nicht als kompatible Konfiguration. Beleg- und Gutscheinmodelle bleiben unverändert frei von TSE-Platzhaltern. Der Vertrag steht in `docs/tse.md`.
 
 Der Datensatz im Store `catalog` enthält ausschließlich:
 
@@ -156,6 +159,7 @@ Telefonnummern bleiben Text. E-Mail-Adressen werden an den Rändern bereinigt, i
 Der Datensatz im Store `receipts` enthält:
 
 - `formatVersion`, `tenantId`, `updatedAt` und die Liste `receipts`;
+- je Beleg eine direkte, gültige `companyId`;
 - je Dokument stabile ID, Belegnummer, Typ, Status und ISO-Zeitstempel;
 - IDs und unveränderliche Snapshots für Unternehmen, Geschäftsbereich, Leistungsort, Branding und optional Kunde;
 - Positionssnapshots mit optionaler Katalog-ID, Typ, Name, Menge, Preis, Rabatt, Steuersatz sowie Netto-, Steuer- und Bruttocentwerten;
@@ -169,6 +173,7 @@ Die bestehenden UI-Aliasfelder wie `number`, `type`, `items`, `total` und `activ
 Der Datensatz im Store `vouchers` enthält:
 
 - `formatVersion`, `tenantId`, `updatedAt` und die Liste `vouchers`;
+- je Gutschein eine direkte, gültige `companyId`;
 - stabile Gutschein-ID, opake `reference`, normalisierten sowie sichtbaren Code und Status;
 - Ursprungs- und Restwert als Integer-Centwerte sowie die bestehenden UI-Aliasfelder;
 - Verkaufszeitpunkt, Verkaufsbelegreferenz, Einlösungsreferenzen und Zeitstempel;

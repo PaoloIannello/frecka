@@ -1,6 +1,7 @@
 window.PROTOTYPE_DATA = Object.freeze({
   version: "0.11.10",
   build: "BETA-PREVIEW-001",
+  companySettings: { activeCompanyId: "company_c41d74e8" },
   users: [
     {
       formatVersion: 1,
@@ -42,6 +43,7 @@ window.PROTOTYPE_DATA = Object.freeze({
   serviceLocations: [
     {
       id: "location-default",
+      companyId: "company_c41d74e8",
       name: "Leistungsort",
       addressMode: "company",
       street: "",
@@ -72,7 +74,7 @@ window.PROTOTYPE_DATA = Object.freeze({
     language: "Deutsch"
   },
   businessAreas: [
-    { id: "general", label: "Geschäftsbereich", visibleName: "", logoMode: "company", logo: null, active: true, isDefault: true, defaultServiceLocationId: "location-default", features: { prescriptionDocumentation: false } }
+    { id: "general", companyId: "company_c41d74e8", label: "Geschäftsbereich", visibleName: "", logoMode: "company", logo: null, active: true, isDefault: true, defaultServiceLocationId: "location-default", features: { prescriptionDocumentation: false } }
   ],
   catalog: { general: [] },
   categories: [],

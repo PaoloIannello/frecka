@@ -22,7 +22,7 @@ vm.runInContext("const api = FRECKA_PERSISTENCE;\n" + browserTests.slice(
 vm.runInContext(browserTests.slice(browserTests.indexOf("  function voucherSaleReceiptFixture"), browserTests.indexOf("  function exportVoucherSaleReceiptFixture")), context);
 const tenant = "test-android004";
 const snapshot = api.validateTenantSnapshot(context.completeTenantSnapshotFixture(tenant), tenant).snapshot;
-assert.equal(api.constants.databaseVersion, 8);
+assert.equal(api.constants.databaseVersion, 9);
 assert(!api.tenantSnapshotConstants.storeKeys.includes("licenseRuntime"));
 const contaminated = structuredClone(snapshot);
 contaminated.stores.licenseRuntime = { privateKey: await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"]) };

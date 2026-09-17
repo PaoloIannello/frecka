@@ -8,7 +8,7 @@
 
 **Serverformat:** Version 1
 
-**Clientformat seit LICENSE-005:** `settings.license` Version 2 und `licenseRuntime` Version 1
+**Clientformat seit LICENSE-005 / MULTI-COMPANY-002:** `settings.companies[].license` Version 2 und `licenseRuntime` Version 1
 
 **Grundlage:** ADR-0004 und angenommene ADR-0005
 
@@ -214,10 +214,10 @@ Alle mehrteiligen Zustandswechsel verwenden eine einzige Datenbanktransaktion. L
 
 ## 5. Clientmodell und geplante Migration
 
-### 5.1 Portable Referenz `settings.license` Version 2
+### 5.1 Portable Referenz `settings.companies[].license` Version 2
 
 ```text
-settings.license
+settings.companies[].license
 ├── formatVersion: 2
 ├── localTenantId
 ├── licenseId
@@ -259,13 +259,13 @@ Ein eigener Store ist zwingend, weil der Settings-Store vollständig in Tenant-S
 
 ### 5.3 Backup, Restore und Neuinstallation
 
-- Backup enthält nur `settings.license` Version 2.
+- Backup enthält nur `settings.companies[].license` Version 2.
 - Restore importiert keinen Runtime-Datensatz, privaten Schlüssel, Token, Nonce, Zeitanker oder Gerätecache.
 - Auf demselben Gerät bleibt eine vorhandene Runtime-Bindung außerhalb der Restore-Transaktion erhalten und muss danach zur restaurierten Referenz passen.
 - Bei abweichender Lizenzreferenz wird die Runtime nicht überschrieben; der Client wechselt zu `activation_required`.
 - Auf einem neuen Gerät führt eine portable Referenz ohne Runtime immer zu `activation_required` und in Transfer/Recovery.
 - Eine vollständig neue Installation ohne portable Referenz bietet Trialstart oder Recovery an.
-- Historische `settings.license`-Version 1 wird verlustfrei als lokale Migrationsquelle gelesen. Lokale LICENSE-001-IDs erzeugen niemals selbst Autorität und starten nicht automatisch einen Trial.
+- Historische `settings.license`-Version 1 wird verlustfrei als lokale Migrationsquelle gelesen. Schema 8 mit der portablen Referenz am Settings-Root wird bei MULTI-COMPANY-002 kontrolliert Profil 1 zugeordnet. Lokale LICENSE-001-IDs erzeugen niemals selbst Autorität und starten nicht automatisch einen Trial.
 - Alte Backupformat-Version 1 bleibt lesbar. Ob die äußere Backupformatnummer erhöht wird, entscheidet LICENSE-005 anhand der finalen Implementierung; der Runtime-Ausschluss ist unabhängig davon verbindlich.
 
 ## 6. JWS-Lizenzbescheinigung Version 1

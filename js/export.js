@@ -158,15 +158,16 @@
   }
 
   function projectOwnOperatingSettings(settings) {
+    const profile = activeCompanyProfile(settings);
     const activeAreas = (Array.isArray(settings?.businessAreas) ? settings.businessAreas : [])
       .filter(area => area?.active !== false);
     const defaultArea = activeAreas.find(area => area?.isDefault === true) || activeAreas[0] || null;
-    const taxSettings = isPlainObject(settings?.taxSettings) ? settings.taxSettings : {};
-    const receiptSettings = isPlainObject(settings?.receiptSettings) ? settings.receiptSettings : {};
+    const taxSettings = isPlainObject(profile?.taxSettings) ? profile.taxSettings : {};
+    const receiptSettings = isPlainObject(profile?.receiptSettings) ? profile.receiptSettings : {};
     const backupInterval = new Set(["48-hours", "5-days", "weekly"]).has(settings?.backupReminder?.interval)
       ? settings.backupReminder.interval
       : "weekly";
-    const paymentChoices = (Array.isArray(settings?.paymentChoices) ? settings.paymentChoices : []).map((choice, index) => Object.freeze({
+    const paymentChoices = (Array.isArray(profile?.paymentChoices) ? profile.paymentChoices : []).map((choice, index) => Object.freeze({
       id: text(choice?.id),
       title: text(choice?.title),
       active: choice?.active !== false,
@@ -216,6 +217,14 @@
     });
   }
 
+  function activeCompanyProfile(settings) {
+    const resolver = globalThis.FRECKA_PERSISTENCE?.activeCompanyProfile;
+    if (typeof resolver !== "function") {
+      throw new ExportError("INVALID_SNAPSHOT", "Die zentrale Unternehmensprofilauflösung ist nicht verfügbar.");
+    }
+    return resolver(settings);
+  }
+
   function projectActiveUser(settings, tenantId) {
     const users = Array.isArray(settings?.users) ? settings.users : [];
     const activeUser = users.find(user => text(user?.id) === text(settings?.activeUserId) && user?.active === true);
@@ -234,7 +243,7 @@
   }
 
   function projectLocalLicense(settings, tenantId) {
-    const license = settings?.license;
+    const license = activeCompanyProfile(settings)?.license;
     const validTimestamp = value => typeof value === "string" && Number.isFinite(Date.parse(value));
     if (!isPlainObject(license)
       || license.formatVersion !== 2
@@ -259,7 +268,7 @@
   }
 
   function projectTseSettings(settings) {
-    const tseSettings = settings?.tseSettings;
+    const tseSettings = activeCompanyProfile(settings)?.tseSettings;
     if (!isPlainObject(tseSettings)
       || tseSettings.formatVersion !== 1
       || text(tseSettings.provider) !== "fiskaly SIGN DE"
@@ -289,6 +298,8 @@
     const required = ["settings", "customers", "receipts", "vouchers"];
     const missing = required.filter(store => !isPlainObject(snapshot.stores[store]));
     if (missing.length
+      || !Array.isArray(snapshot.stores.settings.companies)
+      || snapshot.stores.settings.companies.length !== 1
       || !Array.isArray(snapshot.stores.settings.businessAreas)
       || !Array.isArray(snapshot.stores.customers.customers)
       || !Array.isArray(snapshot.stores.receipts.receipts)
@@ -809,6 +820,7 @@
     assertSnapshot(snapshot);
     const normalized = normalizeOptions(options);
     const settings = snapshot.stores.settings;
+    const profile = activeCompanyProfile(settings);
     const settingsAreaById = new Map(settings.businessAreas.map(area => [text(area.id), area]));
     if (normalized.businessAreaId !== "all" && !settingsAreaById.has(normalized.businessAreaId)) {
       throw new ExportError("INVALID_BUSINESS_AREA", "Der ausgewählte Geschäftsbereich ist im Snapshot nicht vorhanden.");
@@ -829,7 +841,7 @@
       ? projectCustomers(snapshot.stores.customers.customers, receipts.selected, vouchers.selected, vouchers.selectedHistoryEntries)
       : [];
     const selectedArea = settingsAreaById.get(normalized.businessAreaId);
-    const company = snapshotCompanyIdentity(settings.company);
+    const company = snapshotCompanyIdentity(profile.company);
     const activeUser = projectActiveUser(settings, snapshot.tenantId);
     const localLicense = projectLocalLicense(settings, snapshot.tenantId);
     const tseSettings = normalized.exportType === "own-data" ? projectTseSettings(settings) : null;
@@ -843,7 +855,7 @@
       companyName: company.name,
       companyOwner: company.owner,
       companyDisplayName: company.displayName,
-      company: normalized.exportType === "own-data" ? projectOwnCompany(settings.company) : null,
+      company: normalized.exportType === "own-data" ? projectOwnCompany(profile.company) : null,
       activeUser: normalized.exportType === "own-data" ? activeUser : null,
       license: normalized.exportType === "own-data" ? localLicense : null,
       tseSettings,

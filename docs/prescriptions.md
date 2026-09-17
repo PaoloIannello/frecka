@@ -8,13 +8,14 @@ Stand: 01.09.2026. PODOLOGY-002 ergänzt auf Schema 7 die optionale Rezeptzuordn
 
 ## Modell und Persistenz
 
-IndexedDB-Schema 7 ergänzt genau einen Fachstore `prescriptions`, Key Path `tenantId`. Der Datensatz besitzt `formatVersion: 1`, `tenantId`, `updatedAt` und ein `prescriptions`-Array. Die vorhandene Architektur mandantenbezogener Aggregate bleibt erhalten; `PROTOTYPE_DATA.prescriptions` ist die einzige fachliche Laufzeitquelle.
+IndexedDB-Schema 7 ergänzte genau einen Fachstore `prescriptions`, Key Path `tenantId`. Schema 9 ergänzt an jedem Rezept die direkte Profilreferenz `companyId`; Store und Aggregatformat bleiben unverändert. Der Datensatz besitzt `formatVersion: 1`, `tenantId`, `updatedAt` und ein `prescriptions`-Array. Die vorhandene Architektur mandantenbezogener Aggregate bleibt erhalten; `PROTOTYPE_DATA.prescriptions` ist die einzige fachliche Laufzeitquelle.
 
 Ein Rezept enthält:
 
 | Feld | Vertrag |
 | --- | --- |
 | `id`, `tenantId` | Stabile interne ID und genau ein Mandant |
+| `companyId` | Direktes, stabiles Unternehmensprofil; muss zum Geschäftsbereich passen |
 | `customerId`, `businessAreaId` | Kunde und Geschäftsbereich müssen existieren |
 | `prescribedOn` | Echtes Kalenderdatum `YYYY-MM-DD`, keine Zeitzone |
 | `treatmentText` | Pflicht-Freitext, UI trimmt, höchstens 200 Zeichen |
@@ -43,7 +44,9 @@ Vor dem Abschluss prüft ein Readonly-Preflight den aktuellen Stand. Die UI zeig
 
 6→7 legt in einer Versionchange-Transaktion leere Rezeptdatensätze für vorhandene Settings-Mandanten und die aktuelle Instanz an. Bisherige Store-Datensätze einschließlich Lizenzruntime bleiben unverändert. Neue Mandanten in einer bereits geöffneten Schema-7-Datenbank erhalten den leeren Rezeptbestand atomar beim ersten Settingsschreiben. Bestehende Settings-Kompatibilität ergänzt die fehlende Capability anschließend mit `false`.
 
-Validiert werden Struktur/Format, Mandant, eindeutige IDs, Pflichttexte, Kalenderdatum, Einheiten, Zeitpunkte, Kunden-/Bereichsreferenzen und alle vorhandenen Belegzuordnungen. Alte Belege ohne `prescriptionAssignment` bleiben unverändert gültig; Datenbankschema und bestehende Storeformate steigen nicht. Deaktivierte Referenzen bleiben historisch gültig; sie erlauben keine neuen Eingaben. Unbekannte zukünftige Rezept- oder Zuordnungsfelder/Formate werden abgewiesen, nicht entfernt. Fehlende/beschädigte Rezeptbestände oder widersprüchliche Zuordnungen bleiben sichtbar fehlerhaft und sperren Vollbackup/Restore; sie werden nicht durch einen leeren UI-Fallback ersetzt.
+Validiert werden Struktur/Format, Mandant, Unternehmensprofil, eindeutige IDs, Pflichttexte, Kalenderdatum, Einheiten, Zeitpunkte, Kunden-/Bereichsreferenzen und alle vorhandenen Belegzuordnungen. Alte Belege ohne `prescriptionAssignment` bleiben unverändert gültig; Rezept- und Belegformat bleiben Version 1. Deaktivierte Referenzen bleiben historisch gültig; sie erlauben keine neuen Eingaben. Unbekannte zukünftige Rezept- oder Zuordnungsfelder/Formate werden abgewiesen, nicht entfernt. Fehlende/beschädigte Rezeptbestände oder widersprüchliche Zuordnungen bleiben sichtbar fehlerhaft und sperren Vollbackup/Restore; sie werden nicht durch einen leeren UI-Fallback ersetzt.
+
+8→9 weist jedes bestehende Rezept eindeutig Profil 1 zu. Neue Rezepte übernehmen `companyId` aus dem gewählten Geschäftsbereich; eine fehlende, unbekannte oder profilfremde Zuordnung wird abgewiesen. Kunden bleiben installationsweit gemeinsam und erhalten keine `companyId`. Rezept- und Belegsnapshots werden durch die Migration nicht neu berechnet.
 
 ## Kundenoberfläche
 
@@ -55,7 +58,7 @@ Liste und Detailansicht zeigen abgeleitet genutzte und verfügbare Einheiten sow
 
 Seit PODOLOGY-003 lesen alle zentralen Geschäftssnapshot-Pfade dieselben sieben Fachstores einschließlich `treatmentRecords`: Backup-/Export-Snapshot, Diagnose, Restore und Kandidat der historischen Vierer-Reparatur. Letztere schreibt weiterhin nur freigegebene historische Receipts. `licenseRuntime` bleibt ausgeschlossen.
 
-Das verschlüsselte Vollbackup enthält Rezepte einschließlich Archiv und interner Notiz sowie die Rezeptzuordnungs-Snapshots innerhalb der ohnehin enthaltenen Belege. Es gibt keine zweite Sammlung. Die Kryptographie und der bestehende Ausgabeablauf bleiben unverändert. Unterstützte ältere Schema-5/6-Backups ohne Rezeptstore erhalten einen leeren Bestand; bei Schema 7 und 8 ist der Rezeptstore Pflicht. Restore ersetzt ab Schema 8 atomar alle sieben Fachstores, kein Merge. Vorhandene Rezepte gehen bei einem bewussten Vollrestore eines älteren Backups entsprechend dem gesicherten damaligen Stand nicht mit über.
+Das verschlüsselte Vollbackup enthält Rezepte einschließlich Archiv, `companyId` und interner Notiz sowie die Rezeptzuordnungs-Snapshots innerhalb der ohnehin enthaltenen Belege. Es gibt keine zweite Sammlung. Die Kryptographie und der bestehende Ausgabeablauf bleiben unverändert. Unterstützte ältere Schema-5/6-Backups ohne Rezeptstore erhalten einen leeren Bestand; ab Schema 7 ist der Rezeptstore Pflicht. Ein Schema-8-Backup wird vor Restore kontrolliert Profil 1 zugeordnet. Restore ersetzt alle sieben Fachstores atomar, kein Merge. Vorhandene Rezepte gehen bei einem bewussten Vollrestore eines älteren Backups entsprechend dem gesicherten damaligen Stand nicht mit über.
 
 Regulärer Kunden-/Eigene-Daten-Export, Steuerberater-CSV/ZIP/PDF, QR und Public Viewer erhalten weder Rezeptstammdaten noch den Zuordnungs-Snapshot. PODOLOGY-004 bildet davon nur eine eng begrenzte Ausnahme für das lokale Kundendokument eines normalen Belegs: Es zeigt das deutsche Rezeptdatum aus dem unveränderlichen `prescriptionAssignment`-Snapshot. Rezept-ID, Behandlungstext, verordnete Einheiten, Nutzung, Überziehungsstatus, interne Notiz und heutige Rezeptstammdaten bleiben ausgeschlossen. Diagnose, Logs und technische Fehlermeldungen enthalten keine Behandlungstexte, Rezeptnotizen oder medizinischen Zuordnungen. Die lokale IndexedDB ist kein zusätzlich verschlüsseltes medizinisches Archiv; die bestehende Geräteschutzgrenze bleibt bestehen. Es gibt keinen Upload und keinen medizinischen Export.
 
@@ -69,6 +72,6 @@ Automatisierte Browserfälle stehen in `tests/persistence-smoke.js`; die echte A
 
 Der PODOLOGY-002-Vertrag bleibt durch PODOLOGY-003 unverändert. Die aktuelle Regression ist in [Behandlungsdokumentation](treatment-documentation.md) festgehalten.
 
-Vor Beta-Veröffentlichung: gesonderte Versions-/Cachevorbereitung und echter iPhone-/Android-In-place-Test mit vorheriger verschlüsselter Sicherung. Ein Downgrade auf einen Schema-7-Client ist nach dem Öffnen von Schema 8 kein unterstützter Rückweg. Noch keine Geräte- oder Produktivfreigabe aus den lokalen Tests ableiten.
+Vor Beta-Veröffentlichung: gesonderte Versions-/Cachevorbereitung und echter iPhone-/Android-In-place-Test mit vorheriger verschlüsselter Sicherung. Ein Downgrade auf einen Client vor Schema 9 ist nach der Migration kein unterstützter Rückweg. Noch keine Geräte- oder Produktivfreigabe aus den lokalen Tests ableiten.
 
 PODOLOGY-003 ergänzt `treatmentRecords`, Kundenpflegehinweise und Vorlagen, ohne den Rezeptverbrauch zu verändern. PODOLOGY-004 ergänzt ausschließlich Rezeptdatum und Pflegehinweis im lokalen Kundendokument. Public Viewer, QR-Payload, Steuerberaterausgabe, reguläre Datenexporte und interne Diagnose bleiben frei von diesen Feldern.

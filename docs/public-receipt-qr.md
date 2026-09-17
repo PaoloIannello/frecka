@@ -110,6 +110,7 @@ Die Public-Projektion wird Feld für Feld aufgebaut. Das vollständige DOCUMENT-
 Nicht transportiert werden insbesondere:
 
 - interne Beleg-, Kunden-, Gutschein-, QR- oder Geschäftsbereichs-IDs;
+- Unternehmensprofil-IDs (`companyId`) sowie portable oder gerätelokale Lizenzdaten;
 - Telefonnummern und E-Mail-Adressen von Unternehmen oder Kunden;
 - Websites und echte Unternehmenslogo-Bilddaten;
 - interne Notizen, Aktivitäten und Historien;

@@ -20,7 +20,19 @@
   let running = false;
 
   const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
-  const clone = value => JSON.parse(JSON.stringify(value));
+  const attachSettingsAliasesForTest = value => {
+    if (!value || typeof value !== "object") return value;
+    if (value.formatVersion === 2 && Array.isArray(value.companies) && value.companies.length === 1) {
+      const profile = value.companies[0];
+      ["company", "taxSettings", "receiptSettings", "paymentChoices", "tseSettings", "license", "setup"].forEach(key => {
+        Object.defineProperty(value, key, { configurable: true, enumerable: false,
+          get() { return profile[key]; }, set(next) { profile[key] = next; } });
+      });
+    }
+    Object.values(value).forEach(attachSettingsAliasesForTest);
+    return value;
+  };
+  const clone = value => attachSettingsAliasesForTest(JSON.parse(JSON.stringify(value)));
   const tinyPngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAIAAAASFvFNAAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAA6ADAAQAAAABAAAAAgAAAABqvnfpAAAAGUlEQVQIHWOULEq2VdU8fOc6EwMQMDICCQA2ZAP112/IsQAAAABJRU5ErkJggg==";
   const alternatePngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAQAAAACCAIAAADwyuo0AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAABKADAAQAAAABAAAAAgAAAABKLAuiAAAAHUlEQVQIHWPkz4lxUNdhYGA4cPMqC5BiYAQRQAAARMsD33P5iogAAAAASUVORK5CYII=";
   const tinyJpegBase64 = "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAA6ADAAQAAAABAAAAAgAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAAgADAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMAAgICAgICAwICAwUDAwMFBgUFBQUGCAYGBgYGCAoICAgICAgKCgoKCgoKCgwMDAwMDA4ODg4ODw8PDw8PDw8PD//bAEMBAgICBAQEBwQEBxALCQsQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEP/dAAQAAf/aAAwDAQACEQMRAD8A+bda/wCPyP8A69rX/wBER1k1r61/x+R/9e1r/wCiErIr3D+U6vxM/9k=";
@@ -429,7 +441,9 @@
   }
 
   function receiptsRecordFixture(tenantId) {
-    return api.snapshotReceipts(receiptsRuntimeFixture(), tenantId);
+    const runtime = receiptsRuntimeFixture();
+    runtime.receipts.forEach(receipt => { receipt.companyId = api.primaryCompanyIdForTenant(tenantId); });
+    return api.snapshotReceipts(runtime, tenantId);
   }
 
   function voucherDraftFixture(id = "voucher-test-new", overrides = {}) {
@@ -473,7 +487,9 @@
   }
 
   function vouchersRecordFixture(tenantId) {
-    return api.snapshotVouchers(vouchersRuntimeFixture(), tenantId);
+    const runtime = vouchersRuntimeFixture();
+    runtime.vouchers.forEach(voucher => { voucher.companyId = api.primaryCompanyIdForTenant(tenantId); });
+    return api.snapshotVouchers(runtime, tenantId);
   }
 
   function completeTenantSnapshotFixture(tenantId, options = {}) {
@@ -483,6 +499,7 @@
     const catalog = catalogRecordFixture(tenantId);
     const customers = customersRecordFixture(tenantId);
     const voucher = voucherDraftFixture("voucher-backup", {
+      companyId: settings.activeCompanyId,
       reference: "vch_backup",
       code: "FRKA-BACK-UP01",
       saleReceipt: {
@@ -503,9 +520,11 @@
       }]
     });
     const saleReceipt = voucherSaleReceiptFixture(voucher, "receipt-sale-voucher-backup");
+    saleReceipt.companyId = settings.activeCompanyId;
     saleReceipt.number = "2030-000075";
     saleReceipt.voucherReference = voucher.reference;
     const normalReceipt = receiptDraftFixture("receipt-existing", { number: "2030-000076" });
+    normalReceipt.companyId = settings.activeCompanyId;
     const receipts = api.snapshotReceipts({ receipts: [saleReceipt, normalReceipt] }, tenantId);
     const vouchers = api.snapshotVouchers({ vouchers: [voucher] }, tenantId);
     return {
@@ -528,8 +547,21 @@
     return snapshot;
   }
 
+  function schema8SnapshotFixture(snapshotInput) {
+    const snapshot = clone(snapshotInput);
+    snapshot.appDataSchemaVersion = 8;
+    snapshot.stores.settings = api.legacySettingsView(snapshot.stores.settings);
+    snapshot.stores.settings.businessAreas.forEach(area => { delete area.companyId; });
+    snapshot.stores.settings.serviceLocations.forEach(location => { delete location.companyId; });
+    ["receipts", "vouchers", "prescriptions", "treatmentRecords"].forEach(storeKey => {
+      const entries = snapshot.stores[storeKey]?.[storeKey];
+      if (Array.isArray(entries)) entries.forEach(entry => { delete entry.companyId; });
+    });
+    return snapshot;
+  }
+
   function historicalSettingsSnapshotFixture(tenantId, variant) {
-    const snapshot = completeTenantSnapshotFixture(tenantId);
+    const snapshot = schema8SnapshotFixture(completeTenantSnapshotFixture(tenantId));
     const settings = snapshot.stores.settings;
     const mutations = {
       "0.9.x": () => {
@@ -603,6 +635,9 @@
 
   function historicalDemoRepairCanonicalRecords(tenantId) {
     const seed = historicalDemoRepairSeed();
+    const companyId = api.primaryCompanyIdForTenant(tenantId);
+    seed.receipts = seed.receipts.map(receipt => ({ ...receipt, companyId }));
+    seed.vouchers = seed.vouchers.map(voucher => ({ ...voucher, companyId }));
     return {
       receipts: api.snapshotReceipts(seed, tenantId),
       vouchers: api.snapshotVouchers(seed, tenantId)
@@ -618,6 +653,8 @@
     seed.receiptSettings.yearPrefix = "2026";
     seed.receiptSettings.nextNumber = 132;
     const settings = api.snapshotSettings(seed, "completed", tenantId);
+    seed.receipts = seed.receipts.map(receipt => ({ ...receipt, companyId: settings.activeCompanyId }));
+    seed.vouchers = seed.vouchers.map(voucher => ({ ...voucher, companyId: settings.activeCompanyId }));
     const catalog = api.snapshotCatalog(seed, tenantId);
     const customers = api.snapshotCustomers(seed, tenantId);
     const receipts = api.snapshotReceipts(seed, tenantId);
@@ -798,6 +835,8 @@
       },
       history: [{ type: "sold", occurredAt: "2030-01-18T09:00:00.000Z", amount: 100, balanceAfter: 100, receiptNumber: "2030-000109" }]
     });
+    [decemberVoucher, januaryVoucher, coachingVoucher].forEach(voucher => { voucher.companyId = snapshot.stores.settings.activeCompanyId; });
+    [paid, open, cancellation, coachingCredit, february].forEach(receipt => { receipt.companyId = snapshot.stores.settings.activeCompanyId; });
     snapshot.stores.vouchers = api.snapshotVouchers({ vouchers: [decemberVoucher, januaryVoucher, coachingVoucher] }, tenantId);
     snapshot.stores.receipts = api.snapshotReceipts({
       receipts: [
@@ -816,6 +855,7 @@
 
   function voucherSaleReceiptFixture(voucher, id = `receipt-sale-${voucher.id}`) {
     return receiptDraftFixture(id, {
+      companyId: voucher.companyId,
       receiptKind: "voucher-sale",
       voucherReference: voucher.reference,
       items: [{ type: "voucher-sale", title: "Gutschein", quantity: 1, unitPrice: voucher.issuedValue, total: voucher.issuedValue }],
@@ -1106,8 +1146,91 @@
     });
   }
 
+  function createCompleteSchemaDatabase(databaseName, version, records, licenseRuntimeRecord) {
+    return new Promise((resolve, reject) => {
+      const tenantStores = [
+        api.constants.storeName,
+        api.constants.catalogStoreName,
+        api.constants.customersStoreName,
+        api.constants.receiptsStoreName,
+        api.constants.vouchersStoreName,
+        api.constants.prescriptionsStoreName,
+        api.constants.treatmentRecordsStoreName
+      ];
+      const recordKeys = ["settings", "catalog", "customers", "receipts", "vouchers", "prescriptions", "treatmentRecords"];
+      const request = globalThis.indexedDB.open(databaseName, version);
+      request.onupgradeneeded = () => {
+        tenantStores.forEach(storeName => request.result.createObjectStore(storeName, { keyPath: "tenantId" }));
+        request.result.createObjectStore(api.constants.licenseRuntimeStoreName, { keyPath: "localTenantId" });
+      };
+      request.onerror = () => reject(request.error || new Error(`Schema-${version}-Testdatenbank konnte nicht geöffnet werden.`));
+      request.onsuccess = () => {
+        const database = request.result;
+        const storeNames = [...tenantStores, api.constants.licenseRuntimeStoreName];
+        const transaction = database.transaction(storeNames, "readwrite");
+        tenantStores.forEach((storeName, index) => transaction.objectStore(storeName).put(records[recordKeys[index]]));
+        transaction.objectStore(api.constants.licenseRuntimeStoreName).put(licenseRuntimeRecord);
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onabort = () => {
+          database.close();
+          reject(transaction.error || new Error(`Schema-${version}-Testdaten konnten nicht geschrieben werden.`));
+        };
+      };
+    });
+  }
+
+  function createLegacyV8Database(databaseName, records, licenseRuntimeRecord) {
+    return createCompleteSchemaDatabase(databaseName, 8, records, licenseRuntimeRecord);
+  }
+
+  function createInterruptedSchema9Database(databaseName, records, licenseRuntimeRecord) {
+    // Bildet den crash-sicheren Wiederanlauf ab: Die strukturelle IDB-Version 9
+    // ist bereits committed, die fachliche Ein-Profil-Migration aber noch nicht.
+    return createCompleteSchemaDatabase(databaseName, 9, records, licenseRuntimeRecord);
+  }
+
+  function readCompleteSchemaDatabase(databaseName, tenantId) {
+    return new Promise((resolve, reject) => {
+      const request = globalThis.indexedDB.open(databaseName);
+      request.onerror = () => reject(request.error || new Error("Testdatenbank konnte nicht gelesen werden."));
+      request.onsuccess = () => {
+        const database = request.result;
+        const storeNames = [
+          api.constants.storeName,
+          api.constants.catalogStoreName,
+          api.constants.customersStoreName,
+          api.constants.receiptsStoreName,
+          api.constants.vouchersStoreName,
+          api.constants.prescriptionsStoreName,
+          api.constants.treatmentRecordsStoreName,
+          api.constants.licenseRuntimeStoreName
+        ];
+        const transaction = database.transaction(storeNames, "readonly");
+        const requests = storeNames.map(storeName => transaction.objectStore(storeName).get(tenantId));
+        transaction.oncomplete = () => {
+          database.close();
+          resolve({
+            version: database.version,
+            records: {
+              settings: requests[0].result,
+              catalog: requests[1].result,
+              customers: requests[2].result,
+              receipts: requests[3].result,
+              vouchers: requests[4].result,
+              prescriptions: requests[5].result,
+              treatmentRecords: requests[6].result,
+              licenseRuntime: requests[7].result
+            }
+          });
+        };
+        transaction.onabort = () => { database.close(); reject(transaction.error || new Error("Testdatenbank-Lesen wurde abgebrochen.")); };
+        transaction.onerror = () => {};
+      };
+    });
+  }
+
   function prescriptionFixture(tenantId, overrides = {}) {
-    return { id: "prescription-one", tenantId, customerId: "customer-anna", businessAreaId: "hair",
+    return { id: "prescription-one", tenantId, companyId: api.primaryCompanyIdForTenant(tenantId), customerId: "customer-anna", businessAreaId: "hair",
       prescribedOn: "2026-08-31", treatmentText: "PRIVATE-TREATMENT-ÄÖÜ", catalogItemId: null,
       prescribedUnits: 6, internalNote: "PRIVATE-NOTE-<script>vertraulich</script>", active: true,
       createdAt: "2026-08-31T10:00:00.000Z", updatedAt: "2026-08-31T10:00:00.000Z", formatVersion: 1, ...overrides };
@@ -1182,24 +1305,39 @@
         enabled.businessAreas[0].features.prescriptionDocumentation = "true";
         assertThrows(() => api.normalizeSettingsRecord(enabled, defaults, legacy.tenantId), "PRESCRIPTION_CAPABILITY_INVALID", "Nicht boolesche Capability");
       } },
-      { name: "PODOLOGY-003: Schema 7→8 ergänzt nur einen leeren Behandlungsstore und lässt alle bisherigen Stores bytegleich", run: async () => {
+      { name: "MULTI-COMPANY-002: Schema 7→9 ergänzt Behandlungsstore und migriert den Ein-Profil-Bestand", run: async () => {
         const name = createDatabaseName();
         const snapshot = completeTenantSnapshotFixture("test-prescription-upgrade");
+        snapshot.stores.settings = api.legacySettingsView(snapshot.stores.settings);
         delete snapshot.stores.settings.businessAreas[0].features;
         delete snapshot.stores.settings.treatmentTemplates;
+        ["receipts", "vouchers", "prescriptions"].forEach(storeKey => {
+          const listKey = storeKey === "prescriptions" ? "prescriptions" : storeKey;
+          snapshot.stores[storeKey][listKey].forEach(entry => { delete entry.companyId; });
+        });
         const runtime = { localTenantId: snapshot.tenantId, marker: "UNCHANGED-LOCAL-RUNTIME" };
         await createLegacyV7Database(name, snapshot.stores, runtime);
         const client = api.createSettingsPersistence({ databaseName: name, tenantId: snapshot.tenantId });
         try {
           const database = await client.openDatabase();
-          assertEqual(database.version, 8, "Upgrade fehlt");
+          assertEqual(database.version, 9, "Upgrade fehlt");
           assertEqual(database.objectStoreNames.length, 8, "Zusätzlicher Store angelegt");
-          for (const key of ["settings", "catalog", "customers", "receipts", "vouchers", "licenseRuntime"]) {
-            const record = await new Promise((resolve, reject) => {
-              const request = database.transaction(key).objectStore(key).get(snapshot.tenantId);
-              request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
-            });
-            assertDeepEqual(record, key === "licenseRuntime" ? runtime : snapshot.stores[key], `Upgrade veränderte ${key}`);
+          const readRaw = key => new Promise((resolve, reject) => {
+            const request = database.transaction(key).objectStore(key).get(snapshot.tenantId);
+            request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+          });
+          assertDeepEqual(await readRaw("catalog"), snapshot.stores.catalog, "Upgrade veränderte den globalen Katalog");
+          assertDeepEqual(await readRaw("customers"), snapshot.stores.customers, "Upgrade veränderte die globalen Kunden");
+          assertDeepEqual(await readRaw("licenseRuntime"), runtime, "Upgrade veränderte die Lizenzruntime");
+          const migratedSettings = await client.readSettings();
+          const companyId = migratedSettings.activeCompanyId;
+          assertEqual(migratedSettings.companies.length, 1, "Profil 1 wurde nicht eindeutig angelegt");
+          [migratedSettings.businessAreas, migratedSettings.serviceLocations].flat().forEach(entry => {
+            assertEqual(entry.companyId, companyId, "Settingsreferenz wurde nicht Profil 1 zugeordnet");
+          });
+          for (const storeKey of ["receipts", "vouchers", "prescriptions"]) {
+            const record = await readRaw(storeKey);
+            record[storeKey].forEach(entry => assertEqual(entry.companyId, companyId, `${storeKey} wurde nicht Profil 1 zugeordnet`));
           }
           assertDeepEqual(await client.readPrescriptions(), api.emptyPrescriptionsRecord(snapshot.tenantId), "Initialisierung ist nicht leer");
           assertDeepEqual(await client.readTreatmentRecords(), api.emptyTreatmentRecordsRecord(snapshot.tenantId), "Behandlungsstore ist nicht leer initialisiert");
@@ -2923,6 +3061,270 @@
     frame.src = new URL(`app-frame.html?run=${crypto.randomUUID()}`, window.location.href).href;
   }
 
+  function buildMultiCompanyTests(context) {
+    const withoutCompanyId = value => {
+      const result = clone(value);
+      delete result.companyId;
+      return result;
+    };
+
+    async function realisticSchema8Snapshot(label) {
+      const source = context.makeClient(`multi-company-source-${label}`);
+      const initial = prescriptionSnapshot(source.tenantId, [prescriptionFixture(source.tenantId)]);
+      await source.restoreTenantSnapshot(initial);
+      const settings = await source.readSettings();
+      const receipts = await source.readReceipts();
+      const draft = receiptDraftFixture(`multi-company-treatment-${label}`);
+      const review = await source.reviewPrescriptionAssignment(draft, { prescriptionId: "prescription-one" }, receipts);
+      await source.commitReceipt(draft, settings, receipts, {
+        prescriptionId: "prescription-one",
+        reviewToken: review.reviewToken,
+        overrunConfirmed: review.overrunRequired,
+        plausibilityConfirmed: review.plausibilityRequired
+      }, {
+        internalDocumentation: "Historische interne Dokumentation",
+        customerCareAdvice: "Historischer Pflegehinweis"
+      });
+      return schema8SnapshotFixture(await source.exportTenantSnapshot());
+    }
+
+    return [
+      {
+        name: "MULTI-COMPANY-002: Frische Einstellungen besitzen genau ein stabiles opakes Profil ohne konkurrierende Root-Settings",
+        run: async () => {
+          const tenantId = "test-multi-company-fresh";
+          const first = api.snapshotSettings(freshRuntimeFixture(tenantId), "not-started", tenantId);
+          const second = api.snapshotSettings(freshRuntimeFixture(tenantId), "not-started", tenantId);
+          assertEqual(first.formatVersion, 2, "Kanonisches Settingsformat fehlt");
+          assertEqual(first.companies.length, 1, "Frische Installation besitzt nicht genau Profil 1");
+          assertEqual(first.activeCompanyId, first.companies[0].id, "Aktives Profil ist nicht eindeutig");
+          assertEqual(first.companies[0].id, second.companies[0].id, "Profil-ID ist nicht stabil");
+          assert(/^company_[0-9a-f]{8}$/.test(first.companies[0].id), "Profil-ID ist nicht opak");
+          ["company", "taxSettings", "receiptSettings", "paymentChoices", "tseSettings", "license", "setup"].forEach(key => {
+            assert(!Object.keys(first).includes(key), `Profilsetting blieb als konkurrierende Root-Wahrheit erhalten: ${key}`);
+            assert(Object.prototype.hasOwnProperty.call(first.companies[0], key), `Profilsetting fehlt: ${key}`);
+          });
+          first.businessAreas.forEach(area => assertEqual(area.companyId, first.activeCompanyId, "Geschäftsbereich ist nicht Profil 1 zugeordnet"));
+          first.serviceLocations.forEach(location => assertEqual(location.companyId, first.activeCompanyId, "Leistungsort ist nicht Profil 1 zugeordnet"));
+          assertEqual(api.activeCompanyProfile(first).id, first.activeCompanyId, "Zentraler Aktivprofil-Resolver ist inkonsistent");
+          assertEqual(api.companyProfileForBusinessArea(first, first.businessAreas[0].id).id, first.activeCompanyId, "Geschäftsbereichsresolver ist inkonsistent");
+          assertEqual(api.companyProfileForServiceLocation(first, first.serviceLocations[0].id).id, first.activeCompanyId, "Leistungsortresolver ist inkonsistent");
+          first.users.forEach(user => assert(!hasOwn(user, "companyId"), "V1-Benutzer wurde fälschlich profilgebunden"));
+          first.logoAssets.forEach(asset => assert(!hasOwn(asset, "companyId"), "Logo-Asset-Register wurde fälschlich profilgebunden"));
+        }
+      },
+      {
+        name: "MULTI-COMPANY-002: Realistischer Schema-8-Bestand migriert verlustfrei und idempotent auf Profil 1",
+        run: async () => {
+          const legacy = await realisticSchema8Snapshot("realistic");
+          const tenantId = legacy.tenantId;
+          const databaseName = createDatabaseName();
+          const runtime = { localTenantId: tenantId, marker: "LICENSE-RUNTIME-UNCHANGED", cachedEntitlements: { core: true } };
+          const before = clone(legacy.stores);
+          await createLegacyV8Database(databaseName, legacy.stores, runtime);
+          const client = api.createSettingsPersistence({ databaseName, tenantId });
+          try {
+            const database = await client.openDatabase();
+            assertEqual(database.version, 9, "IndexedDB wurde nicht auf Schema 9 angehoben");
+            const migrated = await readCompleteSchemaDatabase(databaseName, tenantId);
+            const settings = migrated.records.settings;
+            const companyId = settings.activeCompanyId;
+            assertEqual(settings.companies.length, 1, "Schema-8-Unternehmen wurde nicht genau Profil 1");
+            assertEqual(companyId, api.primaryCompanyIdForTenant(tenantId), "Profil-1-ID ist nicht deterministisch");
+            assertDeepEqual(settings.companies[0].company, before.settings.company, "Unternehmensdaten gingen bei der Profilbildung verloren");
+            assertDeepEqual(settings.companies[0].taxSettings, before.settings.taxSettings, "Steuereinstellungen gingen bei der Profilbildung verloren");
+            assertDeepEqual(settings.companies[0].receiptSettings, before.settings.receiptSettings, "Nummernstand ging bei der Profilbildung verloren");
+            assertDeepEqual(settings.companies[0].paymentChoices, before.settings.paymentChoices, "Zahlungsarten gingen bei der Profilbildung verloren");
+            assertDeepEqual(settings.companies[0].tseSettings, before.settings.tseSettings, "TSE-Vorbereitung ging bei der Profilbildung verloren");
+            assertDeepEqual(settings.companies[0].license, before.settings.license, "Portable Lizenzreferenz ging bei der Profilbildung verloren");
+            assertDeepEqual(settings.companies[0].setup, before.settings.setup, "Einrichtungsstatus ging bei der Profilbildung verloren");
+            assert(!Object.keys(settings).some(key => ["company", "taxSettings", "receiptSettings", "paymentChoices", "tseSettings", "license", "setup"].includes(key)), "Legacy-Profilsettings blieben kanonisch am Root");
+            settings.businessAreas.forEach((area, index) => {
+              assertEqual(area.companyId, companyId, "Geschäftsbereich wurde nicht Profil 1 zugeordnet");
+              assertDeepEqual(withoutCompanyId(area), before.settings.businessAreas[index], "Geschäftsbereich wurde außer companyId verändert");
+            });
+            settings.serviceLocations.forEach((location, index) => {
+              assertEqual(location.companyId, companyId, "Leistungsort wurde nicht Profil 1 zugeordnet");
+              assertDeepEqual(withoutCompanyId(location), before.settings.serviceLocations[index], "Leistungsort wurde außer companyId verändert");
+            });
+            for (const storeKey of ["receipts", "vouchers", "prescriptions", "treatmentRecords"]) {
+              const entries = migrated.records[storeKey][storeKey];
+              assert(entries.length > 0, `${storeKey} enthält keine realistische Testentität`);
+              entries.forEach((entry, index) => {
+                assertEqual(entry.companyId, companyId, `${storeKey} wurde nicht Profil 1 zugeordnet`);
+                assertDeepEqual(withoutCompanyId(entry), before[storeKey][storeKey][index], `${storeKey} wurde außer companyId verändert`);
+              });
+            }
+            assertDeepEqual(migrated.records.customers, before.customers, "Gemeinsame Kunden wurden verändert");
+            assertDeepEqual(migrated.records.catalog, before.catalog, "Abgeleiteter globaler Katalog wurde verändert");
+            migrated.records.customers.customers.forEach(customer => assert(!hasOwn(customer, "companyId"), "Kunde erhielt unzulässige companyId"));
+            migrated.records.vouchers.vouchers.flatMap(voucher => voucher.history).forEach(entry => assert(!hasOwn(entry, "companyId"), "Gutscheinhistorie erhielt unzulässige companyId"));
+            assertDeepEqual(migrated.records.licenseRuntime, runtime, "Lizenzruntime wurde durch die Fachmigration verändert");
+            client.closeDatabase();
+            const beforeReopen = await readCompleteSchemaDatabase(databaseName, tenantId);
+            await client.openDatabase();
+            client.closeDatabase();
+            const afterReopen = await readCompleteSchemaDatabase(databaseName, tenantId);
+            assertDeepEqual(afterReopen, beforeReopen, "Wiederholter Schema-9-Start veränderte den bereits migrierten Bestand");
+          } finally {
+            client.closeDatabase();
+            await deleteTestDatabase(databaseName);
+          }
+        }
+      },
+      {
+        name: "MULTI-COMPANY-002: Fachmigration läuft nach strukturellem Schema-9-Abbruch sicher erneut an",
+        run: async () => {
+          const legacy = await realisticSchema8Snapshot("retry");
+          const tenantId = legacy.tenantId;
+          const databaseName = createDatabaseName();
+          const runtime = { localTenantId: tenantId, marker: "RUNTIME-AFTER-INTERRUPTION" };
+          await createInterruptedSchema9Database(databaseName, legacy.stores, runtime);
+          const before = await readCompleteSchemaDatabase(databaseName, tenantId);
+          assertEqual(before.version, 9, "Unterbrochene Testdatenbank besitzt nicht die strukturelle Version 9");
+          assertEqual(before.records.settings.formatVersion, 1, "Unterbrochene Testdatenbank ist nicht fachlich Schema 8");
+          const client = api.createSettingsPersistence({ databaseName, tenantId });
+          try {
+            await client.openDatabase();
+            const after = await readCompleteSchemaDatabase(databaseName, tenantId);
+            assertEqual(after.records.settings.formatVersion, 2, "Wiederanlauf führte die Fachmigration nicht aus");
+            assertEqual(after.records.settings.companies.length, 1, "Wiederanlauf erzeugte kein eindeutiges Profil 1");
+            assertDeepEqual(after.records.customers, before.records.customers, "Wiederanlauf veränderte gemeinsame Kunden");
+            assertDeepEqual(after.records.licenseRuntime, runtime, "Wiederanlauf veränderte die Lizenzruntime");
+          } finally {
+            client.closeDatabase();
+            await deleteTestDatabase(databaseName);
+          }
+        }
+      },
+      {
+        name: "MULTI-COMPANY-002: Inkonsistente Schema-8-Zuordnung bricht atomar ohne Teilmigration ab",
+        run: async () => {
+          const legacy = await realisticSchema8Snapshot("abort");
+          const tenantId = legacy.tenantId;
+          const databaseName = createDatabaseName();
+          const runtime = { localTenantId: tenantId, marker: "RUNTIME-BEFORE-ABORT" };
+          const incomplete = clone(legacy.stores);
+          delete incomplete.customers;
+          assertThrows(
+            () => api.migrateSchema8StoreBundle(incomplete, tenantId),
+            "SCHEMA_MIGRATION_INCOMPLETE",
+            "Unvollständiger Schema-8-Bestand"
+          );
+          legacy.stores.receipts.receipts[0].companyId = "company_foreign";
+          await createInterruptedSchema9Database(databaseName, legacy.stores, runtime);
+          const before = await readCompleteSchemaDatabase(databaseName, tenantId);
+          const client = api.createSettingsPersistence({ databaseName, tenantId });
+          try {
+            await assertRejects(() => client.openDatabase(), "COMPANY_REFERENCE_INVALID", "Inkonsistente Profilreferenz");
+            const after = await readCompleteSchemaDatabase(databaseName, tenantId);
+            assertDeepEqual(after, before, "Abgebrochene Fachmigration hinterließ Teiländerungen");
+          } finally {
+            client.closeDatabase();
+            await deleteTestDatabase(databaseName);
+          }
+        }
+      },
+      {
+        name: "MULTI-COMPANY-002: Schema-9-Schreibpfade lehnen fehlende und fremde Profilreferenzen hart ab",
+        run: async () => {
+          const client = context.makeClient("multi-company-reference-guards");
+          const snapshot = prescriptionSnapshot(client.tenantId, []);
+          await client.restoreTenantSnapshot(snapshot);
+          const badSettings = clone(snapshot.stores.settings);
+          badSettings.businessAreas[0].companyId = "company_foreign";
+          assertThrows(() => api.validateCompanySettingsReferences(badSettings), "COMPANY_REFERENCE_INVALID", "Fremder Geschäftsbereich");
+          const badLocation = clone(snapshot.stores.settings);
+          badLocation.serviceLocations[0].businessAreaIds = ["missing-area"];
+          assertThrows(() => api.validateCompanySettingsReferences(badLocation), "COMPANY_REFERENCE_INVALID", "Fremde Leistungsortzuordnung");
+          const receipts = clone(snapshot.stores.receipts);
+          receipts.receipts[0].companyId = "company_foreign";
+          await assertRejects(() => client.writeReceipts(receipts), "COMPANY_REFERENCE_INVALID", "Fremder Beleg");
+          const vouchers = clone(snapshot.stores.vouchers);
+          vouchers.vouchers = [voucherDraftFixture("voucher-foreign-company", {
+            companyId: "company_foreign", reference: "vch_foreign_company", code: "FRKA-FRGN-0001"
+          })];
+          await assertRejects(() => client.writeVouchers(vouchers), "COMPANY_REFERENCE_INVALID", "Fremder Gutschein");
+          await assertRejects(() => client.savePrescription(prescriptionFixture(client.tenantId, { companyId: "company_foreign" })), "PRESCRIPTION_EDIT_DISABLED", "Fremdes Rezept");
+          const malformed = clone(snapshot);
+          malformed.stores.treatmentRecords = {
+            formatVersion: 1,
+            tenantId: client.tenantId,
+            updatedAt: "2030-01-05T12:00:00.000Z",
+            treatmentRecords: [{
+              formatVersion: 1, id: "treatment_foreign", tenantId: client.tenantId, companyId: "company_foreign",
+              customerId: "customer-anna", businessAreaId: "hair", receiptId: "receipt-existing", receiptNumber: "2030-000076",
+              prescriptionId: null, userId: null, performedAt: "2030-01-05T12:00:00.000Z",
+              internalDocumentation: "Fremdprofil", customerCareAdvice: "", customerSnapshot: { id: "customer-anna" },
+              businessAreaSnapshot: { id: "hair" }, userSnapshot: null, prescriptionSnapshot: null,
+              createdAt: "2030-01-05T12:00:00.000Z", updatedAt: "2030-01-05T12:00:00.000Z"
+            }]
+          };
+          assertThrows(() => api.validateTenantSnapshot(malformed, client.tenantId), "TREATMENT_RECORD_REFERENCE_INVALID", "Fremde Behandlungsdokumentation");
+        }
+      },
+      {
+        name: "MULTI-COMPANY-002: Neue Belege, Gutscheine, Rezepte, Behandlungen und Korrekturen tragen Profil 1",
+        run: async () => {
+          const client = context.makeClient("multi-company-new-entities");
+          const initial = prescriptionSnapshot(client.tenantId, []);
+          await client.restoreTenantSnapshot(initial);
+          const settings = await client.readSettings();
+          const companyId = settings.activeCompanyId;
+          const prescription = (await client.savePrescription(prescriptionFixture(client.tenantId))).prescription;
+          assertEqual(prescription.companyId, companyId, "Neues Rezept trägt nicht Profil 1");
+          const receipts = await client.readReceipts();
+          const receiptDraft = receiptDraftFixture("multi-company-new-receipt");
+          const committed = await client.commitReceipt(receiptDraft, settings, receipts, null, {
+            internalDocumentation: "Neue Behandlungsdokumentation",
+            customerCareAdvice: "Pflegehinweis"
+          });
+          assertEqual(committed.receipt.companyId, companyId, "Neuer Beleg trägt nicht Profil 1");
+          assertEqual(committed.treatmentRecord.companyId, companyId, "Neue Behandlung trägt nicht Profil 1");
+          const voucher = voucherDraftFixture("multi-company-new-voucher", { reference: "vch_multi_company_new", code: "FRKA-MULT-0001" });
+          const voucherSale = await client.commitVoucherSale(
+            voucherSaleReceiptFixture(voucher), voucher, committed.settingsRecord, committed.receiptsRecord, await client.readVouchers()
+          );
+          assertEqual(voucherSale.receipt.companyId, companyId, "Gutscheinverkaufsbeleg trägt nicht Profil 1");
+          assertEqual(voucherSale.voucher.companyId, companyId, "Neuer Gutschein trägt nicht Profil 1");
+          const correction = await client.commitReceiptCorrection(committed.receipt.number, {
+            id: "multi-company-new-correction", type: "cancellation", completedAt: "2030-01-05T13:00:00.000Z",
+            total: -committed.receipt.total
+          }, voucherSale.receiptsRecord);
+          assertEqual(correction.receipt.companyId, companyId, "Korrektur übernahm companyId nicht");
+          assertDeepEqual(correction.receipt.companySnapshot, committed.receipt.companySnapshot, "Korrektur veränderte Unternehmenssnapshot");
+          assertDeepEqual(correction.receipt.businessAreaSnapshot, committed.receipt.businessAreaSnapshot, "Korrektur veränderte Geschäftsbereichssnapshot");
+          assertDeepEqual(correction.receipt.serviceLocationSnapshot, committed.receipt.serviceLocationSnapshot, "Korrektur veränderte Leistungsortsnapshot");
+        }
+      },
+      {
+        name: "MULTI-COMPANY-002: Schema-8-Backup wird vor Restore kontrolliert auf Schema 9 migriert",
+        run: async () => {
+          const legacy = await realisticSchema8Snapshot("backup-restore");
+          const client = context.makeClient("multi-company-schema8-restore");
+          const tenantLegacy = clone(legacy);
+          tenantLegacy.tenantId = client.tenantId;
+          Object.values(tenantLegacy.stores).forEach(record => { record.tenantId = client.tenantId; });
+          tenantLegacy.stores.settings.users.forEach(user => { user.tenantId = client.tenantId; });
+          tenantLegacy.stores.settings.license.localTenantId = client.tenantId;
+          tenantLegacy.stores.prescriptions.prescriptions.forEach(entry => { entry.tenantId = client.tenantId; });
+          tenantLegacy.stores.treatmentRecords.treatmentRecords.forEach(entry => { entry.tenantId = client.tenantId; });
+          const restored = await client.restoreTenantSnapshot(tenantLegacy);
+          assertEqual(restored.snapshot.appDataSchemaVersion, 9, "Restore hob Schema-8-Backup nicht auf Schema 9 an");
+          assertEqual(restored.records.settings.companies.length, 1, "Restore erzeugte nicht Profil 1");
+          const companyId = restored.records.settings.activeCompanyId;
+          ["receipts", "vouchers", "prescriptions", "treatmentRecords"].forEach(storeKey => {
+            restored.records[storeKey][storeKey].forEach(entry => assertEqual(entry.companyId, companyId, `${storeKey} verlor Profil 1 beim Restore`));
+          });
+          assertDeepEqual(restored.records.customers, tenantLegacy.stores.customers, "Schema-8-Restore veränderte gemeinsame Kunden");
+          const roundtrip = await client.exportTenantSnapshot();
+          assertEqual(roundtrip.appDataSchemaVersion, 9, "Vollbackup nach Restore ist nicht Schema 9");
+          assertEqual(roundtrip.stores.settings.companies.length, 1, "Vollbackup enthält Profil 1 nicht");
+        }
+      }
+    ];
+  }
+
   function buildTests(context) {
     const cryptoPassphrase = "Sehr sicherer Backup Testsatz 2030";
     const wrongCryptoPassphrase = "Ganz andere sichere Passphrase";
@@ -2937,6 +3339,7 @@
       return encryptedFixturePromise;
     };
     return [
+      ...buildMultiCompanyTests(context),
       ...buildPrescriptionTests(context),
       ...buildTreatmentTests(context),
       {
@@ -3077,16 +3480,17 @@
         run: async () => {
           const source = receiptDocumentFixture({
             id: "receipt-secret-internal-id",
+            companyId: "COMPANY-ID-SECRET",
             internalNote: "INTERN-NOTIZ-SECRET",
             activity: [{ label: "HISTORY-SECRET" }],
-            companySnapshot: { name: "Studio", owner: "Testperson", phone: "COMPANY-PHONE-SECRET", email: "COMPANY-MAIL-SECRET@example.invalid", website: "https://COMPANY-WEBSITE-SECRET.invalid", logo: { dataUrl: "COMPANY-LOGO-DATA-SECRET" }, street: "Testweg 1", zip: "12345", city: "Teststadt" },
+            companySnapshot: { name: "Studio", owner: "Testperson", licenseId: "LICENSE-ID-SECRET", phone: "COMPANY-PHONE-SECRET", email: "COMPANY-MAIL-SECRET@example.invalid", website: "https://COMPANY-WEBSITE-SECRET.invalid", logo: { dataUrl: "COMPANY-LOGO-DATA-SECRET" }, street: "Testweg 1", zip: "12345", city: "Teststadt" },
             serviceLocationSnapshot: { id: "LOCATION-ID-SECRET", name: "LOCATION-NAME-SECRET", addressMode: "own", street: "LOCATION-STREET-SECRET", zip: "99999", city: "LOCATION-CITY-SECRET", taxNumber: "LOCATION-TAX-SECRET", effectiveTaxNumber: "LOCATION-TAX-SECRET", taxNumberSource: "service-location" },
             customerSnapshot: { id: "CUSTOMER-ID-SECRET", name: "Sichtbarer Name", phone: "CUSTOMER-PHONE-SECRET", email: "CUSTOMER-MAIL-SECRET@example.invalid", street: "Sichtweg 1", zip: "12345", city: "Teststadt" }
           });
           const model = documentApi.createReceiptDocumentModel(source, documentOptions());
           const publicModel = { ...model, issuer: { ...model.issuer, taxNumber: "COMPANY-TAX-SECRET", vatId: "COMPANY-VAT-SECRET" } };
           const serialized = JSON.stringify(publicDocumentApi.projectDocument(publicModel));
-          ["receipt-secret-internal-id", "INTERN-NOTIZ-SECRET", "HISTORY-SECRET", "COMPANY-PHONE-SECRET", "COMPANY-MAIL-SECRET", "COMPANY-WEBSITE-SECRET", "COMPANY-TAX-SECRET", "COMPANY-VAT-SECRET", "COMPANY-LOGO-DATA-SECRET", "LOCATION-ID-SECRET", "LOCATION-NAME-SECRET", "LOCATION-STREET-SECRET", "LOCATION-CITY-SECRET", "LOCATION-TAX-SECRET", "CUSTOMER-ID-SECRET", "CUSTOMER-PHONE-SECRET", "CUSTOMER-MAIL-SECRET", "contextSnapshot", "history", "internalNote"].forEach(secret => {
+          ["receipt-secret-internal-id", "COMPANY-ID-SECRET", "LICENSE-ID-SECRET", "INTERN-NOTIZ-SECRET", "HISTORY-SECRET", "COMPANY-PHONE-SECRET", "COMPANY-MAIL-SECRET", "COMPANY-WEBSITE-SECRET", "COMPANY-TAX-SECRET", "COMPANY-VAT-SECRET", "COMPANY-LOGO-DATA-SECRET", "LOCATION-ID-SECRET", "LOCATION-NAME-SECRET", "LOCATION-STREET-SECRET", "LOCATION-CITY-SECRET", "LOCATION-TAX-SECRET", "CUSTOMER-ID-SECRET", "CUSTOMER-PHONE-SECRET", "CUSTOMER-MAIL-SECRET", "contextSnapshot", "history", "internalNote", "companyId", "licenseId"].forEach(secret => {
             assert(!serialized.includes(secret), `Nicht öffentliche Information gelangte in die Payload: ${secret}`);
           });
           const bundle = await publicDocumentApi.createPublicBundle(publicModel, { baseUrl: "https://app.example.invalid/frecka/", qrService: qrApi });
@@ -3965,10 +4369,10 @@
             "TSE-Vorbereitung besitzt unerwartete Felder"
           );
 
-          const legacy = clone(settings);
+          const legacy = api.legacySettingsView(settings);
           delete legacy.tseSettings;
-          const normalizedLegacy = api.normalizeSettingsRecord(legacy, settings, tenantId);
-          assert(normalizedLegacy.repairs.includes("TSE_SETTINGS_DEFAULTED"), "Historische Settings weisen die sichere TSE-Ergänzung nicht aus");
+          const normalizedLegacy = api.prepareHistoricalSettingsRecord(legacy, settings, tenantId);
+          assert(normalizedLegacy.compatibilityCodes.includes("TSE_SETTINGS_ADDED"), "Historische Settings weisen die sichere TSE-Ergänzung nicht aus");
           assertDeepEqual(normalizedLegacy.record.tseSettings, settings.tseSettings, "Historische Settings erhielten nicht den deaktivierten Standard");
 
           const unsafe = clone(settings);
@@ -3995,6 +4399,8 @@
           const persistence = context.makeClient("tse002-roundtrip");
           const snapshot = completeTenantSnapshotFixture(persistence.tenantId);
           const legacySnapshot = clone(snapshot);
+          legacySnapshot.appDataSchemaVersion = 8;
+          legacySnapshot.stores.settings = api.legacySettingsView(legacySnapshot.stores.settings);
           delete legacySnapshot.stores.settings.tseSettings;
           const migrated = api.validateTenantSnapshot(legacySnapshot, persistence.tenantId).snapshot;
           assertEqual(migrated.stores.settings.tseSettings.provider, "fiskaly SIGN DE", "Historisches Backup erhielt keinen Anbieter");
@@ -4525,15 +4931,15 @@
         run: async () => {
           const tenantId = "test-license-legacy";
           const defaults = recordFixture(tenantId, "completed");
-          const legacy = clone(defaults);
+          const legacy = api.legacySettingsView(defaults);
           delete legacy.license;
-          const normalized = api.normalizeSettingsRecord(legacy, defaults, tenantId);
-          assert(normalized.repairs.includes("LICENSE_MODEL_DEFAULTED"), "Historische Settings weisen die lokale Lizenzerweiterung nicht aus");
-          assertDeepEqual(normalized.record.license, defaults.license, "Historische Settings erhielten keine stabile lokale Standardbindung");
+          const normalized = api.prepareHistoricalSettingsRecord(legacy, defaults, tenantId);
+          assert(normalized.compatibilityCodes.includes("LICENSE_MODEL_ADDED"), "Historische Settings weisen die lokale Lizenzerweiterung nicht aus");
+          assertEquivalent(normalized.record.license, defaults.license, "Historische Settings erhielten keine stabile lokale Standardbindung");
 
           const preserved = api.normalizeSettingsRecord(defaults, defaults, tenantId);
           assertDeepEqual(preserved.record.license, defaults.license, "Vorhandene Lizenzbindung wurde bei der Normalisierung verändert");
-          const v1 = clone(defaults);
+          const v1 = api.legacySettingsView(defaults);
           v1.license = legacyLicenseFixture(tenantId);
           const prepared = api.prepareHistoricalSettingsRecord(v1, defaults, tenantId);
           assert(prepared.compatible && prepared.changed, "Eindeutige LICENSE-001-Migration wurde nicht freigegeben");
@@ -4624,6 +5030,8 @@
           const databaseName = createDatabaseName();
           const tenantId = "test-license-schema-upgrade";
           const snapshot = completeTenantSnapshotFixture(tenantId);
+          snapshot.appDataSchemaVersion = 5;
+          snapshot.stores.settings = api.legacySettingsView(snapshot.stores.settings);
           snapshot.stores.settings.license = legacyLicenseFixture(tenantId, {
             licenseId: "license_schema_legacy",
             deviceId: "device_schema_legacy"
@@ -4632,22 +5040,20 @@
           const persistence = api.createSettingsPersistence({ databaseName, tenantId });
           try {
             const database = await persistence.openDatabase();
-            assertEqual(database.version, 8, "IndexedDB wurde nicht auf Schema 8 angehoben");
+            assertEqual(database.version, api.constants.databaseVersion, "IndexedDB wurde nicht auf das aktuelle Schema angehoben");
             ["settingsStoreName", "catalogStoreName", "customersStoreName", "receiptsStoreName", "vouchersStoreName", "licenseRuntimeStoreName"].forEach(constantName => {
               assert(database.objectStoreNames.contains(api.constants[constantName]), `Store fehlt nach 5→6: ${constantName}`);
             });
-            const legacySettings = await persistence.readSettings();
-            assertEqual(legacySettings.license.formatVersion, 1, "Schema-Upgrade hat Settings außerhalb der Settingsmigration verändert");
+            const migratedSettings = await persistence.readSettings();
+            assertEqual(migratedSettings.license.formatVersion, 2, "Schema-Upgrade hat die portable Lizenzreferenz nicht migriert");
             assertDeepEqual(await persistence.readCatalog(), snapshot.stores.catalog, "Schema-Upgrade veränderte den Katalogstore");
             assertDeepEqual(await persistence.readCustomers(), snapshot.stores.customers, "Schema-Upgrade veränderte den Kundenstore");
             assertDeepEqual(await persistence.readReceipts(), snapshot.stores.receipts, "Schema-Upgrade veränderte den Receipt-Store");
             assertDeepEqual(await persistence.readVouchers(), snapshot.stores.vouchers, "Schema-Upgrade veränderte den Voucher-Store");
-            const defaults = recordFixture(tenantId, "completed");
-            const prepared = api.prepareHistoricalSettingsRecord(legacySettings, defaults, tenantId);
-            assert(prepared.compatible && prepared.changed, "LICENSE-001-Settings wurden nicht eindeutig vorbereitet");
-            await persistence.writeSettings(prepared.record);
-            const runtime = await persistence.ensureLicenseRuntime(prepared.record.license, { legacyLicense: legacySettings.license });
-            assertEqual(runtime.deviceId, "device_schema_legacy", "Historische Geräte-ID ging bei 5→6 verloren");
+            const prepared = api.prepareHistoricalSettingsRecord(migratedSettings, migratedSettings, tenantId);
+            assert(prepared.compatible && !prepared.changed, "Schema-9-Settings sind nach der Migration nicht idempotent");
+            const runtime = await persistence.ensureLicenseRuntime(migratedSettings.license);
+            assert(/^device_[A-Za-z0-9._:-]+$/.test(runtime.deviceId), "Lokale Geräte-ID wurde nach der Migration nicht sicher initialisiert");
             assertEqual(runtime.licenseId, "license_schema_legacy", "Historische Lizenz-ID ging bei 5→6 verloren");
           } finally {
             persistence.closeDatabase();
@@ -4839,6 +5245,8 @@
           const creditSettings = api.snapshotSettings(creditRuntime, "completed", creditClient.tenantId);
           const creditSource = await creditClient.commitReceipt(receiptDraftFixture("fresh-credit-source", {
             businessAreaId: "general",
+            serviceLocationId: "location-default",
+            serviceLocationSnapshot: { id: "location-default", name: "Leistungsort", street: "", zip: "", city: "" },
             customerId: null,
             customerSnapshot: null
           }), creditSettings, api.snapshotReceipts(creditRuntime, creditClient.tenantId));
@@ -4866,6 +5274,8 @@
           });
           const voucherReceipt = voucherSaleReceiptFixture(voucher);
           voucherReceipt.businessAreaId = "general";
+          voucherReceipt.serviceLocationId = "location-default";
+          voucherReceipt.serviceLocationSnapshot = { id: "location-default", name: "Leistungsort", street: "", zip: "", city: "" };
           voucherReceipt.customerId = null;
           voucherReceipt.customerSnapshot = null;
           const voucherSale = await voucherClient.commitVoucherSale(
@@ -4960,7 +5370,7 @@
         }
       },
       {
-        name: "Ungültige Referenzen und fehlende Felder werden sicher normalisiert",
+        name: "Ungültige Schema-8-Referenzen werden vor der Profilmigration fail closed abgewiesen",
         run: async () => {
           const tenantId = "test-normalization";
           const defaults = recordFixture(tenantId, "not-started");
@@ -4986,19 +5396,11 @@
               }
             ]
           };
-          const normalized = api.normalizeSettingsRecord(raw, defaults, tenantId);
-          const hair = normalized.record.businessAreas.find(area => area.id === "hair");
-          assert(normalized.record.businessAreas.some(area => area.active), "Kein aktiver Geschäftsbereich wiederhergestellt");
-          assertEqual(normalized.record.businessAreas.filter(area => area.active && area.isDefault).length, 1, "Aktiver Standardbereich nicht eindeutig");
-          assertDeepEqual(normalized.record.serviceLocations[0].businessAreaIds, ["hair"], "Verwaiste Geschäftsbereichsreferenz blieb erhalten");
-          assertEqual(normalized.record.serviceLocations[0].taxNumber, "", "Historischer Leistungsort ohne Steuernummer ist nicht abwärtskompatibel");
-          assertEqual(hair.defaultServiceLocationId, "location-repair", "Verwaister Standard-Leistungsort wurde nicht repariert");
-          assert(normalized.record.taxSettings.rates.length > 0, "Fehlende Steuersätze nicht ergänzt");
-          assert(normalized.record.paymentChoices.some(choice => choice.id !== "voucher" && choice.active), "Keine normale Zahlungsart wiederhergestellt");
-          assertEqual(normalized.record.receiptSettings.yearPrefix, "2030", "Fehlende Belegeinstellungen nicht ergänzt");
-          assertEqual(normalized.record.setup.status, "not-started", "Fehlender Setupstatus nicht sicher ergänzt");
-          assertEqual(hair.logo, null, "Historischer Geschäftsbereich ohne Logo wurde nicht kompatibel normalisiert");
-          assert(normalized.repairs.length > 0, "Reparaturen wurden nicht dokumentiert");
+          const before = clone(raw);
+          const prepared = api.prepareHistoricalSettingsRecord(raw, defaults, tenantId);
+          assert(!prepared.compatible && !prepared.changed, "Mehrdeutiger Schema-8-Bestand wurde automatisch repariert");
+          assert(prepared.blockedCode, "Abbruchgrund der kontrollierten Migration fehlt");
+          assertDeepEqual(raw, before, "Fail-closed-Prüfung hat historische Eingabedaten verändert");
         }
       },
       {
@@ -5520,6 +5922,7 @@
           requested.receipts[0].voucherReference = "vch-reference-only";
           requested.receipts[0].voucher = { code: "FORBIDDEN", history: [{ amount: 39 }] };
           requested.receipts[0].emailStatus = "FORBIDDEN";
+          await persistence.writeSettings(recordFixture(persistence.tenantId, "completed"));
           await persistence.writeReceipts(requested);
           const stored = await persistence.readReceipts();
           const receipt = stored.receipts[0];
@@ -5685,6 +6088,7 @@
           await first.writeCatalog(catalogRecordFixture(first.tenantId));
           await first.writeCustomers(customersRecordFixture(first.tenantId));
           await first.writeReceipts(receiptsRecordFixture(first.tenantId));
+          await second.writeSettings(recordFixture(second.tenantId, "completed"));
           await second.writeReceipts(receiptsRecordFixture(second.tenantId));
           await first.deleteReceipts();
           assertEqual(await first.readReceipts(), null, "Receipt-Store des ersten Tenants wurde nicht gelöscht");
@@ -5704,6 +6108,7 @@
           requested.vouchers[0].mailStatus = "FORBIDDEN";
           requested.vouchers[0].cameraData = { frame: "FORBIDDEN" };
           requested.vouchers[0].printStatus = "FORBIDDEN";
+          await persistence.writeSettings(recordFixture(persistence.tenantId, "completed"));
           await persistence.writeVouchers(requested);
           const stored = await persistence.readVouchers();
           const voucher = stored.vouchers[0];
@@ -6145,7 +6550,10 @@
         run: async () => {
           const persistence = context.makeClient("demo-repair-hard-stop");
           const snapshot = historicalDemoRepairSnapshotFixture(persistence.tenantId, ["2026-000124"]);
-          snapshot.stores.receipts.receipts.push(receiptDraftFixture("receipt-id-collision", { number: "2026-000124" }));
+          snapshot.stores.receipts.receipts.push(receiptDraftFixture("receipt-id-collision", {
+            companyId: snapshot.stores.settings.activeCompanyId,
+            number: "2026-000124"
+          }));
           await writeHistoricalDemoRepairSnapshot(persistence, snapshot);
           const before = {
             settings: clone(await persistence.readSettings()),
@@ -6463,6 +6871,7 @@
             "Restwert über Ursprungswert"
           );
           const record = vouchersRecordFixture(persistence.tenantId);
+          await persistence.writeSettings(recordFixture(persistence.tenantId, "completed"));
           await persistence.writeVouchers(record);
           const changed = clone(record);
           changed.vouchers[0].history[0].amount = 99;
@@ -6483,6 +6892,7 @@
           await first.writeCustomers(customersRecordFixture(first.tenantId));
           await first.writeReceipts(receiptsRecordFixture(first.tenantId));
           await first.writeVouchers(vouchersRecordFixture(first.tenantId));
+          await second.writeSettings(recordFixture(second.tenantId, "completed"));
           await second.writeVouchers(vouchersRecordFixture(second.tenantId));
           await first.deleteVouchers();
           assertEqual(await first.readVouchers(), null, "Voucher-Store des ersten Tenants wurde nicht gelöscht");
@@ -6525,23 +6935,31 @@
           const tenantId = "legacy-v4-tenant";
           let migratedClient = null;
           try {
+            const legacySettings = api.legacySettingsView(recordFixture(tenantId, "completed"));
+            const legacyReceipts = receiptsRecordFixture(tenantId);
+            legacyReceipts.receipts.forEach(receipt => { delete receipt.companyId; });
             await createLegacyV4Database(
               legacyDatabaseName,
-              recordFixture(tenantId, "completed"),
+              legacySettings,
               catalogRecordFixture(tenantId),
               customersRecordFixture(tenantId),
-              receiptsRecordFixture(tenantId)
+              legacyReceipts
             );
             migratedClient = api.createSettingsPersistence({ databaseName: legacyDatabaseName, tenantId });
             const database = await migratedClient.openDatabase();
-            assertEqual(database.version, 8, "Datenbank wurde nicht auf Schema-Version 8 aktualisiert");
+            assertEqual(database.version, 9, "Datenbank wurde nicht auf Schema-Version 9 aktualisiert");
             assert(database.objectStoreNames.contains(api.constants.vouchersStoreName), "Voucher-Store wurde beim Upgrade nicht ergänzt");
             assert(database.objectStoreNames.contains(api.constants.licenseRuntimeStoreName), "licenseRuntime-Store wurde beim Upgrade nicht ergänzt");
             assertEqual((await migratedClient.readSettings()).company.name, "Teststudio Nord", "Settings gingen beim Upgrade verloren");
             assertEqual((await migratedClient.readCatalog()).items.length, 2, "Katalog ging beim Upgrade verloren");
             assertEqual((await migratedClient.readCustomers()).customers.length, 2, "Kunden gingen beim Upgrade verloren");
             assertEqual((await migratedClient.readReceipts()).receipts.length, 1, "Belege gingen beim Upgrade verloren");
-            assertEqual(await migratedClient.readVouchers(), null, "Upgrade hat ungefragt Gutscheine importiert");
+            assertDeepEqual(await migratedClient.readVouchers(), {
+              formatVersion: api.constants.vouchersFormatVersion,
+              tenantId,
+              updatedAt: legacySettings.updatedAt,
+              vouchers: []
+            }, "Upgrade hat den fehlenden Gutschein-Store nicht deterministisch leer initialisiert");
           } finally {
             migratedClient?.closeDatabase();
             await new Promise(resolve => setTimeout(resolve, 0));
@@ -6723,7 +7141,7 @@
           assert(typeof backupApi?.deliverBackup === "function", "Zentrale Backup-Ausgabe fehlt");
           assert(typeof backupApi?.sharePreparedBackup === "function", "Explizite Backup-Share-Aktion fehlt");
           assert(typeof backupApi?.createBackup === "function", "Deterministischer Backup-Workflow fehlt");
-          assertEqual(api.constants.databaseVersion, 8, "Backup verwendet nicht die erwartete Schema-Version");
+          assertEqual(api.constants.databaseVersion, 9, "Backup verwendet nicht die erwartete Schema-Version");
         }
       },
       {
@@ -6832,24 +7250,12 @@
           for (const [index, variant] of variants.entries()) {
             const persistence = context.makeClient(`backup006-${index}`);
             const historical = historicalSettingsSnapshotFixture(persistence.tenantId, variant);
-            await writeRawSettingsRecord(persistence, historical.stores.settings);
-            await persistence.writeCatalog(historical.stores.catalog);
-            await persistence.writeCustomers(historical.stores.customers);
-            await persistence.writeReceipts(historical.stores.receipts);
-            await persistence.writeVouchers(historical.stores.vouchers);
-
-            const before = await persistence.readSettings();
             const defaults = recordFixture(persistence.tenantId, "completed");
-            const prepared = api.prepareHistoricalSettingsRecord(before, defaults, persistence.tenantId);
+            const prepared = api.prepareHistoricalSettingsRecord(historical.stores.settings, defaults, persistence.tenantId);
             assert(prepared.compatible && prepared.changed, `${variant}: eindeutige Startnormalisierung wurde nicht freigegeben`);
-            await persistence.writeSettings(prepared.record);
+            await persistence.restoreTenantSnapshot(historical);
             const persisted = await persistence.readSettings();
             const repeated = api.prepareHistoricalSettingsRecord(persisted, defaults, persistence.tenantId);
-            if (variant === "pre-BACKUP-004") {
-              const reminderKeys = Object.keys(persisted.backupReminder);
-              assertEqual(reminderKeys[reminderKeys.length - 1], "interval", "Testfixture bildet die reale, durch Merge entstandene Feldreihenfolge nicht ab");
-              assert(!repeated.repairs.includes("BACKUP_REMINDER_REPAIRED"), "Reine Reminder-Feldreihenfolge wird weiterhin als Inkonsistenz bewertet");
-            }
             assert(repeated.compatible && !repeated.changed, `${variant}: Startnormalisierung ist nicht idempotent (${JSON.stringify({ repairs: repeated.repairs, compatibilityCodes: repeated.compatibilityCodes, blockedCode: repeated.blockedCode })})`);
 
             const snapshot = await persistence.exportTenantSnapshot();
@@ -6882,7 +7288,7 @@
             tenantId
           );
           assert(!prepared.compatible && !prepared.changed, "Mehrdeutiger Settingssatz wurde zur Reparatur freigegeben");
-          assertThrows(() => api.validateTenantSnapshot(ambiguous, tenantId), "BACKUP_VALIDATION_FAILED", "Mehrdeutiger historischer Settingssatz");
+          assertThrows(() => api.validateTenantSnapshot(ambiguous, tenantId), "COMPANY_REFERENCE_INVALID", "Mehrdeutiger Schema-9-Settingssatz");
           assertDeepEqual(ambiguous, before, "Fail-closed-Prüfung hat Eingabedaten gelöscht oder verändert");
         }
       },
@@ -6892,10 +7298,10 @@
           const persistence = context.makeClient("backup006-persistence010");
           const historical = historicalDemoRepairSnapshotFixture(persistence.tenantId, ["2026-000124"]);
           const legacySettings = historicalSettingsSnapshotFixture(persistence.tenantId, "combination").stores.settings;
+          await writeHistoricalDemoRepairSnapshot(persistence, historical);
           historical.stores.settings = legacySettings;
           historical.stores.settings.receiptSettings.yearPrefix = "2026";
           historical.stores.settings.receiptSettings.nextNumber = 132;
-          await writeHistoricalDemoRepairSnapshot(persistence, historical);
           await writeRawSettingsRecord(persistence, historical.stores.settings);
 
           const prepared = api.prepareHistoricalSettingsRecord(
@@ -7152,7 +7558,7 @@
           assertEqual(exportPackageApi?.JSZIP_VERSION, "3.10.1", "ZIP-Paketadapter erwartet eine falsche JSZip-Version");
           assertEqual(globalThis.JSZip?.version, "3.10.1", "Lokal vendorte JSZip-Version ist falsch");
           assertEqual(exportApi.constants.exportFormatVersion, 1, "Falsche Exportformatversion");
-          assertEqual(api.constants.databaseVersion, 8, "Export verwendet nicht die erwartete Schema-Version");
+          assertEqual(api.constants.databaseVersion, 9, "Export verwendet nicht die erwartete Schema-Version");
         }
       },
       {
@@ -7589,7 +7995,7 @@
           const historicalSchemaFive = clone(snapshot);
           historicalSchemaFive.appDataSchemaVersion = 5;
           const migratedSchemaFive = api.validateTenantSnapshot(historicalSchemaFive, tenantId).snapshot;
-          assertEqual(migratedSchemaFive.appDataSchemaVersion, 8, "Historisches Schema-5-Backup wurde nicht auf die aktuelle Snapshotprojektion angehoben");
+          assertEqual(migratedSchemaFive.appDataSchemaVersion, 9, "Historisches Schema-5-Backup wurde nicht auf die aktuelle Snapshotprojektion angehoben");
         }
       },
       {
@@ -7597,7 +8003,7 @@
         run: async () => {
           const persistence = context.makeClient("backup-branding-legacy");
           const tenantId = persistence.tenantId;
-          const legacy = completeTenantSnapshotFixture(tenantId);
+          const legacy = schema8SnapshotFixture(completeTenantSnapshotFixture(tenantId));
           delete legacy.stores.settings.logoAssets;
           legacy.stores.settings.company.logo = companyLogoFixture();
           legacy.stores.settings.businessAreas[0].logoMode = "custom";
@@ -7613,18 +8019,10 @@
           const roundtrip = api.validateTenantSnapshot(decrypted, tenantId).snapshot;
           assertDeepEqual(roundtrip.stores.settings.logoAssets, validated.stores.settings.logoAssets, "Verschlüsselungs-Roundtrip verlor migrierte Logoassets");
 
-          await writeRawSettingsRecord(persistence, legacy.stores.settings);
-          await persistence.writeCatalog(legacy.stores.catalog);
-          await persistence.writeCustomers(legacy.stores.customers);
-          await persistence.writeReceipts(legacy.stores.receipts);
-          await persistence.writeVouchers(legacy.stores.vouchers);
-          const persistedLegacy = await persistence.readSettings();
-          assertEqual(persistedLegacy.logoAssets, undefined, "Testfixture wurde vor der Startnormalisierung unerwartet verändert");
           const startupDefaults = api.snapshotSettings(freshRuntimeFixture(tenantId), "not-started", tenantId);
-          const startupNormalization = api.normalizeSettingsRecord(persistedLegacy, startupDefaults, tenantId);
-          assert(startupNormalization.repairs.includes("LOGO_ASSET_REGISTER_DEFAULTED"), "Startnormalisierung erkannte das fehlende Asset-Register nicht");
-          assert(startupNormalization.repairs.includes("LEGACY_LOGO_ASSET_REGISTERED"), "Startnormalisierung erkannte historische Inline-Logos nicht");
-          await persistence.writeSettings(startupNormalization.record);
+          const startupNormalization = api.prepareHistoricalSettingsRecord(legacy.stores.settings, startupDefaults, tenantId);
+          assert(startupNormalization.compatibilityCodes.includes("LOGO_ASSET_REGISTER_ADDED"), "Startnormalisierung erkannte das fehlende Asset-Register nicht");
+          await persistence.restoreTenantSnapshot(legacy);
           const persistedNormalized = await persistence.readSettings();
           assertEqual(persistedNormalized.logoAssets.length, 2, "Startnormalisierung wurde nicht dauerhaft in IndexedDB übernommen");
           assertEqual(persistedNormalized.company.logo.assetId, "company-logo", "Persistierte Startnormalisierung verlor die Unternehmenslogo-Referenz");
@@ -7635,7 +8033,7 @@
           const persistedBackupSnapshot = await backupApi.decryptTenantSnapshot(persistedBackup.serializedBackup, cryptoPassphrase);
           assertEqual(persistedBackupSnapshot.stores.settings.logoAssets.length, 2, "IndexedDB-Backup verlor die migrierten Logoassets");
 
-          const historicalWithoutLogos = completeTenantSnapshotFixture(`${tenantId}-empty`);
+          const historicalWithoutLogos = schema8SnapshotFixture(completeTenantSnapshotFixture(`${tenantId}-empty`));
           delete historicalWithoutLogos.stores.settings.logoAssets;
           historicalWithoutLogos.stores.settings.company.logo = null;
           historicalWithoutLogos.stores.settings.businessAreas.forEach(area => {
@@ -7723,7 +8121,7 @@
         name: "Historische Sicherung ohne USER-001 wird beim Restore deterministisch ergänzt",
         run: async () => {
           const tenantId = "test-backup-user-legacy";
-          const legacy = completeTenantSnapshotFixture(tenantId);
+          const legacy = schema8SnapshotFixture(completeTenantSnapshotFixture(tenantId));
           delete legacy.stores.settings.users;
           delete legacy.stores.settings.activeUserId;
           const validated = api.validateTenantSnapshot(legacy, tenantId);
@@ -7745,7 +8143,7 @@
         name: "Historische Sicherung ohne LICENSE-001 erhält beim Restore eine stabile lokale Bindung",
         run: async () => {
           const tenantId = "test-backup-license-legacy";
-          const legacy = completeTenantSnapshotFixture(tenantId);
+          const legacy = schema8SnapshotFixture(completeTenantSnapshotFixture(tenantId));
           delete legacy.stores.settings.license;
           let firstValidation;
           try {
@@ -7772,7 +8170,7 @@
         name: "Historisches LICENSE-001-Backup wird portabel migriert und stellt keine Runtime wieder her",
         run: async () => {
           const sourceTenantId = "test-backup-license-v1";
-          const historical = completeTenantSnapshotFixture(sourceTenantId);
+          const historical = schema8SnapshotFixture(completeTenantSnapshotFixture(sourceTenantId));
           historical.appDataSchemaVersion = 5;
           historical.stores.settings.license = legacyLicenseFixture(sourceTenantId, {
             licenseId: "license_backup_v1",

@@ -733,15 +733,22 @@
     target.splice(0, target.length, ...source.map(entry => cloneSettingsValue(entry)));
   }
 
+  function settingsCompanyProfile(record) {
+    if (!persistence?.activeCompanyProfile) throw new Error("Die zentrale Unternehmensprofilauflösung ist nicht verfügbar.");
+    return persistence.activeCompanyProfile(record);
+  }
+
   function applySettingsRecord(record) {
+    const profile = settingsCompanyProfile(record);
+    data.companySettings.activeCompanyId = profile.id;
     replaceSettingsArray(data.users, record.users);
     data.userSettings.activeUserId = record.activeUserId;
     Object.keys(data.license).forEach(key => { delete data.license[key]; });
-    Object.assign(data.license, cloneSettingsValue(record.license));
+    Object.assign(data.license, cloneSettingsValue(profile.license));
     Object.keys(data.tseSettings).forEach(key => { delete data.tseSettings[key]; });
-    Object.assign(data.tseSettings, cloneSettingsValue(record.tseSettings));
+    Object.assign(data.tseSettings, cloneSettingsValue(profile.tseSettings));
     replaceSettingsArray(data.logoAssets, record.logoAssets || []);
-    Object.assign(data.company, cloneSettingsValue(record.company));
+    Object.assign(data.company, cloneSettingsValue(profile.company));
     replaceSettingsArray(data.serviceLocations, record.serviceLocations);
     replaceSettingsArray(data.businessAreas, record.businessAreas);
     replaceSettingsArray(data.treatmentTemplates, record.treatmentTemplates || []);
@@ -749,15 +756,15 @@
       if (!Array.isArray(data.catalog[area.id])) data.catalog[area.id] = [];
     });
     Object.assign(data.taxSettings, {
-      status: record.taxSettings.status,
-      defaultRate: record.taxSettings.defaultRate
+      status: profile.taxSettings.status,
+      defaultRate: profile.taxSettings.defaultRate
     });
-    replaceSettingsArray(data.taxSettings.rates, record.taxSettings.rates);
-    Object.assign(data.receiptSettings, cloneSettingsValue(record.receiptSettings));
-    replaceSettingsArray(data.paymentChoices, record.paymentChoices);
+    replaceSettingsArray(data.taxSettings.rates, profile.taxSettings.rates);
+    Object.assign(data.receiptSettings, cloneSettingsValue(profile.receiptSettings));
+    replaceSettingsArray(data.paymentChoices, profile.paymentChoices);
     Object.keys(data.backupReminder).forEach(key => { delete data.backupReminder[key]; });
     Object.assign(data.backupReminder, cloneSettingsValue(record.backupReminder));
-    state.setup.status = validSetupStatuses.has(record.setup?.status) ? record.setup.status : "not-started";
+    state.setup.status = validSetupStatuses.has(profile.setup?.status) ? profile.setup.status : "not-started";
   }
 
   function applyCatalogRecord(record) {
@@ -1037,12 +1044,12 @@
     applySettingsRecord(prepared.record);
     if (persistence.ensureLicenseRuntime && persistence.inspectLocalLicenseRuntime) {
       try {
-        await persistence.ensureLicenseRuntime(prepared.record.license, { legacyLicense: savedRecord?.license });
+        await persistence.ensureLicenseRuntime(settingsCompanyProfile(prepared.record).license, { legacyLicense: savedRecord?.license });
       } catch (error) {
         // LICENSE-005 bereitet nur die lokale Bindung vor. Ein Runtime-Fehler darf die
         // bestehende Beta-Nutzung bis zur späteren Lizenzaktivierung nicht sperren.
       }
-      state.licenseRuntimeStatus = await persistence.inspectLocalLicenseRuntime(prepared.record.license);
+      state.licenseRuntimeStatus = await persistence.inspectLocalLicenseRuntime(settingsCompanyProfile(prepared.record).license);
     }
     return { firstStart: savedRecord === null, repairs: prepared.repairs };
   }
@@ -1784,6 +1791,7 @@
     const contextSnapshot = buildContextSnapshot(state.activeBusinessArea);
     const receipt = {
       id: state.checkoutReceiptId || (state.checkoutReceiptId = `receipt_${crypto.randomUUID?.() || Date.now()}`),
+      companyId: companyIdForBusinessArea(state.activeBusinessArea),
       number: "",
       type: "receipt",
       status: "completed",
@@ -1906,7 +1914,7 @@
       applyReceiptsRecord(committed.receiptsRecord);
       if (committed.treatmentRecordsRecord) applyTreatmentRecordsRecord(committed.treatmentRecordsRecord);
       if (voucher) applyVouchersRecord(committed.vouchersRecord);
-      data.receiptSettings.nextNumber = committed.settingsRecord.receiptSettings.nextNumber;
+      data.receiptSettings.nextNumber = settingsCompanyProfile(committed.settingsRecord).receiptSettings.nextNumber;
       state.receiptCounter = Math.max(0, data.receiptSettings.nextNumber - 1);
       const storedReceipt = data.receipts.find(entry => entry.id === committed.receipt.id) || committed.receipt;
       state.finishedReceipt = storedReceipt;
@@ -3035,7 +3043,10 @@
   }
 
   function serviceLocationsForBusinessArea(areaId, activeOnly = true) {
+    const area = data.businessAreas.find(entry => entry.id === areaId);
     return data.serviceLocations.filter(location =>
+      area && location.companyId === area.companyId
+      &&
       Array.isArray(location.businessAreaIds)
       && location.businessAreaIds.includes(areaId)
       && (!activeOnly || serviceLocationAvailable(location))
@@ -3113,6 +3124,21 @@
       serviceLocation: serviceLocationContextSnapshot(serviceLocationForBusinessArea(areaId) ?? currentServiceLocation(areaId)),
       branding: brandingContextSnapshot(areaId)
     };
+  }
+
+  function companyIdForBusinessArea(areaId = state.activeBusinessArea) {
+    const settings = {
+      companies: [{ id: data.companySettings.activeCompanyId }],
+      activeCompanyId: data.companySettings.activeCompanyId,
+      businessAreas: data.businessAreas,
+      serviceLocations: data.serviceLocations
+    };
+    const profile = persistence.companyProfileForBusinessArea(settings, areaId);
+    const location = serviceLocationForBusinessArea(areaId);
+    if (location && persistence.companyProfileForServiceLocation(settings, location.id).id !== profile.id) {
+      throw new Error("Der Leistungsort gehört zu einem anderen Unternehmensprofil.");
+    }
+    return profile.id;
   }
 
   function brandingLogoMarkup(branding, compact = false) {
@@ -3438,6 +3464,7 @@
     } : null;
     const voucher = {
       id: `voucher_${randomHex(12)}`,
+      companyId: companyIdForBusinessArea(state.activeBusinessArea),
       reference,
       code,
       status: "active",
@@ -3469,6 +3496,7 @@
     };
     const receipt = {
       id: saleReceiptId,
+      companyId: voucher.companyId,
       number: "",
       type: "receipt",
       receiptKind: "voucher-sale",
@@ -3518,7 +3546,7 @@
     );
     applyReceiptsRecord(committed.receiptsRecord);
     applyVouchersRecord(committed.vouchersRecord);
-    data.receiptSettings.nextNumber = committed.settingsRecord.receiptSettings.nextNumber;
+    data.receiptSettings.nextNumber = settingsCompanyProfile(committed.settingsRecord).receiptSettings.nextNumber;
     state.receiptCounter = Math.max(0, data.receiptSettings.nextNumber - 1);
     sale.receipt = data.receipts.find(receipt => receipt.id === committed.receipt.id) || committed.receipt;
     sale.voucher = data.vouchers.find(voucher => voucher.reference === committed.voucher.reference) || committed.voucher;
@@ -3974,7 +4002,7 @@
     const id = `area-${Date.now()}`;
     const initialLocation = data.serviceLocations.find(serviceLocationAvailable) ?? null;
     if (initialLocation && !initialLocation.businessAreaIds.includes(id)) initialLocation.businessAreaIds.push(id);
-    data.businessAreas.push({ id, label, visibleName: "", logoMode: "company", logo: null, active: true, isDefault: false, defaultServiceLocationId: initialLocation?.id ?? null, features: { prescriptionDocumentation: false } });
+    data.businessAreas.push({ id, companyId: data.companySettings.activeCompanyId, label, visibleName: "", logoMode: "company", logo: null, active: true, isDefault: false, defaultServiceLocationId: initialLocation?.id ?? null, features: { prescriptionDocumentation: false } });
     if (initialLocation && !initialLocation.businessAreaIds.includes(id)) initialLocation.businessAreaIds.push(id);
     data.catalog[id] = [];
     const importResult = templateKey ? importBusinessTemplate(id, templateKey) : null;
@@ -4128,6 +4156,7 @@
     const businessAreaIds = editorForm ? submittedAreaIds : (submittedAreaIds.length ? submittedAreaIds : [...(existing.businessAreaIds || [])]);
     const location = {
       id: existingId && existingId !== "new" ? existingId : `location-${Date.now()}`,
+      companyId: existing.companyId || data.companySettings.activeCompanyId,
       name: String(formData.get("name") || existing.name || "").trim(),
       addressMode,
       street: addressMode === "own" ? String(formData.get("street") || "").trim() : "",
@@ -4767,9 +4796,11 @@
     const receiptIds = new Set(allowedCases.map(entry => entry.receiptId));
     const voucherReferences = new Set(allowedCases.map(entry => entry.voucherReference));
     const receipts = (Array.isArray(data.historicalDemoRepairReceipts) ? data.historicalDemoRepairReceipts : [])
-      .filter(receipt => receiptIds.has(receipt?.id));
+      .filter(receipt => receiptIds.has(receipt?.id))
+      .map(receipt => ({ ...receipt, companyId: data.companySettings.activeCompanyId }));
     const vouchers = (Array.isArray(data.historicalDemoRepairVouchers) ? data.historicalDemoRepairVouchers : [])
-      .filter(voucher => voucherReferences.has(voucher?.reference));
+      .filter(voucher => voucherReferences.has(voucher?.reference))
+      .map(voucher => ({ ...voucher, companyId: data.companySettings.activeCompanyId }));
     if (allowedCases.length !== 4 || receipts.length !== 4 || vouchers.length !== 4) {
       throw Object.assign(new Error("Die kanonischen historischen Testdaten wurden nicht geladen."), {
         code: "HISTORICAL_DEMO_REPAIR_CANONICAL_INPUT_INCOMPLETE",
@@ -6878,7 +6909,7 @@
       state.prescriptionDetailId = null;
       state.prescriptionNotice = "";
       state.prescriptionDraft = { formatVersion: 1, id: `prescription_${crypto.randomUUID()}`, tenantId: persistence.tenantId,
-        customerId: customer.id, businessAreaId: area.id, prescribedOn: "", treatmentText: "", prescribedUnits: 1,
+        companyId: area.companyId, customerId: customer.id, businessAreaId: area.id, prescribedOn: "", treatmentText: "", prescribedUnits: 1,
         catalogItemId: null, internalNote: "", active: true, createdAt: now, updatedAt: now };
       renderCustomerDetail(); return;
     }

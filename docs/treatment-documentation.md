@@ -13,7 +13,7 @@ Beide Felder werden getrimmt und niemals still gekürzt. Bleiben beide leer, ent
 
 ## Datenmodell und Referenzen
 
-IndexedDB-Schema 8 ergänzt genau einen mandantenbezogenen Store `treatmentRecords` mit Key Path `tenantId`. Der Aggregatdatensatz besitzt `formatVersion: 1`, `tenantId`, `updatedAt` und ein `treatmentRecords`-Array. Es gibt keine Kopie im Kunden-, Beleg- oder Rezeptobjekt.
+IndexedDB-Schema 8 ergänzte genau einen mandantenbezogenen Store `treatmentRecords` mit Key Path `tenantId`. Schema 9 ergänzt an jedem Behandlungsdatensatz die direkte Profilreferenz `companyId`; Store und Aggregatformat bleiben unverändert. Der Aggregatdatensatz besitzt `formatVersion: 1`, `tenantId`, `updatedAt` und ein `treatmentRecords`-Array. Es gibt keine Kopie im Kunden-, Beleg- oder Rezeptobjekt.
 
 Jeder unveränderliche Behandlungsdatensatz enthält:
 
@@ -21,6 +21,7 @@ Jeder unveränderliche Behandlungsdatensatz enthält:
 | --- | --- |
 | `formatVersion` | `1` |
 | `id`, `tenantId` | stabile interne ID und genau ein Mandant |
+| `companyId` | direktes Unternehmensprofil; muss zu Geschäftsbereich und Beleg passen |
 | `customerId`, `businessAreaId` | stabile Referenzen auf Kunde und Geschäftsbereich |
 | `receiptId`, `receiptNumber` | genau ein erfolgreich abgeschlossener normaler Ursprungsbeleg |
 | `prescriptionId` | optionale Referenz auf das beim Abschluss zugeordnete Rezept |
@@ -63,6 +64,8 @@ Historische Datensätze bleiben auch bei deaktiviertem Kunden, deaktiviertem Ges
 
 Snapshot, Integritätsdiagnose, verschlüsseltes Vollbackup und Restore umfassen ab Schema 8 dieselben sieben Fachstores. Unterstützte Schema-5/6/7-Backups ohne `treatmentRecords` erhalten nach vollständiger Prüfung einen leeren Bestand; in einem Schema-8-Backup ist der Store Pflicht. Restore ersetzt alle sieben Fachstores atomar, ohne Merge. Ein Fehler lässt den vorherigen Bestand vollständig unverändert.
 
+8→9 weist jeden vorhandenen Behandlungsdatensatz eindeutig Profil 1 zu, ohne Texte, Zeitpunkte oder Snapshots zu verändern. Neue Datensätze übernehmen `companyId` ausschließlich aus dem in derselben Transaktion finalisierten Beleg. Geschäftsbereich, Beleg und optionales Rezept müssen profilgleich sein; fehlende oder widersprüchliche Referenzen brechen den gesamten Abschluss ab. Kunden und V1-Benutzer bleiben bewusst global und werden nur über ihre stabilen IDs referenziert.
+
 ## Datenschutz- und Ausgabegrenze
 
 Behandlungsdatensätze, interne Dokumentation, Kundenpflegehinweise und Vorlagen werden ausschließlich in lokaler IndexedDB und im verschlüsselten Vollbackup dauerhaft gespeichert. PODOLOGY-004 erlaubt nur eine eng begrenzte Laufzeitprojektion: Das lokale Kundendokument eines normalen Belegs erhält den Pflegehinweis aus dem exakt über `receiptId` und `receiptNumber` zugeordneten historischen Behandlungsdatensatz. Die interne Dokumentation wird niemals projiziert. Storno, Gutschrift und Gutscheinverkaufsbeleg erhalten auch lokal weder Rezeptdatum noch Pflegehinweis.
@@ -80,7 +83,7 @@ Es gibt keinen Serverupload und keine zusätzliche lokale Verschlüsselung der I
 
 ## Prüfungen und offene Grenze
 
-Automatisierte Browserfälle decken Schema 7→8, unveränderte Altstores, atomaren Abschluss mit und ohne Rezept, Gutscheinzahlung, Fehler/Rollback, Idempotenz, Vorlagen, Kundenverlauf, Backup/Restore und die Ausgabeisolation ab. Die PODOLOGY-005-Matrix umfasst keinen, einen und mehrere Treffer, getrennte Zwecke, archivierte und bereichsfremde Vorlagen sowie den nicht destruktiven Wechsel nach manueller Bearbeitung. Die echte App-Oberfläche wird in isolierten Testdatenbanken bei 320, 360, 390 und 411 Pixeln sowie in einer größeren Ansicht geprüft; die produktive Datenbank und reale Geschäftsdaten werden nicht verwendet.
+Automatisierte Browserfälle decken Schema 7→8, die Schema-8→9-Profilzuordnung, unveränderte Altstores, atomaren Abschluss mit und ohne Rezept, Gutscheinzahlung, Fehler/Rollback, Idempotenz, Vorlagen, Kundenverlauf, Backup/Restore und die Ausgabeisolation ab. Die PODOLOGY-005-Matrix umfasst keinen, einen und mehrere Treffer, getrennte Zwecke, archivierte und bereichsfremde Vorlagen sowie den nicht destruktiven Wechsel nach manueller Bearbeitung. Die echte App-Oberfläche wird in isolierten Testdatenbanken bei 320, 360, 390 und 411 Pixeln sowie in einer größeren Ansicht geprüft; die produktive Datenbank und reale Geschäftsdaten werden nicht verwendet.
 
 Lokales Ergebnis am 02.09.2026: **253/253 Browserprüfungen bestanden**, Testdatenbank-Cleanup bestanden und keine Konsolen-, Ressourcen- oder Laufzeitfehler. Die eingebettete echte App-Oberfläche und die Kundendokumente blieben ohne horizontalen Überlauf. PODOLOGY-006 prüft den Leerzustand sowie jeweils 1, 10 und 20 Behandlungen bei 320, 360, 390, 411, 768 und 1280 Pixeln: alle anfangs geschlossen, unabhängiges Öffnen/Schließen, unveränderte Reihenfolge, vollständige lange Inhalte, mindestens 40 Prozent weniger Listenhöhe gegenüber der vollständig aufgeklappten Ansicht, stabile Kopfposition/Fokus und Belegnavigation aus verschiedenen Einträgen. Sämtliche gespeicherten Snapshotdaten bleiben vor und nach den UI-Aktionen identisch. Leere Teilinhalte, lange Belegreferenzen und deaktivierte Kontexte sind zusätzlich abgedeckt. Tab, Enter und Leertaste wurden ergänzend manuell geprüft.
 

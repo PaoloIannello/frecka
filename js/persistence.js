@@ -9,7 +9,7 @@
 
   const constants = Object.freeze({
     databaseName: "frecka",
-    databaseVersion: 8,
+    databaseVersion: 9,
     storeName: "settings",
     settingsStoreName: "settings",
     catalogStoreName: "catalog",
@@ -28,7 +28,8 @@
     treatmentTemplateTitleMaxLength: 80,
     licenseRuntimeStoreName: "licenseRuntime",
     tenantId: "local-default",
-    formatVersion: 1,
+    formatVersion: 2,
+    companyProfileFormatVersion: 1,
     companyLogoFormatVersion: 1,
     logoAssetFormatVersion: 1,
     logoReferenceFormatVersion: 1,
@@ -44,7 +45,7 @@
     backupReminderIntervals,
     backupReminderDelayMs: backupReminderIntervals.weekly,
     backupReminderSnoozeMs: 24 * 60 * 60 * 1000,
-    settingsFormatVersion: 1,
+    settingsFormatVersion: 2,
     catalogFormatVersion: 1,
     customersFormatVersion: 1,
     receiptsFormatVersion: 1,
@@ -505,6 +506,56 @@
       return `${prefix}_${[...bytes].map(value => value.toString(16).padStart(2, "0")).join("")}`;
     }
     return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
+  }
+
+  function primaryCompanyIdForTenant(expectedTenantId = constants.tenantId) {
+    const tenant = nullableStringId(expectedTenantId) || constants.tenantId;
+    let hash = 0x811c9dc5;
+    for (let index = 0; index < tenant.length; index += 1) {
+      hash ^= tenant.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return `company_${hash.toString(16).padStart(8, "0")}`;
+  }
+
+  function companyProfileById(settings, companyId) {
+    const safeCompanyId = nullableStringId(companyId);
+    if (!isPlainObject(settings) || !Array.isArray(settings.companies) || !safeCompanyId) return null;
+    return settings.companies.find(profile => nullableStringId(profile?.id) === safeCompanyId) || null;
+  }
+
+  function activeCompanyProfile(settings) {
+    if (!isPlainObject(settings) || !Array.isArray(settings.companies) || settings.companies.length !== 1) {
+      throw new PersistenceError("COMPANY_PROFILE_INVALID", "Das lokale Unternehmensprofil ist nicht eindeutig.");
+    }
+    const activeCompanyId = nullableStringId(settings.activeCompanyId);
+    const profile = companyProfileById(settings, activeCompanyId);
+    if (!profile) throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Das aktive Unternehmensprofil ist nicht verfügbar.");
+    return profile;
+  }
+
+  function companyProfileForBusinessArea(settings, businessAreaId) {
+    const areaId = nullableStringId(businessAreaId);
+    const area = (Array.isArray(settings?.businessAreas) ? settings.businessAreas : [])
+      .find(entry => nullableStringId(entry?.id) === areaId) || null;
+    if (!area || !nullableStringId(area.companyId)) {
+      throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Geschäftsbereich besitzt keine gültige Unternehmenszuordnung.");
+    }
+    const profile = companyProfileById(settings, area.companyId);
+    if (!profile) throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Geschäftsbereich verweist auf ein unbekanntes Unternehmensprofil.");
+    return profile;
+  }
+
+  function companyProfileForServiceLocation(settings, serviceLocationId) {
+    const locationId = nullableStringId(serviceLocationId);
+    const location = (Array.isArray(settings?.serviceLocations) ? settings.serviceLocations : [])
+      .find(entry => nullableStringId(entry?.id) === locationId) || null;
+    if (!location || !nullableStringId(location.companyId)) {
+      throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Leistungsort besitzt keine gültige Unternehmenszuordnung.");
+    }
+    const profile = companyProfileById(settings, location.companyId);
+    if (!profile) throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Leistungsort verweist auf ein unbekanntes Unternehmensprofil.");
+    return profile;
   }
 
   function generatedLocalLicense(expectedTenantId) {
@@ -994,8 +1045,8 @@
 
   function prepareHistoricalSettingsRecord(rawRecord, defaultsInput, expectedTenantId = constants.tenantId) {
     const original = rawRecord == null ? null : cloneSerializable(rawRecord);
-    const normalizedCurrent = normalizeSettingsRecord(rawRecord, defaultsInput, expectedTenantId);
     if (original === null) {
+      const normalizedCurrent = normalizeSettingsRecord(null, defaultsInput, expectedTenantId);
       return Object.freeze({
         record: normalizedCurrent.record,
         repairs: normalizedCurrent.repairs,
@@ -1004,10 +1055,43 @@
         changed: true
       });
     }
-    if (!sameSerializableValue(original, cloneSafe(original))) {
+    if (original.formatVersion === constants.settingsFormatVersion) {
+      let normalizedCurrent;
+      try {
+        normalizedCurrent = normalizeSettingsRecord(original, defaultsInput, expectedTenantId);
+      } catch (error) {
+        return Object.freeze({
+          record: null,
+          repairs: Object.freeze([]),
+          compatibilityCodes: Object.freeze([]),
+          compatible: false,
+          changed: false,
+          blockedCode: error?.code || "SETTINGS_NORMALIZATION_FAILED"
+        });
+      }
       return Object.freeze({
         record: normalizedCurrent.record,
         repairs: normalizedCurrent.repairs,
+        compatibilityCodes: Object.freeze([]),
+        compatible: normalizedCurrent.repairs.length === 0,
+        changed: !sameSerializableValue(original, normalizedCurrent.record),
+        ...(normalizedCurrent.repairs.length ? { blockedCode: "SETTINGS_REPAIR_NOT_UNAMBIGUOUS" } : {})
+      });
+    }
+    if (original.formatVersion !== 1) {
+      return Object.freeze({
+        record: null,
+        repairs: Object.freeze([]),
+        compatibilityCodes: Object.freeze([]),
+        compatible: false,
+        changed: false,
+        blockedCode: "SETTINGS_FORMAT_UNSUPPORTED"
+      });
+    }
+    if (!sameSerializableValue(original, cloneSafe(original))) {
+      return Object.freeze({
+        record: null,
+        repairs: Object.freeze([]),
         compatibilityCodes: Object.freeze([]),
         compatible: false,
         changed: false,
@@ -1025,11 +1109,16 @@
 
     let normalizedCandidate;
     try {
-      normalizedCandidate = normalizeSettingsRecord(candidate, defaultsInput, expectedTenantId);
+      const legacyDefaults = defaultsInput?.formatVersion === constants.settingsFormatVersion
+        ? legacySettingsView(defaultsInput)
+        : defaultsInput?.formatVersion === 1
+          ? defaultsInput
+          : snapshotLegacySettings(defaultsInput, "not-started", expectedTenantId);
+      normalizedCandidate = normalizeLegacySettingsRecord(candidate, legacyDefaults, expectedTenantId);
     } catch (error) {
       return Object.freeze({
-        record: normalizedCurrent.record,
-        repairs: normalizedCurrent.repairs,
+        record: null,
+        repairs: Object.freeze([]),
         compatibilityCodes: Object.freeze([]),
         compatible: false,
         changed: false,
@@ -1038,8 +1127,8 @@
     }
     if (normalizedCandidate.repairs.length) {
       return Object.freeze({
-        record: normalizedCurrent.record,
-        repairs: normalizedCurrent.repairs,
+        record: null,
+        repairs: Object.freeze(normalizedCandidate.repairs),
         compatibilityCodes: Object.freeze([]),
         compatible: false,
         changed: false,
@@ -1048,15 +1137,15 @@
     }
 
     const completed = addMissingKnownFields(candidate, normalizedCandidate.record);
-    const verified = normalizeSettingsRecord(completed, completed, expectedTenantId);
+    const verified = normalizeLegacySettingsRecord(completed, completed, expectedTenantId);
     const sanitizedCompleted = stripExcludedData(completed);
     const compatible = verified.repairs.length === 0
       && sameSerializableValue(verified.record, projectKnownFields(completed, verified.record))
       && sameSerializableValue(completed, sanitizedCompleted);
     if (!compatible) {
       return Object.freeze({
-        record: normalizedCurrent.record,
-        repairs: normalizedCurrent.repairs,
+        record: null,
+        repairs: Object.freeze(verified.repairs),
         compatibilityCodes: Object.freeze([]),
         compatible: false,
         changed: false,
@@ -1080,13 +1169,21 @@
     }
     if (original.treatmentTemplates === undefined) compatibilityCodes.push("TREATMENT_TEMPLATES_ADDED");
     if (!sameSerializableValue(candidate, completed)) compatibilityCodes.push("KNOWN_SETTINGS_FIELDS_ADDED");
+    compatibilityCodes.push("SCHEMA_8_COMPANY_PROFILE_MIGRATED");
+
+    const migrated = canonicalSettingsFromLegacy(
+      completed,
+      primaryCompanyIdForTenant(expectedTenantId),
+      expectedTenantId
+    );
+    validateCompanySettingsReferences(migrated);
 
     return Object.freeze({
-      record: completed,
-      repairs: normalizedCurrent.repairs,
+      record: attachLegacySettingsAliases(stripExcludedData(migrated)),
+      repairs: Object.freeze([]),
       compatibilityCodes: Object.freeze(compatibilityCodes),
       compatible: true,
-      changed: !sameSerializableValue(original, completed)
+      changed: true
     });
   }
 
@@ -1118,7 +1215,7 @@
     ));
   }
 
-  function snapshotSettings(runtimeData, setupStatus = "not-started", tenantId = constants.tenantId) {
+  function snapshotLegacySettings(runtimeData, setupStatus = "not-started", tenantId = constants.tenantId) {
     if (!runtimeData || !isPlainObject(runtimeData.company)) {
       throw new PersistenceError("INVALID_DATA", "Die zentralen Einstellungen sind nicht verfügbar.");
     }
@@ -1158,7 +1255,7 @@
       ...runtimeBusinessAreas.map(area => area?.logo)
     ]);
     const snapshot = {
-      formatVersion: constants.formatVersion,
+      formatVersion: 1,
       tenantId: safeTenantId,
       updatedAt: new Date().toISOString(),
       users: [user],
@@ -1425,7 +1522,7 @@
   }
 
   function validateTreatmentRecord(entry, tenantId) {
-    const allowed = new Set(["formatVersion", "id", "tenantId", "customerId", "businessAreaId", "receiptId",
+    const allowed = new Set(["formatVersion", "id", "tenantId", "companyId", "customerId", "businessAreaId", "receiptId",
       "receiptNumber", "prescriptionId", "userId", "performedAt", "internalDocumentation", "customerCareAdvice",
       "customerSnapshot", "businessAreaSnapshot", "userSnapshot", "prescriptionSnapshot", "createdAt", "updatedAt"]);
     if (!isPlainObject(entry) || entry.formatVersion !== constants.treatmentRecordsFormatVersion
@@ -1433,7 +1530,7 @@
       throw prescriptionError("TREATMENT_RECORD_FORMAT_INVALID", "Dieses Format der Behandlungsdokumentation wird nicht unterstützt.");
     }
     if (entry.tenantId !== tenantId) throw prescriptionError("TREATMENT_RECORD_TENANT_INVALID", "Die Behandlungsdokumentation gehört zu einem anderen Mandanten.");
-    for (const key of ["id", "customerId", "businessAreaId", "receiptId", "receiptNumber"]) {
+    for (const key of ["id", "companyId", "customerId", "businessAreaId", "receiptId", "receiptNumber"]) {
       if (typeof entry[key] !== "string" || !entry[key].trim() || entry[key] !== entry[key].trim() || entry[key].length > 160) {
         throw prescriptionError("TREATMENT_RECORD_REFERENCE_INVALID", "Eine Referenz der Behandlungsdokumentation ist ungültig.");
       }
@@ -1488,7 +1585,9 @@
     const receiptById = new Map(receipts.map(entry => [entry.id, entry]));
     record.treatmentRecords.forEach(entry => {
       const receipt = receiptById.get(entry.receiptId);
+      const area = settings.businessAreas.find(candidate => candidate.id === entry.businessAreaId);
       if (!customerIds.has(entry.customerId) || !areaIds.has(entry.businessAreaId) || !receipt
+        || entry.companyId !== area?.companyId || entry.companyId !== receipt.companyId
         || !prescriptionOriginal(receipt) || !completedPrescriptionReceipt(receipt)
         || prescriptionReceiptNumber(receipt) !== entry.receiptNumber
         || prescriptionReceiptCustomer(receipt) !== entry.customerId
@@ -1502,7 +1601,7 @@
   }
 
   function validatePrescription(entry, tenantId) {
-    const allowed = new Set(["id", "tenantId", "customerId", "businessAreaId", "prescribedOn", "treatmentText",
+    const allowed = new Set(["id", "tenantId", "companyId", "customerId", "businessAreaId", "prescribedOn", "treatmentText",
       "catalogItemId", "prescribedUnits", "internalNote", "active", "createdAt", "updatedAt", "formatVersion"]);
     // Future used/revision fields must be understood explicitly before an older writer can edit them.
     if (!isPlainObject(entry) || entry.formatVersion !== constants.prescriptionsFormatVersion
@@ -1510,7 +1609,7 @@
       throw prescriptionError("PRESCRIPTION_FORMAT_INVALID", "Dieses Rezeptformat wird nicht unterstützt. Die Daten wurden nicht verändert.");
     }
     if (entry.tenantId !== tenantId) throw prescriptionError("PRESCRIPTION_TENANT_INVALID", "Die Rezeptdaten gehören zu einem anderen Mandanten.");
-    for (const key of ["id", "customerId", "businessAreaId"]) {
+    for (const key of ["id", "companyId", "customerId", "businessAreaId"]) {
       if (typeof entry[key] !== "string" || !entry[key].trim() || entry[key] !== entry[key].trim() || entry[key].length > 160) {
         throw prescriptionError("PRESCRIPTION_REFERENCE_INVALID", "Eine Rezeptreferenz ist ungültig.");
       }
@@ -1561,8 +1660,12 @@
       if (!customers.some(customer => customer.id === entry.customerId)) {
         throw prescriptionError("PRESCRIPTION_CUSTOMER_MISSING", "Zu einem Rezept fehlt der zugehörige Kunde.");
       }
-      if (!businessAreas.some(area => area.id === entry.businessAreaId)) {
+      const area = businessAreas.find(area => area.id === entry.businessAreaId);
+      if (!area) {
         throw prescriptionError("PRESCRIPTION_AREA_MISSING", "Zu einem Rezept fehlt der zugehörige Geschäftsbereich.");
+      }
+      if (entry.companyId !== area.companyId) {
+        throw prescriptionError("PRESCRIPTION_COMPANY_MISMATCH", "Das Rezept gehört nicht zum Unternehmensprofil des Geschäftsbereichs.");
       }
       const item = catalogItems.find(item => item.id === entry.catalogItemId);
       // A removed/deactivated catalogue item never invalidates the historical text.
@@ -1588,7 +1691,7 @@
       || Object.keys(assignment).some(key => !prescriptionAssignmentKeys.includes(key))) {
       throw prescriptionError("PRESCRIPTION_ASSIGNMENT_INVALID", "Die Rezeptzuordnung eines Belegs ist ungültig. Es wurde nichts verändert.");
     }
-    validatePrescription({ id: assignment.prescriptionId, tenantId: "assignment", customerId: assignment.customerId,
+    validatePrescription({ id: assignment.prescriptionId, tenantId: "assignment", companyId: "assignment-company", customerId: assignment.customerId,
       businessAreaId: assignment.businessAreaId, prescribedOn: assignment.prescribedOn, treatmentText: assignment.treatmentText,
       catalogItemId: assignment.catalogItemId, prescribedUnits: assignment.prescribedUnits, active: true,
       createdAt: epochIso, updatedAt: epochIso, formatVersion: 1 }, "assignment");
@@ -1609,6 +1712,7 @@
   function isFullPrescriptionCancellation(correction, original) {
     return prescriptionReceiptType(correction) === "cancellation" && completedPrescriptionReceipt(correction)
       && correction.status === "cancelled" && correction.id !== original.id
+      && nullableStringId(correction.companyId) === nullableStringId(original.companyId)
       && (correction.reference || correction.references?.originalReceiptNumber) === prescriptionReceiptNumber(original)
       && prescriptionReceiptArea(correction) === prescriptionReceiptArea(original)
       && prescriptionReceiptCustomer(correction) === prescriptionReceiptCustomer(original)
@@ -1660,7 +1764,8 @@
       const prescription = byId.get(assignment.prescriptionId);
       if (!prescriptionOriginal(receipt) || !completedPrescriptionReceipt(receipt) || !prescription
         || prescriptionReceiptCustomer(receipt) !== assignment.customerId || prescriptionReceiptArea(receipt) !== assignment.businessAreaId
-        || prescription.customerId !== assignment.customerId || prescription.businessAreaId !== assignment.businessAreaId) {
+        || prescription.customerId !== assignment.customerId || prescription.businessAreaId !== assignment.businessAreaId
+        || prescription.companyId !== receipt.companyId) {
         throw prescriptionError("PRESCRIPTION_ASSIGNMENT_REFERENCE_INVALID", "Eine historische Rezeptzuordnung ist unvollständig oder widersprüchlich.");
       }
     }
@@ -1686,6 +1791,8 @@
     const area = settings?.businessAreas?.find(entry => entry.id === areaId);
     const customer = customers?.customers?.find(entry => entry.id === customerId);
     if (!prescription || prescription.active === false || prescription.businessAreaId !== areaId || prescription.customerId !== customerId
+      || prescription.companyId !== area?.companyId
+      || (nullableStringId(draft.companyId) && draft.companyId !== prescription.companyId)
       || !area || area.active === false || area.features?.prescriptionDocumentation !== true || !customer || customer.active === false) {
       throw prescriptionError("PRESCRIPTION_SELECTION_UNAVAILABLE", "Diese Rezeptzuordnung ist nicht mehr verfügbar. Bitte Kunde, Geschäftsbereich und Rezept erneut prüfen oder ohne Rezept fortfahren.");
     }
@@ -1743,6 +1850,7 @@
     const customer = customersRecord?.customers?.find(entry => entry.id === customerId);
     const area = settings?.businessAreas?.find(entry => entry.id === businessAreaId);
     if (!customer || customer.active === false || !area || area.active === false
+      || !nullableStringId(receipt.companyId) || receipt.companyId !== area.companyId
       || !businessAreaFeatures(area.features).prescriptionDocumentation) {
       throw prescriptionError("TREATMENT_DOCUMENTATION_DISABLED", "Behandlungsdokumentation ist für diesen Kunden oder Geschäftsbereich nicht verfügbar.");
     }
@@ -1756,6 +1864,7 @@
       formatVersion: constants.treatmentRecordsFormatVersion,
       id: `treatment_${receipt.id}`,
       tenantId,
+      companyId: receipt.companyId,
       customerId,
       businessAreaId,
       receiptId: receipt.id,
@@ -1917,6 +2026,7 @@
 
     const normalized = mergePreservingUnknown(receipt, {
       id,
+      companyId: nullableStringId(receipt.companyId),
       receiptNumber: number,
       number,
       receiptType,
@@ -2193,6 +2303,7 @@
     const id = nullableStringId(voucher.id) || `voucher_${reference.replace(/[^A-Za-z0-9]+/g, "_")}`;
     const normalized = mergePreservingUnknown(voucher, {
       id,
+      companyId: nullableStringId(voucher.companyId),
       reference,
       code,
       normalizedCode,
@@ -2623,6 +2734,9 @@
   }
 
   function validateVoucherCommitInvariant(mode, receipt, voucher) {
+    if (!nullableStringId(receipt?.companyId) || receipt.companyId !== voucher?.companyId) {
+      throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Gutschein und Beleg gehören zu unterschiedlichen Unternehmensprofilen.");
+    }
     if (mode === "sale") {
       return validateVoucherReceiptInvariant([receipt], [voucher]);
     }
@@ -2897,13 +3011,13 @@
     };
   }
 
-  function normalizeSettingsRecord(rawRecord, defaultsInput, expectedTenantId = constants.tenantId) {
+  function normalizeLegacySettingsRecord(rawRecord, defaultsInput, expectedTenantId = constants.tenantId) {
     if (!isPlainObject(defaultsInput)) {
       throw new PersistenceError("INVALID_DATA", "Die sicheren Standard-Einstellungen sind nicht verfügbar.");
     }
     const defaults = defaultsInput.formatVersion
       ? cloneSafe(defaultsInput)
-      : snapshotSettings(defaultsInput, "not-started", expectedTenantId);
+      : snapshotLegacySettings(defaultsInput, "not-started", expectedTenantId);
     if (!isPlainObject(defaults?.company)
       || !Array.isArray(defaults?.businessAreas)
       || !defaults.businessAreas.some(area => isPlainObject(area) && nullableStringId(area.id))) {
@@ -2919,15 +3033,15 @@
     if (hasFormatVersion && (typeof raw.formatVersion !== "number" || !Number.isInteger(raw.formatVersion) || raw.formatVersion < 1)) {
       throw new PersistenceError("INVALID_DATA", "Die gespeicherten Einstellungen besitzen keine gültige Formatversion.");
     }
-    const rawFormatVersion = hasFormatVersion ? raw.formatVersion : constants.formatVersion;
-    if (rawFormatVersion > constants.formatVersion) {
+    const rawFormatVersion = hasFormatVersion ? raw.formatVersion : 1;
+    if (rawFormatVersion > 1) {
       throw new PersistenceError(
         "UNSUPPORTED_FORMAT",
         "Die gespeicherten Einstellungen stammen aus einer neueren FRECKA-Version und wurden nicht verändert."
       );
     }
     if (!hasFormatVersion) repairs.add("FORMAT_VERSION_ADDED");
-    else if (rawFormatVersion !== constants.formatVersion) {
+    else if (rawFormatVersion !== 1) {
       throw new PersistenceError("UNSUPPORTED_FORMAT", "Für diese ältere Einstellungsformatversion ist noch keine Migration verfügbar.");
     }
 
@@ -3221,7 +3335,7 @@
     }
 
     const normalizedKnownFields = {
-        formatVersion: constants.formatVersion,
+        formatVersion: 1,
         tenantId: nullableStringId(expectedTenantId) || constants.tenantId,
         updatedAt: stringValue(raw.updatedAt),
         users: [user],
@@ -3245,6 +3359,336 @@
       record: stripExcludedData(mergedRecord),
       repairs: [...repairs]
     };
+  }
+
+  const legacyProfileRootKeys = new Set([
+    "company", "taxSettings", "receiptSettings", "paymentChoices", "tseSettings", "license", "setup"
+  ]);
+
+  function canonicalSettingsFromLegacy(legacyInput, companyIdInput, expectedTenantId = constants.tenantId) {
+    const legacy = cloneSafe(legacyInput);
+    const companyId = nullableStringId(companyIdInput) || primaryCompanyIdForTenant(expectedTenantId);
+    const profile = {
+      formatVersion: constants.companyProfileFormatVersion,
+      id: companyId,
+      company: cloneSafe(legacy.company),
+      taxSettings: cloneSafe(legacy.taxSettings),
+      receiptSettings: cloneSafe(legacy.receiptSettings),
+      paymentChoices: cloneSafe(legacy.paymentChoices),
+      tseSettings: cloneSafe(legacy.tseSettings),
+      license: cloneSafe(legacy.license),
+      setup: cloneSafe(legacy.setup)
+    };
+    const result = {};
+    Object.keys(legacy).forEach(key => {
+      if (!legacyProfileRootKeys.has(key)) result[key] = cloneSafe(legacy[key]);
+    });
+    result.formatVersion = constants.settingsFormatVersion;
+    result.tenantId = nullableStringId(expectedTenantId) || constants.tenantId;
+    result.companies = [profile];
+    result.activeCompanyId = companyId;
+    result.businessAreas = (Array.isArray(legacy.businessAreas) ? legacy.businessAreas : []).map(area => ({
+      ...cloneSafe(area),
+      companyId
+    }));
+    result.serviceLocations = (Array.isArray(legacy.serviceLocations) ? legacy.serviceLocations : []).map(location => ({
+      ...cloneSafe(location),
+      companyId
+    }));
+    return result;
+  }
+
+  function legacySettingsView(settingsInput) {
+    const settings = cloneSafe(settingsInput);
+    const profile = activeCompanyProfile(settings);
+    const result = {};
+    Object.keys(settings).forEach(key => {
+      if (!["companies", "activeCompanyId"].includes(key)) result[key] = cloneSafe(settings[key]);
+    });
+    result.formatVersion = 1;
+    legacyProfileRootKeys.forEach(key => { result[key] = cloneSafe(profile[key]); });
+    return result;
+  }
+
+  function attachLegacySettingsAliases(settings) {
+    if (!isPlainObject(settings) || settings.formatVersion !== constants.settingsFormatVersion) return settings;
+    legacyProfileRootKeys.forEach(key => {
+      if (Object.prototype.hasOwnProperty.call(settings, key)) delete settings[key];
+      Object.defineProperty(settings, key, {
+        configurable: true,
+        enumerable: false,
+        get() { return activeCompanyProfile(settings)[key]; },
+        set(value) { activeCompanyProfile(settings)[key] = value; }
+      });
+    });
+    return settings;
+  }
+
+  function validateCompanySettingsReferences(settings) {
+    if (!isPlainObject(settings) || settings.formatVersion !== constants.settingsFormatVersion) {
+      throw new PersistenceError("COMPANY_PROFILE_INVALID", "Die Unternehmensprofile besitzen keine gültige Formatversion.");
+    }
+    if (!Array.isArray(settings.companies) || settings.companies.length !== 1) {
+      throw new PersistenceError("COMPANY_PROFILE_INVALID", "FRECKA unterstützt in dieser Phase genau ein Unternehmensprofil.");
+    }
+    const profile = settings.companies[0];
+    const companyId = nullableStringId(profile?.id);
+    if (!companyId || profile.formatVersion !== constants.companyProfileFormatVersion) {
+      throw new PersistenceError("COMPANY_PROFILE_INVALID", "Das Unternehmensprofil besitzt keine stabile ID oder Formatversion.");
+    }
+    if (settings.activeCompanyId !== companyId) {
+      throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Das aktive Unternehmensprofil ist nicht eindeutig zugeordnet.");
+    }
+    if (!isPlainObject(profile.company) || !isPlainObject(profile.taxSettings)
+      || !isPlainObject(profile.receiptSettings) || !Array.isArray(profile.paymentChoices)
+      || !isPlainObject(profile.tseSettings) || !isPlainObject(profile.license)
+      || !isPlainObject(profile.setup)) {
+      throw new PersistenceError("COMPANY_PROFILE_INVALID", "Das Unternehmensprofil ist unvollständig.");
+    }
+    const areas = Array.isArray(settings.businessAreas) ? settings.businessAreas : [];
+    const locations = Array.isArray(settings.serviceLocations) ? settings.serviceLocations : [];
+    const areaIds = new Set();
+    areas.forEach(area => {
+      if (!nullableStringId(area?.id) || areaIds.has(area.id) || area.companyId !== companyId) {
+        throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Ein Geschäftsbereich besitzt eine ungültige Unternehmenszuordnung.");
+      }
+      areaIds.add(area.id);
+    });
+    const locationIds = new Set();
+    locations.forEach(location => {
+      if (!nullableStringId(location?.id) || locationIds.has(location.id) || location.companyId !== companyId) {
+        throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Ein Leistungsort besitzt eine ungültige Unternehmenszuordnung.");
+      }
+      locationIds.add(location.id);
+      uniqueStrings(location.businessAreaIds).forEach(areaId => {
+        const area = areas.find(entry => entry.id === areaId);
+        if (!area || area.companyId !== location.companyId) {
+          throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Ein Leistungsort verweist auf einen profilfremden Geschäftsbereich.");
+        }
+      });
+    });
+    areas.forEach(area => {
+      if (!area.defaultServiceLocationId) return;
+      const location = locations.find(entry => entry.id === area.defaultServiceLocationId);
+      if (!location || location.companyId !== area.companyId || !location.businessAreaIds.includes(area.id)) {
+        throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Standard-Leistungsort gehört nicht zum Geschäftsbereichsprofil.");
+      }
+    });
+    return settings;
+  }
+
+  function snapshotSettings(runtimeData, setupStatus = "not-started", tenantId = constants.tenantId) {
+    const legacy = snapshotLegacySettings(runtimeData, setupStatus, tenantId);
+    const declaredCompanyId = nullableStringId(runtimeData?.companySettings?.activeCompanyId)
+      || nullableStringId(runtimeData?.activeCompanyId)
+      || (Array.isArray(runtimeData?.companies) && runtimeData.companies.length === 1
+        ? nullableStringId(runtimeData.companies[0]?.id) : null);
+    const defaultCompanyId = primaryCompanyIdForTenant(tenantId);
+    // PROTOTYPE_DATA carries the real installation's current profile ID. Test,
+    // restore and migration callers can deliberately use another tenant
+    // namespace; that namespace must never inherit local-default's ID.
+    const runtimeCompanyId = tenantId === constants.tenantId
+      ? declaredCompanyId || defaultCompanyId
+      : defaultCompanyId;
+    return attachLegacySettingsAliases(validateCompanySettingsReferences(stripExcludedData(
+      canonicalSettingsFromLegacy(legacy, runtimeCompanyId, tenantId)
+    )));
+  }
+
+  function normalizeSettingsRecord(rawRecord, defaultsInput, expectedTenantId = constants.tenantId) {
+    if (!isPlainObject(defaultsInput)) {
+      throw new PersistenceError("INVALID_DATA", "Die sicheren Standard-Einstellungen sind nicht verfügbar.");
+    }
+    const defaults = defaultsInput.formatVersion === constants.settingsFormatVersion
+      ? stripExcludedData(cloneSafe(defaultsInput))
+      : snapshotSettings(defaultsInput, "not-started", expectedTenantId);
+    validateCompanySettingsReferences(defaults);
+    const unsanitizedRaw = rawRecord == null ? defaults : cloneSafe(rawRecord);
+    const raw = stripExcludedData(unsanitizedRaw);
+    if (!isPlainObject(raw) || raw.formatVersion !== constants.settingsFormatVersion) {
+      if (Number.isInteger(raw?.formatVersion) && raw.formatVersion > constants.settingsFormatVersion) {
+        throw new PersistenceError("UNSUPPORTED_FORMAT", "Die gespeicherten Einstellungen stammen aus einer neueren FRECKA-Version und wurden nicht verändert.");
+      }
+      throw new PersistenceError("UNSUPPORTED_FORMAT", "Für diese ältere Einstellungsformatversion ist nur die kontrollierte Schema-8-Migration zulässig.");
+    }
+    validateCompanySettingsReferences(raw);
+    const rawProfile = activeCompanyProfile(raw);
+    const normalizedLegacy = normalizeLegacySettingsRecord(
+      legacySettingsView(raw),
+      legacySettingsView(defaults),
+      expectedTenantId
+    );
+    const canonical = canonicalSettingsFromLegacy(normalizedLegacy.record, rawProfile.id, expectedTenantId);
+    canonical.companies[0] = mergePreservingUnknown(rawProfile, canonical.companies[0]);
+    canonical.companies[0].formatVersion = constants.companyProfileFormatVersion;
+    canonical.companies[0].id = rawProfile.id;
+    canonical.activeCompanyId = rawProfile.id;
+    canonical.updatedAt = stringValue(raw.updatedAt, stringValue(defaults.updatedAt));
+    const knownRootKeys = new Set(Object.keys(canonical));
+    Object.keys(raw).forEach(key => {
+      if (!knownRootKeys.has(key) && !legacyProfileRootKeys.has(key)) canonical[key] = cloneSafe(raw[key]);
+    });
+    const cleaned = stripExcludedData(canonical);
+    validateCompanySettingsReferences(cleaned);
+    const repairs = new Set(normalizedLegacy.repairs);
+    const unsanitizedProfile = isPlainObject(unsanitizedRaw) && unsanitizedRaw.formatVersion === constants.settingsFormatVersion
+      ? companyProfileById(unsanitizedRaw, unsanitizedRaw.activeCompanyId)
+      : null;
+    if (unsanitizedProfile && !sameSerializableValue(unsanitizedProfile.tseSettings, rawProfile.tseSettings)) {
+      repairs.add("TSE_SETTINGS_REPAIRED");
+    }
+    return { record: attachLegacySettingsAliases(cleaned), repairs: [...repairs] };
+  }
+
+  function validateCompanyEntityReferences(settings, records) {
+    validateCompanySettingsReferences(settings);
+    const companyIds = new Set(settings.companies.map(profile => profile.id));
+    const areaById = new Map(settings.businessAreas.map(area => [area.id, area]));
+    const locationById = new Map(settings.serviceLocations.map(location => [location.id, location]));
+    const receipts = Array.isArray(records.receipts?.receipts) ? records.receipts.receipts : [];
+    const receiptById = new Map(receipts.map(receipt => [receipt.id, receipt]));
+    const receiptByNumber = new Map(receipts.map(receipt => [receipt.number || receipt.receiptNumber, receipt]));
+    const assertEntity = (entity, kind) => {
+      if (!companyIds.has(entity?.companyId)) {
+        throw new PersistenceError("COMPANY_REFERENCE_INVALID", `${kind} verweist auf ein unbekanntes Unternehmensprofil.`);
+      }
+      const areaId = nullableStringId(entity.businessAreaId)
+        || nullableStringId(entity.businessAreaSnapshot?.id)
+        || nullableStringId(entity.contextSnapshot?.businessArea?.id);
+      if (areaId) {
+        const area = areaById.get(areaId);
+        if (area && area.companyId !== entity.companyId) {
+          throw new PersistenceError("COMPANY_REFERENCE_INVALID", `${kind} verweist auf einen profilfremden Geschäftsbereich.`);
+        }
+      }
+      const locationId = nullableStringId(entity.serviceLocationId)
+        || nullableStringId(entity.serviceLocationSnapshot?.id)
+        || nullableStringId(entity.contextSnapshot?.serviceLocation?.id);
+      if (locationId) {
+        const location = locationById.get(locationId);
+        if (location && location.companyId !== entity.companyId) {
+          throw new PersistenceError("COMPANY_REFERENCE_INVALID", `${kind} verweist auf einen profilfremden Leistungsort.`);
+        }
+      }
+    };
+    receipts.forEach(receipt => assertEntity(receipt, "Ein Beleg"));
+    receipts.forEach(receipt => {
+      const sourceReference = nullableStringId(receipt.reference)
+        || nullableStringId(receipt.references?.originalReceiptNumber);
+      if (!sourceReference) return;
+      const source = receiptById.get(sourceReference) || receiptByNumber.get(sourceReference);
+      if (source && source.companyId !== receipt.companyId) {
+        throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Ein Korrekturbeleg gehört nicht zum Unternehmensprofil des Ursprungsbelegs.");
+      }
+    });
+    (records.vouchers?.vouchers || []).forEach(voucher => {
+      assertEntity(voucher, "Ein Gutschein");
+      const saleReference = nullableStringId(voucher.saleReceipt?.id)
+        || nullableStringId(voucher.saleReceiptReference)
+        || nullableStringId(voucher.saleReceipt?.number);
+      const saleReceipt = receiptById.get(saleReference) || receiptByNumber.get(saleReference);
+      if (saleReceipt && saleReceipt.companyId !== voucher.companyId) {
+        throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Ein Gutschein gehört nicht zum Unternehmensprofil seines Verkaufsbelegs.");
+      }
+      (voucher.redemptionReferences || []).forEach(reference => {
+        const receipt = receiptById.get(reference) || receiptByNumber.get(reference);
+        if (receipt && receipt.companyId !== voucher.companyId) {
+          throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Eine Gutscheineinlösung gehört zu einem anderen Unternehmensprofil.");
+        }
+      });
+    });
+    (records.prescriptions?.prescriptions || []).forEach(entry => assertEntity(entry, "Ein Rezept"));
+    (records.treatmentRecords?.treatmentRecords || []).forEach(entry => {
+      assertEntity(entry, "Eine Behandlungsdokumentation");
+      const receipt = receiptById.get(entry.receiptId);
+      if (receipt && receipt.companyId !== entry.companyId) {
+        throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Eine Behandlungsdokumentation gehört nicht zum Unternehmensprofil ihres Belegs.");
+      }
+    });
+    return true;
+  }
+
+  function emptyStoreBundleRecord(name, tenantId, updatedAt = epochIso) {
+    if (name === "catalog") return { formatVersion: constants.catalogFormatVersion, tenantId, updatedAt, categories: [], items: [], templateImports: [] };
+    if (name === "customers") return { formatVersion: constants.customersFormatVersion, tenantId, updatedAt, customers: [] };
+    if (name === "receipts") return { formatVersion: constants.receiptsFormatVersion, tenantId, updatedAt, receipts: [] };
+    if (name === "vouchers") return { formatVersion: constants.vouchersFormatVersion, tenantId, updatedAt, vouchers: [] };
+    if (name === "prescriptions") return emptyPrescriptionsRecord(tenantId);
+    if (name === "treatmentRecords") return emptyTreatmentRecordsRecord(tenantId);
+    return null;
+  }
+
+  function migrateSchema8StoreBundle(bundleInput, expectedTenantId = constants.tenantId, options = {}) {
+    const bundle = cloneSerializable(bundleInput);
+    const settingsInput = bundle.settings;
+    if (!isPlainObject(settingsInput)) {
+      throw new PersistenceError("SCHEMA_MIGRATION_INCOMPLETE", "Die Schema-8-Daten enthalten keine eindeutigen Einstellungen.");
+    }
+    const tenantId = nullableStringId(expectedTenantId) || constants.tenantId;
+    let settings;
+    let changed = false;
+    const migratesLegacySettings = settingsInput.formatVersion === 1;
+    if (migratesLegacySettings) {
+      const prepared = prepareHistoricalSettingsRecord(settingsInput, settingsInput, tenantId);
+      if (!prepared.compatible || !prepared.record) {
+        throw new PersistenceError("SCHEMA_MIGRATION_BLOCKED", "Der vorhandene Schema-8-Einstellungsstand kann nicht eindeutig migriert werden.");
+      }
+      settings = prepared.record;
+      changed = true;
+    } else {
+      settings = normalizeSettingsRecord(settingsInput, settingsInput, tenantId).record;
+    }
+    const companyId = activeCompanyProfile(settings).id;
+    const records = { settings };
+    const missingStores = [];
+    const mayInitializePreSchema8Stores = options.allowMissingLegacyStores === true;
+    ["catalog", "customers", "receipts", "vouchers", "prescriptions", "treatmentRecords"].forEach(name => {
+      if (!isPlainObject(bundle[name])) {
+        if (migratesLegacySettings && !mayInitializePreSchema8Stores) {
+          throw new PersistenceError(
+            "SCHEMA_MIGRATION_INCOMPLETE",
+            "Die lokale Schema-9-Migration wurde abgebrochen, weil der vorhandene Datenbestand unvollständig ist."
+          );
+        }
+        records[name] = emptyStoreBundleRecord(name, tenantId, settings.updatedAt || epochIso);
+        missingStores.push(name);
+        if (migratesLegacySettings && mayInitializePreSchema8Stores) changed = true;
+        return;
+      }
+      records[name] = cloneSerializable(bundle[name]);
+    });
+    const bind = (record, listKey) => {
+      const list = Array.isArray(record[listKey]) ? record[listKey] : [];
+      record[listKey] = list.map(entry => {
+        if (!isPlainObject(entry)) throw new PersistenceError("SCHEMA_MIGRATION_BLOCKED", "Ein Fachdatensatz ist nicht eindeutig migrierbar.");
+        if (nullableStringId(entry.companyId)) {
+          if (entry.companyId !== companyId) throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Ein vorhandener Fachdatensatz verweist auf ein anderes Unternehmensprofil.");
+          return entry;
+        }
+        if (!migratesLegacySettings) {
+          throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Ein Schema-9-Fachdatensatz besitzt keine Unternehmenszuordnung.");
+        }
+        changed = true;
+        return { ...entry, companyId };
+      });
+    };
+    bind(records.receipts, "receipts");
+    bind(records.vouchers, "vouchers");
+    bind(records.prescriptions, "prescriptions");
+    bind(records.treatmentRecords, "treatmentRecords");
+    validateCompanyEntityReferences(settings, records);
+    return { records, changed, companyId, missingStores };
+  }
+
+  function migrateSchema8Snapshot(snapshotInput, expectedTenantId = constants.tenantId) {
+    const snapshot = cloneSerializable(snapshotInput);
+    if (!Number.isInteger(snapshot?.appDataSchemaVersion) || snapshot.appDataSchemaVersion > constants.databaseVersion) return snapshot;
+    if (snapshot.appDataSchemaVersion === constants.databaseVersion) return snapshot;
+    if (snapshot.appDataSchemaVersion < tenantSnapshotConstants.minimumReadableSchemaVersion) return snapshot;
+    const migrated = migrateSchema8StoreBundle(snapshot.stores, expectedTenantId);
+    snapshot.appDataSchemaVersion = constants.databaseVersion;
+    snapshot.stores = migrated.records;
+    return snapshot;
   }
 
   function mergePreservingUnknown(existing, next) {
@@ -3373,18 +3817,23 @@
       || tenantSnapshotConstants.storeKeys.some(key => !isPlainObject(snapshot.stores[key]))) {
       throw new PersistenceError("BACKUP_INCOMPLETE", "Die Sicherung ist unvollständig. Es fehlen lokale FRECKA-Daten.");
     }
+    if (snapshot.appDataSchemaVersion < constants.databaseVersion) {
+      snapshot = migrateSchema8Snapshot(snapshot, safeTenantId);
+    }
+    if (!isPlainObject(snapshot.stores)
+      || tenantSnapshotConstants.storeKeys.some(key => !isPlainObject(snapshot.stores[key]))) {
+      throw new PersistenceError("BACKUP_INCOMPLETE", "Die Sicherung ist unvollständig. Es fehlen lokale FRECKA-Daten.");
+    }
     tenantSnapshotConstants.storeKeys.forEach(key => {
       if (nullableStringId(snapshot.stores[key].tenantId) !== safeTenantId) {
         throw new PersistenceError("BACKUP_TENANT_MISMATCH", "Die Sicherung enthält Daten einer anderen FRECKA-Instanz.");
       }
     });
 
-    const preparedSettings = prepareHistoricalSettingsRecord(
-      snapshot.stores.settings,
-      snapshot.stores.settings,
-      safeTenantId
-    );
-    const settingsInput = preparedSettings.compatible
+    const preparedSettings = snapshot.stores.settings.formatVersion === constants.settingsFormatVersion
+      ? null
+      : prepareHistoricalSettingsRecord(snapshot.stores.settings, snapshot.stores.settings, safeTenantId);
+    const settingsInput = preparedSettings?.compatible
       ? preparedSettings.record
       : snapshot.stores.settings;
     const settings = assertSnapshotRecord(
@@ -3393,6 +3842,7 @@
       "Die Einstellungen",
       stripExcludedData
     );
+    attachLegacySettingsAliases(settings);
     const catalog = assertSnapshotRecord(
       normalizeCatalogRecord(snapshot.stores.catalog, snapshot.stores.catalog, settings.businessAreas, safeTenantId),
       snapshot.stores.catalog,
@@ -3430,6 +3880,7 @@
       receipts.receipts,
       prescriptions.prescriptions
     );
+    validateCompanyEntityReferences(settings, { receipts, vouchers, prescriptions, treatmentRecords });
 
     assertUniqueVoucherSources(vouchers.vouchers);
     validateVoucherReceiptInvariant(receipts, vouchers);
@@ -3549,12 +4000,13 @@
       }
     });
 
-    const prefix = settings.receiptSettings.yearPrefix;
+    const profile = activeCompanyProfile(settings);
+    const prefix = profile.receiptSettings.yearPrefix;
     const highestSequence = receipts.receipts.reduce((highest, receipt) => {
       const match = String(receipt.number || "").match(new RegExp(`^${prefix}-(\\d{6})$`));
       return match ? Math.max(highest, Number(match[1])) : highest;
     }, 0);
-    if (settings.receiptSettings.nextNumber <= highestSequence) {
+    if (profile.receiptSettings.nextNumber <= highestSequence) {
       throw new PersistenceError(
         "BACKUP_NUMBER_SEQUENCE_INVALID",
         "Der Belegnummernstand der Sicherung würde eine Nummernkollision verursachen.",
@@ -3562,7 +4014,7 @@
         {
           invariant: "RECEIPT_NUMBER_SEQUENCE_COLLISION",
           yearPrefix: prefix,
-          nextNumber: settings.receiptSettings.nextNumber,
+          nextNumber: profile.receiptSettings.nextNumber,
           highestStoredSequence: highestSequence
         }
       );
@@ -3580,7 +4032,7 @@
       },
       stores: { settings, catalog, customers, receipts, vouchers, prescriptions, treatmentRecords }
     };
-    const identity = companyIdentity(settings.company);
+    const identity = companyIdentity(profile.company);
     return {
       snapshot: normalizedSnapshot,
       summary: {
@@ -3780,6 +4232,10 @@
     }
 
     const status = blockedFindings.length ? "blocked" : additions.length ? "repairable" : "no-op";
+    const beforeProfile = candidate?.stores?.settings?.formatVersion === constants.settingsFormatVersion
+      ? activeCompanyProfile(candidate.stores.settings) : null;
+    const afterProfile = patchedCandidate?.stores?.settings?.formatVersion === constants.settingsFormatVersion
+      ? activeCompanyProfile(patchedCandidate.stores.settings) : null;
     const report = Object.freeze(cloneSafe({
       repairFormat: historicalDemoVoucherReceiptRepairConstants.format,
       repairFormatVersion: historicalDemoVoucherReceiptRepairConstants.formatVersion,
@@ -3807,9 +4263,9 @@
         missingByNumber: finding.diagnostic?.missingByNumber
       })),
       receiptSequence: {
-        before: candidate?.stores?.settings?.receiptSettings?.nextNumber ?? null,
-        after: patchedCandidate?.stores?.settings?.receiptSettings?.nextNumber ?? null,
-        changed: candidate?.stores?.settings?.receiptSettings?.nextNumber !== patchedCandidate?.stores?.settings?.receiptSettings?.nextNumber
+        before: beforeProfile?.receiptSettings?.nextNumber ?? null,
+        after: afterProfile?.receiptSettings?.nextNumber ?? null,
+        changed: beforeProfile?.receiptSettings?.nextNumber !== afterProfile?.receiptSettings?.nextNumber
       },
       customerHistory: {
         action: "none",
@@ -3958,6 +4414,32 @@
   function stripExcludedData(record) {
     const cleaned = cloneSafe(record) || {};
     forbiddenRootKeys.forEach(key => { delete cleaned[key]; });
+    if (cleaned.formatVersion === constants.settingsFormatVersion && Array.isArray(cleaned.companies)) {
+      cleaned.companies.forEach(profile => {
+        if (!isPlainObject(profile)) return;
+        if (isPlainObject(profile.company)) {
+          Object.keys(profile.company).forEach(key => {
+            if (key.toLowerCase().startsWith("logo") && key !== "logo") delete profile.company[key];
+          });
+          if (isPlainObject(profile.company.logo)) {
+            Object.keys(profile.company.logo).forEach(key => {
+              if (!logoReferenceAllowedKeys.has(key)) delete profile.company.logo[key];
+            });
+          } else if (profile.company.logo !== null) delete profile.company.logo;
+        }
+        if (isPlainObject(profile.license)) {
+          Object.keys(profile.license).forEach(key => {
+            if (!licenseAllowedKeys.has(key)) delete profile.license[key];
+          });
+        }
+        if (isPlainObject(profile.tseSettings)) {
+          Object.keys(profile.tseSettings).forEach(key => {
+            if (!tseSettingsAllowedKeys.has(key)) delete profile.tseSettings[key];
+          });
+        }
+      });
+      legacyProfileRootKeys.forEach(key => { delete cleaned[key]; });
+    }
     if (Array.isArray(cleaned.logoAssets)) {
       cleaned.logoAssets.forEach(asset => {
         if (!isPlainObject(asset)) return;
@@ -4087,6 +4569,72 @@
       return result;
     };
 
+    function ensureCompanySchema(database, upgradeFromVersion = null) {
+      return new Promise((resolve, reject) => {
+        const names = [storeName, catalogStoreName, customersStoreName, receiptsStoreName, vouchersStoreName,
+          prescriptionsStoreName, treatmentRecordsStoreName];
+        let transaction;
+        let failure = null;
+        try {
+          transaction = database.transaction(names, "readwrite");
+          const requests = names.map(name => transaction.objectStore(name).get(tenantId));
+          let ready = 0;
+          requests.forEach(request => {
+            request.onerror = () => {
+              failure = new PersistenceError("SCHEMA_MIGRATION_READ_FAILED", "Die lokale Schema-9-Migration konnte den Bestand nicht vollständig lesen.", request.error);
+            };
+            request.onsuccess = () => {
+              ready += 1;
+              if (ready !== requests.length || failure) return;
+              try {
+                const current = Object.fromEntries(names.map((name, index) => [
+                  name === storeName ? "settings" : name,
+                  requests[index].result || null
+                ]));
+                if (!current.settings) return;
+                const migrated = migrateSchema8StoreBundle(current, tenantId, {
+                  allowMissingLegacyStores: Number.isInteger(upgradeFromVersion)
+                    && upgradeFromVersion > 0
+                    && upgradeFromVersion < 8
+                });
+                if (!migrated.changed && current.settings.formatVersion === constants.settingsFormatVersion) {
+                  validateCompanyEntityReferences(migrated.records.settings, migrated.records);
+                  return;
+                }
+                transaction.objectStore(storeName).put(migrated.records.settings);
+                transaction.objectStore(receiptsStoreName).put(migrated.records.receipts);
+                transaction.objectStore(vouchersStoreName).put(migrated.records.vouchers);
+                transaction.objectStore(prescriptionsStoreName).put(migrated.records.prescriptions);
+                transaction.objectStore(treatmentRecordsStoreName).put(migrated.records.treatmentRecords);
+                if (migrated.missingStores.includes("catalog")) transaction.objectStore(catalogStoreName).put(migrated.records.catalog);
+                if (migrated.missingStores.includes("customers")) transaction.objectStore(customersStoreName).put(migrated.records.customers);
+              } catch (error) {
+                failure = error instanceof PersistenceError
+                  ? error
+                  : new PersistenceError("SCHEMA_MIGRATION_FAILED", "Die lokale Schema-9-Migration wurde sicher abgebrochen.", error);
+                try { transaction.abort(); } catch (_error) { /* onabort reports the original failure */ }
+              }
+            };
+          });
+          transaction.oncomplete = () => resolve(database);
+          transaction.onabort = () => reject(failure || new PersistenceError(
+            "SCHEMA_MIGRATION_FAILED",
+            "Die lokale Schema-9-Migration wurde sicher abgebrochen.",
+            transaction.error
+          ));
+          transaction.onerror = () => {
+            if (!failure) failure = new PersistenceError(
+              "SCHEMA_MIGRATION_FAILED",
+              "Die lokale Schema-9-Migration wurde sicher abgebrochen.",
+              transaction.error
+            );
+          };
+        } catch (cause) {
+          reject(new PersistenceError("SCHEMA_MIGRATION_FAILED", "Die lokale Schema-9-Migration konnte nicht gestartet werden.", cause));
+        }
+      });
+    }
+
     function openDatabase() {
       if (!indexedDBFactory || typeof indexedDBFactory.open !== "function") {
         return Promise.reject(new PersistenceError(
@@ -4097,6 +4645,7 @@
       if (databasePromise) return databasePromise;
       const openingPromise = new Promise((resolve, reject) => {
         let settled = false;
+        let upgradeFromVersion = null;
         let request;
         try {
           request = indexedDBFactory.open(databaseName, databaseVersion);
@@ -4104,7 +4653,8 @@
           reject(new PersistenceError("OPEN_FAILED", "Die lokale Datenbank konnte nicht geöffnet werden.", cause));
           return;
         }
-        request.onupgradeneeded = () => {
+        request.onupgradeneeded = event => {
+          upgradeFromVersion = event.oldVersion;
           const database = request.result;
           if (!database.objectStoreNames.contains(storeName)) database.createObjectStore(storeName, { keyPath: "tenantId" });
           if (!database.objectStoreNames.contains(catalogStoreName)) database.createObjectStore(catalogStoreName, { keyPath: "tenantId" });
@@ -4159,12 +4709,21 @@
             reject(new PersistenceError("SCHEMA_MISSING", "Die lokale Datenbank besitzt nicht das erwartete FRECKA-Schema."));
             return;
           }
-          settled = true;
           database.onversionchange = () => {
             database.close();
             databasePromise = null;
           };
-          resolve(database);
+          ensureCompanySchema(database, upgradeFromVersion).then(() => {
+            if (settled) return;
+            settled = true;
+            resolve(database);
+          }).catch(error => {
+            if (settled) return;
+            settled = true;
+            database.close();
+            databasePromise = null;
+            reject(error);
+          });
         };
         request.onerror = () => {
           if (settled) return;
@@ -4208,7 +4767,7 @@
         transaction.oncomplete = () => {
           if (settled) return;
           settled = true;
-          resolve(result);
+          resolve(result ? attachLegacySettingsAliases(result) : null);
         };
         transaction.onabort = () => {
           if (settled) return;
@@ -4233,6 +4792,11 @@
         return Promise.reject(new PersistenceError("INVALID_DATA", "Der Einstellungsdatensatz gehört zu einer anderen Instanz."));
       }
       requestedSnapshot.tenantId = tenantId;
+      try {
+        requestedSnapshot = normalizeSettingsRecord(requestedSnapshot, requestedSnapshot, tenantId).record;
+      } catch (error) {
+        return Promise.reject(error);
+      }
 
       return queued(async () => {
         const database = await openDatabase();
@@ -4250,7 +4814,7 @@
             };
             readRequest.onsuccess = () => {
               try {
-                const existing = readRequest.result;
+                let existing = readRequest.result;
                 if (!existing) {
                   const prescriptionStore = transaction.objectStore(prescriptionsStoreName);
                   const prescriptionRequest = prescriptionStore.get(tenantId);
@@ -4274,16 +4838,25 @@
                   );
                 }
                 if (existing?.formatVersion != null && existing.formatVersion < constants.formatVersion) {
-                  throw new PersistenceError("UNSUPPORTED_FORMAT", "Für diese ältere Einstellungsformatversion ist noch keine Migration verfügbar.");
+                  const preparedExisting = prepareHistoricalSettingsRecord(existing, requestedSnapshot, tenantId);
+                  if (!preparedExisting.compatible || !preparedExisting.record) {
+                    throw new PersistenceError("SCHEMA_MIGRATION_BLOCKED", "Der ältere Einstellungsbestand kann nicht eindeutig in Schema 9 überführt werden.");
+                  }
+                  existing = preparedExisting.record;
+                }
+                if (existing?.formatVersion === constants.settingsFormatVersion
+                  && activeCompanyProfile(existing).id !== activeCompanyProfile(requestedSnapshot).id) {
+                  throw new PersistenceError("COMPANY_PROFILE_IMMUTABLE", "Die stabile Unternehmensreferenz darf nicht verändert werden.");
                 }
                 requestedSnapshot.logoAssets = normalizeLogoAssetRegister([
                   ...(Array.isArray(existing?.logoAssets) ? existing.logoAssets : []),
                   ...(Array.isArray(requestedSnapshot.logoAssets) ? requestedSnapshot.logoAssets : [])
                 ]);
-                writtenRecord = stripExcludedData(mergePreservingUnknown(existing, requestedSnapshot));
-                writtenRecord.formatVersion = constants.formatVersion;
-                writtenRecord.tenantId = tenantId;
-                writtenRecord.license = normalizeLicenseReference(requestedSnapshot.license, tenantId);
+                writtenRecord = normalizeSettingsRecord(
+                  stripExcludedData(mergePreservingUnknown(existing, requestedSnapshot)),
+                  requestedSnapshot,
+                  tenantId
+                ).record;
                 writtenRecord.updatedAt = new Date().toISOString();
                 const putRequest = store.put(writtenRecord);
                 putRequest.onerror = () => {
@@ -4308,7 +4881,7 @@
             if (settled) return;
             settled = true;
             if (transactionFailure) reject(transactionFailure);
-            else resolve(cloneSafe(writtenRecord));
+            else resolve(attachLegacySettingsAliases(cloneSafe(writtenRecord)));
           };
           transaction.onabort = () => {
             if (settled) return;
@@ -4913,18 +5486,18 @@
               if ((existing && expectedUpdatedAt !== existing.updatedAt) || (!existing && expectedUpdatedAt !== null)) {
                 throw prescriptionError("PRESCRIPTION_EDIT_CONFLICT", "Das Rezept wurde inzwischen geändert. Bitte erneut öffnen; deine Eingaben wurden nicht gespeichert.");
               }
-              if (existing && (existing.customerId !== draft.customerId || existing.createdAt !== draft.createdAt)) {
+              if (existing && (existing.companyId !== draft.companyId || existing.customerId !== draft.customerId || existing.createdAt !== draft.createdAt)) {
                 throw prescriptionError("PRESCRIPTION_IDENTITY_CHANGED", "Die feste Rezeptzuordnung darf nicht verändert werden.");
               }
               if (existing && prescriptionUsage(existing, receipts).historicallyUsed) {
-                const protectedKeys = ["customerId", "businessAreaId", "prescribedOn", "treatmentText", "catalogItemId", "prescribedUnits", "internalNote"];
+                const protectedKeys = ["companyId", "customerId", "businessAreaId", "prescribedOn", "treatmentText", "catalogItemId", "prescribedUnits", "internalNote"];
                 if (protectedKeys.some(key => !sameSerializableValue(existing[key], draft[key]))) {
                   throw prescriptionError("PRESCRIPTION_USED_READ_ONLY", "Ein bereits verwendetes Rezept kann inhaltlich nicht mehr bearbeitet werden. Es kann weiterhin archiviert werden.");
                 }
               }
               const area = areas.find(area => area.id === draft.businessAreaId);
               const customer = customers.find(customer => customer.id === draft.customerId);
-              if (!customer || customer.active === false || !area || area.active === false
+              if (!customer || customer.active === false || !area || area.active === false || draft.companyId !== area.companyId
                 || !businessAreaFeatures(area.features).prescriptionDocumentation
                 || (existing && !areas.some(previous => previous.id === existing.businessAreaId && previous.active !== false
                   && businessAreaFeatures(previous.features).prescriptionDocumentation))) {
@@ -5042,15 +5615,24 @@
           let transactionFailure = null;
           let transaction;
           try {
-            transaction = database.transaction(receiptsStoreName, "readwrite");
+            transaction = database.transaction([receiptsStoreName, storeName], "readwrite");
             const store = transaction.objectStore(receiptsStoreName);
             const readRequest = store.get(tenantId);
+            const settingsRequest = transaction.objectStore(storeName).get(tenantId);
+            let ready = 0;
             readRequest.onerror = () => {
               transactionFailure = new PersistenceError("RECEIPTS_WRITE_FAILED", "Die Belege konnten nicht lokal gespeichert werden.", readRequest.error);
             };
-            readRequest.onsuccess = () => {
+            settingsRequest.onerror = () => {
+              transactionFailure = new PersistenceError("RECEIPTS_WRITE_FAILED", "Die Unternehmenszuordnung der Belege konnte nicht geprüft werden.", settingsRequest.error);
+            };
+            const writeWhenReady = () => {
+              ready += 1;
+              if (ready !== 2 || transactionFailure) return;
               try {
                 const existing = readRequest.result;
+                const settings = settingsRequest.result;
+                if (!settings) throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Belege können ohne kanonisches Unternehmensprofil nicht gespeichert werden.");
                 if (existing?.formatVersion > constants.receiptsFormatVersion) {
                   throw new PersistenceError("UNSUPPORTED_FORMAT", "Die gespeicherten Belege stammen aus einer neueren FRECKA-Version und wurden nicht überschrieben.");
                 }
@@ -5059,6 +5641,12 @@
                 }
                 writtenRecord = normalizeReceiptsRecord(requestedSnapshot, requestedSnapshot, tenantId).record;
                 writtenRecord = stripExcludedReceiptsData(mergePreservingUnknown(existing, writtenRecord));
+                validateCompanyEntityReferences(settings, {
+                  receipts: writtenRecord,
+                  vouchers: { vouchers: [] },
+                  prescriptions: { prescriptions: [] },
+                  treatmentRecords: { treatmentRecords: [] }
+                });
                 writtenRecord.updatedAt = new Date().toISOString();
                 const putRequest = store.put(writtenRecord);
                 putRequest.onerror = () => {
@@ -5076,6 +5664,8 @@
                 }
               }
             };
+            readRequest.onsuccess = writeWhenReady;
+            settingsRequest.onsuccess = writeWhenReady;
           } catch (cause) {
             reject(new PersistenceError("RECEIPTS_WRITE_FAILED", "Die Belege konnten nicht lokal gespeichert werden.", cause));
             return;
@@ -5210,15 +5800,28 @@
           let transactionFailure = null;
           let transaction;
           try {
-            transaction = database.transaction(vouchersStoreName, "readwrite");
+            transaction = database.transaction([vouchersStoreName, storeName, receiptsStoreName], "readwrite");
             const store = transaction.objectStore(vouchersStoreName);
             const readRequest = store.get(tenantId);
+            const settingsRequest = transaction.objectStore(storeName).get(tenantId);
+            const receiptsRequest = transaction.objectStore(receiptsStoreName).get(tenantId);
+            let ready = 0;
             readRequest.onerror = () => {
               transactionFailure = new PersistenceError("VOUCHERS_WRITE_FAILED", "Die Gutscheine konnten nicht lokal gespeichert werden.", readRequest.error);
             };
-            readRequest.onsuccess = () => {
+            settingsRequest.onerror = () => {
+              transactionFailure = new PersistenceError("VOUCHERS_WRITE_FAILED", "Die Unternehmenszuordnung der Gutscheine konnte nicht geprüft werden.", settingsRequest.error);
+            };
+            receiptsRequest.onerror = () => {
+              transactionFailure = new PersistenceError("VOUCHERS_WRITE_FAILED", "Die Belegreferenzen der Gutscheine konnten nicht geprüft werden.", receiptsRequest.error);
+            };
+            const writeWhenReady = () => {
+              ready += 1;
+              if (ready !== 3 || transactionFailure) return;
               try {
                 const existing = readRequest.result;
+                const settings = settingsRequest.result;
+                if (!settings) throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Gutscheine können ohne kanonisches Unternehmensprofil nicht gespeichert werden.");
                 if (existing?.formatVersion > constants.vouchersFormatVersion) {
                   throw new PersistenceError("UNSUPPORTED_FORMAT", "Die gespeicherten Gutscheine stammen aus einer neueren FRECKA-Version und wurden nicht überschrieben.");
                 }
@@ -5230,7 +5833,8 @@
                     const previous = existingRecord.vouchers.find(voucher => voucher.id === nextVoucher.id);
                     if (!previous) return;
                     const immutableFields = [
-                      "id", "reference", "code", "issuedValueCents", "createdAt", "saleReceipt",
+                      "id", "companyId", "reference", "code", "issuedValueCents", "createdAt", "saleReceipt",
+                      "businessAreaId", "serviceLocationId",
                       "companySnapshot", "brandingSnapshot", "businessAreaSnapshot", "serviceLocationSnapshot",
                       "customerSnapshot", "contextSnapshot", "presentationSnapshot"
                     ];
@@ -5246,6 +5850,12 @@
                 writtenRecord = stripExcludedVouchersData(mergePreservingUnknown(existing, requestedSnapshot));
                 writtenRecord.formatVersion = constants.vouchersFormatVersion;
                 writtenRecord.tenantId = tenantId;
+                validateCompanyEntityReferences(settings, {
+                  receipts: receiptsRequest.result || { receipts: [] },
+                  vouchers: writtenRecord,
+                  prescriptions: { prescriptions: [] },
+                  treatmentRecords: { treatmentRecords: [] }
+                });
                 writtenRecord.updatedAt = new Date().toISOString();
                 const putRequest = store.put(writtenRecord);
                 putRequest.onerror = () => {
@@ -5263,6 +5873,9 @@
                 }
               }
             };
+            readRequest.onsuccess = writeWhenReady;
+            settingsRequest.onsuccess = writeWhenReady;
+            receiptsRequest.onsuccess = writeWhenReady;
           } catch (cause) {
             reject(new PersistenceError("VOUCHERS_WRITE_FAILED", "Die Gutscheine konnten nicht lokal gespeichert werden.", cause));
             return;
@@ -5324,27 +5937,40 @@
       if (existingSettings?.formatVersion > constants.settingsFormatVersion) {
         throw new PersistenceError("UNSUPPORTED_FORMAT", "Die gespeicherten Einstellungen stammen aus einer neueren FRECKA-Version.");
       }
-      const mergedSettings = stripExcludedData(mergePreservingUnknown(existingSettings, requestedSettings));
-      mergedSettings.formatVersion = constants.settingsFormatVersion;
-      mergedSettings.tenantId = tenantId;
-      mergedSettings.license = normalizeLicenseReference(requestedSettings.license, tenantId);
+      const normalizedRequested = normalizeSettingsRecord(requestedSettings, requestedSettings, tenantId).record;
+      const normalizedExisting = existingSettings
+        ? normalizeSettingsRecord(existingSettings, normalizedRequested, tenantId).record
+        : normalizedRequested;
+      const mergedSettings = normalizeSettingsRecord(
+        stripExcludedData(mergePreservingUnknown(normalizedExisting, normalizedRequested)),
+        normalizedRequested,
+        tenantId
+      ).record;
       mergedSettings.updatedAt = new Date().toISOString();
-      mergedSettings.receiptSettings.nextNumber = Math.max(
+      const existingProfile = activeCompanyProfile(normalizedExisting);
+      const requestedProfile = activeCompanyProfile(normalizedRequested);
+      const mergedProfile = activeCompanyProfile(mergedSettings);
+      if (existingProfile.id !== requestedProfile.id || mergedProfile.id !== requestedProfile.id) {
+        throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Nummernstand gehört zu einem anderen Unternehmensprofil.");
+      }
+      mergedProfile.receiptSettings.nextNumber = Math.max(
         1,
-        nonNegativeInteger(existingSettings?.receiptSettings?.nextNumber, 1),
-        nonNegativeInteger(requestedSettings.receiptSettings?.nextNumber, 1)
+        nonNegativeInteger(existingProfile.receiptSettings?.nextNumber, 1),
+        nonNegativeInteger(requestedProfile.receiptSettings?.nextNumber, 1)
       );
       return mergedSettings;
     }
 
     function prepareReceiptCommit(draft, existingSettings, requestedSettings, currentReceipts) {
       const mergedSettings = prepareSettingsForReceiptCommit(existingSettings, requestedSettings);
+      const mergedProfile = activeCompanyProfile(mergedSettings);
+      const requestedProfile = activeCompanyProfile(requestedSettings);
       const existingById = currentReceipts.receipts.find(receipt => receipt.id === draft.id);
       if (existingById) {
         return { created: false, receipt: existingById, receiptsRecord: currentReceipts, settingsRecord: mergedSettings };
       }
-      const prefix = /^\d{4}$/.test(trimmedString(mergedSettings.receiptSettings?.yearPrefix))
-        ? trimmedString(mergedSettings.receiptSettings.yearPrefix)
+      const prefix = /^\d{4}$/.test(trimmedString(mergedProfile.receiptSettings?.yearPrefix))
+        ? trimmedString(mergedProfile.receiptSettings.yearPrefix)
         : String(new Date().getFullYear());
       const highestPersisted = currentReceipts.receipts.reduce((highest, receipt) => {
         const match = String(receipt.number || "").match(new RegExp(`^${prefix}-(\\d{6})$`));
@@ -5352,8 +5978,8 @@
       }, 0);
       let sequence = Math.max(
         1,
-        nonNegativeInteger(existingSettings?.receiptSettings?.nextNumber, 1),
-        nonNegativeInteger(requestedSettings.receiptSettings?.nextNumber, 1),
+        nonNegativeInteger(activeCompanyProfile(existingSettings || requestedSettings).receiptSettings?.nextNumber, 1),
+        nonNegativeInteger(requestedProfile.receiptSettings?.nextNumber, 1),
         highestPersisted + 1
       );
       const usedNumbers = new Set(currentReceipts.receipts.map(receipt => receipt.number));
@@ -5363,8 +5989,22 @@
         receiptNumber = `${prefix}-${String(sequence).padStart(6, "0")}`;
       }
       const completedAt = stableIso(draft.completedAt, stableIso(draft.createdAt, new Date().toISOString()));
+      const businessAreaId = nullableStringId(draft.businessAreaId)
+        || nullableStringId(draft.businessAreaSnapshot?.id)
+        || nullableStringId(draft.contextSnapshot?.businessArea?.id);
+      const companyProfile = companyProfileForBusinessArea(mergedSettings, businessAreaId);
+      const serviceLocationId = nullableStringId(draft.serviceLocationId)
+        || nullableStringId(draft.serviceLocationSnapshot?.id)
+        || nullableStringId(draft.contextSnapshot?.serviceLocation?.id);
+      if (serviceLocationId && companyProfileForServiceLocation(mergedSettings, serviceLocationId).id !== companyProfile.id) {
+        throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Belegkontext enthält einen profilfremden Leistungsort.");
+      }
+      if (nullableStringId(draft.companyId) && draft.companyId !== companyProfile.id) {
+        throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Belegentwurf gehört zu einem anderen Unternehmensprofil.");
+      }
       const receipt = normalizeReceiptEntry({
         ...draft,
+        companyId: companyProfile.id,
         number: receiptNumber,
         receiptNumber,
         createdAt: stableIso(draft.createdAt, completedAt),
@@ -5374,7 +6014,7 @@
       if (!receipt) throw new PersistenceError("INVALID_DATA", "Der Beleg konnte nicht in das persistente Format überführt werden.");
       currentReceipts.receipts.unshift(receipt);
       currentReceipts.updatedAt = new Date().toISOString();
-      mergedSettings.receiptSettings.nextNumber = sequence + 1;
+      mergedProfile.receiptSettings.nextNumber = sequence + 1;
       return { created: true, receipt, receiptsRecord: currentReceipts, settingsRecord: mergedSettings };
     }
 
@@ -5433,7 +6073,7 @@
       }
       if (!isPlainObject(requestedSettings)
         || requestedSettings.formatVersion !== constants.settingsFormatVersion
-        || !isPlainObject(requestedSettings.receiptSettings)) {
+        || !isPlainObject(activeCompanyProfile(requestedSettings).receiptSettings)) {
         return Promise.reject(new PersistenceError("INVALID_DATA", "Der Nummernstand für den Belegabschluss ist nicht verfügbar."));
       }
       if (nullableStringId(requestedSettings.tenantId) && requestedSettings.tenantId !== tenantId) {
@@ -5495,7 +6135,7 @@
                   ...prepared,
                   receipt: cloneSafe(prepared.receipt),
                   receiptsRecord: cloneSafe(prepared.receiptsRecord),
-                  settingsRecord: cloneSafe(prepared.settingsRecord),
+                  settingsRecord: attachLegacySettingsAliases(cloneSafe(prepared.settingsRecord)),
                   treatmentRecord: cloneSafe(preparedTreatment.treatmentRecord),
                   treatmentRecordsRecord: cloneSafe(preparedTreatment.record)
                 };
@@ -5578,7 +6218,7 @@
       }
       if (!isPlainObject(requestedSettings)
         || requestedSettings.formatVersion !== constants.settingsFormatVersion
-        || !isPlainObject(requestedSettings.receiptSettings)) {
+        || !isPlainObject(activeCompanyProfile(requestedSettings).receiptSettings)) {
         return Promise.reject(new PersistenceError("INVALID_DATA", "Der Nummernstand für den Belegabschluss ist nicht verfügbar."));
       }
       if (nullableStringId(requestedSettings.tenantId) && requestedSettings.tenantId !== tenantId) {
@@ -5673,7 +6313,7 @@
                         voucher: cloneSafe(duplicate),
                         receiptsRecord: cloneSafe(currentReceipts),
                         vouchersRecord: cloneSafe(currentVouchers),
-                        settingsRecord: cloneSafe(mergedSettings)
+                        settingsRecord: attachLegacySettingsAliases(cloneSafe(mergedSettings))
                       };
                       return;
                     }
@@ -5695,8 +6335,12 @@
                     receiptNumber: preparedReceipt.receipt.number,
                     occurredAt: stableIso(soldHistory[soldIndex]?.occurredAt, preparedReceipt.receipt.completedAt)
                   };
+                  if (nullableStringId(input.companyId) && input.companyId !== preparedReceipt.receipt.companyId) {
+                    throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Gutschein und Verkaufsbeleg gehören zu unterschiedlichen Unternehmensprofilen.");
+                  }
                   voucher = normalizeVoucherEntry({
                     ...input,
+                    companyId: preparedReceipt.receipt.companyId,
                     saleReceipt: {
                       ...(isPlainObject(input.saleReceipt) ? input.saleReceipt : {}),
                       id: preparedReceipt.receipt.id,
@@ -5747,7 +6391,7 @@
                       voucher: cloneSafe(voucher),
                       receiptsRecord: cloneSafe(currentReceipts),
                       vouchersRecord: cloneSafe(currentVouchers),
-                      settingsRecord: cloneSafe(mergedSettings),
+                      settingsRecord: attachLegacySettingsAliases(cloneSafe(mergedSettings)),
                       treatmentRecord: cloneSafe(preparedExistingTreatment.treatmentRecord),
                       treatmentRecordsRecord: cloneSafe(preparedExistingTreatment.record)
                     };
@@ -5780,6 +6424,9 @@
                   const prescriptionDraft = applyPrescriptionAtCommit(redemptionDraft, prescriptionSelection, settingsRequest.result,
                     customersRequest.result, prescriptionsRequest.result, currentReceipts, tenantId);
                   const preparedReceipt = prepareReceiptCommit(prescriptionDraft, settingsRequest.result, requestedSettings, currentReceipts);
+                  if (voucher.companyId !== preparedReceipt.receipt.companyId) {
+                    throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Gutschein und Einlösungsbeleg gehören zu unterschiedlichen Unternehmensprofilen.");
+                  }
                   const preparedTreatment = prepareTreatmentRecordAtCommit(
                     treatmentDraft,
                     preparedReceipt.receipt,
@@ -5871,7 +6518,7 @@
               voucher: cloneSafe(committedResult.voucher),
               receiptsRecord: cloneSafe(committedResult.receiptsRecord),
               vouchersRecord: cloneSafe(committedResult.vouchersRecord),
-              settingsRecord: cloneSafe(committedResult.settingsRecord),
+              settingsRecord: attachLegacySettingsAliases(cloneSafe(committedResult.settingsRecord)),
               treatmentRecord: cloneSafe(committedResult.treatmentRecord),
               treatmentRecordsRecord: cloneSafe(committedResult.treatmentRecordsRecord)
             });
@@ -5911,18 +6558,32 @@
           let operationResult = null;
           let transaction;
           try {
-            transaction = database.transaction(receiptsStoreName, "readwrite");
+            transaction = database.transaction([receiptsStoreName, storeName], "readwrite");
             const store = transaction.objectStore(receiptsStoreName);
             const readRequest = store.get(tenantId);
+            const settingsRequest = transaction.objectStore(storeName).get(tenantId);
+            let ready = 0;
             readRequest.onerror = () => {
               transactionFailure = new PersistenceError(failureCode, failureMessage, readRequest.error);
             };
-            readRequest.onsuccess = () => {
+            settingsRequest.onerror = () => {
+              transactionFailure = new PersistenceError(failureCode, failureMessage, settingsRequest.error);
+            };
+            const mutateWhenReady = () => {
+              ready += 1;
+              if (ready !== 2 || transactionFailure) return;
               try {
+                if (!settingsRequest.result) throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Belegbestand besitzt kein kanonisches Unternehmensprofil.");
                 const record = readRequest.result
                   ? normalizeReceiptsRecord(readRequest.result, seedRecord, tenantId).record
                   : normalizeReceiptsRecord(seedRecord, seedRecord, tenantId).record;
                 const outcome = operation(record) || {};
+                validateCompanyEntityReferences(settingsRequest.result, {
+                  receipts: record,
+                  vouchers: { vouchers: [] },
+                  prescriptions: { prescriptions: [] },
+                  treatmentRecords: { treatmentRecords: [] }
+                });
                 record.updatedAt = new Date().toISOString();
                 operationResult = { ...cloneSafe(outcome), record: cloneSafe(record) };
                 if (outcome.changed === false) return;
@@ -5942,6 +6603,8 @@
                 }
               }
             };
+            readRequest.onsuccess = mutateWhenReady;
+            settingsRequest.onsuccess = mutateWhenReady;
           } catch (cause) {
             reject(new PersistenceError(failureCode, failureMessage, cause));
             return;
@@ -6048,6 +6711,9 @@
         if (!source || source.receiptType !== "receipt") {
           throw new PersistenceError("RECEIPT_NOT_FOUND", "Der Ursprungsbeleg wurde nicht gefunden.");
         }
+        if (nullableStringId(draft.companyId) && draft.companyId !== source.companyId) {
+          throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Korrekturbeleg gehört nicht zum Unternehmensprofil des Ursprungsbelegs.");
+        }
         const related = record.receipts.filter(receipt => receipt.reference === source.number);
         if (draft.type === "cancellation") {
           const existingCancellation = related.find(receipt => receipt.receiptType === "cancellation");
@@ -6076,6 +6742,7 @@
         const amountCents = -Math.abs(centsFrom(draft.totalCents, draft.total));
         const correction = normalizeReceiptEntry({
           ...draft,
+          companyId: source.companyId,
           number: correctionNumber,
           receiptNumber: correctionNumber,
           receiptType: draft.type,
@@ -6466,9 +7133,13 @@
             if (!failure) failure = new PersistenceError("BACKUP_RESTORE_FAILED", "Die Wiederherstellung ist fehlgeschlagen. Der bisherige Datenstand bleibt erhalten.", transaction.error);
           };
         });
+        const resultRecords = cloneSafe(restoredRecords);
+        const resultSnapshot = cloneSafe({ ...validated.snapshot, stores: restoredRecords });
+        attachLegacySettingsAliases(resultRecords.settings);
+        attachLegacySettingsAliases(resultSnapshot.stores.settings);
         return {
-          snapshot: cloneSafe({ ...validated.snapshot, stores: restoredRecords }),
-          records: cloneSafe(restoredRecords),
+          snapshot: resultSnapshot,
+          records: resultRecords,
           summary: cloneSafe(validated.summary)
         };
       });
@@ -6542,6 +7213,16 @@
     registerLogoAsset,
     resolveLogoAsset,
     companyIdentity,
+    primaryCompanyIdForTenant,
+    companyProfileById,
+    activeCompanyProfile,
+    companyProfileForBusinessArea,
+    companyProfileForServiceLocation,
+    validateCompanySettingsReferences,
+    legacySettingsView,
+    validateCompanyEntityReferences,
+    migrateSchema8StoreBundle,
+    migrateSchema8Snapshot,
     snapshotCatalog,
     normalizeCatalogRecord,
     snapshotCustomers,
