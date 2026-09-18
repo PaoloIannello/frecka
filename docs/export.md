@@ -1,7 +1,7 @@
 # FRECKA-Exportkern Version 1
 
-**Stand:** MULTI-COMPANY-002 auf Basis TSE-002, SETTINGS-002, SETTINGS-001, USER-001 und EXPORT-003
-**Datenbankschema:** Version 9; zentrale Snapshotquelle mit sieben Fachstores, weiterhin genau ein exportierbares Unternehmensprofil
+**Stand:** MULTI-COMPANY-003 auf Basis MULTI-COMPANY-002, TSE-002, SETTINGS-002, SETTINGS-001, USER-001 und EXPORT-003
+**Datenbankschema:** Version 9; zentrale Snapshotquelle mit sieben Fachstores und profilbezogenen Nummernkontexten
 **Exportformat:** `FRECKA_EXPORT`, Version 1
 
 ## Zweck und Abgrenzung
@@ -27,7 +27,7 @@ Der Steuerberaterexport wird als ein einziges lokales ZIP-Gesamtpaket mit CSV-Da
 
 Das Modul liest weder IndexedDB noch Laufzeitlisten der Oberfläche. Es kennt keine Dialoge, Routen oder gerenderten Elemente. Eine zweite Datensammlung und parallele Fachlogik entstehen dadurch nicht.
 
-Ab Schema 9 löst die Projektion Unternehmensidentität, Steuer-/Betriebseinstellungen, TSE-Vorbereitung und portable Lizenzreferenz ausschließlich über das aktive, in dieser Phase einzige Profil in `settings.companies[]` auf. Geschäftsbereiche bleiben per direkter `companyId` eindeutig zugeordnet. Die Filter-, CSV-, PDF- und ZIP-Verträge ändern sich dadurch nicht; es gibt weder eine Profilwahl noch einen profilweisen Export. Historische Dokumente verwenden weiterhin nur ihre unveränderten Snapshots.
+Ab Schema 9 löst die Projektion Unternehmensidentität, Steuer-/Betriebseinstellungen, TSE-Vorbereitung und portable Lizenzreferenz über das aktive, in der Produktoberfläche weiterhin einzige sichtbare Profil in `settings.companies[]` auf. Geschäftsbereiche bleiben per direkter `companyId` eindeutig zugeordnet. MULTI-COMPANY-003 verändert weder Filter noch CSV-, PDF- oder ZIP-Verträge: Es gibt weiterhin keine Profilwahl und keinen profilweisen Export. Historische Dokumente verwenden nur ihre unveränderten Snapshots und ihre bereits gespeicherte sichtbare Belegnummer; der Export leitet keine Nummer aus aktuellen Kürzeln oder Zählern neu ab.
 
 Vor jeder Projektion wird die zentrale Persistenz-Invariante für Gutschein und Verkaufsbeleg erneut auf dem tatsächlich übergebenen Snapshot ausgeführt. Der Export akzeptiert einen Gutscheinverkauf nur, wenn stabile Receipt-ID, Belegnummer, Belegart `voucher-sale` und `voucherReference` in beiden Richtungen exakt zusammenpassen. Fehlende oder widersprüchliche Gegenobjekte stoppen den gesamten Export mit einer verständlichen Meldung. Der Export ergänzt, errät oder rekonstruiert keinen Verkaufsbeleg.
 
@@ -65,7 +65,7 @@ LICENSE-005 projiziert entsprechend ausschließlich die portable `settings.compa
 
 SETTINGS-001 ergänzt nur für `Eigene Daten` die zentralen Unternehmensangaben in der Projektion und in `Export-Info.txt`: Ansprechpartner, getrennte Anschrift, Land, Kontaktwege, Website, optionale Steuerkennungen und eigener Änderungszeitpunkt. BRANDING-002 ergänzt dort je aktiver Zuordnung und Registereintrag ausschließlich Asset-ID, Dateiname, MIME-Type, Bytegröße, Format- und Zeitmetadaten. Data-URLs und andere Bildrohdaten werden nicht projiziert. Der Steuerberaterexport erhält weder diese Stammdatenprojektion noch Bildrohdaten oder einen veränderten Datei-/ZIP-Vertrag.
 
-SETTINGS-002 ergänzt ebenfalls nur für `Eigene Daten` den strukturierten Kontext `operatingSettings`: feste Währung und Sprache, Steuerstatus, aktive und Standard-Steuersätze, Standard-Geschäftsbereich, Zahlungsarten samt Reihenfolge und Aktivstatus, geschützter Belegnummernstand sowie die vorhandenen Belegtexte. `Export-Info.txt` weist diese Werte lesbar aus. Im Steuerberaterexport ist `operatingSettings` ausdrücklich `null`; CSV-Dateien, Übersicht, PDF-Inhalte und ZIP-Struktur bleiben unverändert.
+SETTINGS-002 ergänzt ebenfalls nur für `Eigene Daten` den strukturierten Kontext `operatingSettings`: feste Währung und Sprache, Steuerstatus, aktive und Standard-Steuersätze, Standard-Geschäftsbereich, Zahlungsarten samt Reihenfolge und Aktivstatus, die vorhandene Ein-Profil-Kompatibilitätsprojektion des geschützten Belegnummernstands sowie die Belegtexte. Die vollständigen profil-/typ-/jahresbezogenen Zähler bleiben Bestandteil des verschlüsselten Vollbackups und werden nicht als zusätzliche Exportdatei offengelegt. `Export-Info.txt` weist die vorhandenen Werte lesbar aus. Im Steuerberaterexport ist `operatingSettings` ausdrücklich `null`; CSV-Dateien, Übersicht, PDF-Inhalte und ZIP-Struktur bleiben unverändert.
 
 BACKUP-004 ergänzt darin ausschließlich die gewählte Intervallkennung als Einstellungsmetadatum und weist sie in `Export-Info.txt` verständlich aus. Operative Reminder-Zeitpunkte und Snooze werden nicht projiziert. Der Steuerberaterexport bleibt unverändert und enthält weder Intervall noch Reminder-Metadaten.
 
@@ -75,7 +75,7 @@ Alle Dateien entstehen im Arbeitsspeicher des Endgeräts. Die Anwendung übertr�
 
 ## Steuerberaterpaket
 
-Ein vollständiger Monatszeitraum erzeugt beispielsweise:
+Ein vollständiger Monatszeitraum eines künftig ausdrücklich mit `FR` konfigurierten Profils erzeugt beispielsweise:
 
 ```text
 FRECKA-Steuerberatung-2030-01.zip
@@ -87,12 +87,12 @@ FRECKA-Steuerberatung-2030-01.zip
     ├── Gutschein-Historie.csv
     ├── Export-Info.txt
     └── Belege/
-        ├── 2030-000132.pdf
-        ├── GS-2030-000101.pdf
-        └── ST-2030-000101.pdf
+        ├── FR-2030-000132.pdf
+        ├── FR-GS-2030-000101.pdf
+        └── FR-ST-2030-000101.pdf
 ```
 
-Eigene oder bereichsübergreifende Zeiträume verwenden `YYYY-MM-DD_bis_YYYY-MM-DD`; ein einzelner Geschäftsbereich wird zusätzlich als sicherer Dateinamensbestandteil ausgewiesen. Jedes Beleg-PDF wird aus der unveränderten gespeicherten Belegnummer benannt. Doppelte resultierende Dateinamen führen zu einem klaren Fehler, nicht zu einem Überschreiben.
+Eigene oder bereichsübergreifende Zeiträume verwenden `YYYY-MM-DD_bis_YYYY-MM-DD`; ein einzelner Geschäftsbereich wird zusätzlich als sicherer Dateinamensbestandteil ausgewiesen. Jedes Beleg-PDF wird aus der unveränderten gespeicherten Belegnummer benannt. Deshalb bleiben auch historische Dateinamen wie `2030-000132.pdf`, `GS-2030-000101.pdf` oder `ST-2030-000101.pdf` gültig. Doppelte resultierende Dateinamen führen zu einem klaren Fehler, nicht zu einem Überschreiben.
 
 Normale Belege, offene Belege, Stornos, Gutschriften und Gutscheinverkaufsbelege werden durch `FRECKA_DOCUMENTS` als echte PDFs erzeugt. Sie verwenden denselben gespeicherten Snapshot und dieselbe PDF-Engine wie die Belegansicht, aber den festen Ausgabemodus `tax-advisor`. BRANDING-002 reicht dem Dokumentmodell zusätzlich ausschließlich den zentralen Resolver und das Register aus demselben Tenant-Snapshot; dadurch enthält jedes PDF genau die historisch referenzierte Logo-Version. Die Rohbilder werden nicht als eigene ZIP-Dateien oder CSV-/TXT-Inhalte exportiert. PDF-Dateien werden weder in IndexedDB noch dauerhaft im Exportmodul gespeichert.
 

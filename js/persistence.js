@@ -30,6 +30,7 @@
     tenantId: "local-default",
     formatVersion: 2,
     companyProfileFormatVersion: 1,
+    receiptNumberingFormatVersion: 1,
     companyLogoFormatVersion: 1,
     logoAssetFormatVersion: 1,
     logoReferenceFormatVersion: 1,
@@ -525,13 +526,163 @@
   }
 
   function activeCompanyProfile(settings) {
-    if (!isPlainObject(settings) || !Array.isArray(settings.companies) || settings.companies.length !== 1) {
-      throw new PersistenceError("COMPANY_PROFILE_INVALID", "Das lokale Unternehmensprofil ist nicht eindeutig.");
+    if (!isPlainObject(settings) || !Array.isArray(settings.companies) || settings.companies.length < 1) {
+      throw new PersistenceError("COMPANY_PROFILE_INVALID", "Es ist kein lokales Unternehmensprofil verfügbar.");
     }
     const activeCompanyId = nullableStringId(settings.activeCompanyId);
     const profile = companyProfileById(settings, activeCompanyId);
     if (!profile) throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Das aktive Unternehmensprofil ist nicht verfügbar.");
     return profile;
+  }
+
+  const receiptNumberTypes = Object.freeze(["receipt", "cancellation", "credit"]);
+  const receiptProfileCodePattern = /^[A-Z][A-Z0-9]{1,7}$/;
+
+  function normalizeReceiptSequenceMap(source) {
+    if (source != null && !isPlainObject(source)) {
+      throw new PersistenceError("RECEIPT_NUMBERING_INVALID", "Der gespeicherte Nummernstand ist ungültig.");
+    }
+    const result = {};
+    Object.entries(source || {}).forEach(([year, value]) => {
+      if (!/^\d{4}$/.test(year) || !Number.isInteger(value) || value < 1 || value > 1000000) {
+        throw new PersistenceError("RECEIPT_NUMBERING_INVALID", "Der gespeicherte Jahreszähler ist ungültig.");
+      }
+      result[year] = value;
+    });
+    return result;
+  }
+
+  function normalizeReceiptSettings(sourceInput, fallbackInput = {}) {
+    const source = isPlainObject(sourceInput) ? sourceInput : {};
+    const fallback = isPlainObject(fallbackInput) ? fallbackInput : {};
+    const sourceDeclaresNumbering = Object.prototype.hasOwnProperty.call(source, "numbering") && source.numbering != null;
+    if (sourceDeclaresNumbering && !isPlainObject(source.numbering)) {
+      throw new PersistenceError("RECEIPT_NUMBERING_INVALID", "Der gespeicherte Nummernkreis ist ungültig.");
+    }
+    const rawNumbering = isPlainObject(source.numbering) ? source.numbering : null;
+    const fallbackNumbering = isPlainObject(fallback.numbering) ? fallback.numbering : null;
+    const hasLegacyNumberSource = /^\d{4}$/.test(trimmedString(source.yearPrefix))
+      || (Number.isInteger(source.nextNumber) && source.nextNumber > 0);
+    const legacyYear = /^\d{4}$/.test(trimmedString(source.yearPrefix))
+      ? trimmedString(source.yearPrefix)
+      : /^\d{4}$/.test(trimmedString(fallback.yearPrefix))
+        ? trimmedString(fallback.yearPrefix)
+        : String(new Date().getFullYear());
+    const legacyNext = Number.isInteger(source.nextNumber) && source.nextNumber > 0
+      ? source.nextNumber
+      : Number.isInteger(fallback.nextNumber) && fallback.nextNumber > 0 ? fallback.nextNumber : 1;
+    const candidate = rawNumbering || (!hasLegacyNumberSource ? fallbackNumbering : null) || {};
+    const candidateHasNumberingModel = Boolean(rawNumbering || (!hasLegacyNumberSource && fallbackNumbering));
+    if (Number.isInteger(candidate.formatVersion)
+      && candidate.formatVersion > constants.receiptNumberingFormatVersion) {
+      throw new PersistenceError("UNSUPPORTED_FORMAT", "Dieser Nummernkreis benötigt eine neuere FRECKA-Version und wurde nicht verändert.");
+    }
+    if (candidateHasNumberingModel && candidate.formatVersion !== constants.receiptNumberingFormatVersion) {
+      throw new PersistenceError("RECEIPT_NUMBERING_INVALID", "Der gespeicherte Nummernkreis besitzt keine gültige Formatversion.");
+    }
+    if (candidateHasNumberingModel && !["legacy", "profile"].includes(candidate.mode)) {
+      throw new PersistenceError("RECEIPT_NUMBERING_INVALID", "Der gespeicherte Nummernkreismodus ist ungültig.");
+    }
+    if (candidateHasNumberingModel
+      && (!isPlainObject(candidate.startSequences) || !isPlainObject(candidate.nextSequences))) {
+      throw new PersistenceError("RECEIPT_NUMBERING_INVALID", "Der gespeicherte Nummernkreis ist unvollständig.");
+    }
+    if (candidateHasNumberingModel && !/^\d{4}$/.test(trimmedString(candidate.displayYear))) {
+      throw new PersistenceError("RECEIPT_NUMBERING_INVALID", "Das Anzeigejahr des gespeicherten Nummernkreises ist ungültig.");
+    }
+    const mode = candidate.mode === "profile" ? "profile" : "legacy";
+    const profileCode = mode === "profile" ? trimmedString(candidate.profileCode).toUpperCase() : null;
+    if (mode === "profile" && !receiptProfileCodePattern.test(profileCode)) {
+      throw new PersistenceError("RECEIPT_PROFILE_CODE_REQUIRED", "Für dieses Unternehmensprofil fehlt ein gültiges eindeutiges Profilkürzel.");
+    }
+    const displayYear = candidateHasNumberingModel ? trimmedString(candidate.displayYear) : legacyYear;
+    const defaultStarts = mode === "profile"
+      ? { receipt: 1, cancellation: 1, credit: 1 }
+      : { receipt: 1, cancellation: 101, credit: 101 };
+    const startSequences = {};
+    const nextSequences = {};
+    receiptNumberTypes.forEach(type => {
+      const requestedStart = candidate.startSequences?.[type];
+      if (candidateHasNumberingModel
+        && (!Number.isInteger(requestedStart) || requestedStart < 1 || requestedStart > 999999)) {
+        throw new PersistenceError("RECEIPT_NUMBERING_INVALID", "Die gespeicherte Startsequenz ist ungültig.");
+      }
+      startSequences[type] = Number.isInteger(requestedStart) && requestedStart > 0 && requestedStart <= 999999
+        ? requestedStart
+        : defaultStarts[type];
+      if (candidateHasNumberingModel
+        && !Object.prototype.hasOwnProperty.call(candidate.nextSequences, type)) {
+        throw new PersistenceError("RECEIPT_NUMBERING_INVALID", "Der gespeicherte Jahreszähler ist unvollständig.");
+      }
+      nextSequences[type] = normalizeReceiptSequenceMap(candidate.nextSequences?.[type]);
+    });
+    // Alte Profile besitzen nur yearPrefix/nextNumber. Diese beiden Werte werden
+    // einmalig in den profilinternen Normalbeleg-Zähler überführt. Sobald ein
+    // versionierter Nummernkontext vorhanden ist, ist ausschließlich dieser
+    // Kontext die kanonische Quelle.
+    if (!rawNumbering && hasLegacyNumberSource) {
+      nextSequences.receipt[legacyYear] = Math.max(
+        startSequences.receipt,
+        legacyNext,
+        nextSequences.receipt[legacyYear] || 0
+      );
+    }
+    if (!nextSequences.receipt[displayYear]) {
+      nextSequences.receipt[displayYear] = startSequences.receipt;
+    }
+    const numbering = {
+      formatVersion: constants.receiptNumberingFormatVersion,
+      mode,
+      profileCode,
+      displayYear,
+      startSequences,
+      nextSequences
+    };
+    return {
+      yearPrefix: displayYear,
+      nextNumber: nextSequences.receipt[displayYear],
+      numbering,
+      footerText: stringValue(source.footerText, stringValue(fallback.footerText)),
+      thankYouText: stringValue(source.thankYouText, stringValue(fallback.thankYouText)),
+      currency: stringValue(source.currency, stringValue(fallback.currency, "EUR")),
+      language: stringValue(source.language, stringValue(fallback.language, "Deutsch"))
+    };
+  }
+
+  function syncReceiptSettingsProjection(receiptSettings) {
+    const normalized = normalizeReceiptSettings(receiptSettings, receiptSettings);
+    Object.keys(receiptSettings).forEach(key => { delete receiptSettings[key]; });
+    Object.assign(receiptSettings, normalized);
+    return receiptSettings;
+  }
+
+  function receiptNumberYear(timestamp, businessDate = "") {
+    const germanDate = trimmedString(businessDate).match(/^\d{2}\.\d{2}\.(\d{4})$/);
+    if (germanDate) return germanDate[1];
+    const isoDate = trimmedString(businessDate).match(/^(\d{4})-\d{2}-\d{2}$/);
+    if (isoDate) return isoDate[1];
+    const iso = stableIso(timestamp, "");
+    const year = iso.slice(0, 4);
+    if (!/^\d{4}$/.test(year)) {
+      throw new PersistenceError("RECEIPT_NUMBERING_INVALID", "Der fachliche Abschlusszeitpunkt besitzt kein gültiges Jahr.");
+    }
+    return year;
+  }
+
+  function receiptNumberPattern(numbering, type, year) {
+    const typePart = type === "cancellation" ? "ST-" : type === "credit" ? "GS-" : "";
+    const codePart = numbering.mode === "profile" ? `${numbering.profileCode}-` : "";
+    return new RegExp(`^${codePart}${typePart}${year}-(\\d{6})$`);
+  }
+
+  function formatReceiptNumber(numbering, type, year, sequence) {
+    if (!receiptNumberTypes.includes(type) || !/^\d{4}$/.test(year)
+      || !Number.isInteger(sequence) || sequence < 1 || sequence > 999999) {
+      throw new PersistenceError("RECEIPT_NUMBERING_INVALID", "Die Belegnummer kann nicht sicher gebildet werden.");
+    }
+    const typePart = type === "cancellation" ? "ST-" : type === "credit" ? "GS-" : "";
+    const codePart = numbering.mode === "profile" ? `${numbering.profileCode}-` : "";
+    return `${codePart}${typePart}${year}-${String(sequence).padStart(6, "0")}`;
   }
 
   function companyProfileForBusinessArea(settings, businessAreaId) {
@@ -1024,6 +1175,22 @@
     return migrated;
   }
 
+  function settingsWithReceiptNumberingModel(record) {
+    if (!isPlainObject(record)) return record;
+    const migrated = cloneSerializable(record);
+    if (migrated.formatVersion === constants.settingsFormatVersion && Array.isArray(migrated.companies)) {
+      migrated.companies.forEach(profile => {
+        if (!isPlainObject(profile) || !isPlainObject(profile.receiptSettings)) return;
+        profile.receiptSettings = normalizeReceiptSettings(profile.receiptSettings, profile.receiptSettings);
+      });
+      return migrated;
+    }
+    if (migrated.formatVersion === 1 && isPlainObject(migrated.receiptSettings)) {
+      migrated.receiptSettings = normalizeReceiptSettings(migrated.receiptSettings, migrated.receiptSettings);
+    }
+    return migrated;
+  }
+
   function addMissingKnownFields(source, normalizedShape) {
     if (Array.isArray(normalizedShape)) {
       if (!Array.isArray(source) || source.length !== normalizedShape.length) return cloneSafe(source);
@@ -1057,8 +1224,9 @@
     }
     if (original.formatVersion === constants.settingsFormatVersion) {
       let normalizedCurrent;
+      const preparedOriginal = settingsWithReceiptNumberingModel(original);
       try {
-        normalizedCurrent = normalizeSettingsRecord(original, defaultsInput, expectedTenantId);
+        normalizedCurrent = normalizeSettingsRecord(preparedOriginal, defaultsInput, expectedTenantId);
       } catch (error) {
         return Object.freeze({
           record: null,
@@ -1106,6 +1274,7 @@
     candidate = settingsWithLegacyCompanyIdentity(candidate);
     candidate = settingsWithLegacyBackupReminder(candidate);
     candidate = settingsWithLegacyTreatmentTemplates(candidate);
+    candidate = settingsWithReceiptNumberingModel(candidate);
 
     let normalizedCandidate;
     try {
@@ -1305,14 +1474,7 @@
         })).filter(rate => nullableStringId(rate.id)),
         defaultRate: finiteNumber(taxSettings.defaultRate, 19)
       },
-      receiptSettings: {
-        yearPrefix: stringValue(receiptSettings.yearPrefix),
-        nextNumber: Number.isInteger(receiptSettings.nextNumber) ? receiptSettings.nextNumber : 1,
-        footerText: stringValue(receiptSettings.footerText),
-        thankYouText: stringValue(receiptSettings.thankYouText),
-        currency: stringValue(receiptSettings.currency, "EUR"),
-        language: stringValue(receiptSettings.language, "Deutsch")
-      },
+      receiptSettings: normalizeReceiptSettings(receiptSettings),
       paymentChoices: (Array.isArray(runtimeData.paymentChoices) ? runtimeData.paymentChoices : []).map(choice => ({
         id: choice.id,
         title: stringValue(choice.title),
@@ -1713,7 +1875,9 @@
     return prescriptionReceiptType(correction) === "cancellation" && completedPrescriptionReceipt(correction)
       && correction.status === "cancelled" && correction.id !== original.id
       && nullableStringId(correction.companyId) === nullableStringId(original.companyId)
-      && (correction.reference || correction.references?.originalReceiptNumber) === prescriptionReceiptNumber(original)
+      && (correction.references?.originalReceiptId
+        ? correction.references.originalReceiptId === original.id
+        : (correction.reference || correction.references?.originalReceiptNumber) === prescriptionReceiptNumber(original))
       && prescriptionReceiptArea(correction) === prescriptionReceiptArea(original)
       && prescriptionReceiptCustomer(correction) === prescriptionReceiptCustomer(original)
       && prescriptionReceiptTotal(correction) === -prescriptionReceiptTotal(original);
@@ -2002,11 +2166,15 @@
       ...cloneSafe(activity),
       occurredAt: stableIso(activity.occurredAt, updatedAt)
     }));
-    const originalReference = nullableStringId(receipt.reference)
-      || nullableStringId(receipt.references?.originalReceiptNumber);
+    const originalReceiptId = nullableStringId(receipt.references?.originalReceiptId)
+      || nullableStringId(receipt.referenceId);
+    const originalReceiptNumber = nullableStringId(receipt.references?.originalReceiptNumber)
+      || nullableStringId(receipt.reference);
     const references = {
       ...(isPlainObject(receipt.references) ? cloneSafe(receipt.references) : {}),
-      originalReceiptNumber: originalReference,
+      originalReceiptId,
+      originalReceiptNumber,
+      correctionIds: uniqueStrings(receipt.references?.correctionIds),
       correctionNumbers: uniqueStrings(receipt.references?.correctionNumbers)
     };
     const voucherReference = nullableStringId(receipt.voucherReference)
@@ -2075,7 +2243,8 @@
       completedAt,
       updatedAt,
       references,
-      reference: originalReference,
+      referenceId: originalReceiptId,
+      reference: originalReceiptNumber,
       voucherReference,
       voucherPayment
     });
@@ -3273,18 +3442,7 @@
     const defaultReceiptSettings = defaults.receiptSettings || {};
     const rawReceiptSettings = isPlainObject(raw.receiptSettings) ? raw.receiptSettings : {};
     if (!isPlainObject(raw.receiptSettings)) repairs.add("RECEIPT_SETTINGS_DEFAULTED");
-    const yearPrefix = /^\d{4}$/.test(rawReceiptSettings.yearPrefix) ? rawReceiptSettings.yearPrefix : stringValue(defaultReceiptSettings.yearPrefix, String(new Date().getFullYear()));
-    const nextNumber = Number.isInteger(rawReceiptSettings.nextNumber) && rawReceiptSettings.nextNumber > 0
-      ? rawReceiptSettings.nextNumber
-      : Math.max(1, Number(defaultReceiptSettings.nextNumber) || 1);
-    const receiptSettings = {
-      yearPrefix,
-      nextNumber,
-      footerText: stringValue(rawReceiptSettings.footerText, stringValue(defaultReceiptSettings.footerText)),
-      thankYouText: stringValue(rawReceiptSettings.thankYouText, stringValue(defaultReceiptSettings.thankYouText)),
-      currency: stringValue(rawReceiptSettings.currency, stringValue(defaultReceiptSettings.currency, "EUR")),
-      language: stringValue(rawReceiptSettings.language, stringValue(defaultReceiptSettings.language, "Deutsch"))
-    };
+    const receiptSettings = normalizeReceiptSettings(rawReceiptSettings, defaultReceiptSettings);
 
     const defaultPaymentById = new Map((defaults.paymentChoices || []).map(choice => [choice.id, choice]));
     const paymentSource = Array.isArray(raw.paymentChoices) ? raw.paymentChoices : defaults.paymentChoices || [];
@@ -3428,35 +3586,56 @@
     if (!isPlainObject(settings) || settings.formatVersion !== constants.settingsFormatVersion) {
       throw new PersistenceError("COMPANY_PROFILE_INVALID", "Die Unternehmensprofile besitzen keine gültige Formatversion.");
     }
-    if (!Array.isArray(settings.companies) || settings.companies.length !== 1) {
-      throw new PersistenceError("COMPANY_PROFILE_INVALID", "FRECKA unterstützt in dieser Phase genau ein Unternehmensprofil.");
+    if (!Array.isArray(settings.companies) || settings.companies.length < 1) {
+      throw new PersistenceError("COMPANY_PROFILE_INVALID", "Es ist kein Unternehmensprofil verfügbar.");
     }
-    const profile = settings.companies[0];
-    const companyId = nullableStringId(profile?.id);
-    if (!companyId || profile.formatVersion !== constants.companyProfileFormatVersion) {
-      throw new PersistenceError("COMPANY_PROFILE_INVALID", "Das Unternehmensprofil besitzt keine stabile ID oder Formatversion.");
+    const companyIds = new Set();
+    const profileCodes = new Set();
+    let legacyProfiles = 0;
+    settings.companies.forEach((profile, index) => {
+      const companyId = nullableStringId(profile?.id);
+      if (!companyId || companyIds.has(companyId) || profile.formatVersion !== constants.companyProfileFormatVersion) {
+        throw new PersistenceError("COMPANY_PROFILE_INVALID", "Ein Unternehmensprofil besitzt keine eindeutige stabile ID oder Formatversion.");
+      }
+      companyIds.add(companyId);
+      if (!isPlainObject(profile.company) || !isPlainObject(profile.taxSettings)
+        || !isPlainObject(profile.receiptSettings) || !Array.isArray(profile.paymentChoices)
+        || !isPlainObject(profile.tseSettings) || !isPlainObject(profile.license)
+        || !isPlainObject(profile.setup)) {
+        throw new PersistenceError("COMPANY_PROFILE_INVALID", "Ein Unternehmensprofil ist unvollständig.");
+      }
+      const normalizedReceiptSettings = normalizeReceiptSettings(profile.receiptSettings, profile.receiptSettings);
+      const numbering = normalizedReceiptSettings.numbering;
+      if (numbering.mode === "legacy") {
+        legacyProfiles += 1;
+        if (index !== 0) {
+          throw new PersistenceError("RECEIPT_PROFILE_CODE_REQUIRED", "Weitere Unternehmensprofile benötigen vor einem Belegabschluss ein explizites Profilkürzel.");
+        }
+      } else {
+        if (profileCodes.has(numbering.profileCode)) {
+          throw new PersistenceError("RECEIPT_PROFILE_CODE_DUPLICATE", "Das Profilkürzel wird bereits von einem anderen Unternehmensprofil verwendet.");
+        }
+        profileCodes.add(numbering.profileCode);
+      }
+    });
+    if (legacyProfiles > 1) {
+      throw new PersistenceError("RECEIPT_PROFILE_CODE_REQUIRED", "Nur das bestehende erste Unternehmensprofil darf den Übergangsmodus verwenden.");
     }
-    if (settings.activeCompanyId !== companyId) {
+    if (!companyIds.has(settings.activeCompanyId)) {
       throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Das aktive Unternehmensprofil ist nicht eindeutig zugeordnet.");
-    }
-    if (!isPlainObject(profile.company) || !isPlainObject(profile.taxSettings)
-      || !isPlainObject(profile.receiptSettings) || !Array.isArray(profile.paymentChoices)
-      || !isPlainObject(profile.tseSettings) || !isPlainObject(profile.license)
-      || !isPlainObject(profile.setup)) {
-      throw new PersistenceError("COMPANY_PROFILE_INVALID", "Das Unternehmensprofil ist unvollständig.");
     }
     const areas = Array.isArray(settings.businessAreas) ? settings.businessAreas : [];
     const locations = Array.isArray(settings.serviceLocations) ? settings.serviceLocations : [];
     const areaIds = new Set();
     areas.forEach(area => {
-      if (!nullableStringId(area?.id) || areaIds.has(area.id) || area.companyId !== companyId) {
+      if (!nullableStringId(area?.id) || areaIds.has(area.id) || !companyIds.has(area.companyId)) {
         throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Ein Geschäftsbereich besitzt eine ungültige Unternehmenszuordnung.");
       }
       areaIds.add(area.id);
     });
     const locationIds = new Set();
     locations.forEach(location => {
-      if (!nullableStringId(location?.id) || locationIds.has(location.id) || location.companyId !== companyId) {
+      if (!nullableStringId(location?.id) || locationIds.has(location.id) || !companyIds.has(location.companyId)) {
         throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Ein Leistungsort besitzt eine ungültige Unternehmenszuordnung.");
       }
       locationIds.add(location.id);
@@ -3512,6 +3691,28 @@
       throw new PersistenceError("UNSUPPORTED_FORMAT", "Für diese ältere Einstellungsformatversion ist nur die kontrollierte Schema-8-Migration zulässig.");
     }
     validateCompanySettingsReferences(raw);
+    if (raw.companies.length > 1) {
+      const canonical = cloneSafe(raw);
+      const defaultProfiles = new Map((defaults.companies || []).map(profile => [profile.id, profile]));
+      canonical.companies = raw.companies.map(profile => {
+        const fallbackProfile = defaultProfiles.get(profile.id) || profile;
+        return mergePreservingUnknown(profile, {
+          formatVersion: constants.companyProfileFormatVersion,
+          id: profile.id,
+          company: cloneSafe(profile.company),
+          taxSettings: cloneSafe(profile.taxSettings),
+          receiptSettings: normalizeReceiptSettings(profile.receiptSettings, fallbackProfile.receiptSettings),
+          paymentChoices: cloneSafe(profile.paymentChoices),
+          tseSettings: cloneSafe(profile.tseSettings),
+          license: cloneSafe(profile.license),
+          setup: cloneSafe(profile.setup)
+        });
+      });
+      canonical.tenantId = nullableStringId(expectedTenantId) || constants.tenantId;
+      const cleaned = stripExcludedData(canonical);
+      validateCompanySettingsReferences(cleaned);
+      return { record: attachLegacySettingsAliases(cleaned), repairs: [] };
+    }
     const rawProfile = activeCompanyProfile(raw);
     const normalizedLegacy = normalizeLegacySettingsRecord(
       legacySettingsView(raw),
@@ -3547,7 +3748,23 @@
     const locationById = new Map(settings.serviceLocations.map(location => [location.id, location]));
     const receipts = Array.isArray(records.receipts?.receipts) ? records.receipts.receipts : [];
     const receiptById = new Map(receipts.map(receipt => [receipt.id, receipt]));
-    const receiptByNumber = new Map(receipts.map(receipt => [receipt.number || receipt.receiptNumber, receipt]));
+    const receiptsByNumber = new Map();
+    receipts.forEach(receipt => {
+      const number = receipt.number || receipt.receiptNumber;
+      if (!receiptsByNumber.has(number)) receiptsByNumber.set(number, []);
+      receiptsByNumber.get(number).push(receipt);
+    });
+    const resolveReceiptRelation = (referenceId, referenceNumber, companyId, label) => {
+      const stableId = nullableStringId(referenceId);
+      if (stableId) return receiptById.get(stableId) || null;
+      const number = nullableStringId(referenceNumber);
+      if (!number) return null;
+      const matches = (receiptsByNumber.get(number) || []).filter(receipt => receipt.companyId === companyId);
+      if (matches.length > 1) {
+        throw new PersistenceError("RECEIPT_REFERENCE_AMBIGUOUS", `${label} ist innerhalb des Unternehmensprofils nicht eindeutig.`);
+      }
+      return matches[0] || null;
+    };
     const assertEntity = (entity, kind) => {
       if (!companyIds.has(entity?.companyId)) {
         throw new PersistenceError("COMPANY_REFERENCE_INVALID", `${kind} verweist auf ein unbekanntes Unternehmensprofil.`);
@@ -3573,10 +3790,12 @@
     };
     receipts.forEach(receipt => assertEntity(receipt, "Ein Beleg"));
     receipts.forEach(receipt => {
-      const sourceReference = nullableStringId(receipt.reference)
-        || nullableStringId(receipt.references?.originalReceiptNumber);
-      if (!sourceReference) return;
-      const source = receiptById.get(sourceReference) || receiptByNumber.get(sourceReference);
+      const source = resolveReceiptRelation(
+        receipt.references?.originalReceiptId || receipt.referenceId,
+        receipt.references?.originalReceiptNumber || receipt.reference,
+        receipt.companyId,
+        "Die Ursprungsbelegreferenz"
+      );
       if (source && source.companyId !== receipt.companyId) {
         throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Ein Korrekturbeleg gehört nicht zum Unternehmensprofil des Ursprungsbelegs.");
       }
@@ -3584,14 +3803,15 @@
     (records.vouchers?.vouchers || []).forEach(voucher => {
       assertEntity(voucher, "Ein Gutschein");
       const saleReference = nullableStringId(voucher.saleReceipt?.id)
-        || nullableStringId(voucher.saleReceiptReference)
-        || nullableStringId(voucher.saleReceipt?.number);
-      const saleReceipt = receiptById.get(saleReference) || receiptByNumber.get(saleReference);
+        || nullableStringId(voucher.saleReceiptReference);
+      const saleReceipt = resolveReceiptRelation(saleReference, voucher.saleReceipt?.number, voucher.companyId, "Die Gutschein-Verkaufsbelegreferenz");
       if (saleReceipt && saleReceipt.companyId !== voucher.companyId) {
         throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Ein Gutschein gehört nicht zum Unternehmensprofil seines Verkaufsbelegs.");
       }
+      const redemptionReceiptIds = new Set((voucher.redemptionReceipts || []).map(entry => entry?.id).filter(Boolean));
       (voucher.redemptionReferences || []).forEach(reference => {
-        const receipt = receiptById.get(reference) || receiptByNumber.get(reference);
+        const stable = redemptionReceiptIds.size === 1 ? [...redemptionReceiptIds][0] : null;
+        const receipt = resolveReceiptRelation(stable, reference, voucher.companyId, "Die Gutschein-Einlösungsbelegreferenz");
         if (receipt && receipt.companyId !== voucher.companyId) {
           throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Eine Gutscheineinlösung gehört zu einem anderen Unternehmensprofil.");
         }
@@ -3833,9 +4053,9 @@
     const preparedSettings = snapshot.stores.settings.formatVersion === constants.settingsFormatVersion
       ? null
       : prepareHistoricalSettingsRecord(snapshot.stores.settings, snapshot.stores.settings, safeTenantId);
-    const settingsInput = preparedSettings?.compatible
+    const settingsInput = settingsWithReceiptNumberingModel(preparedSettings?.compatible
       ? preparedSettings.record
-      : snapshot.stores.settings;
+      : snapshot.stores.settings);
     const settings = assertSnapshotRecord(
       normalizeSettingsRecord(settingsInput, settingsInput, safeTenantId),
       settingsInput,
@@ -3899,11 +4119,19 @@
 
     receipts.receipts.forEach(receipt => {
       requireReceipt(
-        receipt.reference,
+        receipt.references?.originalReceiptId || receipt.reference,
         `Der Beleg ${receipt.number} verweist auf einen nicht enthaltenen Ursprungsbeleg.`,
         receipt,
         "RECEIPT_SOURCE_REFERENCE_ORPHANED"
       );
+      (receipt.references?.correctionIds || []).forEach(reference => {
+        requireReceipt(
+          reference,
+          `Der Beleg ${receipt.number} enthält eine ungültige stabile Korrekturreferenz.`,
+          receipt,
+          "RECEIPT_CORRECTION_REFERENCE_ORPHANED"
+        );
+      });
       (receipt.references?.correctionNumbers || []).forEach(reference => {
         requireReceipt(
           reference,
@@ -4000,25 +4228,47 @@
       }
     });
 
+    settings.companies.forEach(profile => {
+      const numbering = normalizeReceiptSettings(profile.receiptSettings, profile.receiptSettings).numbering;
+      receiptNumberTypes.forEach(type => {
+        const configured = numbering.nextSequences[type] || {};
+        const years = new Set(Object.keys(configured));
+        receipts.receipts.forEach(receipt => {
+          if (receipt.companyId !== profile.id || receipt.receiptType !== type) return;
+          const completedYear = receiptNumberYear(receipt.completedAt, receipt.date);
+          if (receiptNumberPattern(numbering, type, completedYear).test(String(receipt.number || ""))) years.add(completedYear);
+        });
+        years.forEach(year => {
+          const highestSequence = receipts.receipts.reduce((highest, receipt) => {
+            if (receipt.companyId !== profile.id || receipt.receiptType !== type) return highest;
+            const match = String(receipt.number || "").match(receiptNumberPattern(numbering, type, year));
+            return match ? Math.max(highest, Number(match[1])) : highest;
+          }, 0);
+          const nextSequence = configured[year];
+          // Historische ST-/GS-Nummern des Übergangsprofils besaßen bislang
+          // keinen gespeicherten Zähler. Dort ist der profilgebundene Scan beim
+          // ersten Folgeabschluss die sichere, abwärtskompatible Quelle.
+          if (numbering.mode === "legacy" && type !== "receipt" && nextSequence == null) return;
+          if (!Number.isInteger(nextSequence) || nextSequence <= highestSequence) {
+            throw new PersistenceError(
+              "BACKUP_NUMBER_SEQUENCE_INVALID",
+              "Der Belegnummernstand der Sicherung würde eine Nummernkollision verursachen.",
+              null,
+              {
+                invariant: "RECEIPT_NUMBER_SEQUENCE_COLLISION",
+                companyId: profile.id,
+                receiptType: type,
+                yearPrefix: year,
+                nextNumber: nextSequence ?? null,
+                highestStoredSequence: highestSequence
+              }
+            );
+          }
+        });
+      });
+    });
+
     const profile = activeCompanyProfile(settings);
-    const prefix = profile.receiptSettings.yearPrefix;
-    const highestSequence = receipts.receipts.reduce((highest, receipt) => {
-      const match = String(receipt.number || "").match(new RegExp(`^${prefix}-(\\d{6})$`));
-      return match ? Math.max(highest, Number(match[1])) : highest;
-    }, 0);
-    if (profile.receiptSettings.nextNumber <= highestSequence) {
-      throw new PersistenceError(
-        "BACKUP_NUMBER_SEQUENCE_INVALID",
-        "Der Belegnummernstand der Sicherung würde eine Nummernkollision verursachen.",
-        null,
-        {
-          invariant: "RECEIPT_NUMBER_SEQUENCE_COLLISION",
-          yearPrefix: prefix,
-          nextNumber: profile.receiptSettings.nextNumber,
-          highestStoredSequence: highestSequence
-        }
-      );
-    }
 
     const normalizedSnapshot = {
       backupFormat: tenantSnapshotConstants.backupFormat,
@@ -5617,8 +5867,9 @@
           try {
             transaction = database.transaction([receiptsStoreName, storeName], "readwrite");
             const store = transaction.objectStore(receiptsStoreName);
+            const settingsStore = transaction.objectStore(storeName);
             const readRequest = store.get(tenantId);
-            const settingsRequest = transaction.objectStore(storeName).get(tenantId);
+            const settingsRequest = settingsStore.get(tenantId);
             let ready = 0;
             readRequest.onerror = () => {
               transactionFailure = new PersistenceError("RECEIPTS_WRITE_FAILED", "Die Belege konnten nicht lokal gespeichert werden.", readRequest.error);
@@ -5941,72 +6192,117 @@
       const normalizedExisting = existingSettings
         ? normalizeSettingsRecord(existingSettings, normalizedRequested, tenantId).record
         : normalizedRequested;
-      const mergedSettings = normalizeSettingsRecord(
-        stripExcludedData(mergePreservingUnknown(normalizedExisting, normalizedRequested)),
-        normalizedRequested,
-        tenantId
-      ).record;
+      const mergedInput = stripExcludedData(mergePreservingUnknown(normalizedExisting, normalizedRequested));
+      const requestedById = new Map(normalizedRequested.companies.map(profile => [profile.id, profile]));
+      const existingById = new Map(normalizedExisting.companies.map(profile => [profile.id, profile]));
+      const companyIds = uniqueStrings([
+        ...normalizedExisting.companies.map(profile => profile.id),
+        ...normalizedRequested.companies.map(profile => profile.id)
+      ]);
+      mergedInput.companies = companyIds.map(companyId => {
+        const existingProfile = existingById.get(companyId);
+        const requestedProfile = requestedById.get(companyId);
+        const baseProfile = mergePreservingUnknown(existingProfile || requestedProfile, requestedProfile || existingProfile);
+        const existingReceiptSettings = normalizeReceiptSettings(existingProfile?.receiptSettings, existingProfile?.receiptSettings);
+        const requestedReceiptSettings = normalizeReceiptSettings(requestedProfile?.receiptSettings, requestedProfile?.receiptSettings);
+        const authoritative = existingProfile ? existingReceiptSettings : requestedReceiptSettings;
+        const numbering = cloneSafe(authoritative.numbering);
+        receiptNumberTypes.forEach(type => {
+          const existingMap = existingReceiptSettings.numbering.nextSequences[type] || {};
+          const requestedMap = requestedReceiptSettings.numbering.nextSequences[type] || {};
+          numbering.nextSequences[type] = {};
+          uniqueStrings([...Object.keys(existingMap), ...Object.keys(requestedMap)]).forEach(year => {
+            numbering.nextSequences[type][year] = Math.max(
+              authoritative.startSequences?.[type] || 1,
+              existingMap[year] || 0,
+              requestedMap[year] || 0
+            );
+          });
+        });
+        const displayYear = authoritative.numbering.displayYear;
+        return mergePreservingUnknown(baseProfile, {
+          receiptSettings: normalizeReceiptSettings({
+            ...baseProfile.receiptSettings,
+            yearPrefix: displayYear,
+            nextNumber: numbering.nextSequences.receipt[displayYear] || numbering.startSequences.receipt,
+            numbering
+          }, authoritative)
+        });
+      });
+      const mergedSettings = normalizeSettingsRecord(mergedInput, normalizedRequested, tenantId).record;
       mergedSettings.updatedAt = new Date().toISOString();
-      const existingProfile = activeCompanyProfile(normalizedExisting);
-      const requestedProfile = activeCompanyProfile(normalizedRequested);
-      const mergedProfile = activeCompanyProfile(mergedSettings);
-      if (existingProfile.id !== requestedProfile.id || mergedProfile.id !== requestedProfile.id) {
-        throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Nummernstand gehört zu einem anderen Unternehmensprofil.");
-      }
-      mergedProfile.receiptSettings.nextNumber = Math.max(
-        1,
-        nonNegativeInteger(existingProfile.receiptSettings?.nextNumber, 1),
-        nonNegativeInteger(requestedProfile.receiptSettings?.nextNumber, 1)
-      );
       return mergedSettings;
+    }
+
+    function allocateReceiptNumber(settings, companyId, type, completedAt, currentReceipts, businessDate = "") {
+      const profile = companyProfileById(settings, companyId);
+      if (!profile) {
+        throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Nummernkreis gehört zu einem unbekannten Unternehmensprofil.");
+      }
+      profile.receiptSettings = normalizeReceiptSettings(profile.receiptSettings, profile.receiptSettings);
+      const numbering = profile.receiptSettings.numbering;
+      if (numbering.mode === "profile" && !receiptProfileCodePattern.test(numbering.profileCode)) {
+        throw new PersistenceError("RECEIPT_PROFILE_CODE_REQUIRED", "Vor dem Belegabschluss muss ein gültiges Profilkürzel festgelegt werden.");
+      }
+      const year = receiptNumberYear(completedAt, businessDate);
+      const pattern = receiptNumberPattern(numbering, type, year);
+      const highestPersisted = currentReceipts.receipts.reduce((highest, receipt) => {
+        if (receipt.companyId !== companyId || receipt.receiptType !== type) return highest;
+        const match = String(receipt.number || "").match(pattern);
+        return match ? Math.max(highest, Number(match[1])) : highest;
+      }, 0);
+      const configuredNext = numbering.nextSequences[type]?.[year] || numbering.startSequences[type];
+      let sequence = Math.max(numbering.startSequences[type], configuredNext, highestPersisted + 1);
+      const usedNumbers = new Set(currentReceipts.receipts.map(receipt => receipt.number));
+      if (sequence > 999999) {
+        throw new PersistenceError("RECEIPT_NUMBERING_EXHAUSTED", "Der Nummernkreis für dieses Jahr ist ausgeschöpft.");
+      }
+      let receiptNumber = formatReceiptNumber(numbering, type, year, sequence);
+      while (usedNumbers.has(receiptNumber)) {
+        sequence += 1;
+        if (sequence > 999999) {
+          throw new PersistenceError("RECEIPT_NUMBERING_EXHAUSTED", "Der Nummernkreis für dieses Jahr ist ausgeschöpft.");
+        }
+        receiptNumber = formatReceiptNumber(numbering, type, year, sequence);
+      }
+      numbering.nextSequences[type][year] = sequence + 1;
+      numbering.displayYear = year;
+      profile.receiptSettings.yearPrefix = year;
+      profile.receiptSettings.nextNumber = numbering.nextSequences.receipt[year] || numbering.startSequences.receipt;
+      syncReceiptSettingsProjection(profile.receiptSettings);
+      return { number: receiptNumber, sequence, year, profile };
     }
 
     function prepareReceiptCommit(draft, existingSettings, requestedSettings, currentReceipts) {
       const mergedSettings = prepareSettingsForReceiptCommit(existingSettings, requestedSettings);
-      const mergedProfile = activeCompanyProfile(mergedSettings);
-      const requestedProfile = activeCompanyProfile(requestedSettings);
       const existingById = currentReceipts.receipts.find(receipt => receipt.id === draft.id);
       if (existingById) {
         return { created: false, receipt: existingById, receiptsRecord: currentReceipts, settingsRecord: mergedSettings };
-      }
-      const prefix = /^\d{4}$/.test(trimmedString(mergedProfile.receiptSettings?.yearPrefix))
-        ? trimmedString(mergedProfile.receiptSettings.yearPrefix)
-        : String(new Date().getFullYear());
-      const highestPersisted = currentReceipts.receipts.reduce((highest, receipt) => {
-        const match = String(receipt.number || "").match(new RegExp(`^${prefix}-(\\d{6})$`));
-        return match ? Math.max(highest, Number(match[1])) : highest;
-      }, 0);
-      let sequence = Math.max(
-        1,
-        nonNegativeInteger(activeCompanyProfile(existingSettings || requestedSettings).receiptSettings?.nextNumber, 1),
-        nonNegativeInteger(requestedProfile.receiptSettings?.nextNumber, 1),
-        highestPersisted + 1
-      );
-      const usedNumbers = new Set(currentReceipts.receipts.map(receipt => receipt.number));
-      let receiptNumber = `${prefix}-${String(sequence).padStart(6, "0")}`;
-      while (usedNumbers.has(receiptNumber)) {
-        sequence += 1;
-        receiptNumber = `${prefix}-${String(sequence).padStart(6, "0")}`;
       }
       const completedAt = stableIso(draft.completedAt, stableIso(draft.createdAt, new Date().toISOString()));
       const businessAreaId = nullableStringId(draft.businessAreaId)
         || nullableStringId(draft.businessAreaSnapshot?.id)
         || nullableStringId(draft.contextSnapshot?.businessArea?.id);
       const companyProfile = companyProfileForBusinessArea(mergedSettings, businessAreaId);
+      const draftCompanyId = nullableStringId(draft.companyId);
+      if (mergedSettings.companies.length > 1 && !draftCompanyId) {
+        throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Belegentwurf besitzt keine eindeutige Unternehmenszuordnung.");
+      }
       const serviceLocationId = nullableStringId(draft.serviceLocationId)
         || nullableStringId(draft.serviceLocationSnapshot?.id)
         || nullableStringId(draft.contextSnapshot?.serviceLocation?.id);
       if (serviceLocationId && companyProfileForServiceLocation(mergedSettings, serviceLocationId).id !== companyProfile.id) {
         throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Belegkontext enthält einen profilfremden Leistungsort.");
       }
-      if (nullableStringId(draft.companyId) && draft.companyId !== companyProfile.id) {
+      if (draftCompanyId && draftCompanyId !== companyProfile.id) {
         throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Belegentwurf gehört zu einem anderen Unternehmensprofil.");
       }
+      const allocated = allocateReceiptNumber(mergedSettings, companyProfile.id, "receipt", completedAt, currentReceipts, draft.date);
       const receipt = normalizeReceiptEntry({
         ...draft,
         companyId: companyProfile.id,
-        number: receiptNumber,
-        receiptNumber,
+        number: allocated.number,
+        receiptNumber: allocated.number,
         createdAt: stableIso(draft.createdAt, completedAt),
         completedAt,
         updatedAt: completedAt
@@ -6014,7 +6310,6 @@
       if (!receipt) throw new PersistenceError("INVALID_DATA", "Der Beleg konnte nicht in das persistente Format überführt werden.");
       currentReceipts.receipts.unshift(receipt);
       currentReceipts.updatedAt = new Date().toISOString();
-      mergedProfile.receiptSettings.nextNumber = sequence + 1;
       return { created: true, receipt, receiptsRecord: currentReceipts, settingsRecord: mergedSettings };
     }
 
@@ -6560,8 +6855,9 @@
           try {
             transaction = database.transaction([receiptsStoreName, storeName], "readwrite");
             const store = transaction.objectStore(receiptsStoreName);
+            const settingsStore = transaction.objectStore(storeName);
             const readRequest = store.get(tenantId);
-            const settingsRequest = transaction.objectStore(storeName).get(tenantId);
+            const settingsRequest = settingsStore.get(tenantId);
             let ready = 0;
             readRequest.onerror = () => {
               transactionFailure = new PersistenceError(failureCode, failureMessage, readRequest.error);
@@ -6577,20 +6873,32 @@
                 const record = readRequest.result
                   ? normalizeReceiptsRecord(readRequest.result, seedRecord, tenantId).record
                   : normalizeReceiptsRecord(seedRecord, seedRecord, tenantId).record;
-                const outcome = operation(record) || {};
-                validateCompanyEntityReferences(settingsRequest.result, {
+                const settings = normalizeSettingsRecord(settingsRequest.result, settingsRequest.result, tenantId).record;
+                const outcome = operation(record, settings) || {};
+                validateCompanyEntityReferences(settings, {
                   receipts: record,
                   vouchers: { vouchers: [] },
                   prescriptions: { prescriptions: [] },
                   treatmentRecords: { treatmentRecords: [] }
                 });
                 record.updatedAt = new Date().toISOString();
-                operationResult = { ...cloneSafe(outcome), record: cloneSafe(record) };
+                operationResult = {
+                  ...cloneSafe(outcome),
+                  record: cloneSafe(record),
+                  settingsRecord: attachLegacySettingsAliases(cloneSafe(settings))
+                };
                 if (outcome.changed === false) return;
                 const putRequest = store.put(stripExcludedReceiptsData(record));
                 putRequest.onerror = () => {
-                  transactionFailure = new PersistenceError(failureCode, failureMessage, putRequest.error);
+                  if (!transactionFailure) transactionFailure = new PersistenceError(failureCode, failureMessage, putRequest.error);
                 };
+                if (outcome.settingsChanged === true) {
+                  settings.updatedAt = new Date().toISOString();
+                  const settingsPutRequest = settingsStore.put(stripExcludedData(settings));
+                  settingsPutRequest.onerror = () => {
+                    if (!transactionFailure) transactionFailure = new PersistenceError(failureCode, failureMessage, settingsPutRequest.error);
+                  };
+                }
               } catch (error) {
                 transactionFailure = error instanceof PersistenceError
                   ? error
@@ -6694,7 +7002,7 @@
       }, "RECEIPT_NOTE_FAILED", "Die interne Notiz konnte nicht lokal gespeichert werden.");
     }
 
-    function commitReceiptCorrection(sourceReceiptNumber, correctionDraft, seedReceiptsRecord) {
+    function commitReceiptCorrection(sourceReceiptReference, correctionDraft, seedReceiptsRecord) {
       let draft;
       try {
         draft = cloneSerializable(correctionDraft);
@@ -6704,17 +7012,31 @@
       if (!isPlainObject(draft) || !nullableStringId(draft.id) || !["cancellation", "credit"].includes(draft.type)) {
         return Promise.reject(new PersistenceError("INVALID_DATA", "Der Korrekturvorgang ist unvollständig."));
       }
-      return mutateReceipts(seedReceiptsRecord, record => {
+      return mutateReceipts(seedReceiptsRecord, (record, settings) => {
         const existingById = record.receipts.find(receipt => receipt.id === draft.id);
         if (existingById) return { changed: false, created: false, receipt: existingById };
-        const source = record.receipts.find(receipt => receipt.number === sourceReceiptNumber);
+        const sourceById = record.receipts.find(receipt => receipt.id === sourceReceiptReference) || null;
+        const requestedCompanyId = nullableStringId(draft.companyId);
+        const sourceByNumber = record.receipts.filter(receipt => (
+          receipt.number === sourceReceiptReference
+          && (!requestedCompanyId || receipt.companyId === requestedCompanyId)
+        ));
+        if (!sourceById && sourceByNumber.length > 1) {
+          throw new PersistenceError("RECEIPT_REFERENCE_AMBIGUOUS", "Der Ursprungsbeleg ist über seine sichtbare Nummer nicht eindeutig. Bitte verwende die stabile Belegreferenz.");
+        }
+        const source = sourceById || sourceByNumber[0] || null;
         if (!source || source.receiptType !== "receipt") {
           throw new PersistenceError("RECEIPT_NOT_FOUND", "Der Ursprungsbeleg wurde nicht gefunden.");
         }
         if (nullableStringId(draft.companyId) && draft.companyId !== source.companyId) {
           throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Korrekturbeleg gehört nicht zum Unternehmensprofil des Ursprungsbelegs.");
         }
-        const related = record.receipts.filter(receipt => receipt.reference === source.number);
+        const related = record.receipts.filter(receipt => (
+          receipt.references?.originalReceiptId === source.id
+          || (!receipt.references?.originalReceiptId
+            && receipt.companyId === source.companyId
+            && (receipt.reference === source.number || receipt.references?.originalReceiptNumber === source.number))
+        ));
         if (draft.type === "cancellation") {
           const existingCancellation = related.find(receipt => receipt.receiptType === "cancellation");
           if (existingCancellation || source.status === "cancelled") {
@@ -6725,30 +7047,24 @@
           throw new PersistenceError("RECEIPT_NOT_CORRECTABLE", "Für diesen Beleg ist keine weitere Korrektur möglich.");
         }
 
-        const prefix = draft.type === "cancellation" ? "ST" : "GS";
-        const sourceYear = String(source.number).match(/^(\d{4})-/)?.[1] || String(new Date().getFullYear());
-        const numberPattern = new RegExp(`^${prefix}-${sourceYear}-(\\d{6})$`);
-        let sequence = record.receipts.reduce((highest, receipt) => {
-          const match = String(receipt.number || "").match(numberPattern);
-          return match ? Math.max(highest, Number(match[1])) : highest;
-        }, 100) + 1;
-        const usedNumbers = new Set(record.receipts.map(receipt => receipt.number));
-        let correctionNumber = `${prefix}-${sourceYear}-${String(sequence).padStart(6, "0")}`;
-        while (usedNumbers.has(correctionNumber)) {
-          sequence += 1;
-          correctionNumber = `${prefix}-${sourceYear}-${String(sequence).padStart(6, "0")}`;
-        }
         const completedAt = stableIso(draft.completedAt, new Date().toISOString());
+        const allocated = allocateReceiptNumber(settings, source.companyId, draft.type, completedAt, record, draft.date);
         const amountCents = -Math.abs(centsFrom(draft.totalCents, draft.total));
         const correction = normalizeReceiptEntry({
           ...draft,
           companyId: source.companyId,
-          number: correctionNumber,
-          receiptNumber: correctionNumber,
+          number: allocated.number,
+          receiptNumber: allocated.number,
           receiptType: draft.type,
           status: draft.type === "cancellation" ? "cancelled" : "credited",
+          referenceId: source.id,
           reference: source.number,
-          references: { originalReceiptNumber: source.number, correctionNumbers: [] },
+          references: {
+            originalReceiptId: source.id,
+            originalReceiptNumber: source.number,
+            correctionIds: [],
+            correctionNumbers: []
+          },
           businessAreaId: source.businessAreaId,
           businessAreaSnapshot: source.businessAreaSnapshot,
           serviceLocationId: source.serviceLocationId,
@@ -6776,7 +7092,9 @@
         const sourceReferences = isPlainObject(source.references) ? source.references : {};
         source.references = {
           ...sourceReferences,
+          originalReceiptId: nullableStringId(sourceReferences.originalReceiptId),
           originalReceiptNumber: nullableStringId(sourceReferences.originalReceiptNumber),
+          correctionIds: uniqueStrings([...(sourceReferences.correctionIds || []), correction.id]),
           correctionNumbers: uniqueStrings([...(sourceReferences.correctionNumbers || []), correction.number])
         };
         source.activities = Array.isArray(source.activities) ? source.activities : [];
@@ -6793,11 +7111,14 @@
           source.status = "cancelled";
         } else {
           const creditedCents = record.receipts
-            .filter(receipt => receipt.reference === source.number && receipt.receiptType === "credit")
+            .filter(receipt => receipt.receiptType === "credit" && (
+              receipt.references?.originalReceiptId === source.id
+              || (!receipt.references?.originalReceiptId && receipt.companyId === source.companyId && receipt.reference === source.number)
+            ))
             .reduce((sum, receipt) => sum + Math.abs(centsFrom(receipt.totalCents, receipt.total)), 0);
           source.status = creditedCents >= Math.abs(centsFrom(source.totalCents, source.total)) ? "credited" : "partially-credited";
         }
-        return { changed: true, created: true, receipt: correction, sourceReceipt: source };
+        return { changed: true, settingsChanged: true, created: true, receipt: correction, sourceReceipt: source };
       }, "RECEIPT_CORRECTION_FAILED", "Die Korrektur konnte nicht lokal gespeichert werden.");
     }
 

@@ -39,3 +39,4 @@ Bereits getroffene Grundsatzentscheidungen können nachträglich als eigene ADRs
 - `ADR-0004-lizenzmodell-v1.md`: ein Mandant/eine Filiale und ein aktives Gerät pro Lizenz in V1.0;
 - `ADR-0005-trial-lizenzdienst-und-entitlements.md`: angenommene Architektur für Trial, serverautorisierte Gerätebindung, Offline-Nachweis und Zusatz-Entitlements;
 - `ADR-0006-schema-9-unternehmensprofilgrenze.md`: kanonisches Profil 1, direkte Unternehmensreferenzen und crash-sichere Schema-8→9-Migration.
+- `ADR-0007-profilbezogene-belegnummernkreise.md`: getrennte Profil-/Typ-/Jahreszähler, Legacy-Übergang, atomare Vergabe und stabile Korrekturreferenzen.

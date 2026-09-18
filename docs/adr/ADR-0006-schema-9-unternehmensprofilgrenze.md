@@ -4,6 +4,8 @@
 
 Angenommen am 17. September 2026.
 
+Hinsichtlich validierter Mehrprofil-Daten und profilbezogener Nummernkreise durch [ADR-0007](ADR-0007-profilbezogene-belegnummernkreise.md) ergänzt. Die hier festgelegte Schema-8→9-Migration und die weiterhin auf Profil 1 begrenzte Produktoberfläche bleiben unverändert.
+
 ## Kontext
 
 Bis IndexedDB-Schema 8 besitzt FRECKA fachlich genau ein Unternehmen. Unternehmensidentität, Steuer-, Beleg-, Zahlungs-, TSE-, Lizenz- und Einrichtungseinstellungen liegen als einzelne Root-Felder im mandantenbezogenen Settings-Datensatz. Geschäftsbereiche, Leistungsorte, Belege, Gutscheine, Rezepte und Behandlungsdatensätze haben keine direkte Unternehmensreferenz.
@@ -38,7 +40,7 @@ Unterstützte Schema-8-Backups durchlaufen dieselbe Projektion vor der atomaren 
 - Neue Belege und Gutscheine lösen das Profil aus Geschäftsbereich und Leistungsort auf. Storno und Gutschrift übernehmen Profil und Snapshots des Ursprungsbelegs.
 - Public QR erhält weder `companyId` noch Lizenzdaten. Steuerberaterexport und Dokumentengine verwenden weiterhin historische Snapshots; der Eigene-Daten-Export darf die portable Profilreferenz ausgeben.
 - Ein Downgrade auf einen Client vor Schema 9 ist nach der Migration kein unterstützter Rückweg.
-- MULTI-COMPANY-003/004 dürfen auf der Profilgrenze aufbauen, müssen Aktivprofilwahl, profilbezogene Nummern und UI bewusst entscheiden. Eine künftige Mehrprofil-Lizenzierung benötigt ein separates Lizenz-ADR und darf `licenseRuntime` nicht beiläufig umdeuten.
+- MULTI-COMPANY-003 baut mit ADR-0007 auf dieser Profilgrenze auf und führt profilbezogene Nummernkreise ohne Mehr-Unternehmens-UI ein. Aktivprofilwahl und Profilverwaltung bleiben MULTI-COMPANY-004 vorbehalten. Eine künftige Mehrprofil-Lizenzierung benötigt ein separates Lizenz-ADR und darf `licenseRuntime` nicht beiläufig umdeuten.
 
 ## Alternativen
 

@@ -1,7 +1,7 @@
 # Verschlüsselte Sicherung und Wiederherstellung
 
-**Stand:** MULTI-COMPANY-002 auf Basis BACKUP-006, PODOLOGY-006, BRANDING-002, TSE-002, SETTINGS-002, USER-001 und PERSISTENCE-007
-**Datenbankschema:** 9 (Ein-Profil-Migration; Backup-Kryptographie, Dateiformat und Ausgabeablauf unverändert)
+**Stand:** MULTI-COMPANY-003 auf Basis MULTI-COMPANY-002, BACKUP-006, PODOLOGY-006, BRANDING-002, TSE-002, SETTINGS-002, USER-001 und PERSISTENCE-007
+**Datenbankschema:** 9 (Unternehmensprofile und profilbezogene Nummernkontexte; Backup-Kryptographie, Dateiformat und Ausgabeablauf unverändert)
 **Backupformat:** 1
 **Geltungsbereich:** Vollständiger lokaler Datenstand eines Mandanten
 
@@ -58,7 +58,9 @@ Bei einem unterstützten Schema-8-Backup ist die fehlende Profilzuordnung eindeu
 
 Jeder Store enthält seinen bestehenden versionierten Datensatz einschließlich `tenantId`. Das Snapshotformat erfindet keine zusätzlichen Geschäftsmodelle. Beleg- und Gutscheinsnapshots, Historien, QR-Referenzen, Nummernstand und fachliche Referenzen bleiben Teil ihrer bisherigen Store-Objekte.
 
-MULTI-COMPANY-002 liegt vollständig innerhalb der vorhandenen Storestruktur. `stores.settings.companies[]` enthält in dieser Phase exakt Profil 1; `businessAreas` und `serviceLocations` sowie Belege, Gutscheine, Rezepte und Behandlungsdatensätze tragen dessen direkte `companyId`. Kunden, Benutzer, Logo-Asset-Register, Backup-Erinnerung, Behandlungsvorlagen, eingebettete Positionen und Gutscheinhistorien erhalten keine `companyId`. Das äußere Backupformat bleibt Version 1.
+MULTI-COMPANY-002/003 liegen vollständig innerhalb der vorhandenen Storestruktur. Die Produktoberfläche erstellt und verwendet in dieser Phase weiterhin ausschließlich Profil 1; der Persistenz- und Restorevertrag kann jedoch mehrere vollständig referenzierte Profile mit eindeutigen IDs und Kürzeln prüfen. `businessAreas` und `serviceLocations` sowie Belege, Gutscheine, Rezepte und Behandlungsdatensätze tragen ihre direkte `companyId`. Kunden, Benutzer, Logo-Asset-Register, Backup-Erinnerung, Behandlungsvorlagen, eingebettete Positionen und Gutscheinhistorien erhalten keine `companyId`. Das äußere Backupformat bleibt Version 1.
+
+Jedes Profil sichert seine kanonische `receiptSettings.numbering`-Struktur vollständig mit: Format und Übergangsmodus, optionales Profilkürzel, Startwerte sowie die nächsten Sequenzen getrennt nach Normalbeleg, Storno und Gutschrift und jeweils nach Abschlussjahr. Historische Backups ohne dieses additive Modell werden beim Prüfen ausschließlich aus ihrem vorhandenen `yearPrefix`/`nextNumber` und den im selben Snapshot gespeicherten Belegen in einen gleichwertigen Übergangszustand projiziert. Sichtbare Belegnummern werden dabei niemals umgeschrieben. Ein Snapshot, dessen Zähler hinter seinem eigenen Belegbestand zurückliegt, wird weiterhin vor dem Restore abgelehnt.
 
 USER-001 liegt innerhalb von `stores.settings` als `users` und `activeUserId`. Dadurch wird der lokale Benutzer ohne zusätzliche Sammlung oder Änderung des äußeren Backupformats vollständig mitgesichert.
 
@@ -117,7 +119,8 @@ Vor jeder Schreibtransaktion werden mindestens geprüft:
 - äußeres und inneres Format sowie unterstützte Versionsstände;
 - vollständige Anwesenheit aller sieben Fachstores (mit der beschriebenen Altformat-Kompatibilität);
 - Übereinstimmung sämtlicher `tenantId`-Werte;
-- genau ein Unternehmensprofil mit eindeutiger opaker ID und passender `activeCompanyId`;
+- mindestens ein Unternehmensprofil mit jeweils eindeutiger opaker ID und einer `activeCompanyId`, die genau auf eines dieser Profile verweist;
+- eindeutige explizite Profilkürzel für weitere Profile; Profil 1 darf bis zur bewussten Kürzelwahl als einziges Profil im historischen Übergangsformat bleiben;
 - gültige, profilgleiche `companyId` an Geschäftsbereichen, Leistungsorten, Belegen, Gutscheinen, Rezepten und Behandlungsdatensätzen;
 - profilgleiche Standard-/Mehrfachzuordnungen, Korrekturen und relevante Beleg-/Gutschein-/Behandlungsreferenzen;
 - genau ein aktiver Settings-Benutzer mit derselben `tenantId` und passender `activeUserId`;
@@ -131,7 +134,7 @@ Vor jeder Schreibtransaktion werden mindestens geprüft:
 - unverfälschte, chronologische Gutscheinhistorien;
 - gültige Referenztypen und widerspruchsfreie Gegenreferenzen;
 - für jeden referenzierten Gutscheinverkauf einen vorhandenen Beleg mit exakt passender ID, Nummer, Belegart `voucher-sale` und Gegenreferenz sowie keine verwaisten Gutscheinverkaufsbelege;
-- ein Belegnummernstand oberhalb der höchsten vorhandenen Nummer des aktuellen Präfixes.
+- je Profil, Belegtyp und Abschlussjahr einen Nummernstand oberhalb der höchsten zugehörigen vorhandenen Nummer; unbekannte oder mehrdeutige Profil-/Nummernbezüge werden abgelehnt.
 
 Historische Referenzen auf Einlösungs- oder Korrekturbelege dürfen nach einem getrennten Entwickler-Reset weiterhin ohne Gegenobjekt erhalten bleiben. Für den ursprünglichen Gutscheinverkaufsbeleg gilt diese Ausnahme ausdrücklich nicht: Gutschein und Verkaufsbeleg bilden eine bidirektional vollständig prüfbare Einheit. Ein durch Entwickler-Reset inkonsistent gewordener Datenstand ist kein gültiger Restore-Snapshot.
 
@@ -207,7 +210,7 @@ Die sichtbare Fehlerbehandlung trennt Snapshot-/Vorbereitungsfehler von Fehlern 
 
 BACKUP-004 ergänzt alle drei Intervalle, den wöchentlichen Standard, Reload, Wechsel vor und nach Fälligkeit, den erhaltenen 24-Stunden-Snooze, die ausschließliche Rücksetzung nach bestätigter Ausgabe, die reine lokale Speicherhilfe sowie den getrennten Restore-Vertrag für Intervallwahl und operative Zeitpunkte.
 
-`tests/persistence-smoke.html` prüft ohne zusätzliches Testframework die gesamte bisherige Persistenz sowie BACKUP-001/002/003/004/005/006, HARDEN-001, EXPORT-001/003, PERSISTENCE-007/008/010, SETTINGS-001/002, TSE-002, LICENSE-005 und QR-001. BACKUP-006 ergänzt historische Profile für 0.9.x/0.10.x sowie Zustände vor USER-001, LICENSE-001, SETTINGS-001/002, BRANDING-001/002, BACKUP-004 und TSE-002 einschließlich Kombination und PERSISTENCE-010. LICENSE-005 ergänzt Schema 5→6, portable V2-Migration, CryptoKey-Reload und den Nachweis, dass Runtime, Schlüssel und Token weder verschlüsselt gesichert noch restauriert werden. Jeder freigegebene Profilpfad durchläuft Startnormalisierung, Settingspersistenz, Snapshotvalidierung, AES-GCM, Restore, erneute Vollvalidierung und Idempotenz. Ein eigener Negativfall beweist `fail closed` und unveränderte Eingabedaten. Die Diagnoseprüfungen suchen gezielt nach Namen, Beträgen, IDs, Nummern und Referenzen und dürfen ausschließlich sichere Kategorien ausgeben.
+`tests/persistence-smoke.html` prüft ohne zusätzliches Testframework die gesamte bisherige Persistenz sowie BACKUP-001/002/003/004/005/006, HARDEN-001, EXPORT-001/003, PERSISTENCE-007/008/010, SETTINGS-001/002, TSE-002, LICENSE-005, MULTI-COMPANY-003 und QR-001. BACKUP-006 ergänzt historische Profile für 0.9.x/0.10.x sowie Zustände vor USER-001, LICENSE-001, SETTINGS-001/002, BRANDING-001/002, BACKUP-004 und TSE-002 einschließlich Kombination und PERSISTENCE-010. MULTI-COMPANY-003 ergänzt den exakten Backup-/Restore-Roundtrip und die anschließende Fortsetzung aller Profil-/Typ-/Jahreszähler, ohne alte Belegnummern zu verändern. LICENSE-005 ergänzt Schema 5→6, portable V2-Migration, CryptoKey-Reload und den Nachweis, dass Runtime, Schlüssel und Token weder verschlüsselt gesichert noch restauriert werden. Jeder freigegebene Profilpfad durchläuft Startnormalisierung, Settingspersistenz, Snapshotvalidierung, AES-GCM, Restore, erneute Vollvalidierung und Idempotenz. Ein eigener Negativfall beweist `fail closed` und unveränderte Eingabedaten. Die Diagnoseprüfungen suchen gezielt nach Namen, Beträgen, IDs, Nummern und Referenzen und dürfen ausschließlich sichere Kategorien ausgeben.
 
 Jeder Lauf verwendet ausschließlich eine zufällig benannte Testdatenbank mit Guard gegen `frecka` und löscht diese anschließend. Ein simulierter Restore-Abbruch ist nur für eindeutig benannte Testdatenbanken freigeschaltet.
 

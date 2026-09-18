@@ -551,6 +551,7 @@
     const snapshot = clone(snapshotInput);
     snapshot.appDataSchemaVersion = 8;
     snapshot.stores.settings = api.legacySettingsView(snapshot.stores.settings);
+    delete snapshot.stores.settings.receiptSettings.numbering;
     snapshot.stores.settings.businessAreas.forEach(area => { delete area.companyId; });
     snapshot.stores.settings.serviceLocations.forEach(location => { delete location.companyId; });
     ["receipts", "vouchers", "prescriptions", "treatmentRecords"].forEach(storeKey => {
@@ -652,6 +653,7 @@
     seed.company.owner = "Angel Luzolo";
     seed.receiptSettings.yearPrefix = "2026";
     seed.receiptSettings.nextNumber = 132;
+    delete seed.receiptSettings.numbering;
     const settings = api.snapshotSettings(seed, "completed", tenantId);
     seed.receipts = seed.receipts.map(receipt => ({ ...receipt, companyId: settings.activeCompanyId }));
     seed.vouchers = seed.vouchers.map(voucher => ({ ...voucher, companyId: settings.activeCompanyId }));
@@ -3133,7 +3135,14 @@
             assertEqual(companyId, api.primaryCompanyIdForTenant(tenantId), "Profil-1-ID ist nicht deterministisch");
             assertDeepEqual(settings.companies[0].company, before.settings.company, "Unternehmensdaten gingen bei der Profilbildung verloren");
             assertDeepEqual(settings.companies[0].taxSettings, before.settings.taxSettings, "Steuereinstellungen gingen bei der Profilbildung verloren");
-            assertDeepEqual(settings.companies[0].receiptSettings, before.settings.receiptSettings, "Nummernstand ging bei der Profilbildung verloren");
+            const migratedReceiptSettings = settings.companies[0].receiptSettings;
+            const legacyReceiptProjection = Object.fromEntries(
+              Object.keys(before.settings.receiptSettings).map(key => [key, migratedReceiptSettings[key]])
+            );
+            assertDeepEqual(legacyReceiptProjection, before.settings.receiptSettings, "Nummernstand ging bei der Profilbildung verloren");
+            assertEqual(migratedReceiptSettings.numbering.mode, "legacy", "Profil 1 erhielt bei der Migration ein geratenes Kürzel");
+            assertEqual(migratedReceiptSettings.numbering.nextSequences.receipt[before.settings.receiptSettings.yearPrefix],
+              before.settings.receiptSettings.nextNumber, "Profil-1-Nummernstand wurde nicht in den kanonischen Jahreszähler übernommen");
             assertDeepEqual(settings.companies[0].paymentChoices, before.settings.paymentChoices, "Zahlungsarten gingen bei der Profilbildung verloren");
             assertDeepEqual(settings.companies[0].tseSettings, before.settings.tseSettings, "TSE-Vorbereitung ging bei der Profilbildung verloren");
             assertDeepEqual(settings.companies[0].license, before.settings.license, "Portable Lizenzreferenz ging bei der Profilbildung verloren");
@@ -3325,6 +3334,283 @@
     ];
   }
 
+  function buildMultiCompanyNumberingTests(context) {
+    const profileNumbering = (code, displayYear = "2030") => ({
+      formatVersion: 1,
+      mode: "profile",
+      profileCode: code,
+      displayYear,
+      startSequences: { receipt: 1, cancellation: 1, credit: 1 },
+      nextSequences: { receipt: { [displayYear]: 1 }, cancellation: {}, credit: {} }
+    });
+    const twoProfileSettings = tenantId => {
+      const settings = recordFixture(tenantId, "completed");
+      const first = settings.companies[0];
+      first.receiptSettings = {
+        ...first.receiptSettings,
+        yearPrefix: "2030",
+        nextNumber: 1,
+        numbering: profileNumbering("FR")
+      };
+      const second = clone(first);
+      second.id = "company_podology_test";
+      second.company = { ...second.company, name: "Podologie Süd", owner: "Testperson Süd" };
+      second.receiptSettings = {
+        ...second.receiptSettings,
+        yearPrefix: "2030",
+        nextNumber: 1,
+        numbering: profileNumbering("POD")
+      };
+      settings.companies.push(second);
+      settings.businessAreas.push({
+        id: "pod-area", companyId: second.id, label: "Podologie", visibleName: "Podologie Süd",
+        logoMode: "none", logo: null, active: true, isDefault: false,
+        defaultServiceLocationId: "pod-location", features: { prescriptionDocumentation: true }
+      });
+      settings.serviceLocations.push({
+        id: "pod-location", companyId: second.id, name: "Podologie Süd", addressMode: "own",
+        street: "Südweg", houseNumber: "2", zip: "54321", city: "Südstadt", phone: "",
+        voucherNote: "", taxNumber: "", active: true, businessAreaIds: ["pod-area"]
+      });
+      return api.normalizeSettingsRecord(settings, settings, tenantId).record;
+    };
+    const profileDraft = (id, settings, companyId, completedAt, overrides = {}) => {
+      const isPodology = companyId === "company_podology_test";
+      const [year, month, day] = completedAt.slice(0, 10).split("-");
+      return receiptDraftFixture(id, {
+        companyId,
+        date: `${day}.${month}.${year}`,
+        businessAreaId: isPodology ? "pod-area" : "hair",
+        businessAreaSnapshot: isPodology
+          ? { id: "pod-area", label: "Podologie", visibleName: "Podologie Süd" }
+          : { id: "hair", label: "Friseur", visibleName: "Test-Haarstudio" },
+        serviceLocationId: isPodology ? "pod-location" : "location-company",
+        serviceLocationSnapshot: isPodology
+          ? { id: "pod-location", name: "Podologie Süd", street: "Südweg", houseNumber: "2", zip: "54321", city: "Südstadt" }
+          : { id: "location-company", name: "Hauptstudio", street: "Testweg", houseNumber: "10", zip: "12345", city: "Teststadt" },
+        companySnapshot: clone(api.companyProfileById(settings, companyId).company),
+        completedAt,
+        createdAt: completedAt,
+        updatedAt: completedAt,
+        sortKey: completedAt,
+        ...overrides
+      });
+    };
+
+    return [
+      {
+        name: "MULTI-COMPANY-003: Profil 1 übernimmt Normal-, ST- und GS-Stand ohne historische Nummern zu verändern",
+        run: async () => {
+          const client = context.makeClient("multi-number-legacy");
+          const settings = recordFixture(client.tenantId, "completed");
+          const historicalSettings = clone(settings);
+          delete historicalSettings.companies[0].receiptSettings.numbering;
+          historicalSettings.companies[0].receiptSettings.yearPrefix = "2030";
+          historicalSettings.companies[0].receiptSettings.nextNumber = 77;
+          const lowDefaults = clone(settings);
+          lowDefaults.companies[0].receiptSettings.nextNumber = 1;
+          lowDefaults.companies[0].receiptSettings.numbering.nextSequences.receipt["2030"] = 1;
+          const migratedHistoricalSettings = api.normalizeSettingsRecord(historicalSettings, lowDefaults, client.tenantId).record;
+          assertEqual(migratedHistoricalSettings.companies[0].receiptSettings.numbering.nextSequences.receipt["2030"], 77,
+            "Historischer Profil-1-Nummernstand wurde von heutigen Defaults zurückgesetzt");
+          const seed = receiptsRecordFixture(client.tenantId);
+          const historicalNormal = clone(seed.receipts[0]);
+          const historicalCancellation = {
+            ...clone(historicalNormal), id: "historical-st-105", type: "cancellation", receiptType: "cancellation",
+            status: "cancelled", number: "ST-2030-000105", receiptNumber: "ST-2030-000105", reference: null,
+            referenceId: null, references: { originalReceiptId: null, originalReceiptNumber: null, correctionIds: [], correctionNumbers: [] }
+          };
+          const historicalCredit = {
+            ...clone(historicalNormal), id: "historical-gs-105", type: "credit", receiptType: "credit",
+            status: "credited", number: "GS-2030-000105", receiptNumber: "GS-2030-000105", reference: null,
+            referenceId: null, references: { originalReceiptId: null, originalReceiptNumber: null, correctionIds: [], correctionNumbers: [] }
+          };
+          seed.receipts.push(historicalCancellation, historicalCredit);
+          const normal = await client.commitReceipt(profileDraft("legacy-normal-77", settings, settings.activeCompanyId, "2030-03-01T10:00:00.000Z"), settings, seed);
+          assertEqual(normal.receipt.number, "2030-000077", "Profil 1 setzte den bestehenden Normalbelegstand nicht fort");
+          assert(normal.receiptsRecord.receipts.some(entry => entry.number === "2030-000076"), "Historische Normalnummer wurde verändert");
+          assert(normal.receiptsRecord.receipts.some(entry => entry.number === "ST-2030-000105"), "Historische Stornonummer wurde verändert");
+          assert(normal.receiptsRecord.receipts.some(entry => entry.number === "GS-2030-000105"), "Historische Gutschriftnummer wurde verändert");
+          const cancelled = await client.commitReceiptCorrection(normal.receipt.id, {
+            id: "legacy-st-next", type: "cancellation", total: -39, completedAt: "2030-03-01T11:00:00.000Z"
+          }, normal.receiptsRecord);
+          assertEqual(cancelled.receipt.number, "ST-2030-000106", "Legacy-Storno setzte den historischen Stand nicht fort");
+          const secondNormal = await client.commitReceipt(profileDraft("legacy-credit-source", settings, settings.activeCompanyId, "2030-03-01T12:00:00.000Z"), cancelled.settingsRecord, cancelled.record);
+          const credited = await client.commitReceiptCorrection(secondNormal.receipt.id, {
+            id: "legacy-gs-next", type: "credit", total: -10, completedAt: "2030-03-01T13:00:00.000Z"
+          }, secondNormal.receiptsRecord);
+          assertEqual(credited.receipt.number, "GS-2030-000106", "Legacy-Gutschrift setzte den historischen Stand nicht fort");
+        }
+      },
+      {
+        name: "MULTI-COMPANY-003: Zwei Profile besitzen eindeutige getrennte Normal-, ST-, GS- und Gutscheinverkaufskreise",
+        run: async () => {
+          const client = context.makeClient("multi-number-profiles");
+          const settings = twoProfileSettings(client.tenantId);
+          const emptyReceipts = api.snapshotReceipts({ receipts: [] }, client.tenantId);
+          const firstId = settings.companies[0].id;
+          const fr = await client.commitReceipt(profileDraft("fr-normal-1", settings, firstId, "2030-02-01T10:00:00.000Z"), settings, emptyReceipts);
+          const pod = await client.commitReceipt(profileDraft("pod-normal-1", settings, "company_podology_test", "2030-02-01T10:01:00.000Z"), fr.settingsRecord, fr.receiptsRecord);
+          assertEqual(fr.receipt.number, "FR-2030-000001", "Profil FR startete nicht bei 000001");
+          assertEqual(pod.receipt.number, "POD-2030-000001", "Profil POD startete nicht unabhängig bei 000001");
+
+          const voucher = voucherDraftFixture("fr-profile-voucher", {
+            companyId: firstId, reference: "vch_fr_profile", code: "FRKA-MC03-0001"
+          });
+          const voucherReceipt = voucherSaleReceiptFixture(voucher);
+          Object.assign(voucherReceipt, profileDraft(voucherReceipt.id, pod.settingsRecord, firstId, "2030-02-01T10:02:00.000Z", {
+            receiptKind: "voucher-sale", voucherReference: voucher.reference
+          }));
+          const voucherSale = await client.commitVoucherSale(
+            voucherReceipt, voucher, pod.settingsRecord, pod.receiptsRecord,
+            api.snapshotVouchers({ vouchers: [] }, client.tenantId)
+          );
+          assertEqual(voucherSale.receipt.number, "FR-2030-000002", "Gutscheinverkauf teilte nicht den normalen Profilkreis");
+
+          const frCancellation = await client.commitReceiptCorrection(fr.receipt.id, {
+            id: "fr-st-1", type: "cancellation", total: -39, completedAt: "2030-02-01T11:00:00.000Z"
+          }, voucherSale.receiptsRecord);
+          const podCancellation = await client.commitReceiptCorrection(pod.receipt.id, {
+            id: "pod-st-1", type: "cancellation", total: -39, completedAt: "2030-02-01T11:01:00.000Z"
+          }, frCancellation.record);
+          assertEqual(frCancellation.receipt.number, "FR-ST-2030-000001", "FR-Storno nutzte nicht den eigenen Kreis");
+          assertEqual(podCancellation.receipt.number, "POD-ST-2030-000001", "POD-Storno nutzte nicht den eigenen Kreis");
+          assertEqual(frCancellation.receipt.companyId, firstId, "FR-Storno verlor das Ursprungsprofil");
+          assertEqual(podCancellation.receipt.companyId, "company_podology_test", "POD-Storno verlor das Ursprungsprofil");
+          assertDeepEqual(podCancellation.receipt.companySnapshot, pod.receipt.companySnapshot, "Storno übernahm den Unternehmenssnapshot nicht");
+
+          const frCreditSource = await client.commitReceipt(profileDraft("fr-credit-source", podCancellation.settingsRecord, firstId, "2030-02-01T12:00:00.000Z"), podCancellation.settingsRecord, podCancellation.record);
+          const frCredit = await client.commitReceiptCorrection(frCreditSource.receipt.id, {
+            id: "fr-gs-1", type: "credit", total: -10, completedAt: "2030-02-01T12:30:00.000Z"
+          }, frCreditSource.receiptsRecord);
+          assertEqual(frCredit.receipt.number, "FR-GS-2030-000001", "FR-Gutschrift nutzte nicht den eigenen Kreis");
+          assertEqual(frCredit.receipt.companyId, firstId, "Gutschrift verlor das Ursprungsprofil");
+          assertDeepEqual(frCredit.receipt.contextSnapshot, frCreditSource.receipt.contextSnapshot, "Gutschrift übernahm den Kontextsnapshot nicht");
+          assertEqual(frCredit.receipt.references.originalReceiptId, frCreditSource.receipt.id, "Stabile Ursprungs-ID fehlt");
+          assert(frCredit.sourceReceipt.references.correctionIds.includes(frCredit.receipt.id), "Stabile Korrektur-ID fehlt am Ursprung");
+          assertEqual(frCredit.receipt.reference, frCreditSource.receipt.number, "Sichtbare Legacy-/Exportreferenz ging verloren");
+        }
+      },
+      {
+        name: "MULTI-COMPANY-003: Profilkürzel sind eindeutig und für weitere Profile verpflichtend",
+        run: async () => {
+          const settings = twoProfileSettings("test-multi-number-codes");
+          const duplicate = clone(settings);
+          duplicate.companies[1].receiptSettings.numbering.profileCode = "FR";
+          assertThrows(() => api.validateCompanySettingsReferences(duplicate), "RECEIPT_PROFILE_CODE_DUPLICATE", "Doppeltes Profilkürzel");
+          const missing = clone(settings);
+          missing.companies[1].receiptSettings.numbering.mode = "legacy";
+          missing.companies[1].receiptSettings.numbering.profileCode = null;
+          assertThrows(() => api.validateCompanySettingsReferences(missing), "RECEIPT_PROFILE_CODE_REQUIRED", "Fehlendes Kürzel im zweiten Profil");
+          const primaryLegacy = recordFixture("test-multi-number-legacy-primary", "completed");
+          assertEqual(primaryLegacy.receiptSettings.numbering.mode, "legacy", "Profil 1 erhielt unerlaubt ein geratenes Kürzel");
+          assertEqual(primaryLegacy.receiptSettings.numbering.profileCode, null, "Profil 1 erhielt unerlaubt ein Kürzel");
+          const customStart = clone(settings);
+          customStart.companies[1].receiptSettings.numbering.startSequences.receipt = 25;
+          customStart.companies[1].receiptSettings.numbering.nextSequences.receipt = {};
+          const normalizedCustomStart = api.normalizeSettingsRecord(customStart, customStart, customStart.tenantId).record;
+          assertEqual(normalizedCustomStart.companies[1].receiptSettings.numbering.nextSequences.receipt["2030"], 25,
+            "Explizit abweichende Startsequenz wurde nicht als nächster Profilwert übernommen");
+        }
+      },
+      {
+        name: "MULTI-COMPANY-003: Fachliches Jahr setzt Normal-, ST- und GS-Kreise je Profil zurück",
+        run: async () => {
+          const client = context.makeClient("multi-number-year");
+          const settings = twoProfileSettings(client.tenantId);
+          const firstId = settings.companies[0].id;
+          let state = await client.commitReceipt(profileDraft("year-normal-2030", settings, firstId, "2030-12-31T23:50:00.000Z"), settings, api.snapshotReceipts({ receipts: [] }, client.tenantId));
+          state = await client.commitReceipt(profileDraft("year-normal-2031", state.settingsRecord, firstId, "2030-12-31T23:10:00.000Z", {
+            date: "01.01.2031"
+          }), state.settingsRecord, state.receiptsRecord);
+          assert(state.receiptsRecord.receipts.some(entry => entry.number === "FR-2030-000001"), "Normalbeleg 2030 fehlt");
+          assertEqual(state.receipt.number, "FR-2031-000001", "Normalbelegkreis wurde 2031 nicht zurückgesetzt");
+          const st2030 = await client.commitReceiptCorrection("year-normal-2030", {
+            id: "year-st-2030", type: "cancellation", total: -39, completedAt: "2030-12-31T23:55:00.000Z"
+          }, state.receiptsRecord);
+          const st2031 = await client.commitReceiptCorrection("year-normal-2031", {
+            id: "year-st-2031", type: "cancellation", total: -39, date: "01.01.2031", completedAt: "2030-12-31T23:15:00.000Z"
+          }, st2030.record);
+          assertEqual(st2030.receipt.number, "FR-ST-2030-000001", "Stornokreis 2030 ist falsch");
+          assertEqual(st2031.receipt.number, "FR-ST-2031-000001", "Stornokreis wurde 2031 nicht zurückgesetzt");
+          const c2030 = await client.commitReceipt(profileDraft("year-credit-source-2030", st2031.settingsRecord, firstId, "2030-12-31T22:00:00.000Z"), st2031.settingsRecord, st2031.record);
+          const c2031 = await client.commitReceipt(profileDraft("year-credit-source-2031", c2030.settingsRecord, firstId, "2030-12-31T23:20:00.000Z", {
+            date: "01.01.2031"
+          }), c2030.settingsRecord, c2030.receiptsRecord);
+          const gs2030 = await client.commitReceiptCorrection(c2030.receipt.id, { id: "year-gs-2030", type: "credit", total: -10, completedAt: "2030-12-31T22:30:00.000Z" }, c2031.receiptsRecord);
+          const gs2031 = await client.commitReceiptCorrection(c2031.receipt.id, { id: "year-gs-2031", type: "credit", total: -10, date: "01.01.2031", completedAt: "2030-12-31T23:30:00.000Z" }, gs2030.record);
+          assertEqual(gs2030.receipt.number, "FR-GS-2030-000001", "Gutschriftkreis 2030 ist falsch");
+          assertEqual(gs2031.receipt.number, "FR-GS-2031-000001", "Gutschriftkreis wurde 2031 nicht zurückgesetzt");
+        }
+      },
+      {
+        name: "MULTI-COMPANY-003: Parallelität, Doppelklick und Profilfehler verbrauchen keine doppelte Nummer",
+        run: async () => {
+          const first = context.makeClient("multi-number-parallel");
+          const settings = twoProfileSettings(first.tenantId);
+          const empty = api.snapshotReceipts({ receipts: [] }, first.tenantId);
+          await first.writeSettings(settings);
+          await first.writeReceipts(empty);
+          const second = api.createSettingsPersistence({ databaseName: context.databaseName, tenantId: first.tenantId });
+          try {
+            const [left, right] = await Promise.all([
+              first.commitReceipt(profileDraft("parallel-left", settings, settings.companies[0].id, "2030-04-01T10:00:00.000Z"), settings, empty),
+              second.commitReceipt(profileDraft("parallel-right", settings, settings.companies[0].id, "2030-04-01T10:00:01.000Z"), settings, empty)
+            ]);
+            assertDeepEqual([left.receipt.number, right.receipt.number].sort(), ["FR-2030-000001", "FR-2030-000002"], "Parallele Abschlüsse vergaben doppelte Nummern");
+            const beforeFailure = await first.readSettings();
+            const receiptsBeforeFailure = await first.readReceipts();
+            await assertRejects(() => first.commitReceipt(profileDraft("foreign-area", beforeFailure, "company_podology_test", "2030-04-01T11:00:00.000Z", {
+              businessAreaId: "hair", serviceLocationId: "location-company"
+            }), beforeFailure, receiptsBeforeFailure), "COMPANY_REFERENCE_INVALID", "Profilfremder Geschäftsbereich");
+            await assertRejects(() => first.commitReceipt(profileDraft("foreign-location", beforeFailure, settings.companies[0].id, "2030-04-01T11:05:00.000Z", {
+              businessAreaId: "hair", serviceLocationId: "pod-location"
+            }), beforeFailure, receiptsBeforeFailure), "COMPANY_REFERENCE_INVALID", "Profilfremder Leistungsort");
+            const missingCompany = profileDraft("missing-company", beforeFailure, settings.companies[0].id, "2030-04-01T11:10:00.000Z");
+            delete missingCompany.companyId;
+            await assertRejects(() => first.commitReceipt(missingCompany, beforeFailure, receiptsBeforeFailure), "COMPANY_REFERENCE_INVALID", "Fehlende Unternehmensreferenz");
+            assertDeepEqual((await first.readSettings()).companies.map(profile => profile.receiptSettings.numbering), beforeFailure.companies.map(profile => profile.receiptSettings.numbering), "Fehler verbrauchte eine Profilnummer");
+            const sameDraft = profileDraft("parallel-double-click", beforeFailure, settings.companies[0].id, "2030-04-01T12:00:00.000Z");
+            const [once, repeated] = await Promise.all([
+              first.commitReceipt(sameDraft, beforeFailure, await first.readReceipts()),
+              first.commitReceipt(sameDraft, beforeFailure, await first.readReceipts())
+            ]);
+            assertEqual(once.receipt.number, repeated.receipt.number, "Doppelklick erzeugte zwei Nummern für dieselbe stabile ID");
+            assertEqual((await first.readReceipts()).receipts.filter(entry => entry.id === sameDraft.id).length, 1, "Doppelklick erzeugte zwei Belege");
+          } finally {
+            second.closeDatabase();
+          }
+        }
+      },
+      {
+        name: "MULTI-COMPANY-003: Vollbackup und Restore erhalten Profilzähler und setzen exakt fort",
+        run: async () => {
+          const source = context.makeClient("multi-number-backup-source");
+          const baseline = completeTenantSnapshotFixture(source.tenantId);
+          baseline.stores.settings = twoProfileSettings(source.tenantId);
+          await source.restoreTenantSnapshot(baseline);
+          const settings = await source.readSettings();
+          const firstPod = await source.commitReceipt(profileDraft("pod-before-backup", settings, "company_podology_test", "2030-05-01T10:00:00.000Z"), settings, await source.readReceipts());
+          assertEqual(firstPod.receipt.number, "POD-2030-000001", "POD-Ausgangszähler ist falsch");
+          const backup = await source.exportTenantSnapshot();
+          const restoredClient = api.createSettingsPersistence({ databaseName: createDatabaseName(), tenantId: source.tenantId });
+          try {
+            await restoredClient.restoreTenantSnapshot(backup);
+            const restoredSettings = await restoredClient.readSettings();
+            const nextPod = await restoredClient.commitReceipt(profileDraft("pod-after-restore", restoredSettings, "company_podology_test", "2030-05-01T11:00:00.000Z"), restoredSettings, await restoredClient.readReceipts());
+            assertEqual(nextPod.receipt.number, "POD-2030-000002", "Restore setzte den Profilzähler zurück oder übersprang ihn");
+            assert((await restoredClient.readReceipts()).receipts.some(entry => entry.number === "POD-2030-000001"), "Restore verlor den vorherigen Profilbeleg");
+          } finally {
+            const database = await restoredClient.openDatabase();
+            database.close();
+            restoredClient.closeDatabase();
+            await deleteTestDatabase(database.name);
+          }
+        }
+      }
+    ];
+  }
+
   function buildTests(context) {
     const cryptoPassphrase = "Sehr sicherer Backup Testsatz 2030";
     const wrongCryptoPassphrase = "Ganz andere sichere Passphrase";
@@ -3340,6 +3626,7 @@
     };
     return [
       ...buildMultiCompanyTests(context),
+      ...buildMultiCompanyNumberingTests(context),
       ...buildPrescriptionTests(context),
       ...buildTreatmentTests(context),
       {
@@ -5212,7 +5499,8 @@
       {
         name: "Erste Beleg-, Storno-, Gutschrift- und Gutscheinverkaufsnummer starten kollisionsfrei",
         run: async () => {
-          const year = String(new Date().getFullYear());
+          const completedYear = "2030";
+          const correctionYear = String(new Date().getFullYear());
           const receiptClient = context.makeClient("fresh-number-receipt");
           const receiptRuntime = freshRuntimeFixture(receiptClient.tenantId);
           const receiptSettings = api.snapshotSettings(receiptRuntime, "completed", receiptClient.tenantId);
@@ -5226,7 +5514,7 @@
             customerId: null,
             customerSnapshot: null
           }), receiptSettings, emptyReceipts);
-          assertEqual(normal.receipt.number, `${year}-000001`, "Erster normaler Beleg erhielt nicht Nummer 000001");
+          assertEqual(normal.receipt.number, `${completedYear}-000001`, "Erster normaler Beleg verwendete nicht das fachliche Abschlussjahr");
           assertEqual(normal.settingsRecord.receiptSettings.nextNumber, 2, "Nummernstand wurde nach erstem Beleg nicht fortgeschrieben");
 
           const cancellation = await receiptClient.commitReceiptCorrection(normal.receipt.number, {
@@ -5238,7 +5526,7 @@
             sourceActivityDate: "14.08.2026 · 12:00",
             activity: []
           }, normal.receiptsRecord);
-          assertEqual(cancellation.receipt.number, `ST-${year}-000101`, "Erstes Storno erhielt nicht Nummer 000101");
+          assertEqual(cancellation.receipt.number, `ST-${correctionYear}-000101`, "Erstes Storno erhielt nicht Nummer 000101");
 
           const creditClient = context.makeClient("fresh-number-credit");
           const creditRuntime = freshRuntimeFixture(creditClient.tenantId);
@@ -5259,7 +5547,7 @@
             sourceActivityDate: "14.08.2026 · 12:05",
             isFull: false
           }, creditSource.receiptsRecord);
-          assertEqual(credit.receipt.number, `GS-${year}-000101`, "Erste Gutschrift erhielt nicht Nummer 000101");
+          assertEqual(credit.receipt.number, `GS-${correctionYear}-000101`, "Erste Gutschrift erhielt nicht Nummer 000101");
 
           const voucherClient = context.makeClient("fresh-number-voucher");
           const voucherRuntime = freshRuntimeFixture(voucherClient.tenantId);
@@ -5285,8 +5573,8 @@
             api.snapshotReceipts(voucherRuntime, voucherClient.tenantId),
             voucherRecord
           );
-          assertEqual(voucherSale.receipt.number, `${year}-000001`, "Erster Gutscheinverkaufsbeleg erhielt nicht Nummer 000001");
-          assertEqual(voucherSale.voucher.saleReceipt.number, `${year}-000001`, "Gutschein und Verkaufsbeleg sind nicht identisch nummeriert verknüpft");
+          assertEqual(voucherSale.receipt.number, `${completedYear}-000001`, "Erster Gutscheinverkaufsbeleg verwendete nicht das fachliche Abschlussjahr");
+          assertEqual(voucherSale.voucher.saleReceipt.number, `${completedYear}-000001`, "Gutschein und Verkaufsbeleg sind nicht identisch nummeriert verknüpft");
         }
       },
       {
@@ -8259,6 +8547,9 @@
           const tenantId = "test-backup-number";
           const snapshot = completeTenantSnapshotFixture(tenantId);
           snapshot.stores.settings.receiptSettings.nextNumber = 76;
+          snapshot.stores.settings.receiptSettings.numbering.nextSequences.receipt[
+            snapshot.stores.settings.receiptSettings.numbering.displayYear
+          ] = 76;
           await assertRejects(
             () => api.validateTenantSnapshot(snapshot, tenantId),
             "BACKUP_NUMBER_SEQUENCE_INVALID",

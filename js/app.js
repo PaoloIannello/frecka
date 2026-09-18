@@ -1914,7 +1914,8 @@
       applyReceiptsRecord(committed.receiptsRecord);
       if (committed.treatmentRecordsRecord) applyTreatmentRecordsRecord(committed.treatmentRecordsRecord);
       if (voucher) applyVouchersRecord(committed.vouchersRecord);
-      data.receiptSettings.nextNumber = settingsCompanyProfile(committed.settingsRecord).receiptSettings.nextNumber;
+      Object.keys(data.receiptSettings).forEach(key => { delete data.receiptSettings[key]; });
+      Object.assign(data.receiptSettings, cloneSettingsValue(settingsCompanyProfile(committed.settingsRecord).receiptSettings));
       state.receiptCounter = Math.max(0, data.receiptSettings.nextNumber - 1);
       const storedReceipt = data.receipts.find(entry => entry.id === committed.receipt.id) || committed.receipt;
       state.finishedReceipt = storedReceipt;
@@ -2904,6 +2905,7 @@
       : [{ title: text || "Korrektur / Kulanz", name: text || "Korrektur / Kulanz", type: "service", quantity: 1, unitPrice: -Math.abs(amount), total: -Math.abs(amount), taxRate: 0 }];
     const credit = {
       id: `credit_${crypto.randomUUID?.() || Date.now()}`,
+      companyId: receipt.companyId,
       type: "credit",
       status: "credited",
       date: receiptDate,
@@ -2930,11 +2932,13 @@
         });
       }
       const result = await persistence.commitReceiptCorrection(
-        receipt.number,
+        receipt.id,
         credit,
         persistence.snapshotReceipts(data, persistence.tenantId)
       );
       applyReceiptsRecord(result.record);
+      Object.keys(data.receiptSettings).forEach(key => { delete data.receiptSettings[key]; });
+      Object.assign(data.receiptSettings, cloneSettingsValue(settingsCompanyProfile(result.settingsRecord).receiptSettings));
       if (!result.receipt) throw new Error("Die Gutschrift wurde nicht bestätigt.");
       state.receiptDetailNumber = result.receipt.number;
       state.successNotice = `${isFull ? "Gesamtgutschrift" : "Teilgutschrift"} ${result.receipt.number} wurde lokal gespeichert.`;
@@ -3546,7 +3550,8 @@
     );
     applyReceiptsRecord(committed.receiptsRecord);
     applyVouchersRecord(committed.vouchersRecord);
-    data.receiptSettings.nextNumber = settingsCompanyProfile(committed.settingsRecord).receiptSettings.nextNumber;
+    Object.keys(data.receiptSettings).forEach(key => { delete data.receiptSettings[key]; });
+    Object.assign(data.receiptSettings, cloneSettingsValue(settingsCompanyProfile(committed.settingsRecord).receiptSettings));
     state.receiptCounter = Math.max(0, data.receiptSettings.nextNumber - 1);
     sale.receipt = data.receipts.find(receipt => receipt.id === committed.receipt.id) || committed.receipt;
     sale.voucher = data.vouchers.find(voucher => voucher.reference === committed.voucher.reference) || committed.voucher;
@@ -8654,6 +8659,7 @@
       const time = new Intl.DateTimeFormat("de-DE", { timeStyle: "short" }).format(now);
       const cancellation = {
         id: `cancellation_${crypto.randomUUID?.() || Date.now()}`,
+        companyId: receipt.companyId,
         type: "cancellation",
         status: "cancelled",
         date,
@@ -8693,11 +8699,13 @@
           });
         }
         const result = await persistence.commitReceiptCorrection(
-          receipt.number,
+          receipt.id,
           cancellation,
           persistence.snapshotReceipts(data, persistence.tenantId)
         );
         applyReceiptsRecord(result.record);
+        Object.keys(data.receiptSettings).forEach(key => { delete data.receiptSettings[key]; });
+        Object.assign(data.receiptSettings, cloneSettingsValue(settingsCompanyProfile(result.settingsRecord).receiptSettings));
         state.successNotice = result.receipt
           ? `Stornobeleg ${result.receipt.number} wurde lokal gespeichert.`
           : "Dieser Beleg war bereits storniert. Es wurde kein Duplikat erzeugt.";

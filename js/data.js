@@ -68,6 +68,18 @@ window.PROTOTYPE_DATA = Object.freeze({
   receiptSettings: {
     yearPrefix: String(new Date().getFullYear()),
     nextNumber: 1,
+    numbering: {
+      formatVersion: 1,
+      mode: "legacy",
+      profileCode: null,
+      displayYear: String(new Date().getFullYear()),
+      startSequences: { receipt: 1, cancellation: 101, credit: 101 },
+      nextSequences: {
+        receipt: { [String(new Date().getFullYear())]: 1 },
+        cancellation: {},
+        credit: {}
+      }
+    },
     footerText: "",
     thankYouText: "Vielen Dank für Ihren Besuch.",
     currency: "EUR",

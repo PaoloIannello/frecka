@@ -15,7 +15,7 @@ Damit bleibt die Verantwortungsfolge eindeutig:
 
 Die datensparsame Public-Projektion aus QR-002 ist eine Transport-Whitelist des fertigen Dokumentmodells und keine zweite fachliche Beleg- oder Gutscheinquelle. Spätere Ausgabekanäle wie E-Mail oder Synology müssen ebenfalls dasselbe Dokumentmodell verwenden.
 
-MULTI-COMPANY-002 ergänzt `companyId` ausschließlich als interne Routing- und Integritätsreferenz. Die Dokumentenengine rendert weiterhin die beim Abschluss gespeicherten Unternehmens-, Branding-, Geschäftsbereichs- und Leistungsortsnapshots; sie löst historische Dokumente nicht aus aktuellen Profildaten neu auf. `companyId` und Lizenzdaten werden weder sichtbar ausgegeben noch in die Public-Payload aufgenommen.
+MULTI-COMPANY-002 ergänzt `companyId` ausschließlich als interne Routing- und Integritätsreferenz. MULTI-COMPANY-003 ergänzt profil-, typ- und jahresbezogene Nummernkreise ausschließlich im Abschlusswriter. Die Dokumentenengine rendert weiterhin die beim Abschluss gespeicherten Unternehmens-, Branding-, Geschäftsbereichs- und Leistungsortsnapshots sowie die gespeicherte sichtbare Belegnummer; sie löst historische Dokumente weder aus aktuellen Profildaten noch aus Kürzel oder Zähler neu auf. `companyId`, Nummernkreiszustand und Lizenzdaten werden weder sichtbar zusätzlich ausgegeben noch in die Public-Payload aufgenommen.
 
 ## Öffentliche API
 
