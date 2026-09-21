@@ -1,12 +1,12 @@
-# FRECKA – 0.11.10 / BETA-PREVIEW-001
+# FRECKA – 0.11.11 / BETA-PREVIEW-002
 
-**Vorbereiteter Zwischen-Beta-Stand:** 0.11.10 bündelt den seit der veröffentlichten Beta 0.11.9 auf `main` aufgelaufenen Stand aus ANDROID-004, COMPLIANCE-002 und DOCUMENT-002. Unmittelbarer Zweck ist die reale iPhone-Sicht- und Funktionsprüfung der neuen history-sicheren Leistungsort- und Steuernummerndarstellung. Die reale Android-Akzeptanz von ANDROID-004 bleibt ausdrücklich offen. [Release-Freigabenachweis](docs/releases/0.11.10.md).
+**Vorbereiteter Multi-Company-Zwischen-Beta-Stand:** 0.11.11 bündelt auf Basis von 0.11.10 die Blöcke MULTI-COMPANY-002/003/004. Unmittelbarer Zweck ist die kontrollierte reale Schema-8→9-Migration sowie die Prüfung der profilbezogenen Nummernkreise, Unternehmensverwaltung und Aktivkontextgrenzen. [Release-Freigabenachweis](docs/releases/0.11.11.md).
 
-Browserbasierte FRECKA-PWA 0.11.10 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Die noch nicht veröffentlichten Implementierungsblöcke MULTI-COMPANY-002/003/004 führen mit IndexedDB-Schema 9 eine kanonische Unternehmensprofilgrenze, profilbezogene Belegnummernkontexte und eine kontrollierte Unternehmensverwaltung ein. Mehrere Profile sind lokal konfigurierbar; bis zum getrennten Lizenz-Multi-Binding-Block bleibt ausschließlich Profil 1 produktiv nutzbar. Die getrennte gerätelokale `licenseRuntime` bleibt unverändert außerhalb von Tenant-Snapshot, Backup und Export.
+Browserbasierte FRECKA-PWA 0.11.11 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. MULTI-COMPANY-002/003/004 führen mit IndexedDB-Schema 9 eine kanonische Unternehmensprofilgrenze, profilbezogene Belegnummernkontexte und eine kontrollierte Unternehmensverwaltung ein. Mehrere Profile sind lokal konfigurierbar; bis zum getrennten Lizenz-Multi-Binding-Block bleibt ausschließlich Profil 1 produktiv nutzbar. Die getrennte gerätelokale `licenseRuntime` bleibt unverändert außerhalb von Tenant-Snapshot, Backup und Export.
 
 ANDROID-001 sichert die mobile Skalierung und Touch-Ziele auch für Android-nahe Darstellungsprofile ab. IOS-NAV-001 verankert die Bottom-Navigation außerhalb der scrollenden App-Shell direkt am Viewport. ANDROID-002 behandelt den tatsächlichen File-Share nicht mehr als durch `canShare()` garantiert, klassifiziert Fehler neutral und bietet PDF- sowie ZIP-Speichern ausschließlich als bewusste Folgeaktion an. Der erfolgreiche iPhone-Datei-Share bleibt ohne Plattformweiche erhalten.
 
-0.11.9-2d6b2d4 / PODOLOGY-006 ist die unmittelbare veröffentlichte Beta-Vorgängerbasis. 0.11.10 benötigt vor einer weitergehenden Freigabe eine reale In-place-Abnahme auf iPhone/Home-Screen-PWA. Die reale Android-Prüfung von ANDROID-004 folgt separat, sobald ein Testgerät verfügbar ist. Lizenzserver, Trial, Kauf, Payment, neue TSE-Logik und ein allgemeiner Medizinexport sind nicht enthalten.
+0.11.10-b6512dd / BETA-PREVIEW-001 ist die unmittelbare Vorgängerbasis. Vor dem realen In-place-Update auf 0.11.11 muss unter 0.11.10 eine vollständige verschlüsselte Sicherung erstellt und außerhalb der App gespeichert werden. MULTI-COMPANY-005, Lizenz-Multi-Binding, Profilgerätewechsel, Synchronisation, COMPLIANCE-003 und eine TSE-Implementierung sind nicht enthalten.
 
 Ein vollständig neuer Mandant startet ohne Kunden, Katalogpositionen, Belege, offene Zahlungen, Korrekturen, Gutscheine, Umsätze oder Logoassets. Neutrale technische Defaults, optionale Vorlagen und die ausschließlich für PERSISTENCE-010 erlaubte historische Vierer-Reparaturquelle sind strikt getrennt. Die verbindliche Erststartinventur und die 15-Punkte-Übergabecheckliste stehen in [`docs/beta-handoff.md`](docs/beta-handoff.md).
 
@@ -27,7 +27,7 @@ ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzei
 - Bestandsbelege bleiben unverändert; Public-QR bleibt restriktiv, der Steuerberaterexport erhält ausschließlich gesnapshotte Leistungsort-/Steuernummerinformationen
 - einheitliche Release-, Asset- und App-Shell-Kennung `0.11.10 / BETA-PREVIEW-001 / betapreview001-1`; reale iPhone-Sichtprüfung und Android-Abnahme bleiben nachgelagerte Gates
 
-## Implementierungsstand nach 0.11.10: MULTI-COMPANY-004
+## Neu in 0.11.11
 
 - IndexedDB-Schema 9 mit `settings.companies[]` als einziger persistierter Wahrheit für Unternehmensidentität, Steuer-, Beleg-, Zahlungs-, TSE-, portable Lizenz- und Einrichtungsdaten
 - deterministische Migration eines vollständigen Schema-8-Bestands in exakt Profil 1; Kunden, IDs, Nummern, Zeitpunkte, Beträge und historische Snapshots bleiben unverändert
@@ -44,6 +44,7 @@ ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzei
 - zusätzliche Profile sind zur Konfiguration auswählbar, aber bis zum gesonderten Lizenz-Multi-Binding-Block technisch `activation_required` und nicht produktiv schreibfähig
 - Beleglisten und Exporte sind bis MULTI-COMPANY-005 sicher auf das aktive Profil begrenzt; noch keine profilübergreifende Auswertung
 - zentrale Auflösung statt verstreuter `companies[0]`-Annahmen; nach Schema 9 gibt es keinen stillen Profil-1-Fallback für fehlende Referenzen
+- einheitliche Release-, Asset- und App-Shell-Kennung `0.11.11 / BETA-PREVIEW-002 / betapreview002-1`; reale In-place-Migration und Geräteabnahme bleiben nachgelagerte Gates
 
 ## Neu in 0.11.9
 

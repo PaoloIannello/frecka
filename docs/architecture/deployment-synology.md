@@ -1,8 +1,8 @@
 # FRECKA: Deployment- und Infrastrukturkonzept für Synology Web Station
 
-Stand: 10. September 2026
+Stand: 21. September 2026
 
-Geltungsbereich: historische Beta-Stände bis `0.11.9-2d6b2d4`, vorbereiteter Zwischen-Beta-Stand `0.11.10` / `BETA-PREVIEW-001` und lokaler automatisierter Beta-Release
+Geltungsbereich: historische Beta-Stände bis `0.11.10-b6512dd`, vorbereiteter Multi-Company-Zwischen-Beta-Stand `0.11.11` / `BETA-PREVIEW-002` und lokaler automatisierter Beta-Release
 
 Der verbindliche Infrastrukturrahmen steht in `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`. Dieses Dokument konkretisiert ausschließlich die statische Laufzeitmenge und ihre spätere Zuordnung zu Synology Web Station.
 
@@ -183,7 +183,7 @@ Der annotierte Tag `v0.11.6` zeigt auf Commit `ee13b12ed7cd4763d23d6f4979b83cd5a
 
 Der annotierte Tag `v0.11.7` zeigt auf Commit `608257fc99b7f1fd93d893cc6104ce55e6e40f44`; das unveränderliche Artefakt `0.11.7-608257f` verwendet Build `PODOLOGY-004`, den HTML-Titel `FRECKA – PODOLOGY-004`, den Asset-Abfragewert `podology004-1` und den App-Shell-Cache `frecka-app-shell-0.11.7-podology004-1`. Es bündelt PODOLOGY-001 bis PODOLOGY-004.
 
-Der annotierte Tag `v0.11.9` und das veröffentlichte Artefakt `0.11.9-2d6b2d4 / PODOLOGY-006` bleiben unverändert. Der vorbereitete Stand `0.11.10 / BETA-PREVIEW-001` verwendet den Asset-Abfragewert `betapreview001-1` und den App-Shell-Cache `frecka-app-shell-0.11.10-betapreview001-1`. Er bündelt ANDROID-004, COMPLIANCE-002 und DOCUMENT-002 sowie ausschließlich notwendige Versions-, Cache-, Test- und Releaseanpassungen. Für 0.11.10 werden in diesem Vorbereitungsschritt weder Tag noch Artefakt, Upload oder Web-Station-Umschaltung erzeugt.
+Der annotierte Tag `v0.11.9` und das veröffentlichte Artefakt `0.11.9-2d6b2d4 / PODOLOGY-006` bleiben unverändert. Der annotierte Tag `v0.11.10` zeigt auf `b6512dd95b1c80e36276195d68d8c2b51e96e42c`; der Stand `0.11.10-b6512dd / BETA-PREVIEW-001` verwendet den Asset-Abfragewert `betapreview001-1` und den App-Shell-Cache `frecka-app-shell-0.11.10-betapreview001-1`. Der vorbereitete Stand `0.11.11 / BETA-PREVIEW-002` verwendet `betapreview002-1` und `frecka-app-shell-0.11.11-betapreview002-1`. Er bündelt MULTI-COMPANY-002/003/004 auf Schema 9 sowie ausschließlich notwendige Versions-, Cache-, Test- und Releaseanpassungen. In diesem Vorbereitungsschritt entstehen weder Tag noch Artefakt, Upload oder Web-Station-Umschaltung.
 
 Ein Updateformat für signierte Kanäle und ein Signaturverfahren sind ausdrücklich noch nicht implementiert. SERVICEWORKER-002 erkennt ausschließlich Änderungen des Service Workers innerhalb derselben bereits aufgerufenen Deployment-Origin.
 
@@ -248,6 +248,10 @@ Das veröffentlichte Release `0.11.9-2d6b2d4` ergänzt ausschließlich PODOLOGY-
 ### 2.21 Vorbereiteter Zwischen-Beta-Stand 0.11.10
 
 0.11.10 bündelt den seit 0.11.9 auf `main` aufgelaufenen Stand aus ANDROID-004, COMPLIANCE-002 und DOCUMENT-002. Der Stand dient insbesondere der realen iPhone-Prüfung von Leistungsort, effektiver Steuernummer und Dokumentdarstellung. Die automatisierte ANDROID-004-Prüfung ist bestanden; eine reale Android-Abnahme wird ausdrücklich nicht vorweggenommen. Die strukturierte technische Freigabe steht in `docs/releases/0.11.10.md`. Tag, Artefakt, Upload, Web-Station-Umschaltung, Geräteabnahme und Produktion bleiben separate Gates.
+
+### 2.22 Vorbereiteter Multi-Company-Zwischen-Beta-Stand 0.11.11
+
+0.11.11 bündelt MULTI-COMPANY-002/003/004 auf Basis von 0.11.10. Schema 9, kanonische Unternehmensprofile, profilbezogene Nummernkontexte, Unternehmensverwaltung und Aktivkontextgrenzen werden für die reale In-place-Abnahme vorbereitet. Vor dem Update ist eine vollständige verschlüsselte Sicherung unter 0.11.10 Pflicht; ein Downgrade des migrierten Bestands auf Schema 8 ist kein regulärer Rückweg. MULTI-COMPANY-005, Lizenz-Multi-Binding und profilübergreifende Auswertungen sind nicht enthalten. Die strukturierte technische Freigabe steht in `docs/releases/0.11.11.md`. Tag, Artefakt, Upload, Web-Station-Umschaltung, Migration, Geräteabnahme und Produktion bleiben separate Gates.
 
 ## 3. Abgeleitete Deployment-Prinzipien
 
