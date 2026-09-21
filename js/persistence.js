@@ -30,6 +30,8 @@
     tenantId: "local-default",
     formatVersion: 2,
     companyProfileFormatVersion: 1,
+    betaProductiveTestFormatVersion: 1,
+    betaProductiveTestBuilds: Object.freeze(["BETA-PREVIEW-002"]),
     receiptNumberingFormatVersion: 1,
     companyLogoFormatVersion: 1,
     logoAssetFormatVersion: 1,
@@ -3598,6 +3600,16 @@
         throw new PersistenceError("COMPANY_PROFILE_INVALID", "Ein Unternehmensprofil besitzt keine eindeutige stabile ID oder Formatversion.");
       }
       companyIds.add(companyId);
+      if (profile.betaProductiveTest !== undefined) {
+        const betaState = profile.betaProductiveTest;
+        if (!isPlainObject(betaState)
+          || betaState.formatVersion !== constants.betaProductiveTestFormatVersion
+          || typeof betaState.enabled !== "boolean"
+          || stableIso(betaState.updatedAt, "") !== betaState.updatedAt
+          || Object.keys(betaState).some(key => !["formatVersion", "enabled", "updatedAt"].includes(key))) {
+          throw new PersistenceError("COMPANY_BETA_TEST_STATE_INVALID", "Die lokale Beta-Testfreigabe ist ungültig und wurde nicht verwendet.");
+        }
+      }
       if (!isPlainObject(profile.company) || !isPlainObject(profile.taxSettings)
         || !isPlainObject(profile.receiptSettings) || !Array.isArray(profile.paymentChoices)
         || !isPlainObject(profile.tseSettings) || !isPlainObject(profile.license)
@@ -3913,16 +3925,44 @@
     return normalizeSettingsRecord(next, current, safeTenantId).record;
   }
 
-  function companyProductiveStatus(settingsInput, companyIdInput) {
+  function betaProductiveTestBuildAllowed(appBuildInput) {
+    return constants.betaProductiveTestBuilds.includes(trimmedString(appBuildInput));
+  }
+
+  function companyProductiveStatus(settingsInput, companyIdInput, appBuildInput = "") {
     const companyId = nullableStringId(companyIdInput);
     const companies = Array.isArray(settingsInput?.companies) ? settingsInput.companies : [];
     const index = companies.findIndex(profile => profile?.id === companyId);
-    if (index < 0) return Object.freeze({ code: "unknown", productive: false });
-    return Object.freeze({ code: index === 0 ? "primary_profile" : "activation_required", productive: index === 0 });
+    const betaBuildAllowed = betaProductiveTestBuildAllowed(appBuildInput);
+    if (index < 0) {
+      return Object.freeze({
+        code: "unknown",
+        productive: false,
+        regularProductive: false,
+        betaProductiveTestAvailable: betaBuildAllowed,
+        betaProductiveTestEnabled: false,
+        betaProductiveTestEffective: false
+      });
+    }
+    const primaryProfile = index === 0;
+    const betaState = companies[index]?.betaProductiveTest;
+    const betaEnabled = !primaryProfile
+      && isPlainObject(betaState)
+      && betaState.formatVersion === constants.betaProductiveTestFormatVersion
+      && betaState.enabled === true;
+    const betaEffective = betaEnabled && betaBuildAllowed;
+    return Object.freeze({
+      code: primaryProfile ? "primary_profile" : "activation_required",
+      productive: primaryProfile || betaEffective,
+      regularProductive: primaryProfile,
+      betaProductiveTestAvailable: !primaryProfile && betaBuildAllowed,
+      betaProductiveTestEnabled: betaEnabled,
+      betaProductiveTestEffective: betaEffective
+    });
   }
 
-  function assertCompanyProductive(settingsInput, companyIdInput) {
-    const status = companyProductiveStatus(settingsInput, companyIdInput);
+  function assertCompanyProductive(settingsInput, companyIdInput, appBuildInput = "") {
+    const status = companyProductiveStatus(settingsInput, companyIdInput, appBuildInput);
     if (!status.productive) {
       throw new PersistenceError(
         "COMPANY_ACTIVATION_REQUIRED",
@@ -3930,6 +3970,47 @@
       );
     }
     return status;
+  }
+
+  function setCompanyBetaProductiveTest(settingsInput, companyIdInput, enabledInput, appBuildInput, updatedAtInput = new Date().toISOString()) {
+    if (!betaProductiveTestBuildAllowed(appBuildInput)) {
+      throw new PersistenceError(
+        "COMPANY_BETA_TEST_BUILD_REQUIRED",
+        "Die Beta-Testfreigabe ist in diesem FRECKA-Build nicht verfügbar."
+      );
+    }
+    const safeTenantId = nullableStringId(settingsInput?.tenantId) || constants.tenantId;
+    const current = normalizeSettingsRecord(settingsInput, settingsInput, safeTenantId).record;
+    const companyId = nullableStringId(companyIdInput);
+    const index = current.companies.findIndex(profile => profile.id === companyId);
+    if (index <= 0) {
+      throw new PersistenceError(
+        "COMPANY_BETA_TEST_PROFILE_INVALID",
+        "Die Beta-Testfreigabe ist ausschließlich für zusätzliche Unternehmensprofile vorgesehen."
+      );
+    }
+    const updatedAt = stableIso(updatedAtInput, "");
+    if (updatedAt === epochIso) {
+      throw new PersistenceError("COMPANY_BETA_TEST_STATE_INVALID", "Der Zeitpunkt der Beta-Testfreigabe ist ungültig.");
+    }
+    const next = cloneSafe(current);
+    next.companies[index].betaProductiveTest = {
+      formatVersion: constants.betaProductiveTestFormatVersion,
+      enabled: enabledInput === true,
+      updatedAt
+    };
+    next.updatedAt = updatedAt;
+    return normalizeSettingsRecord(next, current, safeTenantId).record;
+  }
+
+  function settingsWithoutBetaProductiveTest(settingsInput) {
+    const settings = cloneSafe(settingsInput);
+    if (Array.isArray(settings?.companies)) {
+      settings.companies.forEach(profile => {
+        if (isPlainObject(profile)) delete profile.betaProductiveTest;
+      });
+    }
+    return settings;
   }
 
   function validateCompanyEntityReferences(settings, records) {
@@ -4050,6 +4131,7 @@
       settings = normalizeSettingsRecord(settingsInput, settingsInput, tenantId).record;
     }
     const companyId = activeCompanyProfile(settings).id;
+    const companyIds = new Set(settings.companies.map(profile => profile.id));
     const records = { settings };
     const missingStores = [];
     const mayInitializePreSchema8Stores = options.allowMissingLegacyStores === true;
@@ -4073,7 +4155,7 @@
       record[listKey] = list.map(entry => {
         if (!isPlainObject(entry)) throw new PersistenceError("SCHEMA_MIGRATION_BLOCKED", "Ein Fachdatensatz ist nicht eindeutig migrierbar.");
         if (nullableStringId(entry.companyId)) {
-          if (entry.companyId !== companyId) throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Ein vorhandener Fachdatensatz verweist auf ein anderes Unternehmensprofil.");
+          if (!companyIds.has(entry.companyId)) throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Ein vorhandener Fachdatensatz verweist auf ein anderes Unternehmensprofil.");
           return entry;
         }
         if (!migratesLegacySettings) {
@@ -4244,9 +4326,9 @@
     const preparedSettings = snapshot.stores.settings.formatVersion === constants.settingsFormatVersion
       ? null
       : prepareHistoricalSettingsRecord(snapshot.stores.settings, snapshot.stores.settings, safeTenantId);
-    const settingsInput = settingsWithReceiptNumberingModel(preparedSettings?.compatible
+    const settingsInput = settingsWithoutBetaProductiveTest(settingsWithReceiptNumberingModel(preparedSettings?.compatible
       ? preparedSettings.record
-      : snapshot.stores.settings);
+      : snapshot.stores.settings));
     const settings = assertSnapshotRecord(
       normalizeSettingsRecord(settingsInput, settingsInput, safeTenantId),
       settingsInput,
@@ -5001,6 +5083,7 @@
     const treatmentRecordsStoreName = options.treatmentRecordsStoreName || constants.treatmentRecordsStoreName;
     const licenseRuntimeStoreName = options.licenseRuntimeStoreName || constants.licenseRuntimeStoreName;
     const tenantId = nullableStringId(options.tenantId) || constants.tenantId;
+    const appBuild = trimmedString(options.appBuild, trimmedString(globalThis.PROTOTYPE_DATA?.build));
     let databasePromise = null;
     let writeQueue = Promise.resolve();
 
@@ -5948,7 +6031,7 @@
                   && businessAreaFeatures(previous.features).prescriptionDocumentation))) {
                 throw prescriptionError("PRESCRIPTION_EDIT_DISABLED", "Neue Eingaben sind nur für aktive Kunden und aktivierte Geschäftsbereiche möglich. Vorhandene Rezepte bleiben lesbar.");
               }
-              assertCompanyProductive(settings, draft.companyId);
+              assertCompanyProductive(settings, draft.companyId, appBuild);
               const linkedItem = items.find(item => item.id === draft.catalogItemId);
               if (draft.catalogItemId && draft.catalogItemId !== existing?.catalogItemId
                 && (!linkedItem || linkedItem.active === false || linkedItem.type !== "service" || linkedItem.businessAreaId !== draft.businessAreaId)) {
@@ -6480,7 +6563,7 @@
         || nullableStringId(draft.businessAreaSnapshot?.id)
         || nullableStringId(draft.contextSnapshot?.businessArea?.id);
       const companyProfile = companyProfileForBusinessArea(mergedSettings, businessAreaId);
-      assertCompanyProductive(mergedSettings, companyProfile.id);
+      assertCompanyProductive(mergedSettings, companyProfile.id, appBuild);
       const draftCompanyId = nullableStringId(draft.companyId);
       if (mergedSettings.companies.length > 1 && !draftCompanyId) {
         throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Belegentwurf besitzt keine eindeutige Unternehmenszuordnung.");
@@ -7142,7 +7225,7 @@
       return mutateReceipts(seedReceiptsRecord, (record, settings) => {
         const receipt = record.receipts.find(entry => entry.number === receiptNumber);
         if (!receipt) throw new PersistenceError("RECEIPT_NOT_FOUND", "Der Beleg wurde nicht gefunden.");
-        assertCompanyProductive(settings, receipt.companyId);
+        assertCompanyProductive(settings, receipt.companyId, appBuild);
         if (receipt.receiptType !== "receipt" || receipt.status === "cancelled") {
           throw new PersistenceError("RECEIPT_NOT_PAYABLE", "Für diesen Beleg kann keine Zahlung erfasst werden.");
         }
@@ -7185,7 +7268,7 @@
       return mutateReceipts(seedReceiptsRecord, (record, settings) => {
         const receipt = record.receipts.find(entry => entry.number === receiptNumber);
         if (!receipt) throw new PersistenceError("RECEIPT_NOT_FOUND", "Der Beleg wurde nicht gefunden.");
-        assertCompanyProductive(settings, receipt.companyId);
+        assertCompanyProductive(settings, receipt.companyId, appBuild);
         const occurredAt = stableIso(activity.occurredAt, new Date().toISOString());
         receipt.note = safeNote;
         receipt.internalNote = safeNote;
@@ -7227,7 +7310,7 @@
         if (!source || source.receiptType !== "receipt") {
           throw new PersistenceError("RECEIPT_NOT_FOUND", "Der Ursprungsbeleg wurde nicht gefunden.");
         }
-        assertCompanyProductive(settings, source.companyId);
+        assertCompanyProductive(settings, source.companyId, appBuild);
         if (nullableStringId(draft.companyId) && draft.companyId !== source.companyId) {
           throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Korrekturbeleg gehört nicht zum Unternehmensprofil des Ursprungsbelegs.");
         }
@@ -7720,6 +7803,9 @@
     normalizeReceiptProfileCode,
     companyProductiveStatus,
     assertCompanyProductive,
+    betaProductiveTestBuildAllowed,
+    setCompanyBetaProductiveTest,
+    settingsWithoutBetaProductiveTest,
     prepareHistoricalSettingsRecord,
     normalizeLicenseReference,
     legacyLicenseRuntimeHint,

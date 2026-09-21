@@ -12,6 +12,8 @@
 
 **Lokale Mehrprofilgrenze seit MULTI-COMPANY-004:** Mehrere Unternehmensprofile dürfen konfiguriert und gesichert werden. Die bestehende einzelne `licenseRuntime` autorisiert aber kein zweites Profil. Bis ein eigener Multi-Binding-Block diesen Vertrag erweitert, ist nur Profil 1 produktiv; jedes Zusatzprofil bleibt lokal `activation_required`. Seine portable Referenz wird weder aus Profil 1 kopiert noch als Berechtigungsnachweis behandelt. Diese Zwischenregel ändert keinen Serverclaim und nimmt keine spätere Aktivierungs- oder Kaufarchitektur vorweg.
 
+**Temporäre Beta-Testgrenze seit MULTI-COMPANY-004B:** Der ausdrücklich freigegebene Build `BETA-PREVIEW-002` darf am bestehenden zentralen Write-Guard zusätzlich eine profilbezogene, installationslokale `betaProductiveTest`-Freigabe auswerten. Sie ändert den Clientmodus nicht: Das Zusatzprofil bleibt `activation_required` und erhält weder Serverclaim noch Lizenz-, Token- oder Runtime-Autorität. Nicht-Beta-Builds ignorieren den Zustand. Tenant-Snapshot, Backup, Restore und Export transportieren ihn nicht. Diese eng begrenzte Testausnahme ist kein Bestandteil des späteren Lizenzprotokolls und wird mit echter Multi-Binding-Autorisierung entfernt.
+
 **Grundlage:** ADR-0004 und angenommene ADR-0005
 
 ## 1. Normative Begriffe und Grenzen

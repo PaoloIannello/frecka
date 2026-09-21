@@ -4622,6 +4622,7 @@ body.work-mode:not(.catalog-mode) .flow-page {
 
 .company-profile-status.is-productive { background: #e8f5ed; color: #17633a; }
 .company-profile-status.needs-activation { background: #fff4df; color: #805600; }
+.company-profile-status.is-beta-test { background: #e9f0ff; color: #254f9b; }
 
 .company-profile-list { display: grid; gap: 8px; }
 
@@ -4645,15 +4646,57 @@ body.work-mode:not(.catalog-mode) .flow-page {
 .company-create-actions .button { margin: 0; }
 
 .company-activation-notice,
-.company-activation-inline {
+.company-activation-inline,
+.company-beta-test-notice {
   border: 1px solid #ead3a3;
   border-radius: 12px;
   background: #fff8e9;
   color: #6e4b00;
 }
 
-.company-activation-notice { display: grid; gap: 3px; padding: 12px 14px; }
+.company-activation-notice,
+.company-beta-test-notice { display: grid; gap: 3px; padding: 12px 14px; }
 .company-activation-inline { margin: 0; padding: 10px 12px; line-height: 1.4; }
+
+.company-beta-test-notice {
+  border-color: #b9ccef;
+  background: #f1f5ff;
+  color: #254f9b;
+}
+
+.company-beta-test-card {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid #b9ccef;
+  border-radius: var(--r-lg);
+  background: #f7f9ff;
+}
+
+.company-beta-test-card h2,
+.company-beta-test-card p,
+.company-beta-test-card .eyebrow { margin: 0; }
+.company-beta-test-card > p,
+.company-beta-test-card > small { color: var(--muted); line-height: 1.45; }
+.company-beta-test-card .button { margin: 0; }
+
+.company-beta-test-state {
+  display: grid;
+  gap: 3px;
+  padding: 11px 12px;
+  border: 1px solid #ead3a3;
+  border-radius: 12px;
+  background: #fff8e9;
+  color: #6e4b00;
+}
+
+.company-beta-test-state.is-active {
+  border-color: #b9ccef;
+  background: #e9f0ff;
+  color: #254f9b;
+}
+
+.company-beta-test-state span { line-height: 1.4; }
 
 @media (max-width: 390px) {
   .company-profile-manager-head,
@@ -4662,7 +4705,8 @@ body.work-mode:not(.catalog-mode) .flow-page {
   .company-profile-status,
   .company-profile-item > span { align-self: flex-start; }
   .company-profile-item .button,
-  .company-create-actions .button { width: 100%; }
+  .company-create-actions .button,
+  .company-beta-test-card .button { width: 100%; }
 }
 .settings-head {
   margin-bottom: 16px;

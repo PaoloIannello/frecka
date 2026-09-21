@@ -41,3 +41,4 @@ Bereits getroffene Grundsatzentscheidungen können nachträglich als eigene ADRs
 - `ADR-0006-schema-9-unternehmensprofilgrenze.md`: kanonisches Profil 1, direkte Unternehmensreferenzen und crash-sichere Schema-8→9-Migration.
 - `ADR-0007-profilbezogene-belegnummernkreise.md`: getrennte Profil-/Typ-/Jahreszähler, Legacy-Übergang, atomare Vergabe und stabile Korrekturreferenzen.
 - `ADR-0008-unternehmensprofilverwaltung-und-aktivkontext.md`: verwaltbare Unternehmensprofile, persistenter Aktivkontext, Draft-Schutz und lokale Aktivierungsgrenze für Zusatzprofile.
+- `ADR-0009-temporaere-beta-testfreigabe-fuer-zusatzprofile.md`: buildgebundene, installationslokale und nicht portable Beta-Testfreigabe am zentralen Write-Guard ohne Lizenzsimulation.

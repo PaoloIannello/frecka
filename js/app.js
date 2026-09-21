@@ -755,7 +755,7 @@
   }
 
   function activeCompanyProductiveStatus() {
-    return persistence?.companyProductiveStatus?.(currentSettingsRecord, activeCompanyId())
+    return persistence?.companyProductiveStatus?.(currentSettingsRecord, activeCompanyId(), data.build)
       || { code: "primary_profile", productive: true };
   }
 
@@ -1084,9 +1084,9 @@
     applySettingsRecord(prepared.record);
     if (persistence.ensureLicenseRuntime && persistence.inspectLocalLicenseRuntime) {
       const profile = settingsCompanyProfile(prepared.record);
-      const productiveStatus = persistence.companyProductiveStatus?.(prepared.record, profile.id)
+      const productiveStatus = persistence.companyProductiveStatus?.(prepared.record, profile.id, data.build)
         || { productive: true };
-      if (productiveStatus.productive) {
+      if (productiveStatus.regularProductive !== false) {
         try {
           await persistence.ensureLicenseRuntime(profile.license, { legacyLicense: savedRecord?.license });
         } catch (error) {
@@ -1292,8 +1292,12 @@
       <p>${draftCount} ${draftCount === 1 ? "Position" : "Positionen"} · ${formatCurrency(cartTotal())} · ${escapeHtml(draftCustomer)}</p>
       <div class="open-receipt-actions"><button class="button button-secondary" type="button" data-action="resume-receipt">Weiter bearbeiten</button><button class="button button-ghost" type="button" data-action="discard-receipt">Verwerfen</button></div>
     </section>` : "";
-    const productive = activeCompanyIsProductive();
-    mainContent.innerHTML = `<div class="home-layout ${hasDraft ? "has-draft" : "has-no-draft"} page-enter">${state.settingsStorageNotice ? `<div class="settings-save-notice ${state.settingsStorageNoticeIsError ? "is-error" : ""}" role="${state.settingsStorageNoticeIsError ? "alert" : "status"}">${escapeHtml(state.settingsStorageNotice)}</div>` : ""}${state.setupFirstStartVisible ? setupStartHint() : ""}${backupReminderMarkup()}${productive ? "" : '<div class="company-activation-notice" role="status"><strong>Konfigurationsmodus</strong><span>Für die produktive Nutzung dieses Unternehmens ist eine eigene Aktivierung erforderlich.</span></div>'}<section class="hero-card"><p class="eyebrow">${escapeHtml(getAreaLabel())}</p><h1>Was möchtest du erfassen?</h1><p class="hero-copy">Leistungen und Produkte direkt auswählen.</p><button class="button button-primary" type="button" data-action="new-receipt" ${productive ? "" : "disabled"}><span aria-hidden="true">＋</span><span>Neuer Beleg</span></button></section>${openReceipt}</div>`;
+    const productiveStatus = activeCompanyProductiveStatus();
+    const productive = productiveStatus.productive === true;
+    const betaTestNotice = productiveStatus.betaProductiveTestEffective
+      ? '<div class="company-beta-test-notice" role="status"><strong>Beta-Testmodus aktiv</strong><span>Dieses Unternehmensprofil ist nicht regulär aktiviert. Produktive Vorgänge sind auf diesem Gerät nur für den Betatest freigegeben.</span></div>'
+      : "";
+    mainContent.innerHTML = `<div class="home-layout ${hasDraft ? "has-draft" : "has-no-draft"} page-enter">${state.settingsStorageNotice ? `<div class="settings-save-notice ${state.settingsStorageNoticeIsError ? "is-error" : ""}" role="${state.settingsStorageNoticeIsError ? "alert" : "status"}">${escapeHtml(state.settingsStorageNotice)}</div>` : ""}${state.setupFirstStartVisible ? setupStartHint() : ""}${backupReminderMarkup()}${betaTestNotice}${productive ? "" : '<div class="company-activation-notice" role="status"><strong>Konfigurationsmodus</strong><span>Für die produktive Nutzung dieses Unternehmens ist eine eigene Aktivierung erforderlich.</span></div>'}<section class="hero-card"><p class="eyebrow">${escapeHtml(getAreaLabel())}</p><h1>Was möchtest du erfassen?</h1><p class="hero-copy">Leistungen und Produkte direkt auswählen.</p><button class="button button-primary" type="button" data-action="new-receipt" ${productive ? "" : "disabled"}><span aria-hidden="true">＋</span><span>Neuer Beleg</span></button></section>${openReceipt}</div>`;
   }
 
   function catalogItems() {
@@ -5716,6 +5720,21 @@
     const profiles = currentSettingsRecord?.companies || [];
     const numbering = activeProfile?.receiptSettings?.numbering || data.receiptSettings.numbering;
     const activeStatus = activeCompanyProductiveStatus();
+    const activeStatusLabel = activeStatus.betaProductiveTestEffective
+      ? "Beta-Testmodus"
+      : activeStatus.productive ? "Produktiv" : "Aktivierung erforderlich";
+    const activeStatusClass = activeStatus.betaProductiveTestEffective
+      ? "is-beta-test"
+      : activeStatus.productive ? "is-productive" : "needs-activation";
+    const betaTestCard = activeStatus.code === "activation_required" && activeStatus.betaProductiveTestAvailable
+      ? `<section class="company-beta-test-card" aria-labelledby="companyBetaTestTitle">
+          <div><p class="eyebrow">Temporäre Testfunktion</p><h2 id="companyBetaTestTitle">Beta-Testfreigabe</h2></div>
+          <p>Dieses Unternehmensprofil ist nicht regulär aktiviert. Für den Betatest kann die produktive Nutzung auf diesem Gerät vorübergehend freigegeben werden.</p>
+          <div class="company-beta-test-state ${activeStatus.betaProductiveTestEffective ? "is-active" : ""}"><strong>${activeStatus.betaProductiveTestEffective ? "Beta-Testmodus aktiv" : "Aktivierung erforderlich"}</strong><span>${activeStatus.betaProductiveTestEffective ? "Dies ist keine reguläre Lizenz. Die Freigabe gilt nur lokal in diesem Beta-Build." : "Ohne Beta-Testfreigabe bleiben neue produktive Vorgänge gesperrt."}</span></div>
+          <button class="button ${activeStatus.betaProductiveTestEffective ? "button-secondary" : "button-primary"}" type="button" data-company-beta-test="${activeStatus.betaProductiveTestEffective ? "disable" : "enable"}">${activeStatus.betaProductiveTestEffective ? "Beta-Testfreigabe deaktivieren" : "Für Betatest freigeben"}</button>
+          <small>Die Freigabe ist installations- und buildgebunden, wird nicht als Lizenz gespeichert und nicht in Sicherungen übertragen.</small>
+        </section>`
+      : "";
     mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter">
       <div class="flow-head compact-flow-head">
         <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
@@ -5724,15 +5743,19 @@
         <p class="page-copy">Unternehmensprofile auf dieser Installation verwalten.</p>
       </div>
       <section class="company-profile-manager" aria-labelledby="companyProfilesTitle">
-        <div class="company-profile-manager-head"><div><p class="eyebrow">Aktiver Kontext</p><h2 id="companyProfilesTitle">${escapeHtml(companyDisplayName(company))}</h2></div><span class="company-profile-status ${activeStatus.productive ? "is-productive" : "needs-activation"}">${activeStatus.productive ? "Produktiv" : "Aktivierung erforderlich"}</span></div>
-        <p>${activeStatus.productive ? "Neue Geschäftsvorgänge werden diesem Unternehmen zugeordnet." : "Dieses Unternehmen kann konfiguriert werden. Für die produktive Nutzung ist eine eigene Aktivierung erforderlich."}</p>
+        <div class="company-profile-manager-head"><div><p class="eyebrow">Aktiver Kontext</p><h2 id="companyProfilesTitle">${escapeHtml(companyDisplayName(company))}</h2></div><span class="company-profile-status ${activeStatusClass}">${activeStatusLabel}</span></div>
+        <p>${activeStatus.betaProductiveTestEffective ? "Neue Geschäftsvorgänge sind vorübergehend für den Betatest freigegeben. Eine eigene reguläre Aktivierung ist weiterhin erforderlich." : activeStatus.productive ? "Neue Geschäftsvorgänge werden diesem Unternehmen zugeordnet." : "Dieses Unternehmen kann konfiguriert werden. Für die produktive Nutzung ist eine eigene Aktivierung erforderlich."}</p>
         <div class="company-profile-list" role="list">${profiles.map(profile => {
           const selected = profile.id === activeCompanyId();
-          const status = persistence.companyProductiveStatus(currentSettingsRecord, profile.id);
-          return `<article class="company-profile-item ${selected ? "is-active" : ""}" role="listitem"><div><strong>${escapeHtml(companyDisplayName(profile.company))}</strong><small>${profile.receiptSettings?.numbering?.profileCode ? `Kürzel ${escapeHtml(profile.receiptSettings.numbering.profileCode)}` : "Bestehender Nummernmodus"} · ${status.productive ? "produktiv" : "Aktivierung erforderlich"}</small></div>${selected ? '<span aria-label="Aktiv">✓ Aktiv</span>' : `<button class="button button-secondary" type="button" data-company-switch="${escapeHtml(profile.id)}">Auswählen</button>`}</article>`;
+          const status = persistence.companyProductiveStatus(currentSettingsRecord, profile.id, data.build);
+          const statusText = status.betaProductiveTestEffective
+            ? "Aktivierung erforderlich · Beta-Testfreigabe aktiv"
+            : status.productive ? "produktiv" : "Aktivierung erforderlich";
+          return `<article class="company-profile-item ${selected ? "is-active" : ""}" role="listitem"><div><strong>${escapeHtml(companyDisplayName(profile.company))}</strong><small>${profile.receiptSettings?.numbering?.profileCode ? `Kürzel ${escapeHtml(profile.receiptSettings.numbering.profileCode)}` : "Bestehender Nummernmodus"} · ${statusText}</small></div>${selected ? '<span aria-label="Aktiv">✓ Aktiv</span>' : `<button class="button button-secondary" type="button" data-company-switch="${escapeHtml(profile.id)}">Auswählen</button>`}</article>`;
         }).join("")}</div>
         <button class="button button-secondary" type="button" data-action="company-create-open">+ Weiteres Unternehmen anlegen</button>
       </section>
+      ${betaTestCard}
       ${state.companySwitchNotice ? `<div class="settings-save-notice ${state.companySwitchNoticeIsError ? "is-error" : ""}" role="${state.companySwitchNoticeIsError ? "alert" : "status"}">${escapeHtml(state.companySwitchNotice)}</div>` : ""}
       <div id="companySettingsNotice" class="settings-save-notice ${state.settingsNoticeIsError ? "is-error" : ""}" role="${state.settingsNoticeIsError ? "alert" : "status"}" ${state.settingsNotice ? "" : "hidden"}>${escapeHtml(state.settingsNotice)}</div>
       ${state.companyCreateOpen ? `<form id="companyCreateForm" class="settings-form company-create-form">
@@ -5792,6 +5815,33 @@
       || voucherDraftStarted;
   }
 
+  async function updateActiveCompanyBetaProductiveTest(enabled) {
+    if (!currentSettingsRecord || !persistence?.setCompanyBetaProductiveTest) return false;
+    const previous = cloneSettingsValue(currentSettingsRecord);
+    try {
+      const requested = persistence.setCompanyBetaProductiveTest(
+        currentSettingsRecord,
+        activeCompanyId(),
+        enabled,
+        data.build
+      );
+      const written = await persistence.writeSettings(requested);
+      applySettingsRecord(written);
+      state.companySwitchNotice = enabled
+        ? "Beta-Testfreigabe aktiviert. Dieses Unternehmensprofil besitzt weiterhin keine reguläre Aktivierung."
+        : "Beta-Testfreigabe deaktiviert. Neue produktive Vorgänge sind wieder gesperrt.";
+      state.companySwitchNoticeIsError = false;
+      refreshSettingsDerivedState();
+      refreshBusinessSwitcher();
+      return true;
+    } catch (error) {
+      currentSettingsRecord = previous;
+      state.companySwitchNotice = `Beta-Testfreigabe konnte nicht gespeichert werden: ${persistenceErrorMessage(error)}`;
+      state.companySwitchNoticeIsError = true;
+      return false;
+    }
+  }
+
   async function switchActiveCompany(companyId) {
     if (!currentSettingsRecord || companyId === activeCompanyId()) return true;
     if (!persistence.companyProfileById(currentSettingsRecord, companyId)) {
@@ -5812,9 +5862,12 @@
       applySettingsRecord(written);
       state.licenseRuntimeStatus = await persistence.inspectLocalLicenseRuntime(settingsCompanyProfile(written).license);
       state.companyCreateOpen = false;
-      state.companySwitchNotice = activeCompanyIsProductive()
-        ? "Aktives Unternehmen wurde gewechselt."
-        : "Unternehmen ausgewählt. Für die produktive Nutzung ist eine eigene Aktivierung erforderlich.";
+      const productiveStatus = activeCompanyProductiveStatus();
+      state.companySwitchNotice = productiveStatus.betaProductiveTestEffective
+        ? "Unternehmen ausgewählt. Beta-Testmodus aktiv; eine reguläre Aktivierung ist weiterhin erforderlich."
+        : productiveStatus.productive
+          ? "Aktives Unternehmen wurde gewechselt."
+          : "Unternehmen ausgewählt. Für die produktive Nutzung ist eine eigene Aktivierung erforderlich.";
       state.companySwitchNoticeIsError = false;
       resetCheckoutVoucher();
       resetCheckoutPrescription();
@@ -6997,6 +7050,12 @@
     }
     if (sheetAction === "company-logo-remove") {
       if (logoAssetId(data.company.logo)) await saveCompanyLogo(null);
+      return;
+    }
+    const companyBetaTest = event.target.closest("[data-company-beta-test]");
+    if (companyBetaTest) {
+      await updateActiveCompanyBetaProductiveTest(companyBetaTest.dataset.companyBetaTest === "enable");
+      renderCompanySettings();
       return;
     }
     const companySwitch = event.target.closest("[data-company-switch]");

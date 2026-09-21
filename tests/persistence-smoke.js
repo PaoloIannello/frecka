@@ -3033,10 +3033,15 @@
     ];
   }
 
-  function isolatedAppMarkup(index, client, route, databaseName) {
+  function isolatedAppMarkup(index, client, route, databaseName, options = {}) {
     // Test-only wiring: production source and DOM, isolated tenant/DB, no Service Worker.
     assert(databaseName?.startsWith(testDatabasePrefix), "UI-Test benötigt eine isolierte Testdatenbank");
     const base = new URL("../", window.location.href).href;
+    const persistenceOptions = {
+      databaseName,
+      tenantId: client.tenantId,
+      ...(options.appBuild ? { appBuild: options.appBuild } : {})
+    };
     const setup = `<script>
       window.FRECKA_DISABLE_SERVICE_WORKER = true;
       window.FRECKA_PRESCRIPTION_UI_ERRORS = [];
@@ -3044,7 +3049,7 @@
       addEventListener('unhandledrejection', () => window.FRECKA_PRESCRIPTION_UI_ERRORS.push('rejection'));
       const testSnapshotSettings = window.FRECKA_PERSISTENCE.snapshotSettings;
       window.FRECKA_PERSISTENCE = Object.freeze({ ...window.FRECKA_PERSISTENCE,
-        ...window.FRECKA_PERSISTENCE.createSettingsPersistence(${JSON.stringify({ databaseName, tenantId: client.tenantId })}),
+        ...window.FRECKA_PERSISTENCE.createSettingsPersistence(${JSON.stringify(persistenceOptions)}),
         snapshotSettings: (data, status, tenant = ${JSON.stringify(client.tenantId)}) => testSnapshotSettings(data, status, tenant)
       });
       window.PROTOTYPE_DATA.users.forEach(user => { user.tenantId = ${JSON.stringify(client.tenantId)}; });
@@ -3810,6 +3815,428 @@
     ];
   }
 
+  function buildMultiCompanyBetaTestTests(context) {
+    const betaBuild = "BETA-PREVIEW-002";
+    const nonBetaBuild = "RELEASE-1.0.0";
+    const setupFixture = tenantId => {
+      const snapshot = completeTenantSnapshotFixture(tenantId);
+      snapshot.stores.settings = api.createCompanyProfileSettings(snapshot.stores.settings, {
+        profileCode: "CTS",
+        createdAt: "2030-07-01T08:00:00.000Z",
+        company: {
+          name: "Podologie Beta",
+          owner: "Paula Beta",
+          street: "Testweg",
+          houseNumber: "2",
+          zip: "54321",
+          city: "Teststadt"
+        }
+      }, tenantId);
+      const companyId = snapshot.stores.settings.activeCompanyId;
+      const area = snapshot.stores.settings.businessAreas.find(entry => entry.companyId === companyId);
+      area.label = "Podologie";
+      area.visibleName = "Podologie Beta";
+      area.features = { prescriptionDocumentation: true };
+      return { snapshot, companyId, areaId: area.id };
+    };
+    const companyDraft = (id, settings, completedAt, overrides = {}) => {
+      const companyId = settings.activeCompanyId;
+      const area = settings.businessAreas.find(entry => entry.companyId === companyId);
+      const location = settings.serviceLocations.find(entry => entry.companyId === companyId);
+      const [year, month, day] = completedAt.slice(0, 10).split("-");
+      return receiptDraftFixture(id, {
+        companyId,
+        date: `${day}.${month}.${year}`,
+        businessAreaId: area.id,
+        businessAreaSnapshot: { id: area.id, label: area.label, visibleName: area.visibleName },
+        serviceLocationId: location.id,
+        serviceLocationSnapshot: {
+          id: location.id, name: location.name, street: location.street, houseNumber: location.houseNumber,
+          zip: location.zip, city: location.city
+        },
+        companySnapshot: clone(api.activeCompanyProfile(settings).company),
+        completedAt,
+        createdAt: completedAt,
+        updatedAt: completedAt,
+        sortKey: completedAt,
+        ...overrides
+      });
+    };
+    const enableBetaTest = async (client, fixture) => {
+      await client.restoreTenantSnapshot(fixture.snapshot);
+      const initial = await client.readSettings();
+      const enabled = api.setCompanyBetaProductiveTest(
+        initial,
+        fixture.companyId,
+        true,
+        betaBuild,
+        "2030-07-01T09:00:00.000Z"
+      );
+      return client.writeSettings(enabled);
+    };
+
+    return [
+      {
+        name: "MULTI-COMPANY-004B: Beta-Gate bleibt von echter Lizenz und activation_required getrennt",
+        run: async () => {
+          const fixture = setupFixture("multi-company-beta-gate");
+          const settings = fixture.snapshot.stores.settings;
+          const primary = settings.companies[0];
+          const additional = settings.companies[1];
+          const licensesBefore = settings.companies.map(profile => clone(profile.license));
+          const regular = api.companyProductiveStatus(settings, primary.id, betaBuild);
+          const blocked = api.companyProductiveStatus(settings, additional.id, betaBuild);
+          assert(regular.productive && regular.regularProductive && !regular.betaProductiveTestEffective,
+            "Profil 1 wurde durch das Beta-Gate verändert");
+          assertEqual(blocked.code, "activation_required", "Zusatzprofil verlor den echten Aktivierungsstatus");
+          assert(!blocked.productive && blocked.betaProductiveTestAvailable, "Zusatzprofil ist ohne explizite Freigabe produktiv");
+          assertThrows(() => api.setCompanyBetaProductiveTest(settings, additional.id, true, nonBetaBuild),
+            "COMPANY_BETA_TEST_BUILD_REQUIRED", "Nicht-Beta-Build");
+          assertThrows(() => api.setCompanyBetaProductiveTest(settings, primary.id, true, betaBuild),
+            "COMPANY_BETA_TEST_PROFILE_INVALID", "Profil 1");
+          const enabled = api.setCompanyBetaProductiveTest(settings, additional.id, true, betaBuild, "2030-07-01T09:00:00.000Z");
+          const betaStatus = api.companyProductiveStatus(enabled, additional.id, betaBuild);
+          assertEqual(betaStatus.code, "activation_required", "Beta-Freigabe täuschte reguläre Aktivierung vor");
+          assert(betaStatus.productive && !betaStatus.regularProductive && betaStatus.betaProductiveTestEffective,
+            "Explizite Beta-Freigabe öffnet den zentralen Guard nicht");
+          assert(!api.companyProductiveStatus(enabled, additional.id, nonBetaBuild).productive,
+            "Nicht-Beta-Build akzeptierte ein gespeichertes Beta-Flag");
+          assertDeepEqual(enabled.companies.map(profile => profile.license), licensesBefore, "Beta-Freigabe veränderte Lizenzreferenzen");
+          assert(!JSON.stringify(enabled).includes("signedLicenseToken") && !JSON.stringify(enabled).includes("devicePrivateKey"),
+            "Beta-Freigabe erzeugte Fake- oder Runtime-Lizenzdaten");
+          const disabled = api.setCompanyBetaProductiveTest(enabled, additional.id, false, betaBuild, "2030-07-01T10:00:00.000Z");
+          assert(!api.companyProductiveStatus(disabled, additional.id, betaBuild).productive, "Deaktivierung sperrte das Profil nicht");
+          assertEqual(api.constants.databaseVersion, 9, "Beta-Testfreigabe veränderte das Datenbankschema");
+        }
+      },
+      {
+        name: "MULTI-COMPANY-004B: Produktiver Profilwechsel A→B→A bleibt profil- und nummernrein",
+        run: async () => {
+          const client = context.makeClient("multi-company-beta-switch", { appBuild: betaBuild });
+          const fixture = setupFixture(client.tenantId);
+          const enabled = await enableBetaTest(client, fixture);
+          const primaryId = enabled.companies[0].id;
+          const betaId = enabled.companies[1].id;
+          const startBetaNumbering = clone(enabled.companies[1].receiptSettings.numbering);
+
+          const firstPrimarySettings = clone(enabled);
+          firstPrimarySettings.activeCompanyId = primaryId;
+          await client.writeSettings(firstPrimarySettings);
+          const firstPrimary = await client.commitReceipt(
+            companyDraft("beta-switch-a1", firstPrimarySettings, "2031-01-02T10:00:00.000Z"),
+            firstPrimarySettings,
+            await client.readReceipts()
+          );
+          assertEqual(firstPrimary.receipt.companyId, primaryId, "Erster A-Beleg verlor Profil 1");
+          assertDeepEqual(firstPrimary.settingsRecord.companies[1].receiptSettings.numbering, startBetaNumbering,
+            "A-Beleg veränderte vor dem Wechsel den B-Nummernkreis");
+
+          const betaSettings = clone(firstPrimary.settingsRecord);
+          betaSettings.activeCompanyId = betaId;
+          await client.writeSettings(betaSettings);
+          const betaReceipt = await client.commitReceipt(
+            companyDraft("beta-switch-b", betaSettings, "2031-01-02T11:00:00.000Z"),
+            betaSettings,
+            firstPrimary.receiptsRecord
+          );
+          assertEqual(betaReceipt.receipt.companyId, betaId, "B-Beleg verlor Profil 2");
+          assert(betaReceipt.receipt.number.startsWith("CTS-2031-"), "B-Beleg verwendete nicht das CTS-Profilkürzel");
+          const betaNumberingAfterB = clone(betaReceipt.settingsRecord.companies[1].receiptSettings.numbering);
+
+          const secondPrimarySettings = clone(betaReceipt.settingsRecord);
+          secondPrimarySettings.activeCompanyId = primaryId;
+          await client.writeSettings(secondPrimarySettings);
+          const secondPrimary = await client.commitReceipt(
+            companyDraft("beta-switch-a2", secondPrimarySettings, "2031-01-02T12:00:00.000Z"),
+            secondPrimarySettings,
+            betaReceipt.receiptsRecord
+          );
+          assertEqual(secondPrimary.receipt.companyId, primaryId, "Zweiter A-Beleg verlor Profil 1");
+          assertDeepEqual(secondPrimary.settingsRecord.companies[1].receiptSettings.numbering, betaNumberingAfterB,
+            "Rückwechsel zu A veränderte den B-Nummernkreis");
+          assertEqual(secondPrimary.receipt.customerId || secondPrimary.receipt.customer?.id, "customer-anna",
+            "Globaler Kunde war nach dem Profilwechsel nicht mehr verwendbar");
+        }
+      },
+      {
+        name: "MULTI-COMPANY-004B: Beta-Profil nutzt unverändert atomare Profilnummern, Korrekturen und Notizen",
+        run: async () => {
+          const client = context.makeClient("multi-company-beta-receipts", { appBuild: betaBuild });
+          const fixture = setupFixture(client.tenantId);
+          let settings = await enableBetaTest(client, fixture);
+          const primaryNumberingBefore = clone(settings.companies[0].receiptSettings.numbering);
+          const first = await client.commitReceipt(
+            companyDraft("beta-cts-1", settings, "2030-07-02T10:00:00.000Z"),
+            settings,
+            await client.readReceipts()
+          );
+          assertEqual(first.receipt.number, "CTS-2030-000001", "Erster Beta-Profilbeleg besitzt eine falsche Nummer");
+          assertEqual(first.receipt.companyId, fixture.companyId, "Beta-Profilbeleg verlor companyId");
+          assertEqual(first.receipt.companySnapshot.owner, "Paula Beta", "Beta-Profilbeleg besitzt den falschen Unternehmenssnapshot");
+          const second = await client.commitReceipt(
+            companyDraft("beta-cts-2", first.settingsRecord, "2030-07-02T11:00:00.000Z"),
+            first.settingsRecord,
+            first.receiptsRecord
+          );
+          assertEqual(second.receipt.number, "CTS-2030-000002", "Zweiter Beta-Profilbeleg zählte nicht korrekt weiter");
+          assertDeepEqual(second.settingsRecord.companies[0].receiptSettings.numbering, primaryNumberingBefore,
+            "Beta-Profilvorgang veränderte Profil 1");
+          const noted = await client.saveReceiptNote(second.receipt.number, "Beta-Testnotiz", {
+            label: "Interne Notiz aktualisiert", occurredAt: "2030-07-02T11:05:00.000Z"
+          }, second.receiptsRecord);
+          assertEqual(noted.receipt.internalNote, "Beta-Testnotiz", "Belegnotiz im Beta-Profil wurde nicht gespeichert");
+          const cancelled = await client.commitReceiptCorrection(first.receipt.id, {
+            id: "beta-cts-st-1", companyId: fixture.companyId, type: "cancellation", total: -39,
+            completedAt: "2030-07-02T12:00:00.000Z"
+          }, noted.record);
+          assertEqual(cancelled.receipt.number, "CTS-ST-2030-000001", "Stornokreis des Beta-Profils ist falsch");
+          const credited = await client.commitReceiptCorrection(second.receipt.id, {
+            id: "beta-cts-gs-1", companyId: fixture.companyId, type: "credit", total: -10,
+            completedAt: "2030-07-02T13:00:00.000Z"
+          }, cancelled.record);
+          assertEqual(credited.receipt.number, "CTS-GS-2030-000001", "Gutschriftkreis des Beta-Profils ist falsch");
+          const numberingBeforeDisable = clone(credited.settingsRecord.companies[1].receiptSettings.numbering);
+          const disabled = api.setCompanyBetaProductiveTest(credited.settingsRecord, fixture.companyId, false, betaBuild,
+            "2030-07-02T14:00:00.000Z");
+          await client.writeSettings(disabled);
+          await assertRejects(() => client.commitReceipt(
+            companyDraft("beta-after-disable", disabled, "2030-07-02T15:00:00.000Z"), disabled, credited.record
+          ), "COMPANY_ACTIVATION_REQUIRED", "Deaktivierte Beta-Testfreigabe");
+          assertDeepEqual((await client.readSettings()).companies[1].receiptSettings.numbering, numberingBeforeDisable,
+            "Deaktivierung oder gesperrter Write setzte den Nummernkreis zurück");
+          assert((await client.readReceipts()).receipts.some(receipt => receipt.id === first.receipt.id),
+            "Deaktivierung löschte historische Testbelege");
+        }
+      },
+      {
+        name: "MULTI-COMPANY-004B: Gutscheine und globale Kunden bleiben trotz Beta-Gate profilrein",
+        run: async () => {
+          const client = context.makeClient("multi-company-beta-vouchers", { appBuild: betaBuild });
+          const fixture = setupFixture(client.tenantId);
+          let settings = await enableBetaTest(client, fixture);
+          const customersBefore = clone(await client.readCustomers());
+          const voucher = voucherDraftFixture("beta-cts-voucher", {
+            companyId: fixture.companyId,
+            reference: "vch_beta_cts",
+            code: "FRKA-CTS0-0001",
+            issuedValue: 50,
+            currentValue: 50,
+            createdAt: "2030-07-03T10:00:00.000Z"
+          });
+          const saleReceipt = voucherSaleReceiptFixture(voucher);
+          Object.assign(saleReceipt, companyDraft(saleReceipt.id, settings, voucher.createdAt, {
+            receiptKind: "voucher-sale", voucherReference: voucher.reference
+          }));
+          const sale = await client.commitVoucherSale(
+            saleReceipt, voucher, settings, await client.readReceipts(), await client.readVouchers()
+          );
+          assertEqual(sale.receipt.companyId, fixture.companyId, "Gutscheinverkaufsbeleg verlor Profil 2");
+          assertEqual(sale.voucher.companyId, fixture.companyId, "Gutschein verlor Profil 2");
+          const redemptionDraft = companyDraft("beta-cts-redemption", sale.settingsRecord, "2030-07-03T11:00:00.000Z", {
+            voucherReference: voucher.reference, total: 30, originalTotal: 30, paymentMethod: "Gutschein"
+          });
+          const redemption = await client.commitVoucherRedemption(redemptionDraft, {
+            voucherReference: voucher.reference, amountCents: 3000, occurredAt: "2030-07-03T11:00:00.000Z",
+            date: "03.07.2030", time: "11:00"
+          }, sale.settingsRecord, sale.receiptsRecord, sale.vouchersRecord);
+          assertEqual(redemption.voucher.currentValueCents, 2000, "Gutschein-Restwert im Beta-Profil ist falsch");
+          const primarySettings = clone(redemption.settingsRecord);
+          primarySettings.activeCompanyId = primarySettings.companies[0].id;
+          const primaryDraft = receiptDraftFixture("beta-cross-company-redemption", {
+            companyId: primarySettings.activeCompanyId,
+            voucherReference: voucher.reference,
+            total: 10,
+            originalTotal: 10,
+            completedAt: "2030-07-03T12:00:00.000Z"
+          });
+          await assertRejects(() => client.commitVoucherRedemption(primaryDraft, {
+            voucherReference: voucher.reference, amountCents: 1000, occurredAt: "2030-07-03T12:00:00.000Z"
+          }, primarySettings, redemption.receiptsRecord, redemption.vouchersRecord),
+          "COMPANY_REFERENCE_INVALID", "Cross-Company-Gutscheineinlösung");
+          assertDeepEqual(await client.readCustomers(), customersBefore, "Beta-Profil kopierte oder veränderte den globalen Kundenstamm");
+          assert(redemption.receipt.customerId === "customer-anna" || redemption.receipt.customer?.id === "customer-anna",
+            "Globaler Kunde konnte im Beta-Profil nicht verwendet werden");
+        }
+      },
+      {
+        name: "MULTI-COMPANY-004B: Podologie-Schreibpfad bleibt companyId-gebunden",
+        run: async () => {
+          const client = context.makeClient("multi-company-beta-podology", { appBuild: betaBuild });
+          const fixture = setupFixture(client.tenantId);
+          await enableBetaTest(client, fixture);
+          const saved = await client.savePrescription(prescriptionFixture(client.tenantId, {
+            id: "beta-profile-prescription",
+            companyId: fixture.companyId,
+            businessAreaId: fixture.areaId,
+            catalogItemId: null,
+            treatmentText: "Podologische Beta-Verordnung"
+          }));
+          assertEqual(saved.prescription.companyId, fixture.companyId, "Rezept verlor die Profilbindung");
+          const settings = await client.readSettings();
+          const receipts = await client.readReceipts();
+          const draft = companyDraft("beta-profile-treatment", settings, "2030-07-03T15:00:00.000Z");
+          const review = await client.reviewPrescriptionAssignment(draft, { prescriptionId: saved.prescription.id }, receipts);
+          const treatment = await client.commitReceipt(draft, settings, receipts, {
+            prescriptionId: saved.prescription.id,
+            reviewToken: review.reviewToken,
+            overrunConfirmed: review.overrunRequired,
+            plausibilityConfirmed: review.plausibilityRequired
+          }, {
+            internalDocumentation: "Interne Beta-Behandlungsdokumentation",
+            customerCareAdvice: "Pflegehinweis im Betatest"
+          });
+          assertEqual(treatment.treatmentRecord?.companyId, fixture.companyId,
+            "Behandlungsdokumentation verlor die Profilbindung");
+          assertEqual(treatment.treatmentRecord?.receiptId, treatment.receipt.id,
+            "Behandlungsdokumentation verlor die Belegreferenz");
+          await assertRejects(() => client.savePrescription(prescriptionFixture(client.tenantId, {
+            id: "beta-cross-company-prescription",
+            companyId: fixture.companyId,
+            businessAreaId: "hair",
+            catalogItemId: null
+          })), "PRESCRIPTION_EDIT_DISABLED", "Cross-Company-Rezept");
+        }
+      },
+      {
+        name: "MULTI-COMPANY-004B: Backup, Restore, Nicht-Beta und Dokumentausgaben bleiben berechtigungsfrei",
+        run: async () => {
+          const source = context.makeClient("multi-company-beta-portability", { appBuild: betaBuild });
+          const fixture = setupFixture(source.tenantId);
+          const settings = await enableBetaTest(source, fixture);
+          const committed = await source.commitReceipt(
+            companyDraft("beta-portability-receipt", settings, "2030-07-04T10:00:00.000Z"),
+            settings,
+            await source.readReceipts()
+          );
+          source.closeDatabase();
+          const reloadedSettings = await source.readSettings();
+          assert(api.companyProductiveStatus(reloadedSettings, fixture.companyId, betaBuild).betaProductiveTestEffective,
+            "Reload verlor die lokale Beta-Testfreigabe");
+          assert((await source.readReceipts()).receipts.some(receipt => receipt.id === committed.receipt.id),
+            "Reload verlor den Beta-Profilbeleg");
+          const snapshot = await source.exportTenantSnapshot({ appVersion: "0.11.11", appBuild: betaBuild });
+          const serialized = JSON.stringify(snapshot);
+          assert(!serialized.includes("betaProductiveTest"), "Portable Sicherung enthält die lokale Beta-Testfreigabe");
+          const encrypted = await backupApi.encryptTenantSnapshot(snapshot, "Beta-Test-Sicherungskennwort 2030");
+          const portableSnapshot = await backupApi.decryptTenantSnapshot(encrypted, "Beta-Test-Sicherungskennwort 2030");
+          assert(!JSON.stringify(portableSnapshot).includes("betaProductiveTest"), "Verschlüsselte Sicherung transportiert die Beta-Testfreigabe");
+          const targetDatabaseName = createDatabaseName();
+          const target = api.createSettingsPersistence({
+            databaseName: targetDatabaseName,
+            appBuild: betaBuild,
+            tenantId: source.tenantId
+          });
+          try {
+            await target.restoreTenantSnapshot(portableSnapshot);
+            const restored = await target.readSettings();
+            assert(!api.companyProductiveStatus(restored, fixture.companyId, betaBuild).productive,
+              "Restore übertrug die Beta-Testfreigabe auf eine andere Installation");
+            const restoredReceipts = await target.readReceipts();
+            await assertRejects(() => target.commitReceipt(
+              companyDraft("beta-restored-write", restored, "2030-07-04T11:00:00.000Z"), restored, restoredReceipts
+            ), "COMPANY_ACTIVATION_REQUIRED", "Restore ohne lokale Beta-Freigabe");
+          } finally {
+            target.closeDatabase();
+            await new Promise(resolve => setTimeout(resolve, 0));
+            await deleteTestDatabase(targetDatabaseName);
+          }
+
+          const nonBeta = context.makeClient("multi-company-beta-non-beta", { appBuild: nonBetaBuild });
+          const nonBetaFixture = setupFixture(nonBeta.tenantId);
+          await nonBeta.restoreTenantSnapshot(nonBetaFixture.snapshot);
+          const storedFlag = api.setCompanyBetaProductiveTest(
+            await nonBeta.readSettings(), nonBetaFixture.companyId, true, betaBuild, "2030-07-04T12:00:00.000Z"
+          );
+          await nonBeta.writeSettings(storedFlag);
+          const nonBetaReceipts = await nonBeta.readReceipts();
+          await assertRejects(() => nonBeta.commitReceipt(
+            companyDraft("beta-ignored-by-release", storedFlag, "2030-07-04T13:00:00.000Z"),
+            storedFlag,
+            nonBetaReceipts
+          ), "COMPANY_ACTIVATION_REQUIRED", "Nicht-Beta-Build mit gespeichertem Flag");
+
+          const projection = exportApi.createExportFiles(snapshot, {
+            exportType: "own-data", periodType: "custom", dateFrom: "2030-07-01", dateTo: "2030-07-31",
+            businessAreaId: "all", includeCustomers: true
+          });
+          assert(!JSON.stringify(projection).includes("betaProductiveTest"), "Export enthält Beta-Testmetadaten");
+          const model = documentApi.createReceiptDocumentModel(committed.receipt, documentOptions());
+          assert(!JSON.stringify(model).includes("betaProductiveTest"), "PDF-/Dokumentmodell enthält Beta-Testmetadaten");
+          const pdfBytes = await documentApi.createPdfBytes(model);
+          assert(!new TextDecoder().decode(pdfBytes).includes("betaProductiveTest"), "PDF enthält Beta-Testmetadaten");
+          const publicBundle = await publicDocumentApi.createPublicBundle(model, {
+            baseUrl: "https://app.example.invalid/frecka/", qrService: qrApi
+          });
+          assert(!publicBundle.link.includes("betaProductiveTest") && !JSON.stringify(publicBundle).includes("betaProductiveTest"),
+            "Public QR/Viewer enthält Beta-Testmetadaten");
+        }
+      },
+      {
+        name: "MULTI-COMPANY-004B: UI kennzeichnet Beta-Testmodus, Deaktivierung und Draft-Schutz explizit",
+        run: async () => {
+          const [appSource, cssSource] = await Promise.all([
+            fetch("../js/app.js", { cache: "no-store" }).then(response => response.text()),
+            fetch("../styles.css", { cache: "no-store" }).then(response => response.text())
+          ]);
+          assert(appSource.includes("Beta-Testfreigabe") && appSource.includes("Dies ist keine reguläre Lizenz"),
+            "Eindeutige Beta-/Lizenzabgrenzung fehlt in der UI");
+          assert(appSource.includes("Für Betatest freigeben") && appSource.includes("Beta-Testfreigabe deaktivieren"),
+            "Aktivierung oder Deaktivierung fehlt in der UI");
+          assert(appSource.includes("companyProductiveStatus(currentSettingsRecord, profile.id, data.build)"),
+            "UI verwendet nicht die kanonische Buildkennung");
+          assert(!appSource.includes("beta.frecka.app"), "Beta-Gate verwendet eine fragile Hostname-Erkennung");
+          assert(appSource.includes("Bitte schließe oder verwirf zuerst den offenen Entwurf"), "Draft-Schutz ging verloren");
+          assert(cssSource.includes(".company-beta-test-card") && cssSource.includes("@media (max-width: 390px)"),
+            "Mobile-First-Darstellung der Beta-Testfreigabe fehlt");
+        }
+      },
+      {
+        name: "MULTI-COMPANY-004B: Beta-Testfreigabe ist bei 320/390 px bedienbar und sofort wirksam",
+        run: async () => {
+          const index = await (await fetch("../index.html", { cache: "no-store" })).text();
+          const waitFor = async predicate => {
+            for (let attempt = 0; attempt < 160; attempt += 1) {
+              if (await predicate()) return;
+              await new Promise(resolve => setTimeout(resolve, 50));
+            }
+            throw new Error(`Beta-Testfreigabe wurde nicht rechtzeitig bereit: ${predicate.toString()}`);
+          };
+          for (const width of [320, 390]) {
+            const client = context.makeClient(`multi-company-beta-ui-${width}`, { appBuild: betaBuild });
+            const fixture = setupFixture(client.tenantId);
+            await enableBetaTest(client, fixture);
+            const frame = document.createElement("iframe");
+            frame.title = `Beta-Testfreigabe ${width} px`;
+            frame.style.cssText = `position:fixed;left:-2000px;top:0;width:${width}px;height:807px;border:0`;
+            setIsolatedAppFrame(frame, isolatedAppMarkup(index, client, "settings-company", context.databaseName, { appBuild: betaBuild }));
+            document.body.append(frame);
+            try {
+              const doc = () => frame.contentDocument;
+              await waitFor(() => doc()?.querySelector('[data-company-beta-test="disable"]'));
+              const card = doc().querySelector(".company-beta-test-card");
+              assert(card.innerText.includes("Beta-Testmodus aktiv") && card.innerText.includes("keine reguläre Lizenz"),
+                "Aktive Beta-Testfreigabe ist nicht eindeutig erklärt");
+              assert(card.querySelector("button").getBoundingClientRect().height >= 44, "Beta-Testaktion unterschreitet das Touch-Ziel");
+              assert(doc().documentElement.scrollWidth <= frame.contentWindow.innerWidth,
+                `Beta-Testfreigabe läuft bei ${width} px horizontal über`);
+              card.querySelector('[data-company-beta-test="disable"]').click();
+              await waitFor(async () => !api.companyProductiveStatus(await client.readSettings(), fixture.companyId, betaBuild).productive);
+              await waitFor(() => doc()?.querySelector('[data-company-beta-test="enable"]'));
+              doc().querySelector('[data-company-beta-test="enable"]').click();
+              await waitFor(async () => api.companyProductiveStatus(await client.readSettings(), fixture.companyId, betaBuild).betaProductiveTestEffective);
+              assert(doc().documentElement.scrollWidth <= frame.contentWindow.innerWidth,
+                `Aktivierte Beta-Testfreigabe läuft bei ${width} px horizontal über`);
+              assertDeepEqual(frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS, [], "Beta-Testfreigabe verursachte UI-Laufzeitfehler");
+            } finally {
+              frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase();
+              frame.remove();
+            }
+          }
+        }
+      }
+    ];
+  }
+
   function buildTests(context) {
     const cryptoPassphrase = "Sehr sicherer Backup Testsatz 2030";
     const wrongCryptoPassphrase = "Ganz andere sichere Passphrase";
@@ -3826,6 +4253,7 @@
     return [
       ...buildMultiCompanyTests(context),
       ...buildMultiCompanyNumberingTests(context),
+      ...buildMultiCompanyBetaTestTests(context),
       ...buildPrescriptionTests(context),
       ...buildTreatmentTests(context),
       {
@@ -9053,9 +9481,9 @@
 
     const context = {
       databaseName,
-      makeClient(label) {
+      makeClient(label, options = {}) {
         const tenantId = `test-${label}-${++tenantCounter}`;
-        const client = api.createSettingsPersistence({ databaseName, tenantId });
+        const client = api.createSettingsPersistence({ databaseName, tenantId, ...options });
         clients.add(client);
         return client;
       }

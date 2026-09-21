@@ -1,6 +1,6 @@
 # Lizenzarchitektur V1.0
 
-**Aktueller Implementierungsstand:** MULTI-COMPANY-004 auf Basis LICENSE-005 und LICENSE-001/002, ausschließlich lokale Runtime- und Tokenvorbereitung mit sicherer Zusatzprofil-Sperre
+**Aktueller Implementierungsstand:** MULTI-COMPANY-004B auf Basis MULTI-COMPANY-004 und LICENSE-005, ausschließlich lokale Runtime- und Tokenvorbereitung mit sicherer Zusatzprofil-Sperre und eng begrenzter Beta-Testausnahme
 
 **Verbindliches Zielmodell:** LICENSE-003/004; der lokale Clientteil ist mit LICENSE-005 umgesetzt
 
@@ -125,6 +125,8 @@ licenseRuntime v1
 Der Store ist vom Tenant-Snapshot, Backup, Restore und Export ausgeschlossen. LICENSE-005 hebt das IndexedDB-Schema deterministisch von 5 auf 6 an und ergänzt ausschließlich diesen Store; die fünf bisherigen Stores bleiben unverändert. Der private Schlüssel wird als nicht exportierbarer Web-Crypto-`CryptoKey` gespeichert.
 
 MULTI-COMPANY-002 hebt später 8→9 und ordnet die bestehende portable Referenz Profil 1 zu. MULTI-COMPANY-004 gibt einem neu angelegten Profil eine eigene lokale portable Referenz, kopiert aber weder die Referenz noch die Autorität von Profil 1. Weil `licenseRuntime`, Geräteidentität, Schlüssel, Token und `cachedEntitlements` weiterhin installations-/gerätebezogen und unverändert sind, gilt bis zu einem ausdrücklichen Multi-Binding-Folgeblock die konservative lokale Grenze: Profil 1 bleibt produktiv, jedes Zusatzprofil ist konfigurierbar, aber `activation_required` und für produktive Mutationen gesperrt. Mehrere Bindings, Gerätewechsel und Serverkommunikation sind nicht Bestandteil von MULTI-COMPANY-004.
+
+MULTI-COMPANY-004B ändert dieses Produktmodell nicht. Ausschließlich der kanonische Build `BETA-PREVIEW-002` darf für ein gezielt ausgewähltes Zusatzprofil den getrennten lokalen Zustand `betaProductiveTest` am zentralen Write-Guard berücksichtigen. Das Profil bleibt dabei `activation_required`; weder portable Lizenzreferenz noch `licenseRuntime`, Schlüssel, Token oder Serverstatus werden verändert. Ein Nicht-Beta-Build ignoriert den Zustand. Die zentrale Tenant-Snapshot-Projektion entfernt ihn vor Backup, Restore und Export, sodass er keine portable Lizenzberechtigung werden kann. Die temporäre Entscheidung ist in [ADR-0009](adr/ADR-0009-temporaere-beta-testfreigabe-fuer-zusatzprofile.md) festgehalten.
 
 Bei der eindeutigen LICENSE-001-Migration bleiben die lokale Lizenz-ID und die bisherige Geräte-ID erhalten: Die Lizenz-ID geht in die portable Referenz, die Geräte-ID ausschließlich in die neue Runtime. Beide sind nur Migrationshinweise. Fremde Mandanten, unbekannte Felder, widersprüchliche Serververknüpfungen und zukünftige Formatversionen werden geschlossen abgewiesen. Auf einer neuen Installation oder nach Verlust des Runtime-Stores ist intern höchstens `activation_required` vorbereitet; es wird kein Trial aus lokaler Zeit oder Settings rekonstruiert und in LICENSE-005 noch keine Produktfunktion gesperrt.
 
