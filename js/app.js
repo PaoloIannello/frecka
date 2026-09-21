@@ -41,6 +41,7 @@
   let defaultCustomersRecord = null;
   let defaultReceiptsRecord = null;
   let defaultVouchersRecord = null;
+  let currentSettingsRecord = defaultSettingsRecord ? cloneSettingsValue(defaultSettingsRecord) : null;
   const state = {
     route: "home",
     activeBusinessArea: null,
@@ -118,6 +119,9 @@
     voucherSaleCreatedReference: null,
     settingsNotice: "",
     settingsNoticeIsError: false,
+    companyCreateOpen: false,
+    companySwitchNotice: "",
+    companySwitchNoticeIsError: false,
     userSettingsNotice: "",
     userSettingsNoticeIsError: false,
     serviceLocationNotice: "",
@@ -140,6 +144,7 @@
     setupFirstStartVisible: true,
     setup: { status: "not-started" },
     setupTestPreviewVisible: false,
+    onboardingCompanyMode: "single",
     pendingBusinessTemplate: "",
     settingsReady: false,
     licenseRuntimeStatus: {
@@ -365,7 +370,8 @@
 
   function treatmentRecordForReceipt(receipt) {
     if (!receipt?.id) return null;
-    return data.treatmentRecords.find(entry => entry.receiptId === receipt.id) || null;
+    return data.treatmentRecords.find(entry => entry.receiptId === receipt.id
+      && (!receipt.companyId || entry.companyId === receipt.companyId)) || null;
   }
 
   function receiptDocumentModel(receipt) {
@@ -738,8 +744,40 @@
     return persistence.activeCompanyProfile(record);
   }
 
+  function activeCompanyId() {
+    return data.companySettings.activeCompanyId;
+  }
+
+  function allCompanyBusinessAreas() {
+    return Array.isArray(currentSettingsRecord?.businessAreas)
+      ? currentSettingsRecord.businessAreas
+      : data.businessAreas;
+  }
+
+  function activeCompanyProductiveStatus() {
+    return persistence?.companyProductiveStatus?.(currentSettingsRecord, activeCompanyId())
+      || { code: "primary_profile", productive: true };
+  }
+
+  function activeCompanyIsProductive() {
+    return activeCompanyProductiveStatus().productive === true;
+  }
+
+  function currentSettingsSnapshot() {
+    if (!currentSettingsRecord || !persistence?.mergeActiveCompanySettings) {
+      return persistence.snapshotSettings(data, state.setup.status, persistence.tenantId);
+    }
+    return persistence.mergeActiveCompanySettings(
+      currentSettingsRecord,
+      data,
+      state.setup.status,
+      persistence.tenantId
+    );
+  }
+
   function applySettingsRecord(record) {
     const profile = settingsCompanyProfile(record);
+    currentSettingsRecord = cloneSettingsValue(record);
     data.companySettings.activeCompanyId = profile.id;
     replaceSettingsArray(data.users, record.users);
     data.userSettings.activeUserId = record.activeUserId;
@@ -749,9 +787,11 @@
     Object.assign(data.tseSettings, cloneSettingsValue(profile.tseSettings));
     replaceSettingsArray(data.logoAssets, record.logoAssets || []);
     Object.assign(data.company, cloneSettingsValue(profile.company));
-    replaceSettingsArray(data.serviceLocations, record.serviceLocations);
-    replaceSettingsArray(data.businessAreas, record.businessAreas);
-    replaceSettingsArray(data.treatmentTemplates, record.treatmentTemplates || []);
+    const activeAreas = record.businessAreas.filter(area => area.companyId === profile.id);
+    const activeAreaIds = new Set(activeAreas.map(area => area.id));
+    replaceSettingsArray(data.serviceLocations, record.serviceLocations.filter(location => location.companyId === profile.id));
+    replaceSettingsArray(data.businessAreas, activeAreas);
+    replaceSettingsArray(data.treatmentTemplates, (record.treatmentTemplates || []).filter(template => activeAreaIds.has(template.businessAreaId)));
     data.businessAreas.forEach(area => {
       if (!Array.isArray(data.catalog[area.id])) data.catalog[area.id] = [];
     });
@@ -925,10 +965,10 @@
     pendingSettingsWrites += 1;
     setSettingsWritePending(true);
     try {
-      const snapshot = persistence.snapshotSettings(data, state.setup.status);
+      const snapshot = currentSettingsSnapshot();
       const normalizedRecord = persistence.normalizeSettingsRecord(snapshot, defaultSettingsRecord, persistence.tenantId).record;
       const writtenRecord = await persistence.writeSettings(normalizedRecord);
-      applySettingsRecord(normalizedRecord);
+      applySettingsRecord(writtenRecord);
       state.settingsStorageNotice = "";
       state.settingsStorageNoticeIsError = false;
       return writtenRecord;
@@ -953,7 +993,7 @@
     setSettingsWritePending(true);
     try {
       const snapshot = persistence.snapshotCatalog(data, persistence.tenantId);
-      const normalizedRecord = persistence.normalizeCatalogRecord(snapshot, defaultCatalogRecord, data.businessAreas, persistence.tenantId).record;
+      const normalizedRecord = persistence.normalizeCatalogRecord(snapshot, defaultCatalogRecord, allCompanyBusinessAreas(), persistence.tenantId).record;
       const writtenRecord = await persistence.writeCatalog(normalizedRecord);
       applyCatalogRecord(normalizedRecord);
       return writtenRecord;
@@ -1043,13 +1083,20 @@
     }
     applySettingsRecord(prepared.record);
     if (persistence.ensureLicenseRuntime && persistence.inspectLocalLicenseRuntime) {
-      try {
-        await persistence.ensureLicenseRuntime(settingsCompanyProfile(prepared.record).license, { legacyLicense: savedRecord?.license });
-      } catch (error) {
-        // LICENSE-005 bereitet nur die lokale Bindung vor. Ein Runtime-Fehler darf die
-        // bestehende Beta-Nutzung bis zur späteren Lizenzaktivierung nicht sperren.
+      const profile = settingsCompanyProfile(prepared.record);
+      const productiveStatus = persistence.companyProductiveStatus?.(prepared.record, profile.id)
+        || { productive: true };
+      if (productiveStatus.productive) {
+        try {
+          await persistence.ensureLicenseRuntime(profile.license, { legacyLicense: savedRecord?.license });
+        } catch (error) {
+          // LICENSE-005 bereitet nur die lokale Bindung für Profil 1 vor. Ein
+          // Runtime-Fehler darf die bestehende Beta-Nutzung bis zur späteren
+          // Lizenzaktivierung nicht sperren. Zusatzprofile werden hier bewusst
+          // nicht an dieselbe Runtime gebunden.
+        }
       }
-      state.licenseRuntimeStatus = await persistence.inspectLocalLicenseRuntime(settingsCompanyProfile(prepared.record).license);
+      state.licenseRuntimeStatus = await persistence.inspectLocalLicenseRuntime(profile.license);
     }
     return { firstStart: savedRecord === null, repairs: prepared.repairs };
   }
@@ -1063,7 +1110,7 @@
     }
     const savedRecord = await persistence.readCatalog();
     if (savedRecord === null) return { firstStart: true, repairs: [] };
-    const normalized = persistence.normalizeCatalogRecord(savedRecord, defaultCatalogRecord, data.businessAreas, persistence.tenantId);
+    const normalized = persistence.normalizeCatalogRecord(savedRecord, defaultCatalogRecord, allCompanyBusinessAreas(), persistence.tenantId);
     applyCatalogRecord(normalized.record);
     return { firstStart: false, repairs: normalized.repairs };
   }
@@ -1245,7 +1292,8 @@
       <p>${draftCount} ${draftCount === 1 ? "Position" : "Positionen"} · ${formatCurrency(cartTotal())} · ${escapeHtml(draftCustomer)}</p>
       <div class="open-receipt-actions"><button class="button button-secondary" type="button" data-action="resume-receipt">Weiter bearbeiten</button><button class="button button-ghost" type="button" data-action="discard-receipt">Verwerfen</button></div>
     </section>` : "";
-    mainContent.innerHTML = `<div class="home-layout ${hasDraft ? "has-draft" : "has-no-draft"} page-enter">${state.settingsStorageNotice ? `<div class="settings-save-notice ${state.settingsStorageNoticeIsError ? "is-error" : ""}" role="${state.settingsStorageNoticeIsError ? "alert" : "status"}">${escapeHtml(state.settingsStorageNotice)}</div>` : ""}${state.setupFirstStartVisible ? setupStartHint() : ""}${backupReminderMarkup()}<section class="hero-card"><p class="eyebrow">${escapeHtml(getAreaLabel())}</p><h1>Was möchtest du erfassen?</h1><p class="hero-copy">Leistungen und Produkte direkt auswählen.</p><button class="button button-primary" type="button" data-action="new-receipt"><span aria-hidden="true">＋</span><span>Neuer Beleg</span></button></section>${openReceipt}</div>`;
+    const productive = activeCompanyIsProductive();
+    mainContent.innerHTML = `<div class="home-layout ${hasDraft ? "has-draft" : "has-no-draft"} page-enter">${state.settingsStorageNotice ? `<div class="settings-save-notice ${state.settingsStorageNoticeIsError ? "is-error" : ""}" role="${state.settingsStorageNoticeIsError ? "alert" : "status"}">${escapeHtml(state.settingsStorageNotice)}</div>` : ""}${state.setupFirstStartVisible ? setupStartHint() : ""}${backupReminderMarkup()}${productive ? "" : '<div class="company-activation-notice" role="status"><strong>Konfigurationsmodus</strong><span>Für die produktive Nutzung dieses Unternehmens ist eine eigene Aktivierung erforderlich.</span></div>'}<section class="hero-card"><p class="eyebrow">${escapeHtml(getAreaLabel())}</p><h1>Was möchtest du erfassen?</h1><p class="hero-copy">Leistungen und Produkte direkt auswählen.</p><button class="button button-primary" type="button" data-action="new-receipt" ${productive ? "" : "disabled"}><span aria-hidden="true">＋</span><span>Neuer Beleg</span></button></section>${openReceipt}</div>`;
   }
 
   function catalogItems() {
@@ -1490,7 +1538,7 @@
   }
 
   const normalizeVoucherCode = value => String(value || "").trim().toLocaleUpperCase("de-DE").replaceAll("-", "").replaceAll(" ", "");
-  const eligibleCheckoutVouchers = () => data.vouchers.filter(isVoucherOpen);
+  const eligibleCheckoutVouchers = () => data.vouchers.filter(voucher => voucher.companyId === activeCompanyId() && isVoucherOpen(voucher));
   const selectedCheckoutVoucher = () => voucherByReference(state.checkoutVoucherReference);
 
   function resetCheckoutVoucher() {
@@ -1571,7 +1619,7 @@
   function prescriptionUsageFor(entry) {
     try {
       return persistence?.prescriptionUsage
-        ? persistence.prescriptionUsage(entry, data.receipts)
+        ? persistence.prescriptionUsage(entry, data.receipts.filter(receipt => receipt.companyId === entry.companyId))
         : { prescribedUnits: entry.prescribedUnits, usedUnits: 0, availableUnits: entry.prescribedUnits,
           historicallyUsed: false, status: entry.active === false ? "archived" : "open" };
     } catch (error) {
@@ -1627,7 +1675,7 @@
       state.checkoutVoucherError = "Bitte einen Gutscheincode eingeben.";
       return false;
     }
-    const matches = data.vouchers.filter(voucher => normalizeVoucherCode(voucher.code).includes(query));
+    const matches = data.vouchers.filter(voucher => voucher.companyId === activeCompanyId() && normalizeVoucherCode(voucher.code).includes(query));
     if (!matches.length) {
       state.checkoutVoucherError = "Gutschein wurde nicht gefunden.";
       return false;
@@ -1654,6 +1702,11 @@
 
   async function finishReceipt(leavePaymentOpen = false) {
     if (state.checkoutSubmitting) return;
+    if (!activeCompanyIsProductive()) {
+      state.checkoutVoucherError = "Für die produktive Nutzung dieses Unternehmens ist eine eigene Aktivierung erforderlich.";
+      renderCheckout();
+      return;
+    }
     if (!state.receiptsReadyForWrites) {
       state.checkoutVoucherError = "Der lokale Belegspeicher ist noch nicht sicher verfügbar. Es wurde kein Beleg abgeschlossen und keine Nummer vergeben.";
       renderCheckout();
@@ -1852,7 +1905,7 @@
         unavailableError.userMessage = "Der Beleg konnte nicht sicher lokal gespeichert werden.";
         throw unavailableError;
       }
-      const settingsSnapshot = persistence.snapshotSettings(data, state.setup.status, persistence.tenantId);
+      const settingsSnapshot = currentSettingsSnapshot();
       const seedReceiptsRecord = persistence.snapshotReceipts(data, persistence.tenantId);
       let prescriptionInput = null;
       if (state.checkoutPrescriptionId) {
@@ -1914,8 +1967,7 @@
       applyReceiptsRecord(committed.receiptsRecord);
       if (committed.treatmentRecordsRecord) applyTreatmentRecordsRecord(committed.treatmentRecordsRecord);
       if (voucher) applyVouchersRecord(committed.vouchersRecord);
-      Object.keys(data.receiptSettings).forEach(key => { delete data.receiptSettings[key]; });
-      Object.assign(data.receiptSettings, cloneSettingsValue(settingsCompanyProfile(committed.settingsRecord).receiptSettings));
+      applySettingsRecord(committed.settingsRecord);
       state.receiptCounter = Math.max(0, data.receiptSettings.nextNumber - 1);
       const storedReceipt = data.receipts.find(entry => entry.id === committed.receipt.id) || committed.receipt;
       state.finishedReceipt = storedReceipt;
@@ -2323,7 +2375,7 @@
     if (!customerId) return [];
 
     return data.receipts
-      .filter(receipt => receipt.customer?.id === customerId)
+      .filter(receipt => receipt.companyId === activeCompanyId() && receipt.customer?.id === customerId)
       .sort((a, b) => b.sortKey.localeCompare(a.sortKey));
   }
 
@@ -2337,7 +2389,7 @@
 
   function relatedCustomerCorrections(receipt) {
     return data.receipts
-      .filter(item => item.reference === receipt.number)
+      .filter(item => item.companyId === receipt.companyId && item.reference === receipt.number)
       .sort((a, b) => b.sortKey.localeCompare(a.sortKey));
   }
 
@@ -2356,7 +2408,8 @@
   }
 
   function prescriptionCanEdit(entry, customer) {
-    return state.prescriptionsReady && customer.active !== false
+    return activeCompanyIsProductive() && state.prescriptionsReady && customer.active !== false
+      && entry.companyId === activeCompanyId()
       && prescriptionAreas().some(area => area.id === entry.businessAreaId);
   }
 
@@ -2365,7 +2418,7 @@
   }
 
   function customerPrescriptionsMarkup(customer) {
-    const entries = data.prescriptions.filter(entry => entry.customerId === customer.id)
+    const entries = data.prescriptions.filter(entry => entry.companyId === activeCompanyId() && entry.customerId === customer.id)
       .sort((a, b) => b.prescribedOn.localeCompare(a.prescribedOn) || b.createdAt.localeCompare(a.createdAt));
     if (!prescriptionAreas().length && !entries.length && !state.prescriptionNotice) return "";
     return `<section class="customer-prescriptions" aria-labelledby="customerPrescriptionsTitle">
@@ -2377,12 +2430,12 @@
           <span><strong>${escapeHtml(entry.treatmentText)}</strong><small>${escapeHtml(formatGermanDate(entry.prescribedOn))} · ${usage ? `${usage.usedUnits} von ${usage.prescribedUnits} genutzt · ${usage.availableUnits} verfügbar` : "Verbrauch nicht verfügbar"}</small><small>${escapeHtml(data.businessAreas.find(area => area.id === entry.businessAreaId)?.label || "Geschäftsbereich nicht verfügbar")}</small></span><em>${escapeHtml(prescriptionUsageStatusLabel(usage?.status))}</em>
         </button>`;
       }).join("") || '<p class="page-copy">Noch keine Rezepte hinterlegt.</p>'}</div>
-      ${customer.active !== false && prescriptionAreas().length && state.prescriptionsReady ? '<button class="button button-secondary" type="button" data-prescription-new>Rezept anlegen</button>' : '<p class="page-copy">Vorhandene Rezepte bleiben hier lesbar. Neue Eingaben benötigen einen aktiven Kunden und einen aktivierten Geschäftsbereich.</p>'}
+      ${activeCompanyIsProductive() && customer.active !== false && prescriptionAreas().length && state.prescriptionsReady ? '<button class="button button-secondary" type="button" data-prescription-new>Rezept anlegen</button>' : `<p class="page-copy">${activeCompanyIsProductive() ? "Vorhandene Rezepte bleiben hier lesbar. Neue Eingaben benötigen einen aktiven Kunden und einen aktivierten Geschäftsbereich." : "Vorhandene Rezepte bleiben hier lesbar. Für neue Einträge ist eine eigene Aktivierung dieses Unternehmens erforderlich."}</p>`}
     </section>`;
   }
 
   function customerTreatmentHistoryMarkup(customer) {
-    const records = data.treatmentRecords.filter(entry => entry.customerId === customer.id)
+    const records = data.treatmentRecords.filter(entry => entry.companyId === activeCompanyId() && entry.customerId === customer.id)
       .sort((a, b) => b.performedAt.localeCompare(a.performedAt));
     if (!records.length && !prescriptionAreas().length) return "";
     return `<section class="customer-treatment-history" aria-labelledby="customerTreatmentHistoryTitle">
@@ -2419,7 +2472,8 @@
   }
 
   function renderPrescriptionDetail(customer) {
-    const entry = data.prescriptions.find(entry => entry.id === state.prescriptionDetailId && entry.customerId === customer.id);
+    const entry = data.prescriptions.find(entry => entry.id === state.prescriptionDetailId
+      && entry.companyId === activeCompanyId() && entry.customerId === customer.id);
     if (!entry) { state.prescriptionDetailId = null; renderCustomerDetail(); return; }
     const usage = prescriptionUsageFor(entry);
     const canManage = prescriptionCanEdit(entry, customer);
@@ -2443,7 +2497,7 @@
   function renderPrescriptionEditor(customer) {
     const draft = state.prescriptionDraft;
     if (!draft || draft.customerId !== customer.id) { state.prescriptionDraft = null; renderCustomerDetail(); return; }
-    const existing = data.prescriptions.find(entry => entry.id === draft.id);
+    const existing = data.prescriptions.find(entry => entry.id === draft.id && entry.companyId === activeCompanyId());
     if (!prescriptionCanEdit(existing || draft, customer)) {
       state.prescriptionDraft = null;
       state.prescriptionNotice = "Die Rezeptverwaltung ist für diesen Kunden oder Geschäftsbereich nicht verfügbar.";
@@ -2634,7 +2688,7 @@
   }
 
   function receiptByNumber(number) {
-    return data.receipts.find(receipt => receipt.number === number) || null;
+    return data.receipts.find(receipt => receipt.companyId === activeCompanyId() && receipt.number === number) || null;
   }
 
   function receiptById(id) {
@@ -2651,6 +2705,7 @@
   function visibleReceipts() {
     const search = state.receiptSearch.trim().toLowerCase();
     return data.receipts
+      .filter(receipt => receipt.companyId === activeCompanyId())
       .filter(receipt => {
         if (state.receiptFilter === "completed") return receipt.type !== "credit" && receipt.status !== "cancelled" && receipt.paymentStatus !== "open";
         if (state.receiptFilter === "cancelled") return receipt.status === "cancelled";
@@ -2737,12 +2792,14 @@
     const receipt = receiptByNumber(state.receiptDetailNumber);
     if (!receipt) { navigate("receipts", false); return; }
     const paidVoucher = receipt.voucherPayment ? voucherByReference(receipt.voucherPayment.reference) : null;
-    const related = data.receipts.filter(item => item.reference === receipt.number || item.number === receipt.reference);
+    const related = data.receipts.filter(item => item.companyId === receipt.companyId
+      && (item.reference === receipt.number || item.number === receipt.reference));
     const relatedCreditsTotal = data.receipts
-      .filter(item => item.reference === receipt.number && item.type === "credit")
+      .filter(item => item.companyId === receipt.companyId && item.reference === receipt.number && item.type === "credit")
       .reduce((sum, item) => sum + Math.abs(Number(item.total || 0)), 0);
     const remainingCredit = Math.max(0, Number(receipt.total || 0) - relatedCreditsTotal);
-    const hasCancellation = data.receipts.some(item => item.reference === receipt.number && item.type === "cancellation");
+    const hasCancellation = data.receipts.some(item => item.companyId === receipt.companyId
+      && item.reference === receipt.number && item.type === "cancellation");
     const canRecordPayment = receipt.type === "receipt" && receipt.paymentStatus === "open" && receipt.status !== "cancelled";
     const canCorrect = receipt.type === "receipt"
       && receipt.receiptKind !== "voucher-sale"
@@ -2839,7 +2896,7 @@
     const receipt = receiptByNumber(state.receiptDetailNumber);
     if (!receipt) { navigate("receipts", false); return; }
     const alreadyCredited = data.receipts
-      .filter(item => item.reference === receipt.number && item.type === "credit")
+      .filter(item => item.companyId === receipt.companyId && item.reference === receipt.number && item.type === "credit")
       .reduce((sum, item) => sum + Math.abs(Number(item.total || 0)), 0);
     const maximumCredit = Math.max(0, Number(receipt.total || 0) - alreadyCredited);
     if (maximumCredit <= 0.009 || receipt.status === "cancelled" || receipt.status === "credited") {
@@ -2937,8 +2994,7 @@
         persistence.snapshotReceipts(data, persistence.tenantId)
       );
       applyReceiptsRecord(result.record);
-      Object.keys(data.receiptSettings).forEach(key => { delete data.receiptSettings[key]; });
-      Object.assign(data.receiptSettings, cloneSettingsValue(settingsCompanyProfile(result.settingsRecord).receiptSettings));
+      applySettingsRecord(result.settingsRecord);
       if (!result.receipt) throw new Error("Die Gutschrift wurde nicht bestätigt.");
       state.receiptDetailNumber = result.receipt.number;
       state.successNotice = `${isFull ? "Gesamtgutschrift" : "Teilgutschrift"} ${result.receipt.number} wurde lokal gespeichert.`;
@@ -2955,14 +3011,17 @@
     return saved;
   }
 
-  const voucherByReference = reference => data.vouchers.find(voucher => voucher.reference === reference) ?? null;
+  const voucherByReference = reference => data.vouchers.find(voucher => (
+    voucher.reference === reference && voucher.companyId === activeCompanyId()
+  )) ?? null;
   const voucherByQrReference = reference => data.vouchers.find(voucher => [
     voucher.qrReference,
     voucher.id,
     voucher.reference
   ].includes(reference)) ?? null;
   const linkedVoucherSaleReceipt = voucher => data.receipts.find(receipt =>
-    receipt.id === voucher.saleReceipt?.id
+    receipt.companyId === voucher.companyId
+      && receipt.id === voucher.saleReceipt?.id
       && receipt.number === voucher.saleReceipt?.number
       && receipt.voucherReference === voucher.reference
   ) ?? null;
@@ -3274,7 +3333,8 @@
         ${events.length ? events.map(event => {
           const eventReceipt = event.type === "sold"
             ? (linkedReceipt && event.receiptNumber === linkedReceipt.number ? linkedReceipt : null)
-            : data.receipts.find(receipt => receipt.number === event.receiptNumber && receipt.voucherPayment?.reference === voucher.reference) ?? null;
+            : data.receipts.find(receipt => receipt.companyId === voucher.companyId
+              && receipt.number === event.receiptNumber && receipt.voucherPayment?.reference === voucher.reference) ?? null;
           return `<article class="voucher-history-item voucher-history-${escapeHtml(event.type)}">
           <span class="voucher-history-marker" aria-hidden="true"></span>
           <div class="voucher-history-main">
@@ -3300,17 +3360,17 @@
     const normalize = value => String(value || "").toLocaleLowerCase("de-DE").replaceAll("-", "").replaceAll(" ", "");
     const query = normalize(state.voucherSearch.trim());
     if (query) {
-      return data.vouchers.filter(voucher => [
+      return data.vouchers.filter(voucher => voucher.companyId === activeCompanyId() && [
         voucher.code,
         voucher.customer?.name,
         voucher.displayName,
         voucher.saleReceipt?.number
       ].some(value => normalize(value).includes(query)));
     }
-    if (state.voucherFilter === "redeemed") return data.vouchers.filter(voucher => voucher.status === "redeemed");
-    if (state.voucherFilter === "cancelled") return data.vouchers.filter(voucher => voucher.status === "cancelled");
-    if (state.voucherFilter === "all") return data.vouchers;
-    return data.vouchers.filter(isVoucherOpen);
+    if (state.voucherFilter === "redeemed") return data.vouchers.filter(voucher => voucher.companyId === activeCompanyId() && voucher.status === "redeemed");
+    if (state.voucherFilter === "cancelled") return data.vouchers.filter(voucher => voucher.companyId === activeCompanyId() && voucher.status === "cancelled");
+    if (state.voucherFilter === "all") return data.vouchers.filter(voucher => voucher.companyId === activeCompanyId());
+    return data.vouchers.filter(voucher => voucher.companyId === activeCompanyId() && isVoucherOpen(voucher));
   }
 
   function renderVouchers() {
@@ -3322,7 +3382,8 @@
         <p>Gutscheine verkaufen und vorhandene Gutscheine nachsehen.</p>
       </header>
 
-      <button class="button button-primary voucher-sell-button" type="button" data-action="voucher-sell">＋ Gutschein verkaufen</button>
+      <button class="button button-primary voucher-sell-button" type="button" data-action="voucher-sell" ${activeCompanyIsProductive() ? "" : "disabled"}>＋ Gutschein verkaufen</button>
+      ${activeCompanyIsProductive() ? "" : '<p class="company-activation-inline">Für die produktive Nutzung dieses Unternehmens ist eine eigene Aktivierung erforderlich.</p>'}
       ${state.voucherNotice ? `<div class="voucher-notice" role="status">${escapeHtml(state.voucherNotice)}</div>` : ""}
 
       <div class="voucher-filters" role="group" aria-label="Gutscheine filtern">
@@ -3380,6 +3441,12 @@
   }
 
   function startVoucherSale(returnRoute = "vouchers", amount = null) {
+    if (!activeCompanyIsProductive()) {
+      state.voucherNotice = "Für die produktive Nutzung dieses Unternehmens ist eine eigene Aktivierung erforderlich.";
+      if (state.route !== "vouchers") navigate("vouchers");
+      else renderVouchers();
+      return;
+    }
     resetVoucherSaleDraft();
     state.voucherSaleReturnRoute = returnRoute;
     if (amount !== null) {
@@ -3544,14 +3611,13 @@
     const committed = await persistence.commitVoucherSale(
       sale.receipt,
       sale.voucher,
-      persistence.snapshotSettings(data, state.setup.status, persistence.tenantId),
+      currentSettingsSnapshot(),
       persistence.snapshotReceipts(data, persistence.tenantId),
       persistence.snapshotVouchers(data, persistence.tenantId)
     );
     applyReceiptsRecord(committed.receiptsRecord);
     applyVouchersRecord(committed.vouchersRecord);
-    Object.keys(data.receiptSettings).forEach(key => { delete data.receiptSettings[key]; });
-    Object.assign(data.receiptSettings, cloneSettingsValue(settingsCompanyProfile(committed.settingsRecord).receiptSettings));
+    applySettingsRecord(committed.settingsRecord);
     state.receiptCounter = Math.max(0, data.receiptSettings.nextNumber - 1);
     sale.receipt = data.receipts.find(receipt => receipt.id === committed.receipt.id) || committed.receipt;
     sale.voucher = data.vouchers.find(voucher => voucher.reference === committed.voucher.reference) || committed.voucher;
@@ -4097,6 +4163,20 @@
     }
   }
 
+  function normalizeSubmittedProfileCode(value) {
+    try {
+      return { value: persistence.normalizeReceiptProfileCode(value) };
+    } catch (error) {
+      return { error: persistenceErrorMessage(error, "Bitte ein gültiges Belegkürzel angeben.") };
+    }
+  }
+
+  function activeProfileRecord() {
+    return currentSettingsRecord
+      ? persistence.companyProfileById(currentSettingsRecord, activeCompanyId())
+      : null;
+  }
+
   function applyCompanyForm(formData) {
     const candidate = {
       name: companyFormValue(formData, "name", data.company.name),
@@ -4130,20 +4210,42 @@
     const website = normalizeCompanyWebsite(candidate.website);
     if (website.error) return { error: website.error, changed: false };
     candidate.website = website.value;
-    const requestedCompanyLocationUse = formData.has("useAsServiceLocation")
+    const requestedCompanyLocationUse = formData.has("_companySettingsForm")
       ? formData.get("useAsServiceLocation") === "on"
-      : data.company.useAsServiceLocation !== false;
+      : formData.has("useAsServiceLocation")
+        ? true
+        : data.company.useAsServiceLocation !== false;
     const uncoveredArea = uncoveredBusinessAreaForCompanyLocationChoice(requestedCompanyLocationUse);
-    if (formData.has("useAsServiceLocation") && uncoveredArea) {
+    if (!requestedCompanyLocationUse && uncoveredArea) {
       return { error: `Bitte zuerst einen eigenen aktiven Leistungsort für ${uncoveredArea.label} zuordnen.`, changed: false };
     }
     const identity = companyIdentityValue(candidate);
     candidate.name = identity.name;
     candidate.owner = identity.owner;
     candidate.useAsServiceLocation = requestedCompanyLocationUse;
-    const changed = Object.entries(candidate).some(([key, value]) => data.company[key] !== value);
+    const profile = activeProfileRecord();
+    const submittedCode = formData.has("profileCode") ? String(formData.get("profileCode") || "").trim() : "";
+    let normalizedCode = profile?.receiptSettings?.numbering?.profileCode || null;
+    if (submittedCode || profile?.receiptSettings?.numbering?.mode === "profile") {
+      const codeResult = normalizeSubmittedProfileCode(submittedCode);
+      if (codeResult.error) return { error: codeResult.error, changed: false };
+      normalizedCode = codeResult.value;
+      const duplicate = currentSettingsRecord?.companies?.some(entry => (
+        entry.id !== activeCompanyId() && entry.receiptSettings?.numbering?.profileCode === normalizedCode
+      ));
+      if (duplicate) return { error: "Dieses Belegkürzel wird bereits von einem anderen Unternehmen verwendet.", changed: false };
+    }
+    const codeChanged = Boolean(profile) && (
+      profile.receiptSettings.numbering.mode !== (normalizedCode ? "profile" : "legacy")
+      || profile.receiptSettings.numbering.profileCode !== normalizedCode
+    );
+    const changed = codeChanged || Object.entries(candidate).some(([key, value]) => data.company[key] !== value);
     if (!changed) return { error: "", changed: false };
     Object.assign(data.company, candidate, { updatedAt: new Date().toISOString() });
+    if (codeChanged) {
+      data.receiptSettings.numbering.mode = "profile";
+      data.receiptSettings.numbering.profileCode = normalizedCode;
+    }
     repairBusinessAreaLocationDefaults();
     companyName.textContent = companyDisplayName(data.company);
     return { error: "", changed: true };
@@ -4159,9 +4261,12 @@
     const addressMode = rawMode === "own" || rawMode === "alternate" ? "own" : "company";
     const submittedAreaIds = formData.getAll("businessAreaIds").map(String);
     const businessAreaIds = editorForm ? submittedAreaIds : (submittedAreaIds.length ? submittedAreaIds : [...(existing.businessAreaIds || [])]);
+    const activeAreaIds = new Set(data.businessAreas.map(area => area.id));
+    if (existing.companyId && existing.companyId !== activeCompanyId()) return "Der Leistungsort gehört zu einem anderen Unternehmensprofil.";
+    if (businessAreaIds.some(areaId => !activeAreaIds.has(areaId))) return "Ein Leistungsort darf nur Geschäftsbereichen desselben Unternehmens zugeordnet werden.";
     const location = {
       id: existingId && existingId !== "new" ? existingId : `location-${Date.now()}`,
-      companyId: existing.companyId || data.companySettings.activeCompanyId,
+      companyId: activeCompanyId(),
       name: String(formData.get("name") || existing.name || "").trim(),
       addressMode,
       street: addressMode === "own" ? String(formData.get("street") || "").trim() : "",
@@ -4464,8 +4569,12 @@
   function setupStepContent() {
     const company = data.company;
     const receipt = data.receiptSettings;
+    const numbering = receipt.numbering || {};
+    const numberingYear = numbering.displayYear || receipt.yearPrefix;
+    const numberingNext = numbering.nextSequences?.receipt?.[numberingYear] || receipt.nextNumber;
+    const receiptNumberPreview = `${numbering.mode === "profile" ? `${numbering.profileCode}-` : ""}${numberingYear}-${String(numberingNext).padStart(6, "0")}`;
     switch (state.setupStep) {
-      case 1: return `<div class="setup-welcome"><div class="setup-welcome-symbol" aria-hidden="true">✓</div><h2>In etwa fünf Minuten ist FRECKA einsatzbereit.</h2><p>Wir richten gemeinsam alles ein.<br>Du kannst jederzeit unterbrechen und später weitermachen.</p><ul><li>Unternehmen und Leistungsort</li><li>Steuern und Belegnummern</li><li>Zahlungsarten und Geschäftsbereich</li></ul></div>${setupActions("Einrichtung starten")}`;
+      case 1: return `<div class="setup-welcome"><div class="setup-welcome-symbol" aria-hidden="true">✓</div><h2>In etwa fünf Minuten ist FRECKA einsatzbereit.</h2><p>Wir richten gemeinsam alles ein.<br>Du kannst jederzeit unterbrechen und später weitermachen.</p><fieldset class="settings-option-list onboarding-company-choice"><legend>Wie möchtest du FRECKA nutzen?</legend><label><input type="radio" name="companyMode" value="single" ${state.onboardingCompanyMode !== "multiple" ? "checked" : ""}><span><strong>Ich arbeite mit einem Unternehmen</strong><small>Eine Unternehmenseinheit – auch mit mehreren Geschäftsbereichen oder Leistungsorten.</small></span></label><label><input type="radio" name="companyMode" value="multiple" ${state.onboardingCompanyMode === "multiple" ? "checked" : ""}><span><strong>Ich verwalte mehrere eigenständige Unternehmen</strong><small>Zum Beispiel Unternehmen mit getrennten Unternehmens- oder Steuerdaten. Weitere Profile legst du danach in den Einstellungen an.</small></span></label></fieldset><p class="settings-neutral-note">Diese Auswahl erklärt nur die Datenstruktur und ersetzt keine rechtliche oder steuerliche Beratung.</p></div>${setupActions("Einrichtung starten")}`;
       case 2: return `<section class="settings-form-card"><h2>Unternehmen</h2>
         <label class="setting-field full"><span>Geschäftsbezeichnung <small>optional</small></span><input name="name" autocomplete="organization" maxlength="160" value="${escapeHtml(company.name || "")}"></label>
         <label class="setting-field full"><span>Unternehmer/in</span><input name="owner" autocomplete="name" maxlength="160" required value="${escapeHtml(company.owner || "")}"></label>
@@ -4481,14 +4590,16 @@
         ${[["vat","Umsatzsteuer wird berechnet","Neue Belege zeigen den gewählten Standardsteuersatz."],["small-business","Kleinunternehmerregelung","Belege werden ohne ausgewiesene Umsatzsteuer vorbereitet."],["undecided","Noch nicht sicher","Du kannst fortfahren und die Auswahl später klären."]].map(([value,label,note]) => `<label><input type="radio" name="taxStatus" value="${value}" ${data.taxSettings.status === value ? "checked" : ""}><span><strong>${label}</strong><small>${note}</small></span></label>`).join("")}</fieldset>
         <div class="setup-tax-rate" ${data.taxSettings.status === "vat" ? "" : "hidden"}><span>Standard-Steuersatz</span><div class="setup-choice-row"><label><input type="radio" name="defaultTaxRate" value="19" ${data.taxSettings.defaultRate === 19 ? "checked" : ""}><span>19 %</span></label><label><input type="radio" name="defaultTaxRate" value="7" ${data.taxSettings.defaultRate === 7 ? "checked" : ""}><span>7 %</span></label></div></div>
         <p class="settings-neutral-note">Bitte kläre Unsicherheiten mit deiner Steuerberatung. FRECKA trifft keine rechtliche Entscheidung.</p></section>${setupActions()}`;
-      case 5: return `<section class="settings-form-card settings-single-column"><h2>Belegnummern</h2><div class="receipt-number-preview full"><span>Nächster automatisch vergebener Stand</span><strong>${escapeHtml(receipt.yearPrefix)}-${String(receipt.nextNumber).padStart(6,"0")}</strong><small>Normale Belege und Gutscheinverkäufe verwenden denselben geschützten Nummernkreis.</small></div><p class="settings-neutral-note">Der Nummernkreis ist nach seiner Verwendung nur lesbar. Bereits vergebene Nummern werden weder zurückgesetzt noch neu vergeben.</p></section>${setupActions()}`;
+      case 5: return `<section class="settings-form-card settings-single-column"><h2>Belegnummern</h2><div class="receipt-number-preview full"><span>Nächster automatisch vergebener Stand</span><strong>${escapeHtml(receiptNumberPreview)}</strong><small>Normale Belege und Gutscheinverkäufe verwenden denselben geschützten Nummernkreis.</small></div><p class="settings-neutral-note">Der Nummernkreis ist nach seiner Verwendung nur lesbar. Bereits vergebene Nummern werden weder zurückgesetzt noch neu vergeben.</p></section>${setupActions()}`;
       case 6: return `<div class="payment-settings-list">${data.paymentChoices.map(choice => `<article class="payment-setting-row"><span class="payment-setting-icon" aria-hidden="true">${escapeHtml(choice.icon)}</span><span class="payment-setting-name"><strong>${escapeHtml(choice.title)}</strong><small>${choice.id === "voucher" ? "Gutscheinsystem" : "Normale Zahlungsart"}</small></span><label class="payment-setting-toggle"><input type="checkbox" data-payment-toggle="${escapeHtml(choice.id)}" ${choice.active !== false ? "checked" : ""}><span>${choice.active !== false ? "Aktiv" : "Deaktiviert"}</span></label></article>`).join("")}</div><p class="prototype-note">Mindestens eine normale Zahlungsart muss aktiv bleiben. Offene Zahlungen werden getrennt im Checkout erfasst.</p>${setupActions()}`;
-      case 7: return `<div class="business-model-note"><strong>Eine Instanz entspricht einer Filiale.</strong><span>Hier legst du nur fachliche Geschäftsbereiche fest.</span></div><div class="business-area-list">${setupBusinessAreaRows()}</div><button class="button button-secondary business-area-add" type="button" data-action="business-area-add">＋ Geschäftsbereich</button>${setupActions()}`;
+      case 7: return `<div class="business-model-note"><strong>Geschäftsbereiche gehören zum aktiven Unternehmen.</strong><span>Lege hier fachliche Bereiche desselben Unternehmens an. Eigenständige Unternehmen verwaltest du getrennt in den Einstellungen.</span></div><div class="business-area-list">${setupBusinessAreaRows()}</div><button class="button button-secondary business-area-add" type="button" data-action="business-area-add">＋ Geschäftsbereich</button>${setupActions()}`;
       case 8: return `<section class="settings-form-card settings-single-column"><h2>Optionale Belegtexte</h2><label class="setting-field full"><span>Dankestext <small>optional</small></span><input name="thankYouText" maxlength="120" placeholder="z. B. Vielen Dank für deinen Besuch." value="${escapeHtml(receipt.thankYouText || "")}"></label><label class="setting-field full"><span>Fußtext <small>optional</small></span><textarea name="footerText" rows="3" maxlength="240" placeholder="z. B. Termine bitte 24 Stunden vorher absagen.">${escapeHtml(receipt.footerText || "")}</textarea></label></section>${setupActions("Weiter oder überspringen")}`;
       case 9: return `<div class="setup-info-card"><div class="setup-info-symbol" aria-hidden="true">T</div><h2>TSE ist optional</h2><p>FRECKA ist ohne TSE vollständig nutzbar. Als vorgesehener Anbieter ist fiskaly SIGN DE hinterlegt; eine Verbindung oder Aktivierung findet noch nicht statt.</p><p>Den aktuellen Vorbereitungsstatus findest du jederzeit in den Einstellungen. Die tatsächliche Anbindung folgt in einem eigenen Produktblock.</p><button class="button button-primary" type="button" data-setup-tse>Verstanden</button><button class="button button-secondary" type="button" data-setup-tse>Später in Einstellungen prüfen</button></div><div class="setup-actions"><button class="button button-secondary" type="button" data-setup-back>Zurück</button><button class="setup-cancel" type="button" data-setup-cancel>Assistent abbrechen</button></div>`;
       case 10: return `${setupSummary()}${setupActions("Weiter zum Testbeleg")}`;
       case 11: return `<div class="setup-info-card"><h2>Jetzt einen Testbeleg erstellen</h2><p>Die Vorschau verwendet deine aktuellen Angaben, erzeugt aber keinen echten Beleg.</p><button class="button button-secondary" type="button" data-setup-test>${state.setupTestPreviewVisible ? "Vorschau aktualisieren" : "Testbeleg-Vorschau anzeigen"}</button></div>${state.setupTestPreviewVisible ? setupTestReceipt() : ""}${setupActions(state.setupTestPreviewVisible ? "Einrichtung abschließen" : "Testbeleg überspringen")}`;
-      case 12: return `<div class="setup-finished"><div class="setup-welcome-symbol" aria-hidden="true">✓</div><h2>FRECKA ist startklar.</h2><p>Du kannst jetzt direkt deinen ersten Beleg erstellen.</p><small>Deine Einstellungen sind lokal auf diesem Gerät gespeichert.</small><button class="button button-primary" type="button" data-action="new-receipt">Jetzt ersten Beleg erstellen</button><button class="button button-secondary" type="button" data-route="settings">Einstellungen öffnen</button></div>`;
+      case 12: return activeCompanyIsProductive()
+        ? `<div class="setup-finished"><div class="setup-welcome-symbol" aria-hidden="true">✓</div><h2>FRECKA ist startklar.</h2><p>Du kannst jetzt direkt deinen ersten Beleg erstellen.</p><small>Deine Einstellungen sind lokal auf diesem Gerät gespeichert.</small><button class="button button-primary" type="button" data-action="new-receipt">Jetzt ersten Beleg erstellen</button><button class="button button-secondary" type="button" data-route="settings">Einstellungen öffnen</button></div>`
+        : `<div class="setup-finished"><div class="setup-welcome-symbol" aria-hidden="true">✓</div><h2>Unternehmensprofil ist eingerichtet.</h2><p>Du kannst die Einstellungen dieses Unternehmens weiter bearbeiten.</p><small>Für produktive Belege ist eine eigene Aktivierung erforderlich.</small><button class="button button-primary" type="button" data-route="settings">Einstellungen öffnen</button></div>`;
       default: return "";
     }
   }
@@ -4520,6 +4631,9 @@
   }
 
   function saveSetupStep(formData, validate = true) {
+    if (state.setupStep === 1) {
+      state.onboardingCompanyMode = formData.get("companyMode") === "multiple" ? "multiple" : "single";
+    }
     if (state.setupStep === 2) {
       const required = ["owner", "street", "zip", "city"];
       if (validate && required.some(name => !String(formData.get(name) || "").trim())) return "Bitte alle Pflichtangaben zum Unternehmen ausfüllen.";
@@ -4784,7 +4898,7 @@
       });
     }
     return {
-      settings: persistence.snapshotSettings(data, state.setup.status, persistence.tenantId),
+      settings: currentSettingsSnapshot(),
       catalog: persistence.snapshotCatalog(data, persistence.tenantId),
       customers: persistence.snapshotCustomers(data, persistence.tenantId),
       receipts: persistence.snapshotReceipts(data, persistence.tenantId),
@@ -5598,15 +5712,44 @@
 
   function renderCompanySettings() {
     const company = data.company;
+    const activeProfile = activeProfileRecord();
+    const profiles = currentSettingsRecord?.companies || [];
+    const numbering = activeProfile?.receiptSettings?.numbering || data.receiptSettings.numbering;
+    const activeStatus = activeCompanyProductiveStatus();
     mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter">
       <div class="flow-head compact-flow-head">
         <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
         <p class="eyebrow">Einstellungen</p>
         <h1 class="flow-title">Unternehmen</h1>
-        <p class="page-copy">Rechtliche Angaben, Kontakt und Logo für diesen Mandanten.</p>
+        <p class="page-copy">Unternehmensprofile auf dieser Installation verwalten.</p>
       </div>
+      <section class="company-profile-manager" aria-labelledby="companyProfilesTitle">
+        <div class="company-profile-manager-head"><div><p class="eyebrow">Aktiver Kontext</p><h2 id="companyProfilesTitle">${escapeHtml(companyDisplayName(company))}</h2></div><span class="company-profile-status ${activeStatus.productive ? "is-productive" : "needs-activation"}">${activeStatus.productive ? "Produktiv" : "Aktivierung erforderlich"}</span></div>
+        <p>${activeStatus.productive ? "Neue Geschäftsvorgänge werden diesem Unternehmen zugeordnet." : "Dieses Unternehmen kann konfiguriert werden. Für die produktive Nutzung ist eine eigene Aktivierung erforderlich."}</p>
+        <div class="company-profile-list" role="list">${profiles.map(profile => {
+          const selected = profile.id === activeCompanyId();
+          const status = persistence.companyProductiveStatus(currentSettingsRecord, profile.id);
+          return `<article class="company-profile-item ${selected ? "is-active" : ""}" role="listitem"><div><strong>${escapeHtml(companyDisplayName(profile.company))}</strong><small>${profile.receiptSettings?.numbering?.profileCode ? `Kürzel ${escapeHtml(profile.receiptSettings.numbering.profileCode)}` : "Bestehender Nummernmodus"} · ${status.productive ? "produktiv" : "Aktivierung erforderlich"}</small></div>${selected ? '<span aria-label="Aktiv">✓ Aktiv</span>' : `<button class="button button-secondary" type="button" data-company-switch="${escapeHtml(profile.id)}">Auswählen</button>`}</article>`;
+        }).join("")}</div>
+        <button class="button button-secondary" type="button" data-action="company-create-open">+ Weiteres Unternehmen anlegen</button>
+      </section>
+      ${state.companySwitchNotice ? `<div class="settings-save-notice ${state.companySwitchNoticeIsError ? "is-error" : ""}" role="${state.companySwitchNoticeIsError ? "alert" : "status"}">${escapeHtml(state.companySwitchNotice)}</div>` : ""}
       <div id="companySettingsNotice" class="settings-save-notice ${state.settingsNoticeIsError ? "is-error" : ""}" role="${state.settingsNoticeIsError ? "alert" : "status"}" ${state.settingsNotice ? "" : "hidden"}>${escapeHtml(state.settingsNotice)}</div>
-      <form id="companySettingsForm" class="settings-form">
+      ${state.companyCreateOpen ? `<form id="companyCreateForm" class="settings-form company-create-form">
+        <section class="settings-form-card"><h2>Weiteres Unternehmen anlegen</h2><p class="settings-neutral-note">Ein eigenes Profil ist für eine rechtlich oder steuerlich getrennte Unternehmenseinheit gedacht. Mehrere Geschäftsbereiche oder Leistungsorte desselben Unternehmens benötigen kein weiteres Profil.</p>
+          <label class="setting-field full"><span>Geschäftsbezeichnung <small>optional</small></span><input name="name" maxlength="160" autocomplete="organization"></label>
+          <label class="setting-field full"><span>Unternehmer/in</span><input name="owner" maxlength="160" autocomplete="name" required></label>
+          <label class="setting-field"><span>Straße</span><input name="street" maxlength="160" required></label>
+          <label class="setting-field"><span>Hausnummer</span><input name="houseNumber" maxlength="24" required></label>
+          <label class="setting-field"><span>PLZ</span><input name="zip" maxlength="16" required></label>
+          <label class="setting-field"><span>Ort</span><input name="city" maxlength="100" required></label>
+          <label class="setting-field"><span>Steuernummer <small>optional</small></span><input name="taxNumber" maxlength="50"></label>
+          <label class="setting-field"><span>USt-IdNr. <small>optional</small></span><input name="vatId" maxlength="32"></label>
+          <label class="setting-field full"><span>Belegkürzel</span><input name="profileCode" maxlength="8" autocapitalize="characters" pattern="[A-Za-z][A-Za-z0-9]{1,7}" placeholder="z. B. POD" required><small>2 bis 8 Zeichen, beginnt mit einem Buchstaben. Wird für neue Belege verwendet.</small></label>
+        </section>
+        <div class="company-create-actions"><button class="button button-secondary" type="button" data-action="company-create-cancel">Abbrechen</button><button class="button button-primary" type="submit">Unternehmen anlegen</button></div>
+      </form>` : `<form id="companySettingsForm" class="settings-form">
+        <input type="hidden" name="_companySettingsForm" value="true">
         <section class="settings-form-card">
           ${cardTitle("Rechtliche Angaben", "company")}
           <label class="setting-field full"><span>Geschäftsbezeichnung (Firmenname) <small>optional</small></span><input name="name" autocomplete="organization" maxlength="160" value="${escapeHtml(company.name || "")}"></label>
@@ -5627,13 +5770,70 @@
           <label class="setting-field full"><span>Website <small>optional</small></span><input name="website" type="text" inputmode="url" autocomplete="url" maxlength="2048" placeholder="https://example.de" value="${escapeHtml(company.website || "")}"></label>
           <label class="setting-field"><span>Steuernummer <small>optional</small></span><input name="taxNumber" autocomplete="off" maxlength="50" value="${escapeHtml(company.taxNumber || "")}"></label>
           <label class="setting-field"><span>USt-IdNr. <small>optional</small></span><input name="vatId" autocomplete="off" maxlength="32" value="${escapeHtml(company.vatId || "")}"></label>
+          <label class="setting-field full"><span>Belegkürzel ${numbering?.mode === "legacy" ? "<small>optional für das bestehende Profil</small>" : ""}</span><input name="profileCode" maxlength="8" autocapitalize="characters" pattern="[A-Za-z][A-Za-z0-9]{1,7}" value="${escapeHtml(numbering?.profileCode || "")}" ${numbering?.mode === "profile" ? "required" : ""}><small>${numbering?.mode === "legacy" ? "Historische Nummern bleiben unverändert. Nach einer bewussten Vergabe gilt das Kürzel nur für künftige Belege." : "Dieses Kürzel gilt für künftige Belegnummern."}</small></label>
         </section>
         ${companyLogoCardMarkup()}
         <p class="prototype-note">Unternehmensdaten und Logo werden ausschließlich lokal auf diesem Gerät gespeichert und in verschlüsselte Sicherungen aufgenommen.</p>
         <button class="button button-primary settings-save" type="submit">Änderungen speichern</button>
-      </form>
+      </form>`}
     </section>`;
-    attachCompanyLogoBehavior();
+    if (!state.companyCreateOpen) attachCompanyLogoBehavior();
+  }
+
+  function hasUnsavedCompanyScopedDraft() {
+    const voucherDraftStarted = state.voucherSaleAmountChoice !== null
+      || Boolean(String(state.voucherSaleCustomAmount || "").trim())
+      || Boolean(state.voucherSaleCustomerId)
+      || Boolean(String(state.voucherSaleDisplayName || "").trim());
+    return state.cart.length > 0
+      || state.checkoutSubmitting
+      || Boolean(state.prescriptionDraft)
+      || state.voucherSaleSubmitting
+      || voucherDraftStarted;
+  }
+
+  async function switchActiveCompany(companyId) {
+    if (!currentSettingsRecord || companyId === activeCompanyId()) return true;
+    if (!persistence.companyProfileById(currentSettingsRecord, companyId)) {
+      state.companySwitchNotice = "Das ausgewählte Unternehmensprofil ist nicht verfügbar.";
+      state.companySwitchNoticeIsError = true;
+      return false;
+    }
+    if (hasUnsavedCompanyScopedDraft()) {
+      state.companySwitchNotice = "Bitte schließe oder verwirf zuerst den offenen Entwurf. Er wird nicht automatisch einem anderen Unternehmen zugeordnet.";
+      state.companySwitchNoticeIsError = true;
+      return false;
+    }
+    const previous = cloneSettingsValue(currentSettingsRecord);
+    const requested = cloneSettingsValue(currentSettingsRecord);
+    requested.activeCompanyId = companyId;
+    try {
+      const written = await persistence.writeSettings(requested);
+      applySettingsRecord(written);
+      state.licenseRuntimeStatus = await persistence.inspectLocalLicenseRuntime(settingsCompanyProfile(written).license);
+      state.companyCreateOpen = false;
+      state.companySwitchNotice = activeCompanyIsProductive()
+        ? "Aktives Unternehmen wurde gewechselt."
+        : "Unternehmen ausgewählt. Für die produktive Nutzung ist eine eigene Aktivierung erforderlich.";
+      state.companySwitchNoticeIsError = false;
+      resetCheckoutVoucher();
+      resetCheckoutPrescription();
+      resetCheckoutTreatmentDocumentation();
+      state.prescriptionDraft = null;
+      state.prescriptionDetailId = null;
+      state.treatmentTemplateDraft = null;
+      state.voucherSaleCustomerId = null;
+      state.receiptDetailNumber = null;
+      state.voucherDetailReference = null;
+      refreshSettingsDerivedState();
+      refreshBusinessSwitcher();
+      return true;
+    } catch (error) {
+      currentSettingsRecord = previous;
+      state.companySwitchNotice = `Unternehmenswechsel fehlgeschlagen: ${persistenceErrorMessage(error)}`;
+      state.companySwitchNoticeIsError = true;
+      return false;
+    }
   }
 
   function renderServiceLocationSettings() {
@@ -6349,6 +6549,12 @@
     return true;
   }
   function startNewReceipt() {
+    if (!activeCompanyIsProductive()) {
+      state.settingsStorageNotice = "Für die produktive Nutzung dieses Unternehmens ist eine eigene Aktivierung erforderlich.";
+      state.settingsStorageNoticeIsError = true;
+      renderHome();
+      return;
+    }
     state.cart = [];
     state.customerChoice = "none";
     state.selectedCustomerId = null;
@@ -6793,6 +6999,12 @@
       if (logoAssetId(data.company.logo)) await saveCompanyLogo(null);
       return;
     }
+    const companySwitch = event.target.closest("[data-company-switch]");
+    if (companySwitch) {
+      await switchActiveCompany(companySwitch.dataset.companySwitch);
+      renderCompanySettings();
+      return;
+    }
     const category = event.target.closest("[data-category]");
     if (category) { state.activeCategory = category.dataset.category; state.search = ""; renderCatalog(); return; }
     const toggle = event.target.closest("[data-toggle-item]");
@@ -6909,7 +7121,7 @@
     if (event.target.closest("[data-prescription-new]")) {
       const customer = data.customers.find(customer => customer.id === state.customerDetailId);
       const area = prescriptionAreas().find(area => area.id === state.activeBusinessArea) || prescriptionAreas()[0];
-      if (!customer || customer.active === false || !area || !state.prescriptionsReady) return;
+      if (!activeCompanyIsProductive() || !customer || customer.active === false || !area || !state.prescriptionsReady) return;
       const now = new Date().toISOString();
       state.prescriptionDetailId = null;
       state.prescriptionNotice = "";
@@ -6919,7 +7131,8 @@
       renderCustomerDetail(); return;
     }
     if (event.target.closest("[data-prescription-edit], [data-prescription-archive]")) {
-      const entry = data.prescriptions.find(entry => entry.id === state.prescriptionDetailId && entry.customerId === state.customerDetailId);
+      const entry = data.prescriptions.find(entry => entry.id === state.prescriptionDetailId
+        && entry.companyId === activeCompanyId() && entry.customerId === state.customerDetailId);
       const customer = data.customers.find(customer => customer.id === state.customerDetailId);
       if (!entry || !customer || !prescriptionCanEdit(entry, customer)) return;
       state.prescriptionNotice = "";
@@ -7593,6 +7806,24 @@
       renderServiceLocationSettings();
       return;
     }
+    if (action === "company-create-open") {
+      if (hasUnsavedCompanyScopedDraft()) {
+        state.companySwitchNotice = "Bitte schließe oder verwirf zuerst den offenen Entwurf, bevor du ein weiteres Unternehmen anlegst.";
+        state.companySwitchNoticeIsError = true;
+      } else {
+        state.companyCreateOpen = true;
+        state.companySwitchNotice = "";
+        state.companySwitchNoticeIsError = false;
+      }
+      renderCompanySettings();
+      return;
+    }
+    if (action === "company-create-cancel") {
+      state.companyCreateOpen = false;
+      state.companySwitchNotice = "";
+      renderCompanySettings();
+      return;
+    }
     if (action === "service-location-editor-cancel") {
       state.serviceLocationEditingId = null;
       state.serviceLocationNotice = "";
@@ -8036,6 +8267,46 @@
       state.setupStep = nextSetupStep;
       state.setupFirstStartVisible = state.setup.status !== "completed";
       renderSetupWizard();
+      return;
+    }
+
+    const companyCreateForm = event.target.closest("#companyCreateForm");
+    if (companyCreateForm) {
+      event.preventDefault();
+      const formData = new FormData(companyCreateForm);
+      try {
+        if (hasUnsavedCompanyScopedDraft()) {
+          throw Object.assign(new Error("Open draft"), {
+            userMessage: "Bitte schließe oder verwirf zuerst den offenen Entwurf."
+          });
+        }
+        const created = persistence.createCompanyProfileSettings(currentSettingsSnapshot(), {
+          profileCode: String(formData.get("profileCode") || ""),
+          company: {
+            name: String(formData.get("name") || "").trim(),
+            owner: String(formData.get("owner") || "").trim(),
+            street: String(formData.get("street") || "").trim(),
+            houseNumber: String(formData.get("houseNumber") || "").trim(),
+            zip: String(formData.get("zip") || "").trim(),
+            city: String(formData.get("city") || "").trim(),
+            country: "Deutschland",
+            taxNumber: String(formData.get("taxNumber") || "").trim(),
+            vatId: String(formData.get("vatId") || "").trim()
+          }
+        }, persistence.tenantId);
+        const written = await persistence.writeSettings(created);
+        applySettingsRecord(written);
+        state.licenseRuntimeStatus = await persistence.inspectLocalLicenseRuntime(settingsCompanyProfile(written).license);
+        state.companyCreateOpen = false;
+        state.companySwitchNotice = "Unternehmen wurde lokal angelegt. Für die produktive Nutzung ist eine eigene Aktivierung erforderlich.";
+        state.companySwitchNoticeIsError = false;
+        refreshSettingsDerivedState();
+        refreshBusinessSwitcher();
+      } catch (error) {
+        state.companySwitchNotice = persistenceErrorMessage(error, "Das Unternehmen konnte nicht sicher angelegt werden.");
+        state.companySwitchNoticeIsError = true;
+      }
+      renderCompanySettings();
       return;
     }
 
@@ -8564,7 +8835,7 @@
           throw unavailableError;
         }
         await persistence.deleteCatalog();
-        const normalizedDefaults = persistence.normalizeCatalogRecord(defaultCatalogRecord, defaultCatalogRecord, data.businessAreas, persistence.tenantId);
+        const normalizedDefaults = persistence.normalizeCatalogRecord(defaultCatalogRecord, defaultCatalogRecord, allCompanyBusinessAreas(), persistence.tenantId);
         applyCatalogRecord(normalizedDefaults.record);
         state.catalogEditingItemId = null;
         state.catalogEditingCategoryId = null;
@@ -8704,8 +8975,7 @@
           persistence.snapshotReceipts(data, persistence.tenantId)
         );
         applyReceiptsRecord(result.record);
-        Object.keys(data.receiptSettings).forEach(key => { delete data.receiptSettings[key]; });
-        Object.assign(data.receiptSettings, cloneSettingsValue(settingsCompanyProfile(result.settingsRecord).receiptSettings));
+        applySettingsRecord(result.settingsRecord);
         state.successNotice = result.receipt
           ? `Stornobeleg ${result.receipt.number} wurde lokal gespeichert.`
           : "Dieser Beleg war bereits storniert. Es wurde kein Duplikat erzeugt.";

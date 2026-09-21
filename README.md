@@ -2,7 +2,7 @@
 
 **Vorbereiteter Zwischen-Beta-Stand:** 0.11.10 bündelt den seit der veröffentlichten Beta 0.11.9 auf `main` aufgelaufenen Stand aus ANDROID-004, COMPLIANCE-002 und DOCUMENT-002. Unmittelbarer Zweck ist die reale iPhone-Sicht- und Funktionsprüfung der neuen history-sicheren Leistungsort- und Steuernummerndarstellung. Die reale Android-Akzeptanz von ANDROID-004 bleibt ausdrücklich offen. [Release-Freigabenachweis](docs/releases/0.11.10.md).
 
-Browserbasierte FRECKA-PWA 0.11.10 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Die noch nicht veröffentlichten Implementierungsblöcke MULTI-COMPANY-002/003 führen mit IndexedDB-Schema 9 eine kanonische Unternehmensprofilgrenze und profilbezogene Belegnummernkontexte ein. Sichtbar und produktiv nutzbar bleibt exakt ein Profil. Die getrennte gerätelokale `licenseRuntime` bleibt unverändert außerhalb von Tenant-Snapshot, Backup und Export.
+Browserbasierte FRECKA-PWA 0.11.10 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. Die noch nicht veröffentlichten Implementierungsblöcke MULTI-COMPANY-002/003/004 führen mit IndexedDB-Schema 9 eine kanonische Unternehmensprofilgrenze, profilbezogene Belegnummernkontexte und eine kontrollierte Unternehmensverwaltung ein. Mehrere Profile sind lokal konfigurierbar; bis zum getrennten Lizenz-Multi-Binding-Block bleibt ausschließlich Profil 1 produktiv nutzbar. Die getrennte gerätelokale `licenseRuntime` bleibt unverändert außerhalb von Tenant-Snapshot, Backup und Export.
 
 ANDROID-001 sichert die mobile Skalierung und Touch-Ziele auch für Android-nahe Darstellungsprofile ab. IOS-NAV-001 verankert die Bottom-Navigation außerhalb der scrollenden App-Shell direkt am Viewport. ANDROID-002 behandelt den tatsächlichen File-Share nicht mehr als durch `canShare()` garantiert, klassifiziert Fehler neutral und bietet PDF- sowie ZIP-Speichern ausschließlich als bewusste Folgeaktion an. Der erfolgreiche iPhone-Datei-Share bleibt ohne Plattformweiche erhalten.
 
@@ -27,7 +27,7 @@ ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzei
 - Bestandsbelege bleiben unverändert; Public-QR bleibt restriktiv, der Steuerberaterexport erhält ausschließlich gesnapshotte Leistungsort-/Steuernummerinformationen
 - einheitliche Release-, Asset- und App-Shell-Kennung `0.11.10 / BETA-PREVIEW-001 / betapreview001-1`; reale iPhone-Sichtprüfung und Android-Abnahme bleiben nachgelagerte Gates
 
-## Implementierungsstand nach 0.11.10: MULTI-COMPANY-003
+## Implementierungsstand nach 0.11.10: MULTI-COMPANY-004
 
 - IndexedDB-Schema 9 mit `settings.companies[]` als einziger persistierter Wahrheit für Unternehmensidentität, Steuer-, Beleg-, Zahlungs-, TSE-, portable Lizenz- und Einrichtungsdaten
 - deterministische Migration eines vollständigen Schema-8-Bestands in exakt Profil 1; Kunden, IDs, Nummern, Zeitpunkte, Beträge und historische Snapshots bleiben unverändert
@@ -37,7 +37,12 @@ ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzei
 - neue Testprofile verwenden eindeutige explizite Kürzel und starten je Nummernart bei `000001`; Profil 1 setzt seinen bisherigen Nummernstand ohne erfundenes Kürzel im bisherigen Format fort
 - Gutscheinverkaufsbelege teilen den normalen Profilkreis; Zähler und Beleg werden atomar gespeichert, parallele Abschlüsse sowie Doppelklicks bleiben kollisionsfrei
 - neue Korrekturbeziehungen verwenden primär stabile Receipt-IDs; sichtbare Nummern bleiben unveränderte Anzeige-, Dokument- und Exportwerte
-- noch keine Mehr-Unternehmens-UI, kein Profilwechsel, keine Kürzeleingabe und keine Multi-Binding-Lizenzruntime; diese Bedienung folgt frühestens mit MULTI-COMPANY-004
+- Unternehmensprofile werden unter **Einstellungen → Unternehmen** angezeigt, bearbeitet, neu angelegt und zentral über `activeCompanyId` gewechselt
+- neue Profile verlangen ein explizites eindeutiges Kürzel aus 2 bis 8 Großbuchstaben/Ziffern, erhalten opake IDs und getrennte Nummernkreise ab `000001`; Profil 1 behält unverändert seinen Legacy-Nummernmodus
+- ein offener Beleg-, Gutschein- oder Podologieentwurf blockiert den Profilwechsel; Geschäftsbereiche und Leistungsorte werden ausschließlich im aktiven Profil bearbeitet
+- Kunden bleiben gemeinsam, während Gutscheine, Rezepte, Behandlungen und produktive Mutationen profilgebunden bleiben
+- zusätzliche Profile sind zur Konfiguration auswählbar, aber bis zum gesonderten Lizenz-Multi-Binding-Block technisch `activation_required` und nicht produktiv schreibfähig
+- Beleglisten und Exporte sind bis MULTI-COMPANY-005 sicher auf das aktive Profil begrenzt; noch keine profilübergreifende Auswertung
 - zentrale Auflösung statt verstreuter `companies[0]`-Annahmen; nach Schema 9 gibt es keinen stillen Profil-1-Fallback für fehlende Referenzen
 
 ## Neu in 0.11.9

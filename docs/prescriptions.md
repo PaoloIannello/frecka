@@ -48,6 +48,8 @@ Validiert werden Struktur/Format, Mandant, Unternehmensprofil, eindeutige IDs, P
 
 8→9 weist jedes bestehende Rezept eindeutig Profil 1 zu. Neue Rezepte übernehmen `companyId` aus dem gewählten Geschäftsbereich; eine fehlende, unbekannte oder profilfremde Zuordnung wird abgewiesen. Kunden bleiben installationsweit gemeinsam und erhalten keine `companyId`. Rezept- und Belegsnapshots werden durch die Migration nicht neu berechnet.
 
+MULTI-COMPANY-004 begrenzt Rezeptliste, Detail und Bearbeitung auf das aktive Unternehmensprofil. Ein Profilwechsel verwirft keine gespeicherten Daten, setzt aber flüchtige Rezeptauswahlen zurück. Ein neues Rezept darf nur mit Kunde, Geschäftsbereich und `companyId` desselben aktiven, produktiven Profils gespeichert werden; Zusatzprofile mit `activation_required` bleiben les- und konfigurierbar, aber ohne neue produktive Rezeptmutation. Der Kundenstamm bleibt dabei global.
+
 ## Kundenoberfläche
 
 Vorhandenes Kundenprofil → Rezepte → Anlegen/Detail/Bearbeiten/Archivieren. Keine neue Hauptnavigation. Sichtbar bei mindestens einer aktivierten Capability oder vorhandenen Rezepten, auch nach späterer Deaktivierung. Aktive Kunden können in aktivierten Bereichen mehrere Rezepte anlegen. Deaktivierte Kunden/Bereiche und ausgeschaltete Capabilities lassen vorhandene Rezepte nur lesbar. Archivierte Rezepte bleiben sichtbar und können bei aktivierter Funktion reaktiviert werden.

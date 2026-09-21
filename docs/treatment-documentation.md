@@ -66,6 +66,8 @@ Snapshot, Integritätsdiagnose, verschlüsseltes Vollbackup und Restore umfassen
 
 8→9 weist jeden vorhandenen Behandlungsdatensatz eindeutig Profil 1 zu, ohne Texte, Zeitpunkte oder Snapshots zu verändern. Neue Datensätze übernehmen `companyId` ausschließlich aus dem in derselben Transaktion finalisierten Beleg. Geschäftsbereich, Beleg und optionales Rezept müssen profilgleich sein; fehlende oder widersprüchliche Referenzen brechen den gesamten Abschluss ab. Kunden und V1-Benutzer bleiben bewusst global und werden nur über ihre stabilen IDs referenziert.
 
+MULTI-COMPANY-004 zeigt den internen Behandlungsverlauf nur für das aktive Unternehmensprofil und lässt profilfremde Datensätze weder als aktive Historie noch als produktive Referenz zu. Ein Wechsel ändert keine gespeicherten Inhalte oder Snapshots. Da ein Behandlungsdatensatz nur mit einem erfolgreich abgeschlossenen Beleg entsteht, verhindert die lokale Produktsperre eines Zusatzprofils zugleich neue Behandlungsdatensätze in diesem Profil. Globale Kunden bleiben unverändert gemeinsam nutzbar.
+
 ## Datenschutz- und Ausgabegrenze
 
 Behandlungsdatensätze, interne Dokumentation, Kundenpflegehinweise und Vorlagen werden ausschließlich in lokaler IndexedDB und im verschlüsselten Vollbackup dauerhaft gespeichert. PODOLOGY-004 erlaubt nur eine eng begrenzte Laufzeitprojektion: Das lokale Kundendokument eines normalen Belegs erhält den Pflegehinweis aus dem exakt über `receiptId` und `receiptNumber` zugeordneten historischen Behandlungsdatensatz. Die interne Dokumentation wird niemals projiziert. Storno, Gutschrift und Gutscheinverkaufsbeleg erhalten auch lokal weder Rezeptdatum noch Pflegehinweis.

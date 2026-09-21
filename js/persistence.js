@@ -3741,6 +3741,197 @@
     return { record: attachLegacySettingsAliases(cleaned), repairs: [...repairs] };
   }
 
+  function mergeActiveCompanySettings(settingsInput, runtimeData, setupStatus = "not-started", expectedTenantId = constants.tenantId) {
+    const safeTenantId = nullableStringId(expectedTenantId) || constants.tenantId;
+    const current = normalizeSettingsRecord(settingsInput, settingsInput, safeTenantId).record;
+    const activeId = current.activeCompanyId;
+    const activeSnapshot = snapshotSettings(runtimeData, setupStatus, safeTenantId);
+    const runtimeProfile = activeCompanyProfile(activeSnapshot);
+    const next = stripExcludedData(cloneSafe(current));
+    const profileIndex = next.companies.findIndex(profile => profile.id === activeId);
+    if (profileIndex < 0) {
+      throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Das aktive Unternehmensprofil ist nicht verfügbar.");
+    }
+    next.companies[profileIndex] = {
+      ...cloneSafe(next.companies[profileIndex]),
+      ...cloneSafe(runtimeProfile),
+      id: activeId,
+      formatVersion: constants.companyProfileFormatVersion
+    };
+    next.users = cloneSafe(activeSnapshot.users);
+    next.activeUserId = activeSnapshot.activeUserId;
+    next.logoAssets = normalizeLogoAssetRegister([
+      ...(Array.isArray(current.logoAssets) ? current.logoAssets : []),
+      ...(Array.isArray(activeSnapshot.logoAssets) ? activeSnapshot.logoAssets : [])
+    ]);
+    next.backupReminder = cloneSafe(activeSnapshot.backupReminder);
+    next.businessAreas = [
+      ...current.businessAreas.filter(area => area.companyId !== activeId).map(cloneSafe),
+      ...activeSnapshot.businessAreas.map(area => ({ ...cloneSafe(area), companyId: activeId }))
+    ];
+    next.serviceLocations = [
+      ...current.serviceLocations.filter(location => location.companyId !== activeId).map(cloneSafe),
+      ...activeSnapshot.serviceLocations.map(location => ({ ...cloneSafe(location), companyId: activeId }))
+    ];
+    const previousActiveAreaIds = new Set(current.businessAreas
+      .filter(area => area.companyId === activeId)
+      .map(area => area.id));
+    next.treatmentTemplates = [
+      ...(Array.isArray(current.treatmentTemplates) ? current.treatmentTemplates : [])
+        .filter(template => !previousActiveAreaIds.has(template.businessAreaId))
+        .map(cloneSafe),
+      ...(Array.isArray(activeSnapshot.treatmentTemplates) ? activeSnapshot.treatmentTemplates : []).map(cloneSafe)
+    ];
+    next.activeCompanyId = activeId;
+    next.updatedAt = new Date().toISOString();
+    return normalizeSettingsRecord(next, current, safeTenantId).record;
+  }
+
+  function normalizeReceiptProfileCode(value) {
+    const code = trimmedString(value).toUpperCase();
+    if (!receiptProfileCodePattern.test(code)) {
+      throw new PersistenceError(
+        "RECEIPT_PROFILE_CODE_REQUIRED",
+        "Das Belegkürzel muss aus 2 bis 8 Großbuchstaben oder Ziffern bestehen und mit einem Buchstaben beginnen."
+      );
+    }
+    return code;
+  }
+
+  function createCompanyProfileSettings(settingsInput, profileInput, expectedTenantId = constants.tenantId) {
+    const safeTenantId = nullableStringId(expectedTenantId) || constants.tenantId;
+    const current = normalizeSettingsRecord(settingsInput, settingsInput, safeTenantId).record;
+    const input = isPlainObject(profileInput) ? profileInput : {};
+    const profileCode = normalizeReceiptProfileCode(input.profileCode);
+    const existingCodes = new Set(current.companies.map(profile => profile.receiptSettings?.numbering?.profileCode).filter(Boolean));
+    if (existingCodes.has(profileCode)) {
+      throw new PersistenceError("RECEIPT_PROFILE_CODE_DUPLICATE", "Dieses Belegkürzel wird bereits von einem anderen Unternehmen verwendet.");
+    }
+    const sourceProfile = activeCompanyProfile(current);
+    const now = stableIso(input.createdAt, new Date().toISOString());
+    const companyId = createOpaqueLocalId("company");
+    const areaId = createOpaqueLocalId("area");
+    const locationId = createOpaqueLocalId("location");
+    const companyInput = isPlainObject(input.company) ? input.company : {};
+    const owner = trimmedString(companyInput.owner);
+    if (!owner) throw new PersistenceError("COMPANY_PROFILE_INVALID", "Bitte Unternehmer/in für das neue Unternehmen angeben.");
+    const requiredAddress = [companyInput.street, companyInput.houseNumber, companyInput.zip, companyInput.city]
+      .map(value => trimmedString(value));
+    if (requiredAddress.some(value => !value)) {
+      throw new PersistenceError("COMPANY_PROFILE_INVALID", "Bitte die vollständige Unternehmensanschrift angeben.");
+    }
+    const identity = companyIdentity({ name: trimmedString(companyInput.name), owner });
+    const createdYear = now.slice(0, 4);
+    const year = /^\d{4}$/.test(trimmedString(input.year))
+      ? trimmedString(input.year)
+      : /^\d{4}$/.test(createdYear) ? createdYear : String(new Date().getFullYear());
+    const numbering = {
+      formatVersion: constants.receiptNumberingFormatVersion,
+      mode: "profile",
+      profileCode,
+      displayYear: year,
+      startSequences: { receipt: 1, cancellation: 1, credit: 1 },
+      nextSequences: { receipt: { [year]: 1 }, cancellation: {}, credit: {} }
+    };
+    const profile = {
+      formatVersion: constants.companyProfileFormatVersion,
+      id: companyId,
+      company: {
+        name: identity.name,
+        owner: identity.owner,
+        contactPerson: trimmedString(companyInput.contactPerson),
+        street: requiredAddress[0],
+        houseNumber: requiredAddress[1],
+        zip: requiredAddress[2],
+        city: requiredAddress[3],
+        country: trimmedString(companyInput.country, "Deutschland"),
+        phone: trimmedString(companyInput.phone),
+        email: trimmedString(companyInput.email),
+        website: trimmedString(companyInput.website),
+        taxNumber: trimmedString(companyInput.taxNumber),
+        vatId: trimmedString(companyInput.vatId),
+        logo: null,
+        updatedAt: now,
+        defaultTaxRate: 19,
+        useAsServiceLocation: true
+      },
+      taxSettings: {
+        status: ["vat", "small-business", "undecided"].includes(input.taxStatus) ? input.taxStatus : "undecided",
+        rates: cloneSafe(sourceProfile.taxSettings.rates),
+        defaultRate: 19
+      },
+      receiptSettings: normalizeReceiptSettings({
+        ...cloneSafe(sourceProfile.receiptSettings),
+        yearPrefix: year,
+        nextNumber: 1,
+        numbering
+      }, sourceProfile.receiptSettings),
+      paymentChoices: cloneSafe(sourceProfile.paymentChoices),
+      tseSettings: defaultTseSettings(),
+      license: normalizeLicenseReference({
+        formatVersion: constants.licenseFormatVersion,
+        localTenantId: safeTenantId,
+        licenseId: createOpaqueLocalId("license"),
+        serverTenantId: null,
+        productId: constants.licenseProductId,
+        majorVersion: constants.licenseProductMajor,
+        linkedAt: null
+      }, safeTenantId),
+      setup: { status: "not-started" }
+    };
+    const next = stripExcludedData(cloneSafe(current));
+    next.companies.push(profile);
+    next.activeCompanyId = companyId;
+    next.businessAreas.push({
+      id: areaId,
+      companyId,
+      label: "Geschäftsbereich",
+      visibleName: "",
+      logoMode: "company",
+      logo: null,
+      active: true,
+      isDefault: true,
+      defaultServiceLocationId: locationId,
+      features: { prescriptionDocumentation: false }
+    });
+    next.serviceLocations.push({
+      id: locationId,
+      companyId,
+      name: "Leistungsort",
+      addressMode: "company",
+      street: "",
+      houseNumber: "",
+      zip: "",
+      city: "",
+      phone: "",
+      voucherNote: "",
+      taxNumber: "",
+      active: true,
+      businessAreaIds: [areaId]
+    });
+    next.updatedAt = now;
+    return normalizeSettingsRecord(next, current, safeTenantId).record;
+  }
+
+  function companyProductiveStatus(settingsInput, companyIdInput) {
+    const companyId = nullableStringId(companyIdInput);
+    const companies = Array.isArray(settingsInput?.companies) ? settingsInput.companies : [];
+    const index = companies.findIndex(profile => profile?.id === companyId);
+    if (index < 0) return Object.freeze({ code: "unknown", productive: false });
+    return Object.freeze({ code: index === 0 ? "primary_profile" : "activation_required", productive: index === 0 });
+  }
+
+  function assertCompanyProductive(settingsInput, companyIdInput) {
+    const status = companyProductiveStatus(settingsInput, companyIdInput);
+    if (!status.productive) {
+      throw new PersistenceError(
+        "COMPANY_ACTIVATION_REQUIRED",
+        "Für die produktive Nutzung dieses Unternehmens ist eine eigene Aktivierung erforderlich."
+      );
+    }
+    return status;
+  }
+
   function validateCompanyEntityReferences(settings, records) {
     validateCompanySettingsReferences(settings);
     const companyIds = new Set(settings.companies.map(profile => profile.id));
@@ -5094,9 +5285,12 @@
                   }
                   existing = preparedExisting.record;
                 }
-                if (existing?.formatVersion === constants.settingsFormatVersion
-                  && activeCompanyProfile(existing).id !== activeCompanyProfile(requestedSnapshot).id) {
-                  throw new PersistenceError("COMPANY_PROFILE_IMMUTABLE", "Die stabile Unternehmensreferenz darf nicht verändert werden.");
+                if (existing?.formatVersion === constants.settingsFormatVersion) {
+                  const requestedIds = requestedSnapshot.companies.map(profile => profile.id);
+                  const existingIds = existing.companies.map(profile => profile.id);
+                  if (existingIds.some((companyId, index) => requestedIds[index] !== companyId)) {
+                    throw new PersistenceError("COMPANY_PROFILE_IMMUTABLE", "Bestehende Unternehmensprofile dürfen weder entfernt noch umsortiert werden.");
+                  }
                 }
                 requestedSnapshot.logoAssets = normalizeLogoAssetRegister([
                   ...(Array.isArray(existing?.logoAssets) ? existing.logoAssets : []),
@@ -5726,7 +5920,8 @@
             try {
               const record = normalizePrescriptionsRecord(requests[0].result, tenantId).record;
               const customers = requests[1].result?.customers || [];
-              const areas = requests[2].result?.businessAreas || [];
+              const settings = normalizeSettingsRecord(requests[2].result, requests[2].result, tenantId).record;
+              const areas = settings.businessAreas || [];
               const items = requests[3].result?.items || [];
               const receipts = requests[4].result
                 ? normalizeReceiptsRecord(requests[4].result, requests[4].result, tenantId).record.receipts
@@ -5753,6 +5948,7 @@
                   && businessAreaFeatures(previous.features).prescriptionDocumentation))) {
                 throw prescriptionError("PRESCRIPTION_EDIT_DISABLED", "Neue Eingaben sind nur für aktive Kunden und aktivierte Geschäftsbereiche möglich. Vorhandene Rezepte bleiben lesbar.");
               }
+              assertCompanyProductive(settings, draft.companyId);
               const linkedItem = items.find(item => item.id === draft.catalogItemId);
               if (draft.catalogItemId && draft.catalogItemId !== existing?.catalogItemId
                 && (!linkedItem || linkedItem.active === false || linkedItem.type !== "service" || linkedItem.businessAreaId !== draft.businessAreaId)) {
@@ -6284,6 +6480,7 @@
         || nullableStringId(draft.businessAreaSnapshot?.id)
         || nullableStringId(draft.contextSnapshot?.businessArea?.id);
       const companyProfile = companyProfileForBusinessArea(mergedSettings, businessAreaId);
+      assertCompanyProductive(mergedSettings, companyProfile.id);
       const draftCompanyId = nullableStringId(draft.companyId);
       if (mergedSettings.companies.length > 1 && !draftCompanyId) {
         throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Belegentwurf besitzt keine eindeutige Unternehmenszuordnung.");
@@ -6942,9 +7139,10 @@
       } catch (error) {
         return Promise.reject(error);
       }
-      return mutateReceipts(seedReceiptsRecord, record => {
+      return mutateReceipts(seedReceiptsRecord, (record, settings) => {
         const receipt = record.receipts.find(entry => entry.number === receiptNumber);
         if (!receipt) throw new PersistenceError("RECEIPT_NOT_FOUND", "Der Beleg wurde nicht gefunden.");
+        assertCompanyProductive(settings, receipt.companyId);
         if (receipt.receiptType !== "receipt" || receipt.status === "cancelled") {
           throw new PersistenceError("RECEIPT_NOT_PAYABLE", "Für diesen Beleg kann keine Zahlung erfasst werden.");
         }
@@ -6984,9 +7182,10 @@
     function saveReceiptNote(receiptNumber, note, activityInput, seedReceiptsRecord) {
       const safeNote = stringValue(note).trim();
       const activity = isPlainObject(activityInput) ? cloneSafe(activityInput) : {};
-      return mutateReceipts(seedReceiptsRecord, record => {
+      return mutateReceipts(seedReceiptsRecord, (record, settings) => {
         const receipt = record.receipts.find(entry => entry.number === receiptNumber);
         if (!receipt) throw new PersistenceError("RECEIPT_NOT_FOUND", "Der Beleg wurde nicht gefunden.");
+        assertCompanyProductive(settings, receipt.companyId);
         const occurredAt = stableIso(activity.occurredAt, new Date().toISOString());
         receipt.note = safeNote;
         receipt.internalNote = safeNote;
@@ -7028,6 +7227,7 @@
         if (!source || source.receiptType !== "receipt") {
           throw new PersistenceError("RECEIPT_NOT_FOUND", "Der Ursprungsbeleg wurde nicht gefunden.");
         }
+        assertCompanyProductive(settings, source.companyId);
         if (nullableStringId(draft.companyId) && draft.companyId !== source.companyId) {
           throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Korrekturbeleg gehört nicht zum Unternehmensprofil des Ursprungsbelegs.");
         }
@@ -7515,6 +7715,11 @@
     createSettingsPersistence,
     snapshotSettings,
     normalizeSettingsRecord,
+    mergeActiveCompanySettings,
+    createCompanyProfileSettings,
+    normalizeReceiptProfileCode,
+    companyProductiveStatus,
+    assertCompanyProductive,
     prepareHistoricalSettingsRecord,
     normalizeLicenseReference,
     legacyLicenseRuntimeHint,

@@ -4585,6 +4585,85 @@ body.work-mode:not(.catalog-mode) .flow-page {
   max-width: 760px;
   margin: 0 auto;
 }
+
+.company-profile-manager {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+
+.company-profile-manager-head,
+.company-profile-item,
+.company-create-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.company-profile-manager-head h2,
+.company-profile-manager-head p,
+.company-profile-manager > p { margin: 0; }
+
+.company-profile-manager > p { color: var(--muted); line-height: 1.45; }
+
+.company-profile-status {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #f1f3f5;
+  color: var(--muted);
+  font-size: .76rem;
+  font-weight: 750;
+}
+
+.company-profile-status.is-productive { background: #e8f5ed; color: #17633a; }
+.company-profile-status.needs-activation { background: #fff4df; color: #805600; }
+
+.company-profile-list { display: grid; gap: 8px; }
+
+.company-profile-item {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.company-profile-item.is-active { border-color: var(--primary); background: var(--primary-soft); }
+.company-profile-item > div { min-width: 0; }
+.company-profile-item strong,
+.company-profile-item small { display: block; overflow-wrap: anywhere; }
+.company-profile-item small { margin-top: 3px; color: var(--muted); }
+.company-profile-item > span { flex: 0 0 auto; color: var(--primary); font-weight: 750; }
+.company-profile-item .button { width: auto; min-height: 40px; margin: 0; }
+
+.company-create-form { margin-top: 0; }
+.company-create-actions .button { margin: 0; }
+
+.company-activation-notice,
+.company-activation-inline {
+  border: 1px solid #ead3a3;
+  border-radius: 12px;
+  background: #fff8e9;
+  color: #6e4b00;
+}
+
+.company-activation-notice { display: grid; gap: 3px; padding: 12px 14px; }
+.company-activation-inline { margin: 0; padding: 10px 12px; line-height: 1.4; }
+
+@media (max-width: 390px) {
+  .company-profile-manager-head,
+  .company-profile-item,
+  .company-create-actions { align-items: stretch; flex-direction: column; }
+  .company-profile-status,
+  .company-profile-item > span { align-self: flex-start; }
+  .company-profile-item .button,
+  .company-create-actions .button { width: 100%; }
+}
 .settings-head {
   margin-bottom: 16px;
 }

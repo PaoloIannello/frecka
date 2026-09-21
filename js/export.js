@@ -160,7 +160,7 @@
   function projectOwnOperatingSettings(settings) {
     const profile = activeCompanyProfile(settings);
     const activeAreas = (Array.isArray(settings?.businessAreas) ? settings.businessAreas : [])
-      .filter(area => area?.active !== false);
+      .filter(area => area?.companyId === profile.id && area?.active !== false);
     const defaultArea = activeAreas.find(area => area?.isDefault === true) || activeAreas[0] || null;
     const taxSettings = isPlainObject(profile?.taxSettings) ? profile.taxSettings : {};
     const receiptSettings = isPlainObject(profile?.receiptSettings) ? profile.receiptSettings : {};
@@ -299,7 +299,7 @@
     const missing = required.filter(store => !isPlainObject(snapshot.stores[store]));
     if (missing.length
       || !Array.isArray(snapshot.stores.settings.companies)
-      || snapshot.stores.settings.companies.length !== 1
+      || snapshot.stores.settings.companies.length < 1
       || !Array.isArray(snapshot.stores.settings.businessAreas)
       || !Array.isArray(snapshot.stores.customers.customers)
       || !Array.isArray(snapshot.stores.receipts.receipts)
@@ -821,18 +821,20 @@
     const normalized = normalizeOptions(options);
     const settings = snapshot.stores.settings;
     const profile = activeCompanyProfile(settings);
-    const settingsAreaById = new Map(settings.businessAreas.map(area => [text(area.id), area]));
+    const settingsAreaById = new Map(settings.businessAreas
+      .filter(area => text(area.companyId) === text(profile.id))
+      .map(area => [text(area.id), area]));
     if (normalized.businessAreaId !== "all" && !settingsAreaById.has(normalized.businessAreaId)) {
       throw new ExportError("INVALID_BUSINESS_AREA", "Der ausgewählte Geschäftsbereich ist im Snapshot nicht vorhanden.");
     }
     const receipts = projectReceipts(
-      snapshot.stores.receipts.receipts,
+      snapshot.stores.receipts.receipts.filter(receipt => text(receipt.companyId) === text(profile.id)),
       normalized.range,
       normalized.businessAreaId,
       settingsAreaById
     );
     const vouchers = projectVouchers(
-      snapshot.stores.vouchers.vouchers,
+      snapshot.stores.vouchers.vouchers.filter(voucher => text(voucher.companyId) === text(profile.id)),
       normalized.range,
       normalized.businessAreaId,
       settingsAreaById

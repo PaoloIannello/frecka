@@ -3450,19 +3450,24 @@
           const emptyReceipts = api.snapshotReceipts({ receipts: [] }, client.tenantId);
           const firstId = settings.companies[0].id;
           const fr = await client.commitReceipt(profileDraft("fr-normal-1", settings, firstId, "2030-02-01T10:00:00.000Z"), settings, emptyReceipts);
-          const pod = await client.commitReceipt(profileDraft("pod-normal-1", settings, "company_podology_test", "2030-02-01T10:01:00.000Z"), fr.settingsRecord, fr.receiptsRecord);
           assertEqual(fr.receipt.number, "FR-2030-000001", "Profil FR startete nicht bei 000001");
-          assertEqual(pod.receipt.number, "POD-2030-000001", "Profil POD startete nicht unabhängig bei 000001");
+          await assertRejects(() => client.commitReceipt(
+            profileDraft("pod-normal-1", fr.settingsRecord, "company_podology_test", "2030-02-01T10:01:00.000Z"),
+            fr.settingsRecord,
+            fr.receiptsRecord
+          ), "COMPANY_ACTIVATION_REQUIRED", "Unaktiviertes Profil POD");
+          assertEqual(fr.settingsRecord.companies[1].receiptSettings.numbering.nextSequences.receipt["2030"], 1,
+            "Produktivsperre veränderte den reservierten POD-Zähler");
 
           const voucher = voucherDraftFixture("fr-profile-voucher", {
             companyId: firstId, reference: "vch_fr_profile", code: "FRKA-MC03-0001"
           });
           const voucherReceipt = voucherSaleReceiptFixture(voucher);
-          Object.assign(voucherReceipt, profileDraft(voucherReceipt.id, pod.settingsRecord, firstId, "2030-02-01T10:02:00.000Z", {
+          Object.assign(voucherReceipt, profileDraft(voucherReceipt.id, fr.settingsRecord, firstId, "2030-02-01T10:02:00.000Z", {
             receiptKind: "voucher-sale", voucherReference: voucher.reference
           }));
           const voucherSale = await client.commitVoucherSale(
-            voucherReceipt, voucher, pod.settingsRecord, pod.receiptsRecord,
+            voucherReceipt, voucher, fr.settingsRecord, fr.receiptsRecord,
             api.snapshotVouchers({ vouchers: [] }, client.tenantId)
           );
           assertEqual(voucherSale.receipt.number, "FR-2030-000002", "Gutscheinverkauf teilte nicht den normalen Profilkreis");
@@ -3470,16 +3475,10 @@
           const frCancellation = await client.commitReceiptCorrection(fr.receipt.id, {
             id: "fr-st-1", type: "cancellation", total: -39, completedAt: "2030-02-01T11:00:00.000Z"
           }, voucherSale.receiptsRecord);
-          const podCancellation = await client.commitReceiptCorrection(pod.receipt.id, {
-            id: "pod-st-1", type: "cancellation", total: -39, completedAt: "2030-02-01T11:01:00.000Z"
-          }, frCancellation.record);
           assertEqual(frCancellation.receipt.number, "FR-ST-2030-000001", "FR-Storno nutzte nicht den eigenen Kreis");
-          assertEqual(podCancellation.receipt.number, "POD-ST-2030-000001", "POD-Storno nutzte nicht den eigenen Kreis");
           assertEqual(frCancellation.receipt.companyId, firstId, "FR-Storno verlor das Ursprungsprofil");
-          assertEqual(podCancellation.receipt.companyId, "company_podology_test", "POD-Storno verlor das Ursprungsprofil");
-          assertDeepEqual(podCancellation.receipt.companySnapshot, pod.receipt.companySnapshot, "Storno übernahm den Unternehmenssnapshot nicht");
 
-          const frCreditSource = await client.commitReceipt(profileDraft("fr-credit-source", podCancellation.settingsRecord, firstId, "2030-02-01T12:00:00.000Z"), podCancellation.settingsRecord, podCancellation.record);
+          const frCreditSource = await client.commitReceipt(profileDraft("fr-credit-source", frCancellation.settingsRecord, firstId, "2030-02-01T12:00:00.000Z"), frCancellation.settingsRecord, frCancellation.record);
           const frCredit = await client.commitReceiptCorrection(frCreditSource.receipt.id, {
             id: "fr-gs-1", type: "credit", total: -10, completedAt: "2030-02-01T12:30:00.000Z"
           }, frCreditSource.receiptsRecord);
@@ -3590,22 +3589,222 @@
           baseline.stores.settings = twoProfileSettings(source.tenantId);
           await source.restoreTenantSnapshot(baseline);
           const settings = await source.readSettings();
-          const firstPod = await source.commitReceipt(profileDraft("pod-before-backup", settings, "company_podology_test", "2030-05-01T10:00:00.000Z"), settings, await source.readReceipts());
-          assertEqual(firstPod.receipt.number, "POD-2030-000001", "POD-Ausgangszähler ist falsch");
+          const firstProfile = await source.commitReceipt(profileDraft("fr-before-backup", settings, settings.companies[0].id, "2030-05-01T10:00:00.000Z"), settings, await source.readReceipts());
+          assertEqual(firstProfile.receipt.number, "FR-2030-000001", "Profil-1-Ausgangszähler ist falsch");
           const backup = await source.exportTenantSnapshot();
           const restoredClient = api.createSettingsPersistence({ databaseName: createDatabaseName(), tenantId: source.tenantId });
           try {
             await restoredClient.restoreTenantSnapshot(backup);
             const restoredSettings = await restoredClient.readSettings();
-            const nextPod = await restoredClient.commitReceipt(profileDraft("pod-after-restore", restoredSettings, "company_podology_test", "2030-05-01T11:00:00.000Z"), restoredSettings, await restoredClient.readReceipts());
-            assertEqual(nextPod.receipt.number, "POD-2030-000002", "Restore setzte den Profilzähler zurück oder übersprang ihn");
-            assert((await restoredClient.readReceipts()).receipts.some(entry => entry.number === "POD-2030-000001"), "Restore verlor den vorherigen Profilbeleg");
+            const nextProfile = await restoredClient.commitReceipt(profileDraft("fr-after-restore", restoredSettings, restoredSettings.companies[0].id, "2030-05-01T11:00:00.000Z"), restoredSettings, await restoredClient.readReceipts());
+            assertEqual(nextProfile.receipt.number, "FR-2030-000002", "Restore setzte den Profil-1-Zähler zurück oder übersprang ihn");
+            assert((await restoredClient.readReceipts()).receipts.some(entry => entry.number === "FR-2030-000001"), "Restore verlor den vorherigen Profilbeleg");
+            const podDraft = profileDraft("pod-after-restore", nextProfile.settingsRecord, "company_podology_test", "2030-05-01T12:00:00.000Z");
+            await assertRejects(() => restoredClient.commitReceipt(podDraft, nextProfile.settingsRecord, nextProfile.receiptsRecord),
+              "COMPANY_ACTIVATION_REQUIRED", "Restore aktivierte Profil POD");
+            assertEqual((await restoredClient.readSettings()).companies[1].receiptSettings.numbering.nextSequences.receipt["2030"], 1,
+              "Restore oder Produktivsperre veränderte den POD-Zähler");
           } finally {
             const database = await restoredClient.openDatabase();
             database.close();
             restoredClient.closeDatabase();
             await deleteTestDatabase(database.name);
           }
+        }
+      },
+      {
+        name: "MULTI-COMPANY-004: Profilanlage erzeugt stabile getrennte Defaults und keine Lizenzkopie",
+        run: async () => {
+          const base = recordFixture("multi-company-create", "completed");
+          const created = api.createCompanyProfileSettings(base, {
+            profileCode: " pod ",
+            createdAt: "2030-06-01T10:00:00.000Z",
+            company: { name: "Podologie Süd", owner: "Paula Beispiel", street: "Südweg", houseNumber: "2", zip: "54321", city: "Sýstadt" }
+          }, base.tenantId);
+          assertEqual(created.companies.length, 2, "Zusatzprofil fehlt");
+          const added = api.activeCompanyProfile(created);
+          assert(added.id.startsWith("company_") && !added.id.includes("Podologie"), "Profil-ID ist nicht opaque");
+          assertEqual(added.receiptSettings.numbering.profileCode, "POD", "Kürzel wurde nicht normalisiert");
+          assertEqual(added.receiptSettings.numbering.nextSequences.receipt["2030"], 1, "Normalbeleg startet nicht bei 000001");
+          assertEqual(added.receiptSettings.numbering.startSequences.cancellation, 1, "Storno startet nicht bei 000001");
+          assertEqual(added.receiptSettings.numbering.startSequences.credit, 1, "Gutschrift startet nicht bei 000001");
+          assert(added.license.licenseId !== base.companies[0].license.licenseId, "Lizenz von Profil 1 wurde kopiert");
+          assertEqual(api.companyProductiveStatus(created, added.id).code, "activation_required", "Zusatzprofil ist unberechtigt produktiv");
+          assert(created.businessAreas.some(area => area.companyId === added.id), "Geschäftsbereich fehlt am Zusatzprofil");
+          assert(created.serviceLocations.some(location => location.companyId === added.id), "Leistungsort fehlt am Zusatzprofil");
+        }
+      },
+      {
+        name: "MULTI-COMPANY-004: Kürzel sind verpflichtend, sicher und installationsweit eindeutig",
+        run: async () => {
+          const base = recordFixture("multi-company-code", "completed");
+          assertThrows(() => api.createCompanyProfileSettings(base, { profileCode: "P-1", company: { owner: "A", street: "Weg", houseNumber: "1", zip: "1", city: "Ort" } }, base.tenantId), "RECEIPT_PROFILE_CODE_REQUIRED", "Unsicheres Kürzel");
+          const first = api.createCompanyProfileSettings(base, { profileCode: "POD", company: { owner: "A", street: "Weg", houseNumber: "1", zip: "1", city: "Ort" } }, base.tenantId);
+          assertThrows(() => api.createCompanyProfileSettings(first, { profileCode: "pod", company: { owner: "B", street: "Weg", houseNumber: "2", zip: "1", city: "Ort" } }, base.tenantId), "RECEIPT_PROFILE_CODE_DUPLICATE", "Doppeltes Kürzel");
+        }
+      },
+      {
+        name: "MULTI-COMPANY-004: Bewusstes Kürzel für Profil 1 gilt nur künftig und setzt den Zähler nicht zurück",
+        run: async () => {
+          const client = context.makeClient("multi-company-primary-code");
+          const settings = recordFixture(client.tenantId, "completed");
+          const profile = settings.companies[0];
+          assertEqual(profile.receiptSettings.numbering.mode, "legacy", "Profil 1 startete nicht im Legacy-Modus");
+          profile.receiptSettings.numbering.mode = "profile";
+          profile.receiptSettings.numbering.profileCode = "FR";
+          await client.writeSettings(settings);
+          const stored = await client.readSettings();
+          const result = await client.commitReceipt(
+            profileDraft("primary-after-code", stored, stored.companies[0].id, "2030-06-02T10:00:00.000Z"),
+            stored,
+            api.snapshotReceipts({ receipts: [] }, client.tenantId)
+          );
+          assertEqual(result.receipt.number, "FR-2030-000077", "Die bewusste Kürzelwahl setzte den bestehenden Nummernstand zurück");
+          assertEqual(result.settingsRecord.companies[0].receiptSettings.numbering.nextSequences.receipt["2030"], 78,
+            "Der Profil-1-Nummernstand wurde nach der Kürzelwahl nicht fortgesetzt");
+        }
+      },
+      {
+        name: "MULTI-COMPANY-004: Aktive Profiländerung erhält fremde Profile und Zuordnungen verlustfrei",
+        run: async () => {
+          const base = recordFixture("multi-company-merge", "completed");
+          const created = api.createCompanyProfileSettings(base, { profileCode: "POD", company: { owner: "Paula", street: "Südweg", houseNumber: "2", zip: "54321", city: "Sýstadt" } }, base.tenantId);
+          const addedId = created.activeCompanyId;
+          const runtime = api.legacySettingsView(created);
+          runtime.companySettings = { activeCompanyId: addedId };
+          runtime.company.owner = "Paula Neu";
+          runtime.businessAreas = created.businessAreas.filter(area => area.companyId === addedId);
+          runtime.serviceLocations = created.serviceLocations.filter(location => location.companyId === addedId);
+          runtime.receiptSettings = clone(api.activeCompanyProfile(created).receiptSettings);
+          runtime.taxSettings = clone(api.activeCompanyProfile(created).taxSettings);
+          runtime.paymentChoices = clone(api.activeCompanyProfile(created).paymentChoices);
+          runtime.license = clone(api.activeCompanyProfile(created).license);
+          runtime.tseSettings = clone(api.activeCompanyProfile(created).tseSettings);
+          const merged = api.mergeActiveCompanySettings(created, runtime, "started", base.tenantId);
+          assertEqual(api.companyProfileById(merged, addedId).company.owner, "Paula Neu", "Aktives Profil wurde nicht aktualisiert");
+          assertDeepEqual(api.companyProfileById(merged, base.activeCompanyId), base.companies[0], "Profil 1 wurde beim Speichern verändert");
+          assert(merged.businessAreas.some(area => area.companyId === base.activeCompanyId), "Fremder Geschäftsbereich ging verloren");
+        }
+      },
+      {
+        name: "MULTI-COMPANY-004: Deaktivierte Unternehmensanschrift bleibt nach Speichern und Reload deaktiviert",
+        run: async () => {
+          const client = context.makeClient("multi-company-location-checkbox");
+          const base = recordFixture(client.tenantId, "completed");
+          await client.writeSettings(base);
+          const runtime = api.legacySettingsView(await client.readSettings());
+          runtime.company.useAsServiceLocation = false;
+          runtime.serviceLocations = runtime.serviceLocations.map(location => ({
+            ...location,
+            addressMode: "own",
+            street: "Eigener Weg",
+            houseNumber: "7",
+            zip: "12345",
+            city: "Teststadt"
+          }));
+          const merged = api.mergeActiveCompanySettings(await client.readSettings(), runtime, "completed", client.tenantId);
+          await client.writeSettings(merged);
+          const reloaded = await client.readSettings();
+          assertEqual(api.activeCompanyProfile(reloaded).company.useAsServiceLocation, false,
+            "Die deaktivierte Unternehmensanschrift wurde beim Reload wieder aktiviert");
+          assert(reloaded.serviceLocations.every(location => location.addressMode === "own"),
+            "Der eigenständige Leistungsort ging beim Speichern verloren");
+        }
+      },
+      {
+        name: "MULTI-COMPANY-004: Profilwechsel persistiert und Zusatzprofil bleibt produktiv gesperrt",
+        run: async () => {
+          const client = context.makeClient("multi-company-switch");
+          const base = recordFixture(client.tenantId, "completed");
+          const created = api.createCompanyProfileSettings(base, { profileCode: "POD", company: { owner: "Paula", street: "Südweg", houseNumber: "2", zip: "54321", city: "Sýstadt" } }, client.tenantId);
+          await client.writeSettings(created);
+          const reloaded = await client.readSettings();
+          assertEqual(reloaded.activeCompanyId, created.activeCompanyId, "activeCompanyId ging beim Reload verloren");
+          const area = reloaded.businessAreas.find(entry => entry.companyId === reloaded.activeCompanyId);
+          const location = reloaded.serviceLocations.find(entry => entry.companyId === reloaded.activeCompanyId);
+          const draft = profileDraft("blocked-second-profile", reloaded, reloaded.activeCompanyId, "2030-06-01T11:00:00.000Z", { businessAreaId: area.id, serviceLocationId: location.id });
+          const numberingBefore = clone(reloaded.companies[1].receiptSettings.numbering);
+          await assertRejects(() => client.commitReceipt(draft, reloaded, api.snapshotReceipts({ receipts: [] }, client.tenantId)), "COMPANY_ACTIVATION_REQUIRED", "Zusatzprofil ohne Aktivierung");
+          assertDeepEqual((await client.readSettings()).companies[1].receiptSettings.numbering, numberingBefore, "Gesperrter Abschluss veränderte den Nummernkreis");
+          const switched = clone(reloaded);
+          switched.activeCompanyId = switched.companies[0].id;
+          await client.writeSettings(switched);
+          assertEqual((await client.readSettings()).activeCompanyId, switched.companies[0].id, "Rückwechsel wurde nicht persistiert");
+        }
+      },
+      {
+        name: "MULTI-COMPANY-004: Vollbackup und Restore erhalten Profile, aktiven Kontext und Sperrstatus",
+        run: async () => {
+          const source = context.makeClient("multi-company-backup");
+          const base = completeTenantSnapshotFixture(source.tenantId);
+          base.stores.settings = api.createCompanyProfileSettings(base.stores.settings, { profileCode: "POD", company: { owner: "Paula", street: "Südweg", houseNumber: "2", zip: "54321", city: "Sýstadt" } }, source.tenantId);
+          const addedArea = base.stores.settings.businessAreas.find(area => area.companyId === base.stores.settings.activeCompanyId);
+          addedArea.features.prescriptionDocumentation = true;
+          await source.restoreTenantSnapshot(base);
+          const exported = await source.exportTenantSnapshot();
+          assertEqual(exported.stores.settings.companies.length, 2, "Backup enthält nicht beide Profile");
+          assertEqual(exported.stores.settings.activeCompanyId, base.stores.settings.activeCompanyId, "Backup verlor activeCompanyId");
+          assertEqual((await source.readCustomers()).customers.length, base.stores.customers.customers.length, "Globaler Kundenstamm wurde beim Profilwechsel gefiltert oder kopiert");
+          await assertRejects(() => source.savePrescription(prescriptionFixture(source.tenantId, {
+            id: "blocked-secondary-prescription",
+            companyId: base.stores.settings.activeCompanyId,
+            businessAreaId: addedArea.id,
+            catalogItemId: null,
+            treatmentText: "Konfigurationsprofil darf nicht produktiv schreiben"
+          })), "COMPANY_ACTIVATION_REQUIRED", "Zusatzprofil-Rezept ohne Aktivierung");
+          const target = api.createSettingsPersistence({ databaseName: createDatabaseName(), tenantId: source.tenantId });
+          try {
+            await target.restoreTenantSnapshot(exported);
+            const restored = await target.readSettings();
+            assertEqual(restored.companies.length, 2, "Restore verlor ein Profil");
+            assertEqual(restored.activeCompanyId, exported.stores.settings.activeCompanyId, "Restore veränderte das aktive Profil");
+            assert(!api.companyProductiveStatus(restored, restored.companies[1].id).productive, "Restore aktivierte das Zusatzprofil unberechtigt");
+          } finally {
+            const database = await target.openDatabase();
+            database.close(); target.closeDatabase(); await deleteTestDatabase(database.name);
+          }
+        }
+      },
+      {
+        name: "MULTI-COMPANY-004: Exportprojektion bleibt bis MULTI-COMPANY-005 sicher auf das aktive Profil begrenzt",
+        run: async () => {
+          const tenantId = "multi-company-active-export";
+          const snapshot = completeTenantSnapshotFixture(tenantId);
+          snapshot.stores.settings = api.createCompanyProfileSettings(snapshot.stores.settings, {
+            profileCode: "POD",
+            createdAt: "2030-01-01T08:00:00.000Z",
+            company: { name: "Podologie Süd", owner: "Paula", street: "Südweg", houseNumber: "2", zip: "54321", city: "Sýstadt" }
+          }, tenantId);
+          const companyId = snapshot.stores.settings.activeCompanyId;
+          const area = snapshot.stores.settings.businessAreas.find(entry => entry.companyId === companyId);
+          const location = snapshot.stores.settings.serviceLocations.find(entry => entry.companyId === companyId);
+          const activeReceipt = receiptDraftFixture("pod-export-receipt", {
+            companyId,
+            number: "POD-2030-000001",
+            date: "15.01.2030",
+            completedAt: "2030-01-15T10:00:00.000Z",
+            sortKey: "2030-01-15T10:00:00.000Z",
+            businessAreaId: area.id,
+            businessAreaSnapshot: { id: area.id, label: area.label, visibleName: area.visibleName },
+            serviceLocationId: location.id,
+            serviceLocationSnapshot: { id: location.id, name: location.name },
+            companySnapshot: clone(api.activeCompanyProfile(snapshot.stores.settings).company),
+            customer: { id: "customer-anna", name: "Anna Muster" }
+          });
+          snapshot.stores.receipts = api.snapshotReceipts({
+            receipts: [...snapshot.stores.receipts.receipts, activeReceipt]
+          }, tenantId);
+          const projection = exportApi.createExportProjection(snapshot, {
+            exportType: "own-data",
+            periodType: "custom",
+            dateFrom: "2030-01-01",
+            dateTo: "2030-01-31",
+            businessAreaId: "all",
+            includeCustomers: true
+          });
+          assertDeepEqual(projection.receipts.map(row => row.receiptNumber), ["POD-2030-000001"], "Export mischte Belege eines anderen Profils ein");
+          assertEqual(projection.companyOwner, "Paula", "Export verwendete nicht das aktive Unternehmensprofil");
+          assertDeepEqual(projection.customers.map(row => row.firstName), ["Anna"], "Eigene-Daten-Export verlor den globalen, fachlich zugeordneten Kunden");
         }
       }
     ];

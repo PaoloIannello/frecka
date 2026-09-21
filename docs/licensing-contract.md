@@ -10,6 +10,8 @@
 
 **Clientformat seit LICENSE-005 / MULTI-COMPANY-002:** `settings.companies[].license` Version 2 und `licenseRuntime` Version 1
 
+**Lokale Mehrprofilgrenze seit MULTI-COMPANY-004:** Mehrere Unternehmensprofile dürfen konfiguriert und gesichert werden. Die bestehende einzelne `licenseRuntime` autorisiert aber kein zweites Profil. Bis ein eigener Multi-Binding-Block diesen Vertrag erweitert, ist nur Profil 1 produktiv; jedes Zusatzprofil bleibt lokal `activation_required`. Seine portable Referenz wird weder aus Profil 1 kopiert noch als Berechtigungsnachweis behandelt. Diese Zwischenregel ändert keinen Serverclaim und nimmt keine spätere Aktivierungs- oder Kaufarchitektur vorweg.
+
 **Grundlage:** ADR-0004 und angenommene ADR-0005
 
 ## 1. Normative Begriffe und Grenzen

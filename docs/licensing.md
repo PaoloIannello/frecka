@@ -1,6 +1,6 @@
 # Lizenzarchitektur V1.0
 
-**Aktueller Implementierungsstand:** MULTI-COMPANY-002 auf Basis LICENSE-005 und LICENSE-001/002, ausschließlich lokale Runtime- und Tokenvorbereitung
+**Aktueller Implementierungsstand:** MULTI-COMPANY-004 auf Basis LICENSE-005 und LICENSE-001/002, ausschließlich lokale Runtime- und Tokenvorbereitung mit sicherer Zusatzprofil-Sperre
 
 **Verbindliches Zielmodell:** LICENSE-003/004; der lokale Clientteil ist mit LICENSE-005 umgesetzt
 
@@ -16,7 +16,7 @@ LICENSE-005 setzt ausschließlich die lokale Daten- und Prüfgrenze aus LICENSE-
 
 ## 2. Heutiger Stand LICENSE-005
 
-Im einzigen Unternehmensprofil des mandantenbezogenen Settings-Datensatzes liegt ausschließlich die portable, nicht autoritative Referenz:
+In jedem Unternehmensprofil des mandantenbezogenen Settings-Datensatzes liegt ausschließlich eine eigene portable, nicht autoritative Referenz:
 
 ```text
 license v2
@@ -30,7 +30,7 @@ license v2
 
 `deviceId`, Schlüssel, Token, Zeitanker und gecachte Berechtigungen liegen getrennt im gerätelokalen `licenseRuntime`-Store. Die Geräte-ID wird zufällig ohne Personen-, Hardware- oder Netzwerkmerkmale erzeugt. Der private ECDSA-P-256-Schlüssel ist nicht exportierbar; der öffentliche Schlüssel ist exportierbar und sein RFC-7638-Fingerabdruck wird lokal gespeichert. Ein Reload verwendet dasselbe in IndexedDB strukturgeklonte Schlüsselpaar.
 
-`settings.companies[0].license` wird über die zentrale Tenant-Snapshot-API gesichert und wiederhergestellt sowie in „Eigene Daten“ projiziert. Der Runtime-Store ist dagegen aus Tenant-Snapshot, verschlüsseltem Backup, Restore und beiden Exportarten ausgeschlossen. `Einstellungen → Lizenz & Gerät` zeigt nur die portable Referenz, sichere technische Statuscodes, das Ergebnis des beim Lesen ausgeführten lokalen Signatur-Selbsttests und einen gekürzten Vergleichswert aus dem öffentlichen Thumbprint. Private Schlüssel, vollständiger Thumbprint, Geräte-ID und Token werden nicht angezeigt.
+`settings.companies[].license` wird über die zentrale Tenant-Snapshot-API gesichert und wiederhergestellt; der Exporttyp „Eigene Daten“ projiziert bis MULTI-COMPANY-005 nur die Referenz des aktiven Profils. Der Runtime-Store ist dagegen aus Tenant-Snapshot, verschlüsseltem Backup, Restore und beiden Exportarten ausgeschlossen. `Einstellungen → Lizenz & Gerät` zeigt nur die portable Referenz des aktiven Profils, sichere technische Statuscodes, das Ergebnis des beim Lesen ausgeführten lokalen Signatur-Selbsttests und einen gekürzten Vergleichswert aus dem öffentlichen Thumbprint. Private Schlüssel, vollständiger Thumbprint, Geräte-ID und Token werden nicht angezeigt.
 
 Der Compact-JWS-Parser akzeptiert ausschließlich die LICENSE-004-Allowlist, `ES256`, den festen Typ und ein vorhandenes `kid`. Eine Strukturprüfung liefert immer `unverified`; erst ein ausdrücklich übergebener vertrauenswürdiger öffentlicher Schlüssel und der vollständige Bindungskontext können ein Testfixture kryptografisch verifizieren. Da noch kein produktiver Serverprüfschlüssel vorhanden ist, erzeugt dieser Stand keine Lizenzautorität und löst keinen Schreibschutz aus.
 
@@ -97,10 +97,10 @@ Ein Identity-Inhaber kann mehrere gekaufte Filiallizenzen besitzen. Der Trial de
 
 ## 7. Implementiertes lokales Clientmodell
 
-`settings.companies[0].license` besitzt ab Schema 9 die portable, nicht autoritative Formatversion 2:
+`settings.companies[].license` besitzt ab Schema 9 je Profil die portable, nicht autoritative Formatversion 2:
 
 ```text
-settings.companies[0].license v2
+settings.companies[].license v2
 ├── formatVersion
 ├── localTenantId
 ├── licenseId
@@ -124,7 +124,7 @@ licenseRuntime v1
 
 Der Store ist vom Tenant-Snapshot, Backup, Restore und Export ausgeschlossen. LICENSE-005 hebt das IndexedDB-Schema deterministisch von 5 auf 6 an und ergänzt ausschließlich diesen Store; die fünf bisherigen Stores bleiben unverändert. Der private Schlüssel wird als nicht exportierbarer Web-Crypto-`CryptoKey` gespeichert.
 
-MULTI-COMPANY-002 hebt später 8→9 und ordnet ausschließlich die portable Referenz Profil 1 zu. `licenseRuntime`, Geräteidentität, Schlüssel, Token und `cachedEntitlements` bleiben installations-/gerätebezogen und unverändert. Mehrere Bindings, Gerätewechsel und Serverkommunikation sind nicht Bestandteil dieser Migration.
+MULTI-COMPANY-002 hebt später 8→9 und ordnet die bestehende portable Referenz Profil 1 zu. MULTI-COMPANY-004 gibt einem neu angelegten Profil eine eigene lokale portable Referenz, kopiert aber weder die Referenz noch die Autorität von Profil 1. Weil `licenseRuntime`, Geräteidentität, Schlüssel, Token und `cachedEntitlements` weiterhin installations-/gerätebezogen und unverändert sind, gilt bis zu einem ausdrücklichen Multi-Binding-Folgeblock die konservative lokale Grenze: Profil 1 bleibt produktiv, jedes Zusatzprofil ist konfigurierbar, aber `activation_required` und für produktive Mutationen gesperrt. Mehrere Bindings, Gerätewechsel und Serverkommunikation sind nicht Bestandteil von MULTI-COMPANY-004.
 
 Bei der eindeutigen LICENSE-001-Migration bleiben die lokale Lizenz-ID und die bisherige Geräte-ID erhalten: Die Lizenz-ID geht in die portable Referenz, die Geräte-ID ausschließlich in die neue Runtime. Beide sind nur Migrationshinweise. Fremde Mandanten, unbekannte Felder, widersprüchliche Serververknüpfungen und zukünftige Formatversionen werden geschlossen abgewiesen. Auf einer neuen Installation oder nach Verlust des Runtime-Stores ist intern höchstens `activation_required` vorbereitet; es wird kein Trial aus lokaler Zeit oder Settings rekonstruiert und in LICENSE-005 noch keine Produktfunktion gesperrt.
 
