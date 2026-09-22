@@ -14,6 +14,8 @@ Die vorhandene LICENSE-005-Runtime besitzt genau eine installations- und geräte
 
 `settings.companies[]` bleibt die einzige persistierte Profilquelle; `activeCompanyId` bezeichnet genau ein vorhandenes Profil und ist der zentrale Arbeitskontext der Produktoberfläche. Ein Profilwechsel speichert nur diese Referenz und lädt anschließend Unternehmensdaten, Geschäftsbereiche, Leistungsorte, Betriebs- und Belegeinstellungen des gewählten Profils. Fremde Profile werden bei einem Speichervorgang nicht neu aufgebaut oder überschrieben.
 
+MULTI-COMPANY-004C macht diesen vorhandenen Arbeitskontext im App-Header direkt erreichbar. Bei mehreren Profilen öffnet ein kompakter Kontextschalter eine mobile Auswahl mit den getrennten Ebenen Unternehmen und Geschäftsbereich. Der Unternehmenswechsel verwendet unverändert denselben kanonischen Wechselpfad wie die Unternehmenseinstellungen; der Bereichskontext wird danach ausschließlich aus aktiven Bereichen mit `businessArea.companyId === activeCompanyId` aufgelöst. Die geöffnete Auswahl ist reiner UI-Zustand und wird nicht persistiert. Bei genau einem Profil bleibt die bisherige direkte Geschäftsbereichsauswahl erhalten, ohne einen zusätzlichen Unternehmensschritt einzuführen.
+
 Neue Profile erhalten:
 
 - opake, nicht aus Stammdaten abgeleitete Profil-, Geschäftsbereichs- und Leistungsort-IDs;
@@ -29,6 +31,8 @@ Geschäftsbereiche und Leistungsorte werden in der UI ausschließlich für das a
 
 Ein Profilwechsel ist gesperrt, solange ein nichtleerer Belegwarenkorb, ein laufender Belegabschluss, ein Gutscheinentwurf oder ein Rezeptentwurf existiert. FRECKA migriert und verwirft solche Entwürfe nicht automatisch.
 
+Der Kontextschalter ruft genau diesen zentralen Draft-Schutz auf. Er zeigt den bereits zentral ermittelten Produktiv-, Aktivierungs- oder Beta-Teststatus nur lesend an und kann weder Lizenz- noch Beta-Testzustände verändern. Ein erfolgreicher Wechsel aktualisiert die sichtbare App unmittelbar; ein Reload ist nicht erforderlich.
+
 Bis zu einem eigenen Lizenz-Multi-Binding-Block ist ausschließlich Profil 1 produktiv. Jedes weitere Profil ist auswählbar und konfigurierbar, bleibt aber lokal `activation_required`; Belegabschluss und weitere produktive Mutationen werden in der Persistenzschicht abgewiesen. Die Lizenzreferenz oder Runtime von Profil 1 wird nicht kopiert. Diese konservative Zwischenregel ist keine Lizenzautorisation.
 
 Unternehmensprofile werden in V1 nicht physisch gelöscht. Dadurch entstehen weder Kaskaden noch verwaiste historische Daten. Bis MULTI-COMPANY-005 werden bestehende Beleglisten und Exporte sicher auf das aktive Profil begrenzt; eine profilübergreifende Übersicht oder Steuerberaterauswertung ist nicht Teil dieser Entscheidung.
@@ -37,6 +41,7 @@ Unternehmensprofile werden in V1 nicht physisch gelöscht. Dadurch entstehen wed
 
 - Mehrere Profile können in derselben Installation vorbereitet, gesichert und wiederhergestellt werden, ohne Schemaerhöhung oder zweiten Settingsbestand.
 - Der aktive Unternehmenskontext ist sichtbar und nach Reload stabil.
+- Unternehmen und Geschäftsbereich bleiben im schnellen Headerwechsel als getrennte Kontexte erkennbar; es entsteht keine zweite Zustandsquelle.
 - Offene Entwürfe und profilfremde Referenzen können keine Cross-Company-Geschäftsvorfälle erzeugen.
 - Vollbackup und Restore enthalten alle Profile gemeinsam; `licenseRuntime` bleibt ausgeschlossen und Restore hebt die Produktsperre eines Zusatzprofils nicht auf.
 - Profilbearbeitung wirkt nur auf künftige Vorgänge. Dokumente, Public Viewer, QR, PDFs und historische Exporte bleiben snapshotbasiert.

@@ -199,6 +199,9 @@
   const companyName = document.getElementById("companyName");
   const switcherWrap = document.getElementById("businessSwitcherWrap");
   const switcher = document.getElementById("businessSwitcher");
+  const contextSwitcher = document.getElementById("contextSwitcher");
+  const contextCompanyLabel = document.getElementById("contextCompanyLabel");
+  const contextBusinessAreaLabel = document.getElementById("contextBusinessAreaLabel");
   const bottomNav = document.getElementById("bottomNav");
   const dialogBackdrop = document.getElementById("dialogBackdrop");
   const cancelDiscard = document.getElementById("cancelDiscard");
@@ -302,6 +305,7 @@
   let currentHistoryIndex = Number.isInteger(history.state?.freckaIndex) ? history.state.freckaIndex : 0;
   let qrFullscreenReturnFocus = null;
   let qrNativeFullscreenOwned = false;
+  let bottomSheetReturnFocus = null;
 
   function updateActivationPermission() {
     if (state.cart.length || state.checkoutSubmitting) {
@@ -919,7 +923,8 @@
       "[data-toggle-customer-active]", "#prescriptionForm select",
       "[data-catalog-toggle-item]", "[data-catalog-toggle-category]", "[data-catalog-move-item]",
       "[data-catalog-move-category]", "[data-route]",
-      "#businessSwitcher", "#bottomSheetClose", "#cancelDiscard", "#confirmDiscard"
+      "#businessSwitcher", "#contextSwitcher", "[data-context-company-id]", "[data-context-business-area-id]",
+      "#bottomSheetClose", "#cancelDiscard", "#confirmDiscard"
     ].join(","))];
   }
 
@@ -1228,29 +1233,113 @@
     });
   }
 
+  function companyProfiles() {
+    return Array.isArray(currentSettingsRecord?.companies) ? currentSettingsRecord.companies : [];
+  }
+
+  function contextCompanyShortLabel(profile) {
+    return String(profile?.receiptSettings?.numbering?.profileCode || "").trim()
+      || companyDisplayName(profile?.company);
+  }
+
+  function contextCompanyStatus(profile) {
+    const status = persistence.companyProductiveStatus(currentSettingsRecord, profile.id, data.build);
+    if (status.betaProductiveTestEffective) return { label: "Beta-Testmodus", className: "is-beta-test" };
+    if (status.regularProductive) return { label: "Aktiv", className: "is-active" };
+    return { label: "Aktivierung erforderlich", className: "needs-activation" };
+  }
+
+  function contextBusinessAreas(companyId = activeCompanyId()) {
+    return allCompanyBusinessAreas().filter(area => area.companyId === companyId && area.active !== false);
+  }
+
+  function contextSwitcherSheetMarkup() {
+    const profiles = companyProfiles();
+    const areas = contextBusinessAreas();
+    const notice = state.companySwitchNotice
+      ? `<div class="context-switcher-notice ${state.companySwitchNoticeIsError ? "is-error" : ""}" role="${state.companySwitchNoticeIsError ? "alert" : "status"}" tabindex="-1">${escapeHtml(state.companySwitchNotice)}</div>`
+      : "";
+    return `<div class="context-switcher-sheet-content">
+      ${notice}
+      <section aria-labelledby="contextCompaniesTitle">
+        <h3 id="contextCompaniesTitle">Unternehmen</h3>
+        <div class="context-option-list">${profiles.map(profile => {
+          const selected = profile.id === activeCompanyId();
+          const status = contextCompanyStatus(profile);
+          const code = String(profile.receiptSettings?.numbering?.profileCode || "").trim();
+          return `<button class="context-option ${selected ? "is-selected" : ""}" type="button" data-context-company-id="${escapeHtml(profile.id)}" ${selected ? 'aria-current="true"' : ""}>
+            <span><strong>${escapeHtml(companyDisplayName(profile.company))}</strong><small>${code ? `Kürzel ${escapeHtml(code)} · ` : ""}<em class="context-status ${status.className}">${escapeHtml(status.label)}</em></small></span>
+            <span class="context-option-check" aria-hidden="true">${selected ? "✓" : ""}</span>
+          </button>`;
+        }).join("")}</div>
+      </section>
+      <section aria-labelledby="contextBusinessAreasTitle">
+        <h3 id="contextBusinessAreasTitle">Geschäftsbereich</h3>
+        <div class="context-option-list">${areas.map(area => {
+          const selected = area.id === state.activeBusinessArea;
+          return `<button class="context-option ${selected ? "is-selected" : ""}" type="button" data-context-business-area-id="${escapeHtml(area.id)}" ${selected ? 'aria-current="true"' : ""}>
+            <span><strong>${escapeHtml(area.label)}</strong></span><span class="context-option-check" aria-hidden="true">${selected ? "✓" : ""}</span>
+          </button>`;
+        }).join("")}</div>
+      </section>
+    </div>`;
+  }
+
+  function openContextSwitcher(preserveNotice = false) {
+    if (!preserveNotice) {
+      state.companySwitchNotice = "";
+      state.companySwitchNoticeIsError = false;
+    }
+    openBottomSheet("Kontext wechseln", contextSwitcherSheetMarkup(), "context-switcher-sheet", contextSwitcher);
+    contextSwitcher.setAttribute("aria-expanded", "true");
+  }
+
+  function switchActiveBusinessArea(areaId) {
+    if (pendingSettingsWrites) return false;
+    const area = contextBusinessAreas().find(entry => entry.id === areaId);
+    if (!area) return false;
+    state.activeBusinessArea = area.id;
+    resetCheckoutPrescription();
+    resetCheckoutTreatmentDocumentation();
+    state.activeCategory = "favorites";
+    state.cart = [];
+    state.search = "";
+    refreshBusinessSwitcher();
+    renderRoute(false);
+    return true;
+  }
+
   function refreshBusinessSwitcher() {
     companyName.textContent = companyDisplayName(data.company);
     const areas = activeBusinessAreas();
     if (!areas.some(area => area.id === state.activeBusinessArea)) state.activeBusinessArea = defaultBusinessArea()?.id ?? null;
-    switcherWrap.hidden = areas.length <= 1;
+    const multiCompany = companyProfiles().length > 1;
+    switcherWrap.hidden = !multiCompany && areas.length <= 1;
+    switcher.hidden = multiCompany;
+    switcher.nextElementSibling.hidden = multiCompany;
+    contextSwitcher.hidden = !multiCompany;
     switcher.innerHTML = areas.map(area => `<option value="${escapeHtml(area.id)}">${escapeHtml(area.label)}</option>`).join("");
     switcher.value = state.activeBusinessArea || "";
+    if (multiCompany) {
+      const profile = settingsCompanyProfile(currentSettingsRecord);
+      const companyLabel = contextCompanyShortLabel(profile);
+      const areaLabel = getAreaLabel();
+      contextCompanyLabel.textContent = companyLabel;
+      contextBusinessAreaLabel.textContent = areaLabel;
+      contextSwitcher.setAttribute("aria-label", `Kontext wechseln. Unternehmen ${companyDisplayName(profile.company)}, Geschäftsbereich ${areaLabel}`);
+    } else {
+      contextSwitcher.setAttribute("aria-expanded", "false");
+    }
   }
 
   function initHeader() {
     refreshBusinessSwitcher();
     switcher.addEventListener("change", event => {
-      if (pendingSettingsWrites) {
-        event.target.value = state.activeBusinessArea || "";
-        return;
-      }
-      state.activeBusinessArea = event.target.value;
-      resetCheckoutPrescription();
-      resetCheckoutTreatmentDocumentation();
-      state.activeCategory = "favorites";
-      state.cart = [];
-      state.search = "";
-      renderRoute(false);
+      if (!switchActiveBusinessArea(event.target.value)) event.target.value = state.activeBusinessArea || "";
+    });
+    contextSwitcher.addEventListener("click", () => {
+      if (pendingSettingsWrites) return;
+      openContextSwitcher();
     });
   }
 
@@ -3895,7 +3984,8 @@
     return `<div class="settings-card-title"><h2>${escapeHtml(title)}</h2>${helpButton(helpTopic, title)}</div>`;
   }
 
-  function openBottomSheet(title, content, modifier = "") {
+  function openBottomSheet(title, content, modifier = "", returnFocus = document.activeElement) {
+    bottomSheetReturnFocus = returnFocus instanceof HTMLElement ? returnFocus : null;
     bottomSheetTitle.textContent = title;
     bottomSheetContent.innerHTML = content;
     bottomSheet.className = `bottom-sheet ${modifier}`.trim();
@@ -3905,10 +3995,14 @@
   }
 
   function closeBottomSheet() {
+    const returnFocus = bottomSheetReturnFocus;
     bottomSheetBackdrop.hidden = true;
     bottomSheet.className = "bottom-sheet";
     bottomSheetContent.innerHTML = "";
     document.body.style.overflow = "";
+    contextSwitcher?.setAttribute("aria-expanded", "false");
+    bottomSheetReturnFocus = null;
+    if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
   }
 
   function openContextHelp(topic) {
@@ -7058,6 +7152,22 @@
       renderCompanySettings();
       return;
     }
+    const contextCompanySwitch = event.target.closest("[data-context-company-id]");
+    if (contextCompanySwitch) {
+      const switched = await switchActiveCompany(contextCompanySwitch.dataset.contextCompanyId);
+      if (switched) renderRoute(false);
+      openContextSwitcher(true);
+      const focusTarget = switched
+        ? bottomSheetContent.querySelector('[data-context-company-id][aria-current="true"]')
+        : bottomSheetContent.querySelector(".context-switcher-notice");
+      focusTarget?.focus({ preventScroll: true });
+      return;
+    }
+    const contextBusinessAreaSwitch = event.target.closest("[data-context-business-area-id]");
+    if (contextBusinessAreaSwitch) {
+      if (switchActiveBusinessArea(contextBusinessAreaSwitch.dataset.contextBusinessAreaId)) closeBottomSheet();
+      return;
+    }
     const companySwitch = event.target.closest("[data-company-switch]");
     if (companySwitch) {
       await switchActiveCompany(companySwitch.dataset.companySwitch);
@@ -9077,6 +9187,27 @@
   bottomSheetClose.addEventListener("click", closeBottomSheet);
   bottomSheetBackdrop.addEventListener("click", event => {
     if (event.target === bottomSheetBackdrop) closeBottomSheet();
+  });
+  document.addEventListener("keydown", event => {
+    if (bottomSheetBackdrop.hidden) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeBottomSheet();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = [...bottomSheet.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+      .filter(element => !element.hidden);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   });
   qrFullscreenClose.addEventListener("click", closeQrFullscreen);
   document.addEventListener("fullscreenchange", () => {

@@ -4250,6 +4250,293 @@
             }
           }
         }
+      },
+      {
+        name: "MULTI-COMPANY-004C: Header verwendet kanonischen Kontextwechsel ohne neue Datenwahrheit",
+        run: async () => {
+          const [indexSource, appSource, cssSource] = await Promise.all([
+            fetch("../index.html", { cache: "no-store" }).then(response => response.text()),
+            fetch("../js/app.js", { cache: "no-store" }).then(response => response.text()),
+            fetch("../styles.css", { cache: "no-store" }).then(response => response.text())
+          ]);
+          assert(indexSource.includes('id="contextSwitcher"') && indexSource.includes('aria-controls="bottomSheet"')
+            && indexSource.includes('aria-expanded="false"'), "Semantischer Header-Context-Switcher fehlt");
+          assert(appSource.includes("await switchActiveCompany(contextCompanySwitch.dataset.contextCompanyId)"),
+            "Home-Switcher verwendet nicht den kanonischen Unternehmenswechsel");
+          assert(appSource.includes("allCompanyBusinessAreas().filter(area => area.companyId === companyId"),
+            "Geschäftsbereiche werden nicht explizit am aktiven Unternehmen begrenzt");
+          assert(appSource.includes("Bitte schließe oder verwirf zuerst den offenen Entwurf. Er wird nicht automatisch einem anderen Unternehmen zugeordnet."),
+            "Zentraler Draft-Schutz ging verloren");
+          assert(!appSource.includes("contextSwitcherActiveCompanyId"), "Parallele activeCompanyId-Wahrheit wurde eingeführt");
+          assert(cssSource.includes(".context-switcher") && cssSource.includes(".context-option")
+            && cssSource.includes("min-height: 54px"), "Mobile Context-Switcher-Darstellung oder Touch-Ziel fehlt");
+        }
+      },
+      {
+        name: "MULTI-COMPANY-004C: Single Company behält die einfache Geschäftsbereichsauswahl bei 320/390 px",
+        run: async () => {
+          const index = await (await fetch("../index.html", { cache: "no-store" })).text();
+          const waitFor = async predicate => {
+            for (let attempt = 0; attempt < 160; attempt += 1) {
+              if (await predicate()) return;
+              await new Promise(resolve => setTimeout(resolve, 50));
+            }
+            throw new Error("Single-Company-Context-Switcher wurde nicht rechtzeitig bereit");
+          };
+          const oneAreaClient = context.makeClient("context-single-one-area", { appBuild: betaBuild });
+          const oneAreaSnapshot = completeTenantSnapshotFixture(oneAreaClient.tenantId);
+          const oneAreaSettings = oneAreaSnapshot.stores.settings;
+          const oneAreaCompanyId = oneAreaSettings.activeCompanyId;
+          const onlyArea = oneAreaSettings.businessAreas.find(area => area.companyId === oneAreaCompanyId);
+          assert(onlyArea, "Single-Company-Fixture besitzt keinen Geschäftsbereich");
+          oneAreaSettings.businessAreas.filter(area => area.companyId === oneAreaCompanyId).forEach(area => {
+            area.active = area.id === onlyArea.id;
+            area.isDefault = area.id === onlyArea.id;
+          });
+          await oneAreaClient.restoreTenantSnapshot(oneAreaSnapshot);
+          const oneAreaFrame = document.createElement("iframe");
+          oneAreaFrame.title = "Single Company mit einem Geschäftsbereich";
+          oneAreaFrame.style.cssText = "position:fixed;left:-2000px;top:0;width:320px;height:807px;border:0";
+          setIsolatedAppFrame(oneAreaFrame, isolatedAppMarkup(index, oneAreaClient, "home", context.databaseName, { appBuild: betaBuild }));
+          document.body.append(oneAreaFrame);
+          try {
+            const doc = () => oneAreaFrame.contentDocument;
+            await waitFor(() => doc()?.querySelector(".hero-card"));
+            assert(doc().querySelector("#businessSwitcherWrap").hidden,
+              "Ein Unternehmen mit einem Bereich zeigt unnötige Kontextauswahl");
+            assert(doc().querySelector("#contextSwitcher").hidden,
+              "Ein Unternehmen mit einem Bereich zeigt eine Unternehmensauswahl");
+          } finally {
+            oneAreaFrame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase();
+            oneAreaFrame.remove();
+          }
+          for (const width of [320, 390]) {
+            const client = context.makeClient(`context-single-${width}`, { appBuild: betaBuild });
+            const snapshot = completeTenantSnapshotFixture(client.tenantId);
+            const settings = snapshot.stores.settings;
+            const companyId = settings.activeCompanyId;
+            const firstArea = settings.businessAreas.find(area => area.companyId === companyId);
+            const firstLocation = settings.serviceLocations.find(location => location.companyId === companyId);
+            assert(firstArea && firstLocation, "Single-Company-Fixture ist unvollständig");
+            let secondArea = settings.businessAreas.find(area => area.companyId === companyId && area.id !== firstArea.id);
+            if (!secondArea) {
+              secondArea = {
+                ...clone(firstArea), id: `single-area-${width}`, label: "Zweiter Geschäftsbereich",
+                isDefault: false, defaultServiceLocationId: firstLocation.id
+              };
+              settings.businessAreas.push(secondArea);
+              firstLocation.businessAreaIds = [...new Set([...(firstLocation.businessAreaIds || []), secondArea.id])];
+            }
+            settings.businessAreas.filter(area => area.companyId === companyId).forEach((area, areaIndex) => {
+              area.active = areaIndex < 2;
+              area.isDefault = area.id === firstArea.id;
+            });
+            await client.restoreTenantSnapshot(snapshot);
+            const frame = document.createElement("iframe");
+            frame.title = `Single-Company-Kontext ${width} px`;
+            frame.style.cssText = `position:fixed;left:-2000px;top:0;width:${width}px;height:807px;border:0`;
+            setIsolatedAppFrame(frame, isolatedAppMarkup(index, client, "home", context.databaseName, { appBuild: betaBuild }));
+            document.body.append(frame);
+            try {
+              const doc = () => frame.contentDocument;
+              await waitFor(() => doc()?.querySelector("#businessSwitcher")?.options.length >= 2);
+              assert(doc().querySelector("#contextSwitcher").hidden, "Single Company zeigt unnötige Unternehmensauswahl");
+              const select = doc().querySelector("#businessSwitcher");
+              assert(!select.hidden && !doc().querySelector("#businessSwitcherWrap").hidden,
+                "Bestehende Geschäftsbereichsauswahl wurde bei Single Company entfernt");
+              select.value = secondArea.id;
+              select.dispatchEvent(new frame.contentWindow.Event("change", { bubbles: true }));
+              await waitFor(() => doc()?.querySelector("#businessSwitcher")?.value === secondArea.id);
+              assertEqual(doc().querySelector(".hero-card .eyebrow")?.textContent, secondArea.label,
+                "Geschäftsbereichswechsel aktualisiert die Startseite nicht");
+              assert(select.getBoundingClientRect().height >= 44, "Single-Company-Auswahl unterschreitet das Touch-Ziel");
+              assert(doc().documentElement.scrollWidth <= frame.contentWindow.innerWidth,
+                `Single-Company-Header läuft bei ${width} px horizontal über`);
+              assertDeepEqual(frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS, [], "Single-Company-Umschalter verursachte Laufzeitfehler");
+            } finally {
+              frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase();
+              frame.remove();
+            }
+          }
+        }
+      },
+      {
+        name: "MULTI-COMPANY-004C: Multi-Company-Wechsel bleibt profilrein, responsiv und draftgeschützt",
+        run: async () => {
+          const index = await (await fetch("../index.html", { cache: "no-store" })).text();
+          const waitFor = async (predicate, label) => {
+            for (let attempt = 0; attempt < 180; attempt += 1) {
+              if (await predicate()) return;
+              await new Promise(resolve => setTimeout(resolve, 50));
+            }
+            throw new Error(`${label} wurde nicht rechtzeitig bereit`);
+          };
+          const client = context.makeClient("context-multi", { appBuild: betaBuild });
+          const fixture = setupFixture(client.tenantId);
+          const settings = fixture.snapshot.stores.settings;
+          const primaryId = settings.companies[0].id;
+          const betaProfile = api.companyProfileById(settings, fixture.companyId);
+          betaProfile.company.name = "Coaching | Training | Supervision mit sehr langem Unternehmensnamen";
+          const betaArea = settings.businessAreas.find(area => area.id === fixture.areaId);
+          const betaLocation = settings.serviceLocations.find(location => location.companyId === fixture.companyId);
+          betaArea.label = "Coaching und systemische Supervision";
+          const secondBetaArea = {
+            ...clone(betaArea), id: "context-beta-training", label: "Training für Teams und Organisationen",
+            visibleName: "Training", isDefault: false, defaultServiceLocationId: betaLocation.id
+          };
+          settings.businessAreas.push(secondBetaArea);
+          betaLocation.businessAreaIds = [...new Set([...(betaLocation.businessAreaIds || []), secondBetaArea.id])];
+          await client.restoreTenantSnapshot(fixture.snapshot);
+          const blockedFrame = document.createElement("iframe");
+          blockedFrame.title = "Multi-Company-Kontext ohne Beta-Freigabe";
+          blockedFrame.style.cssText = "position:fixed;left:-2000px;top:0;width:390px;height:844px;border:0";
+          setIsolatedAppFrame(blockedFrame, isolatedAppMarkup(index, client, "home", context.databaseName, { appBuild: betaBuild }));
+          document.body.append(blockedFrame);
+          try {
+            const doc = () => blockedFrame.contentDocument;
+            await waitFor(() => doc()?.querySelector("#contextSwitcher") && !doc().querySelector("#contextSwitcher").hidden,
+              "Gesperrter Multi-Company-Header");
+            assert(doc().querySelector('[data-action="new-receipt"]').disabled,
+              "Zusatzprofil ohne Beta-Freigabe ist im Home-Kontext produktiv");
+            doc().querySelector("#contextSwitcher").click();
+            assert(doc().querySelector(`[data-context-company-id="${fixture.companyId}"]`).innerText.includes("Aktivierung erforderlich"),
+              "Context-Switcher beschönigt den Status des gesperrten Zusatzprofils");
+            assert(!doc().querySelector(".context-switcher-sheet-content").innerText.includes("freigeben"),
+              "Context-Switcher bietet unzulässig eine Beta- oder Lizenzfreigabe an");
+          } finally {
+            blockedFrame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase();
+            blockedFrame.remove();
+          }
+          const betaEnabledSettings = api.setCompanyBetaProductiveTest(
+            await client.readSettings(), fixture.companyId, true, betaBuild, "2030-07-05T08:00:00.000Z"
+          );
+          await client.writeSettings(betaEnabledSettings);
+          const initialSettings = await client.readSettings();
+          const numberingBefore = initialSettings.companies.map(profile => clone(profile.receiptSettings.numbering));
+          const customersBefore = clone(await client.readCustomers());
+          const receiptsBefore = clone(await client.readReceipts());
+
+          const frame = document.createElement("iframe");
+          frame.title = "Multi-Company-Kontext 320 px";
+          frame.style.cssText = "position:fixed;left:-2000px;top:0;width:320px;height:807px;border:0";
+          setIsolatedAppFrame(frame, isolatedAppMarkup(index, client, "home", context.databaseName, { appBuild: betaBuild }));
+          document.body.append(frame);
+          try {
+            const doc = () => frame.contentDocument;
+            await waitFor(() => doc()?.querySelector("#contextSwitcher") && !doc().querySelector("#contextSwitcher").hidden,
+              "Multi-Company-Header");
+            const switchButton = doc().querySelector("#contextSwitcher");
+            assert(switchButton.innerText.includes("CTS") && switchButton.innerText.includes(betaArea.label),
+              "Kompakter aktiver Unternehmens-/Bereichskontext ist falsch");
+            assert(switchButton.getBoundingClientRect().height >= 44, "Context-Switcher unterschreitet das Touch-Ziel");
+            assert(doc().documentElement.scrollWidth <= frame.contentWindow.innerWidth,
+              "Lange Kontextnamen laufen bei 320 px horizontal über");
+
+            switchButton.click();
+            await waitFor(() => !doc().querySelector("#bottomSheetBackdrop").hidden, "Kontextauswahl");
+            assertEqual(switchButton.getAttribute("aria-expanded"), "true", "aria-expanded bildet den offenen Zustand nicht ab");
+            assertEqual(doc().body.style.overflow, "hidden", "Overlay sperrt Body-Scrolling nicht");
+            const companyButtons = [...doc().querySelectorAll("[data-context-company-id]")];
+            assertEqual(companyButtons.length, 2, "Unternehmensprofile fehlen in der Kontextauswahl");
+            assert(doc().querySelector(`[data-context-company-id="${fixture.companyId}"]`).getAttribute("aria-current") === "true",
+              "Aktives Unternehmen ist nicht semantisch markiert");
+            assert(doc().querySelector(`[data-context-company-id="${fixture.companyId}"]`).innerText.includes("Beta-Testmodus"),
+              "Beta-Teststatus wird im Kontext falsch dargestellt");
+            const betaAreaIds = new Set(settings.businessAreas.filter(area => area.companyId === fixture.companyId && area.active !== false).map(area => area.id));
+            const offeredBetaAreaIds = [...doc().querySelectorAll("[data-context-business-area-id]")].map(button => button.dataset.contextBusinessAreaId);
+            assertDeepEqual(offeredBetaAreaIds.sort(), [...betaAreaIds].sort(), "Fremde Geschäftsbereiche erscheinen im Beta-Profil");
+            doc().querySelector(`[data-context-business-area-id="${secondBetaArea.id}"]`).click();
+            await waitFor(() => doc()?.querySelector("#contextBusinessAreaLabel")?.textContent === secondBetaArea.label,
+              "Geschäftsbereichswechsel innerhalb Profil B");
+            assertEqual((await client.readSettings()).activeCompanyId, fixture.companyId,
+              "Geschäftsbereichswechsel veränderte activeCompanyId");
+            doc().querySelector("#contextSwitcher").click();
+
+            doc().querySelector(`[data-context-company-id="${primaryId}"]`).click();
+            await waitFor(async () => (await client.readSettings()).activeCompanyId === primaryId, "Wechsel B→A");
+            await waitFor(() => doc()?.querySelector(`[data-context-company-id="${primaryId}"][aria-current="true"]`), "Aktivmarkierung Profil A");
+            const primaryAreaIds = new Set(settings.businessAreas.filter(area => area.companyId === primaryId && area.active !== false).map(area => area.id));
+            const offeredPrimaryAreaIds = [...doc().querySelectorAll("[data-context-business-area-id]")].map(button => button.dataset.contextBusinessAreaId);
+            assertDeepEqual(offeredPrimaryAreaIds.sort(), [...primaryAreaIds].sort(), "Profil A zeigt profilfremde Geschäftsbereiche");
+            assert(offeredPrimaryAreaIds.every(areaId => !betaAreaIds.has(areaId)), "Cross-Company-Geschäftsbereich blieb nach Wechsel aktiv");
+            assert(offeredPrimaryAreaIds.length > 1, "Profil A besitzt keinen prüfbaren zweiten Geschäftsbereich");
+            const selectedPrimaryAreaId = doc().querySelector('[data-context-business-area-id][aria-current="true"]').dataset.contextBusinessAreaId;
+            const alternatePrimaryAreaId = offeredPrimaryAreaIds.find(areaId => areaId !== selectedPrimaryAreaId);
+            const alternatePrimaryArea = settings.businessAreas.find(area => area.id === alternatePrimaryAreaId);
+            doc().querySelector(`[data-context-business-area-id="${alternatePrimaryAreaId}"]`).click();
+            await waitFor(() => doc()?.querySelector("#contextBusinessAreaLabel")?.textContent === alternatePrimaryArea.label,
+              "Geschäftsbereichswechsel innerhalb Profil A");
+            doc().querySelector("#contextSwitcher").click();
+            doc().querySelector(`[data-context-business-area-id="${selectedPrimaryAreaId}"]`).click();
+            await waitFor(() => doc()?.querySelector("#contextBusinessAreaLabel")?.textContent
+              === settings.businessAreas.find(area => area.id === selectedPrimaryAreaId).label,
+            "Rückwechsel zum Standardbereich in Profil A");
+            doc().querySelector("#contextSwitcher").click();
+            doc().querySelector("#bottomSheetClose").click();
+            assertEqual(switchButton.getAttribute("aria-expanded"), "false", "aria-expanded blieb nach Schließen aktiv");
+            assertEqual(doc().body.style.overflow, "", "Body-Scrolling blieb nach Schließen gesperrt");
+
+            switchButton.click();
+            const lastFocusable = [...doc().querySelectorAll("#bottomSheet button")].at(-1);
+            lastFocusable.focus();
+            lastFocusable.dispatchEvent(new frame.contentWindow.KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+            assertEqual(doc().activeElement, doc().querySelector("#bottomSheetClose"), "Fokus bleibt nicht im Overlay");
+            doc().dispatchEvent(new frame.contentWindow.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+            assert(doc().querySelector("#bottomSheetBackdrop").hidden, "Escape schließt die Kontextauswahl nicht");
+            assertEqual(doc().activeElement, switchButton, "Fokus kehrt nach dem Schließen nicht zum Auslöser zurück");
+
+            doc().querySelector('[data-action="new-receipt"]').click();
+            await waitFor(() => doc()?.querySelector("[data-toggle-item]"), "Katalog für Draft-Test");
+            doc().querySelector("[data-toggle-item]").click();
+            await waitFor(() => doc()?.querySelector(".compact-cart.has-items"), "Offener Belegentwurf");
+            doc().querySelector("#contextSwitcher").click();
+            doc().querySelector(`[data-context-company-id="${fixture.companyId}"]`).click();
+            await waitFor(() => doc()?.querySelector(".context-switcher-notice.is-error"), "Draft-Schutzmeldung");
+            assert(doc().querySelector(".context-switcher-notice").innerText.includes("offenen Entwurf"),
+              "Draft-Schutz meldet den blockierten Wechsel nicht");
+            assertEqual((await client.readSettings()).activeCompanyId, primaryId, "Draft-Schutz ließ activeCompanyId wechseln");
+            assert(doc().querySelector(".compact-cart.has-items"), "Blockierter Wechsel verwarf den Draft");
+            assertDeepEqual(frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS, [], "Context-Switcher verursachte UI-Laufzeitfehler");
+          } finally {
+            frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase();
+            frame.remove();
+          }
+
+          const persisted = await client.readSettings();
+          assertEqual(persisted.activeCompanyId, primaryId, "activeCompanyId blieb nach Reload nicht auf Profil A");
+          assertDeepEqual(persisted.companies.map(profile => profile.receiptSettings.numbering), numberingBefore,
+            "Kontextwechsel verbrauchte oder veränderte Nummernkreise");
+          assertDeepEqual(await client.readCustomers(), customersBefore, "Kontextwechsel veränderte globale Kunden");
+          assertDeepEqual(await client.readReceipts(), receiptsBefore, "Kontextwechsel veränderte historische Belege");
+
+          const reloadFrame = document.createElement("iframe");
+          reloadFrame.title = "Multi-Company-Kontext Reload 390 px";
+          reloadFrame.style.cssText = "position:fixed;left:-2000px;top:0;width:390px;height:844px;border:0";
+          setIsolatedAppFrame(reloadFrame, isolatedAppMarkup(index, client, "home", context.databaseName, { appBuild: betaBuild }));
+          document.body.append(reloadFrame);
+          try {
+            const doc = () => reloadFrame.contentDocument;
+            await waitFor(() => doc()?.querySelector("#contextSwitcher") && !doc().querySelector("#contextSwitcher").hidden,
+              "Context-Switcher nach Reload");
+            assertEqual(doc().querySelector("#companyName").textContent,
+              api.companyIdentity(initialSettings.companies[0].company).displayName,
+              "Reload verwendete nicht das persistierte Profil A");
+            assert(doc().documentElement.scrollWidth <= reloadFrame.contentWindow.innerWidth,
+              "Context-Switcher läuft bei 390 px horizontal über");
+            doc().querySelector("#contextSwitcher").click();
+            doc().querySelector(`[data-context-company-id="${fixture.companyId}"]`).click();
+            await waitFor(async () => (await client.readSettings()).activeCompanyId === fixture.companyId, "Wechsel A→B nach Reload");
+            await waitFor(() => doc()?.querySelector(".company-beta-test-notice"), "Beta-Hinweis nach A→B");
+            assert(doc().querySelector(".company-beta-test-notice").innerText.includes("Beta-Testmodus aktiv"),
+              "Startseite aktualisiert den Beta-Teststatus nicht live");
+            assert(!doc().querySelector('[data-action="new-receipt"]').disabled,
+              "Bestehende 004B-Berechtigung ist nach Kontextwechsel nicht wirksam");
+            assertDeepEqual(reloadFrame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS, [], "Reload-Kontextwechsel verursachte Laufzeitfehler");
+          } finally {
+            reloadFrame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase();
+            reloadFrame.remove();
+          }
+        }
       }
     ];
   }
