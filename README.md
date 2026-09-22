@@ -1,12 +1,12 @@
-# FRECKA – 0.11.11 / BETA-PREVIEW-002
+# FRECKA – 0.11.12 / BETA-PREVIEW-003
 
-**Vorbereiteter Multi-Company-Zwischen-Beta-Stand:** 0.11.11 bündelt auf Basis von 0.11.10 die Blöcke MULTI-COMPANY-002/003/004. Unmittelbarer Zweck ist die kontrollierte reale Schema-8→9-Migration sowie die Prüfung der profilbezogenen Nummernkreise, Unternehmensverwaltung und Aktivkontextgrenzen. [Release-Freigabenachweis](docs/releases/0.11.11.md).
+**Vorbereiteter Multi-Company-Betatest:** 0.11.12 ergänzt auf Basis von 0.11.11 ausschließlich MULTI-COMPANY-004B. Unmittelbarer Zweck ist die reale Prüfung der bereits implementierten produktiven Fachpfade eines gezielt freigegebenen Zusatzprofils, ohne dessen Status `activation_required` oder die Lizenzarchitektur zu verändern. [Release-Freigabenachweis](docs/releases/0.11.12.md).
 
-Browserbasierte FRECKA-PWA 0.11.11 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. MULTI-COMPANY-002/003/004 führen mit IndexedDB-Schema 9 eine kanonische Unternehmensprofilgrenze, profilbezogene Belegnummernkontexte und eine kontrollierte Unternehmensverwaltung ein. Mehrere Profile sind lokal konfigurierbar; bis zum getrennten Lizenz-Multi-Binding-Block bleibt regulär ausschließlich Profil 1 produktiv nutzbar. MULTI-COMPANY-004B ergänzt nur für `BETA-PREVIEW-002` eine deutlich gekennzeichnete, lokale und nicht portable Testfreigabe für ausgewählte Zusatzprofile. Sie verändert weder deren Status `activation_required` noch Lizenzreferenz oder `licenseRuntime`.
+Browserbasierte FRECKA-PWA 0.11.12 mit lokaler IndexedDB-Persistenz, verschlüsselter Gesamtsicherung, snapshotbasiertem Steuerberater-ZIP sowie zentraler Dokument-, QR-, Public-Viewer-, Share-, PWA-Update- und Beta-Release-Infrastruktur. MULTI-COMPANY-002/003/004 führen mit IndexedDB-Schema 9 eine kanonische Unternehmensprofilgrenze, profilbezogene Belegnummernkontexte und eine kontrollierte Unternehmensverwaltung ein. Mehrere Profile sind lokal konfigurierbar; bis zum getrennten Lizenz-Multi-Binding-Block bleibt regulär ausschließlich Profil 1 produktiv nutzbar. MULTI-COMPANY-004B ergänzt in den explizit erlaubten Builds `BETA-PREVIEW-002` und `BETA-PREVIEW-003` eine deutlich gekennzeichnete, lokale und nicht portable Testfreigabe für ausgewählte Zusatzprofile. Sie verändert weder deren Status `activation_required` noch Lizenzreferenz oder `licenseRuntime`.
 
 ANDROID-001 sichert die mobile Skalierung und Touch-Ziele auch für Android-nahe Darstellungsprofile ab. IOS-NAV-001 verankert die Bottom-Navigation außerhalb der scrollenden App-Shell direkt am Viewport. ANDROID-002 behandelt den tatsächlichen File-Share nicht mehr als durch `canShare()` garantiert, klassifiziert Fehler neutral und bietet PDF- sowie ZIP-Speichern ausschließlich als bewusste Folgeaktion an. Der erfolgreiche iPhone-Datei-Share bleibt ohne Plattformweiche erhalten.
 
-0.11.10-b6512dd / BETA-PREVIEW-001 ist die unmittelbare Vorgängerbasis. Vor dem realen In-place-Update auf 0.11.11 muss unter 0.11.10 eine vollständige verschlüsselte Sicherung erstellt und außerhalb der App gespeichert werden. MULTI-COMPANY-005, Lizenz-Multi-Binding, Profilgerätewechsel, Synchronisation, COMPLIANCE-003 und eine TSE-Implementierung sind nicht enthalten.
+0.11.11 / BETA-PREVIEW-002 ist die unmittelbare Vorgängerbasis. Vor dem realen In-place-Update auf 0.11.12 muss eine vollständige verschlüsselte Sicherung erstellt und außerhalb der App gespeichert werden. Das Schema bleibt 9; eine vorhandene lokale Beta-Testfreigabe wirkt nach dem Update nur weiter, weil `BETA-PREVIEW-003` ausdrücklich freigegeben ist. MULTI-COMPANY-005, Lizenz-Multi-Binding, Profilgerätewechsel, Synchronisation, COMPLIANCE-003 und eine TSE-Implementierung sind nicht enthalten.
 
 Ein vollständig neuer Mandant startet ohne Kunden, Katalogpositionen, Belege, offene Zahlungen, Korrekturen, Gutscheine, Umsätze oder Logoassets. Neutrale technische Defaults, optionale Vorlagen und die ausschließlich für PERSISTENCE-010 erlaubte historische Vierer-Reparaturquelle sind strikt getrennt. Die verbindliche Erststartinventur und die 15-Punkte-Übergabecheckliste stehen in [`docs/beta-handoff.md`](docs/beta-handoff.md).
 
@@ -17,6 +17,15 @@ FRECKA V1.0 ist im definierten Einsatz ein lokales Beleg- und Dokumentationstool
 UX-011 / UPDATE-002 / BACKUP-003/004 ergänzt darauf eine reale Seite **Einstellungen → Update**, bereinigt veraltete „Geplant“-Kennzeichnungen und erinnert nach einem wählbaren Intervall ohne bestätigte Sicherungsdatei nicht blockierend an ein neues lokales Backup. Zur Auswahl stehen 48 Stunden, 5 Tage und wöchentlich; wöchentlich ist der abwärtskompatible Standard. Die manuelle Suche verwendet den vorhandenen Updatecontroller; Restore übernimmt die Intervallwahl, gilt aber niemals als neue Sicherung und bewahrt lokale Frist- und Snooze-Zeitpunkte.
 
 ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzeit aufrufbare Installationshilfe für iPhone/iPad und Android. Sie priorisiert die passende Anleitung ausschließlich anhand lokaler Browsermerkmale, zeigt im Standalone-Modus den bereits installierten Zustand und bleibt vollständig offline verfügbar. Beide Plattformen können immer manuell gewählt werden. Der kompakte Ablauf und die abweichenden Android-Bezeichnungen sind in [`docs/installation.md`](docs/installation.md) dokumentiert.
+
+## Neu in 0.11.12
+
+- MULTI-COMPANY-004B: gezielt ausgewählte Zusatzprofile können lokal für reale Produktivpfadtests freigegeben und wieder gesperrt werden; `activation_required` bleibt der echte Lizenzstatus
+- explizite Build-Allowlist ausschließlich für `BETA-PREVIEW-002` und `BETA-PREVIEW-003`; unbekannte Beta-, Release-, leere und ähnlich manipulierte Buildwerte bleiben gesperrt
+- keine Kopie oder Änderung von Lizenzreferenz, Serveridentität, Token, CryptoKey oder `licenseRuntime`
+- dieselben profilgebundenen Write Guards, Nummernkreise, Snapshots und Cross-Company-Regeln gelten unverändert für Belege, Korrekturen, Gutscheine und Podologie
+- lokale Testfreigabe bleibt aus Backup, Restore, Export, PDF, Public QR und Public Viewer ausgeschlossen
+- einheitliche Release-, Asset- und App-Shell-Kennung `0.11.12 / BETA-PREVIEW-003 / betapreview003-1`; Update von 0.11.11 bleibt bewusst nutzergesteuert und lädt genau einmal neu
 
 ## Neu in 0.11.10
 
@@ -42,8 +51,6 @@ ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzei
 - ein offener Beleg-, Gutschein- oder Podologieentwurf blockiert den Profilwechsel; Geschäftsbereiche und Leistungsorte werden ausschließlich im aktiven Profil bearbeitet
 - Kunden bleiben gemeinsam, während Gutscheine, Rezepte, Behandlungen und produktive Mutationen profilgebunden bleiben
 - zusätzliche Profile sind zur Konfiguration auswählbar, aber bis zum gesonderten Lizenz-Multi-Binding-Block technisch `activation_required` und nicht produktiv schreibfähig
-- MULTI-COMPANY-004B: ausgewählte Zusatzprofile können ausschließlich in `BETA-PREVIEW-002` lokal für reale Produktivpfadtests freigegeben und wieder gesperrt werden; `activation_required` bleibt der echte Lizenzstatus
-- die Testfreigabe wird nicht als Lizenz oder Runtime behandelt, nicht in Backup/Restore/Export portiert und von jedem Nicht-Beta-Build ignoriert; [ADR-0009](docs/adr/ADR-0009-temporaere-beta-testfreigabe-fuer-zusatzprofile.md)
 - Beleglisten und Exporte sind bis MULTI-COMPANY-005 sicher auf das aktive Profil begrenzt; noch keine profilübergreifende Auswertung
 - zentrale Auflösung statt verstreuter `companies[0]`-Annahmen; nach Schema 9 gibt es keinen stillen Profil-1-Fallback für fehlende Referenzen
 - einheitliche Release-, Asset- und App-Shell-Kennung `0.11.11 / BETA-PREVIEW-002 / betapreview002-1`; reale In-place-Migration und Geräteabnahme bleiben nachgelagerte Gates

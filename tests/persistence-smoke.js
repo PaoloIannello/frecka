@@ -3816,8 +3816,16 @@
   }
 
   function buildMultiCompanyBetaTestTests(context) {
-    const betaBuild = "BETA-PREVIEW-002";
+    const betaBuild = "BETA-PREVIEW-003";
+    const priorBetaBuild = "BETA-PREVIEW-002";
     const nonBetaBuild = "RELEASE-1.0.0";
+    const disallowedBuilds = Object.freeze([
+      "BETA-PREVIEW-004",
+      nonBetaBuild,
+      "",
+      "BETA-PREVIEW-003-DEV",
+      "beta-preview-003"
+    ]);
     const setupFixture = tenantId => {
       const snapshot = completeTenantSnapshotFixture(tenantId);
       snapshot.stores.settings = api.createCompanyProfileSettings(snapshot.stores.settings, {
@@ -3890,8 +3898,13 @@
             "Profil 1 wurde durch das Beta-Gate verändert");
           assertEqual(blocked.code, "activation_required", "Zusatzprofil verlor den echten Aktivierungsstatus");
           assert(!blocked.productive && blocked.betaProductiveTestAvailable, "Zusatzprofil ist ohne explizite Freigabe produktiv");
-          assertThrows(() => api.setCompanyBetaProductiveTest(settings, additional.id, true, nonBetaBuild),
-            "COMPANY_BETA_TEST_BUILD_REQUIRED", "Nicht-Beta-Build");
+          assert(api.betaProductiveTestBuildAllowed(betaBuild), "BETA-PREVIEW-003 fehlt in der expliziten Allowlist");
+          assert(api.betaProductiveTestBuildAllowed(priorBetaBuild), "BETA-PREVIEW-002 ging aus dem bestehenden Testvertrag verloren");
+          disallowedBuilds.forEach(build => {
+            assert(!api.betaProductiveTestBuildAllowed(build), `Nicht erlaubter Build wurde akzeptiert: ${build || "<leer>"}`);
+            assertThrows(() => api.setCompanyBetaProductiveTest(settings, additional.id, true, build),
+              "COMPANY_BETA_TEST_BUILD_REQUIRED", `Nicht erlaubter Build ${build || "<leer>"}`);
+          });
           assertThrows(() => api.setCompanyBetaProductiveTest(settings, primary.id, true, betaBuild),
             "COMPANY_BETA_TEST_PROFILE_INVALID", "Profil 1");
           const enabled = api.setCompanyBetaProductiveTest(settings, additional.id, true, betaBuild, "2030-07-01T09:00:00.000Z");
@@ -3899,8 +3912,12 @@
           assertEqual(betaStatus.code, "activation_required", "Beta-Freigabe täuschte reguläre Aktivierung vor");
           assert(betaStatus.productive && !betaStatus.regularProductive && betaStatus.betaProductiveTestEffective,
             "Explizite Beta-Freigabe öffnet den zentralen Guard nicht");
-          assert(!api.companyProductiveStatus(enabled, additional.id, nonBetaBuild).productive,
-            "Nicht-Beta-Build akzeptierte ein gespeichertes Beta-Flag");
+          assert(api.companyProductiveStatus(enabled, additional.id, priorBetaBuild).productive,
+            "BETA-PREVIEW-002 akzeptierte das bestehende gespeicherte Beta-Flag nicht mehr");
+          disallowedBuilds.forEach(build => {
+            assert(!api.companyProductiveStatus(enabled, additional.id, build).productive,
+              `Nicht erlaubter Build akzeptierte ein gespeichertes Beta-Flag: ${build || "<leer>"}`);
+          });
           assertDeepEqual(enabled.companies.map(profile => profile.license), licensesBefore, "Beta-Freigabe veränderte Lizenzreferenzen");
           assert(!JSON.stringify(enabled).includes("signedLicenseToken") && !JSON.stringify(enabled).includes("devicePrivateKey"),
             "Beta-Freigabe erzeugte Fake- oder Runtime-Lizenzdaten");
@@ -4114,7 +4131,7 @@
             "Reload verlor die lokale Beta-Testfreigabe");
           assert((await source.readReceipts()).receipts.some(receipt => receipt.id === committed.receipt.id),
             "Reload verlor den Beta-Profilbeleg");
-          const snapshot = await source.exportTenantSnapshot({ appVersion: "0.11.11", appBuild: betaBuild });
+          const snapshot = await source.exportTenantSnapshot({ appVersion: "0.11.12", appBuild: betaBuild });
           const serialized = JSON.stringify(snapshot);
           assert(!serialized.includes("betaProductiveTest"), "Portable Sicherung enthält die lokale Beta-Testfreigabe");
           const encrypted = await backupApi.encryptTenantSnapshot(snapshot, "Beta-Test-Sicherungskennwort 2030");
@@ -5556,7 +5573,7 @@
           ["is-share", "is-menu", "is-home", "is-app", "is-confirm"].forEach(icon => assert(css.includes(icon), `Lokales Piktogramm fehlt: ${icon}`));
           assert(css.includes("@media(max-width:390px)") && css.includes("@media(max-width:350px)"), "Mobile Installationsdarstellung ist nicht abgesichert");
           assert(!index.includes('data-route="installation"'), "Installationshilfe wurde fälschlich zur Hauptnavigation hinzugefügt");
-          assert(worker.includes('\"./js/app.js?v=betapreview002-1\"') && worker.includes('\"./styles.css?v=betapreview002-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
+          assert(worker.includes('\"./js/app.js?v=betapreview003-1\"') && worker.includes('\"./styles.css?v=betapreview003-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
 
           const measureInstallationLayout = width => new Promise((resolve, reject) => {
             const frame = document.createElement("iframe");
@@ -5615,7 +5632,7 @@
           const css = await cssResponse.text();
           const index = await indexResponse.text();
           assert(index.includes('content="width=device-width, initial-scale=1, viewport-fit=cover"'), "Mobiler Viewport-Vertrag fehlt");
-          assert(index.includes('href="styles.css?v=betapreview002-1"'), "Die weiterhin wirksamen ANDROID-001-Styles fehlen im aktuellen Cache-Schlüssel");
+          assert(index.includes('href="styles.css?v=betapreview003-1"'), "Die weiterhin wirksamen ANDROID-001-Styles fehlen im aktuellen Cache-Schlüssel");
           assert(!css.includes("text-size-adjust") && !css.includes("font-size: 16px !important"), "Browserpräferenz wird aggressiv überschrieben");
           ["renderHome", "renderSettings", "renderReceiptDetail", "renderReceiptPreview"].forEach(renderer => {
             assert(appSource.includes(`function ${renderer}(`), `Produktive Ansicht fehlt: ${renderer}`);

@@ -31,7 +31,7 @@
     formatVersion: 2,
     companyProfileFormatVersion: 1,
     betaProductiveTestFormatVersion: 1,
-    betaProductiveTestBuilds: Object.freeze(["BETA-PREVIEW-002"]),
+    betaProductiveTestBuilds: Object.freeze(["BETA-PREVIEW-002", "BETA-PREVIEW-003"]),
     receiptNumberingFormatVersion: 1,
     companyLogoFormatVersion: 1,
     logoAssetFormatVersion: 1,

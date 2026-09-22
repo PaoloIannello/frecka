@@ -20,7 +20,7 @@ ODER
 (betaProductiveTest.enabled UND aktueller Build ausdrücklich freigegeben)
 ```
 
-Der aktuelle Vertrag erlaubt die Testfreigabe ausschließlich für die kanonische Buildkennung `BETA-PREVIEW-002`. Hostname, URL und Installationsmodus sind keine Berechtigungsquelle. Ein Nicht-Beta-Build ignoriert ein gespeichertes Flag immer. Profil 1 verwendet unverändert den regulären Pfad und kann keine Beta-Testfreigabe erhalten.
+Der aktuelle Vertrag erlaubt die Testfreigabe ausschließlich für die explizit genannten kanonischen Buildkennungen `BETA-PREVIEW-002` und `BETA-PREVIEW-003`. Die zweite Kennung erweitert die kontrollierte Geräteabnahme auf Version 0.11.12; es gibt weder Präfix- noch Wildcard-Freigaben. Hostname, URL und Installationsmodus sind keine Berechtigungsquelle. Jeder andere Build ignoriert ein gespeichertes Flag immer. Profil 1 verwendet unverändert den regulären Pfad und kann keine Beta-Testfreigabe erhalten.
 
 Das Zusatzprofil bleibt fachlich und lizenzrechtlich `activation_required`. Die UI bezeichnet den wirksamen Zustand ausschließlich als Beta-Testmodus und weist darauf hin, dass keine reguläre Lizenz besteht. Aktivieren und Deaktivieren verändern weder `license`, `licenseRuntime`, Serveridentität, Geräteschlüssel noch Nummernkreise.
 
