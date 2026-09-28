@@ -3816,15 +3816,18 @@
   }
 
   function buildMultiCompanyBetaTestTests(context) {
-    const betaBuild = "BETA-PREVIEW-003";
-    const priorBetaBuild = "BETA-PREVIEW-002";
-    const nonBetaBuild = "RELEASE-1.0.0";
+    const betaBuild = "BETA-PREVIEW-004";
+    const priorBetaBuild = "BETA-PREVIEW-003";
+    const originalBetaBuild = "BETA-PREVIEW-002";
+    const nonBetaBuild = "RELEASE-0.11.13";
     const disallowedBuilds = Object.freeze([
-      "BETA-PREVIEW-004",
+      "BETA-PREVIEW-005",
       nonBetaBuild,
+      "PRODUCTION",
       "",
-      "BETA-PREVIEW-003-DEV",
-      "beta-preview-003"
+      "BETA-PREVIEW-004-DEV",
+      "beta-preview-004",
+      "UNKNOWN-BUILD"
     ]);
     const setupFixture = tenantId => {
       const snapshot = completeTenantSnapshotFixture(tenantId);
@@ -3898,8 +3901,9 @@
             "Profil 1 wurde durch das Beta-Gate verändert");
           assertEqual(blocked.code, "activation_required", "Zusatzprofil verlor den echten Aktivierungsstatus");
           assert(!blocked.productive && blocked.betaProductiveTestAvailable, "Zusatzprofil ist ohne explizite Freigabe produktiv");
-          assert(api.betaProductiveTestBuildAllowed(betaBuild), "BETA-PREVIEW-003 fehlt in der expliziten Allowlist");
-          assert(api.betaProductiveTestBuildAllowed(priorBetaBuild), "BETA-PREVIEW-002 ging aus dem bestehenden Testvertrag verloren");
+          assert(api.betaProductiveTestBuildAllowed(betaBuild), "BETA-PREVIEW-004 fehlt in der expliziten Allowlist");
+          assert(api.betaProductiveTestBuildAllowed(priorBetaBuild), "BETA-PREVIEW-003 ging aus dem bestehenden Testvertrag verloren");
+          assert(api.betaProductiveTestBuildAllowed(originalBetaBuild), "BETA-PREVIEW-002 ging aus dem bestehenden Testvertrag verloren");
           disallowedBuilds.forEach(build => {
             assert(!api.betaProductiveTestBuildAllowed(build), `Nicht erlaubter Build wurde akzeptiert: ${build || "<leer>"}`);
             assertThrows(() => api.setCompanyBetaProductiveTest(settings, additional.id, true, build),
@@ -3913,6 +3917,8 @@
           assert(betaStatus.productive && !betaStatus.regularProductive && betaStatus.betaProductiveTestEffective,
             "Explizite Beta-Freigabe öffnet den zentralen Guard nicht");
           assert(api.companyProductiveStatus(enabled, additional.id, priorBetaBuild).productive,
+            "BETA-PREVIEW-003 akzeptierte das bestehende gespeicherte Beta-Flag nicht mehr");
+          assert(api.companyProductiveStatus(enabled, additional.id, originalBetaBuild).productive,
             "BETA-PREVIEW-002 akzeptierte das bestehende gespeicherte Beta-Flag nicht mehr");
           disallowedBuilds.forEach(build => {
             assert(!api.companyProductiveStatus(enabled, additional.id, build).productive,
@@ -4131,7 +4137,7 @@
             "Reload verlor die lokale Beta-Testfreigabe");
           assert((await source.readReceipts()).receipts.some(receipt => receipt.id === committed.receipt.id),
             "Reload verlor den Beta-Profilbeleg");
-          const snapshot = await source.exportTenantSnapshot({ appVersion: "0.11.12", appBuild: betaBuild });
+          const snapshot = await source.exportTenantSnapshot({ appVersion: "0.11.13", appBuild: betaBuild });
           const serialized = JSON.stringify(snapshot);
           assert(!serialized.includes("betaProductiveTest"), "Portable Sicherung enthält die lokale Beta-Testfreigabe");
           const encrypted = await backupApi.encryptTenantSnapshot(snapshot, "Beta-Test-Sicherungskennwort 2030");
@@ -5860,7 +5866,7 @@
           ["is-share", "is-menu", "is-home", "is-app", "is-confirm"].forEach(icon => assert(css.includes(icon), `Lokales Piktogramm fehlt: ${icon}`));
           assert(css.includes("@media(max-width:390px)") && css.includes("@media(max-width:350px)"), "Mobile Installationsdarstellung ist nicht abgesichert");
           assert(!index.includes('data-route="installation"'), "Installationshilfe wurde fälschlich zur Hauptnavigation hinzugefügt");
-          assert(worker.includes('\"./js/app.js?v=betapreview003-1\"') && worker.includes('\"./styles.css?v=betapreview003-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
+          assert(worker.includes('\"./js/app.js?v=betapreview004-1\"') && worker.includes('\"./styles.css?v=betapreview004-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
 
           const measureInstallationLayout = width => new Promise((resolve, reject) => {
             const frame = document.createElement("iframe");
@@ -5919,7 +5925,7 @@
           const css = await cssResponse.text();
           const index = await indexResponse.text();
           assert(index.includes('content="width=device-width, initial-scale=1, viewport-fit=cover"'), "Mobiler Viewport-Vertrag fehlt");
-          assert(index.includes('href="styles.css?v=betapreview003-1"'), "Die weiterhin wirksamen ANDROID-001-Styles fehlen im aktuellen Cache-Schlüssel");
+          assert(index.includes('href="styles.css?v=betapreview004-1"'), "Die weiterhin wirksamen ANDROID-001-Styles fehlen im aktuellen Cache-Schlüssel");
           assert(!css.includes("text-size-adjust") && !css.includes("font-size: 16px !important"), "Browserpräferenz wird aggressiv überschrieben");
           ["renderHome", "renderSettings", "renderReceiptDetail", "renderReceiptPreview"].forEach(renderer => {
             assert(appSource.includes(`function ${renderer}(`), `Produktive Ansicht fehlt: ${renderer}`);

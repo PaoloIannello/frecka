@@ -1,8 +1,8 @@
 # FRECKA: Deployment- und Infrastrukturkonzept für Synology Web Station
 
-Stand: 21. September 2026
+Stand: 28. September 2026
 
-Geltungsbereich: historische Beta-Stände bis `0.11.11` / `BETA-PREVIEW-002`, vorbereiteter Multi-Company-Betatest `0.11.12` / `BETA-PREVIEW-003` und lokaler automatisierter Beta-Release
+Geltungsbereich: historische Beta-Stände bis `0.11.12` / `BETA-PREVIEW-003`, vorbereiteter Home-Kontextwechsel-Betatest `0.11.13` / `BETA-PREVIEW-004` und lokaler automatisierter Beta-Release
 
 Der verbindliche Infrastrukturrahmen steht in `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`. Dieses Dokument konkretisiert ausschließlich die statische Laufzeitmenge und ihre spätere Zuordnung zu Synology Web Station.
 
@@ -183,7 +183,7 @@ Der annotierte Tag `v0.11.6` zeigt auf Commit `ee13b12ed7cd4763d23d6f4979b83cd5a
 
 Der annotierte Tag `v0.11.7` zeigt auf Commit `608257fc99b7f1fd93d893cc6104ce55e6e40f44`; das unveränderliche Artefakt `0.11.7-608257f` verwendet Build `PODOLOGY-004`, den HTML-Titel `FRECKA – PODOLOGY-004`, den Asset-Abfragewert `podology004-1` und den App-Shell-Cache `frecka-app-shell-0.11.7-podology004-1`. Es bündelt PODOLOGY-001 bis PODOLOGY-004.
 
-Der annotierte Tag `v0.11.9` und das veröffentlichte Artefakt `0.11.9-2d6b2d4 / PODOLOGY-006` bleiben unverändert. Der annotierte Tag `v0.11.10` zeigt auf `b6512dd95b1c80e36276195d68d8c2b51e96e42c`; der Stand `0.11.10-b6512dd / BETA-PREVIEW-001` verwendet den Asset-Abfragewert `betapreview001-1` und den App-Shell-Cache `frecka-app-shell-0.11.10-betapreview001-1`. Der Stand `0.11.11 / BETA-PREVIEW-002` verwendet `betapreview002-1` und `frecka-app-shell-0.11.11-betapreview002-1`; sein annotierter Tag `v0.11.11` zeigt auf `a1fc42d`. Der vorbereitete Stand `0.11.12 / BETA-PREVIEW-003` verwendet `betapreview003-1` und `frecka-app-shell-0.11.12-betapreview003-1`. Er ergänzt auf unverändertem Schema 9 ausschließlich MULTI-COMPANY-004B sowie notwendige Versions-, Cache-, Test- und Releaseanpassungen. In diesem Vorbereitungsschritt entstehen weder Tag noch Artefakt, Upload oder Web-Station-Umschaltung.
+Der annotierte Tag `v0.11.9` und das veröffentlichte Artefakt `0.11.9-2d6b2d4 / PODOLOGY-006` bleiben unverändert. Der annotierte Tag `v0.11.10` zeigt auf `b6512dd95b1c80e36276195d68d8c2b51e96e42c`; der Stand `0.11.10-b6512dd / BETA-PREVIEW-001` verwendet den Asset-Abfragewert `betapreview001-1` und den App-Shell-Cache `frecka-app-shell-0.11.10-betapreview001-1`. Der Stand `0.11.11 / BETA-PREVIEW-002` verwendet `betapreview002-1` und `frecka-app-shell-0.11.11-betapreview002-1`; sein annotierter Tag `v0.11.11` zeigt auf `a1fc42d`. Der Stand `0.11.12 / BETA-PREVIEW-003` verwendet `betapreview003-1` und `frecka-app-shell-0.11.12-betapreview003-1`; sein annotierter Tag `v0.11.12` zeigt auf `5022e8923a040b39143c059a2c26a9c52c02e7fa`. Der vorbereitete Stand `0.11.13 / BETA-PREVIEW-004` verwendet `betapreview004-1` und `frecka-app-shell-0.11.13-betapreview004-1`. Er ergänzt auf unverändertem Schema 9 ausschließlich MULTI-COMPANY-004C sowie notwendige Versions-, Cache-, Allowlist-, Test- und Releaseanpassungen. In diesem Vorbereitungsschritt entstehen weder Tag noch Artefakt, Upload oder Web-Station-Umschaltung.
 
 Ein Updateformat für signierte Kanäle und ein Signaturverfahren sind ausdrücklich noch nicht implementiert. SERVICEWORKER-002 erkennt ausschließlich Änderungen des Service Workers innerhalb derselben bereits aufgerufenen Deployment-Origin.
 
@@ -256,6 +256,10 @@ Das veröffentlichte Release `0.11.9-2d6b2d4` ergänzt ausschließlich PODOLOGY-
 ### 2.23 Vorbereiteter Multi-Company-Betatest 0.11.12
 
 0.11.12 ergänzt auf Basis von 0.11.11 ausschließlich MULTI-COMPANY-004B. Die lokale, profilbezogene Testfreigabe bleibt auf die explizit genannten Builds `BETA-PREVIEW-002` und `BETA-PREVIEW-003` begrenzt, verändert den Status `activation_required` nicht und wird weder gesichert noch exportiert. Schema, Stores, Lizenzruntime und Fachpfade bleiben unverändert. Die strukturierte technische Freigabe steht in `docs/releases/0.11.12.md`. Tag, Artefakt, Upload, Web-Station-Umschaltung, Geräteabnahme und Produktion bleiben separate Gates.
+
+### 2.24 Vorbereiteter Home-Kontextwechsel-Betatest 0.11.13
+
+0.11.13 ergänzt auf Basis von 0.11.12 ausschließlich MULTI-COMPANY-004C. Der Home-Switcher verwendet für Unternehmen den kanonischen persistierenden Profilwechsel samt Draft-Schutz und für Geschäftsbereiche den vorhandenen Laufzeitzustand. Die lokale Testfreigabe bleibt auf die einzeln benannten Builds `BETA-PREVIEW-002`, `BETA-PREVIEW-003` und `BETA-PREVIEW-004` begrenzt. Schema, Stores, Lizenzruntime, Nummernkreise und Ausgabeformate bleiben unverändert. Die strukturierte technische Freigabe steht in `docs/releases/0.11.13.md`. Tag, Artefakt, Upload, Web-Station-Umschaltung, Geräteabnahme und Produktion bleiben separate Gates.
 
 ## 3. Abgeleitete Deployment-Prinzipien
 

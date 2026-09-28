@@ -424,14 +424,14 @@ assert.match(indexSource, />Jetzt aktualisieren</);
 assert.match(indexSource, />Später erinnern</);
 assert.match(indexSource, /Verbesserungen für Stabilität und Bedienung/);
 assert.doesNotMatch(indexSource, /Commit|Buildnummer|Service Worker/);
-assert.match(indexSource, /<title>FRECKA – BETA-PREVIEW-003<\/title>/);
+assert.match(indexSource, /<title>FRECKA – BETA-PREVIEW-004<\/title>/);
 assert.match(appSource, /Aktualisierung nicht abgeschlossen/);
 assert.match(appSource, /Erneut versuchen/);
-assert.match(indexSource, /js\/pwa-update\.js\?v=betapreview003-1/);
+assert.match(indexSource, /js\/pwa-update\.js\?v=betapreview004-1/);
 assert.match(stylesSource, /\.app-update-notice\[hidden\],\.app-update-notice \[hidden\]\{display:none\}/);
 assert.match(stylesSource, /@media\(max-width:340px\)/);
-assert.match(dataSource, /version:\s*"0\.11\.12"/);
-assert.match(dataSource, /build:\s*"BETA-PREVIEW-003"/);
+assert.match(dataSource, /version:\s*"0\.11\.13"/);
+assert.match(dataSource, /build:\s*"BETA-PREVIEW-004"/);
 
 const businessSnapshot = Object.freeze({ receipts: 7, customers: 4, vouchers: 3, settingsVersion: 5 });
 const snapshotBefore = JSON.stringify(businessSnapshot);
