@@ -1709,7 +1709,7 @@
         const review = await client.reviewPrescriptionAssignment(draft, { prescriptionId: "prescription-one" }, seed);
         const original = await client.commitReceipt(draft, settings, seed, { prescriptionId: "prescription-one", reviewToken: review.reviewToken,
           overrunConfirmed: false, plausibilityConfirmed: false });
-        const credit = await client.commitReceiptCorrection(original.receipt.number, {
+        const credit = await client.commitReceiptCorrection(original.receipt.id, {
           id: "prescription-credit", type: "credit", total: -10,
           items: [{ title: "Kulanz", quantity: 1, unitPrice: -10, total: -10 }],
           completedAt: "2030-01-06T09:00:00.000Z", isFull: false
@@ -1739,13 +1739,13 @@
         ];
         assertEqual(api.prescriptionUsage(prescription, [...credit.record.receipts, ...ignoredCorrections]).usedUnits, 1,
           "Gesamt-, Produktgutschrift oder Storno ohne Rezept veränderten den Verbrauch");
-        const cancelled = await client.commitReceiptCorrection(original.receipt.number, {
+        const cancelled = await client.commitReceiptCorrection(original.receipt.id, {
           id: "prescription-cancellation", type: "cancellation", total: -39,
           items: original.receipt.items.map(item => ({ ...item, unitPrice: -39, total: -39 })),
           completedAt: "2030-01-06T10:00:00.000Z"
         }, credit.record);
         assertEqual(api.prescriptionUsage(prescription, cancelled.record.receipts).usedUnits, 0, "Vollstorno gab nicht genau eine Nutzung frei");
-        const repeated = await client.commitReceiptCorrection(original.receipt.number, {
+        const repeated = await client.commitReceiptCorrection(original.receipt.id, {
           id: "prescription-cancellation-repeat", type: "cancellation", total: -39,
           items: original.receipt.items, completedAt: "2030-01-06T10:01:00.000Z"
         }, cancelled.record);
@@ -2007,10 +2007,10 @@
             assertEqual(treatmentRecords.treatmentRecords[0].internalDocumentation, "PRIVATE-TEMPLATE-INTERNAL-ÄÖÜ", "Gespeichert wurde nicht der tatsächlich bestätigte interne Text");
             assertEqual(treatmentRecords.treatmentRecords[0].customerCareAdvice, "PRIVATE-UI-CARE", "Gespeichert wurde nicht der tatsächlich bestätigte Pflegehinweis");
             click('[data-route="receipts"]');
-            await waitFor(() => doc().querySelector(`[data-open-receipt="${receipts.receipts[0].number}"]`));
-            click(`[data-open-receipt="${receipts.receipts[0].number}"]`);
-            await waitFor(() => doc().querySelector(`[data-preview-receipt="${receipts.receipts[0].number}"]`));
-            click(`[data-preview-receipt="${receipts.receipts[0].number}"]`);
+            await waitFor(() => doc().querySelector(`[data-open-receipt="${receipts.receipts[0].id}"]`));
+            click(`[data-open-receipt="${receipts.receipts[0].id}"]`);
+            await waitFor(() => doc().querySelector(`[data-preview-receipt="${receipts.receipts[0].id}"]`));
+            click(`[data-preview-receipt="${receipts.receipts[0].id}"]`);
             await waitFor(() => doc().querySelector(".receipt-paper-customer-supplements"));
             const customerDocument = doc().querySelector(".receipt-paper").textContent;
             assert(customerDocument.includes("Rezept vom:") && customerDocument.includes("31.08.2026"), "App-Belegvorschau enthält das historische Rezeptdatum nicht");
@@ -2069,8 +2069,8 @@
             if (width === 320) {
               const duplicatedSource = receipts.receipts[0];
               click('[data-route="receipts"]');
-              await waitFor(() => doc().querySelector(`[data-open-receipt="${duplicatedSource.number}"]`));
-              click(`[data-open-receipt="${duplicatedSource.number}"]`);
+              await waitFor(() => doc().querySelector(`[data-open-receipt="${duplicatedSource.id}"]`));
+              click(`[data-open-receipt="${duplicatedSource.id}"]`);
               await waitFor(() => doc().querySelector('[data-action="copy-receipt"]'));
               click('[data-action="copy-receipt"]');
               await waitFor(() => frame.contentWindow.location.hash === "#/edit-cart");
@@ -2295,13 +2295,13 @@
           internalDocumentation: "PRIVATE-LIFECYCLE", customerCareAdvice: "Pflegehinweis"
         });
         const historical = clone(committed.treatmentRecord);
-        const credit = await client.commitReceiptCorrection(committed.receipt.number, {
+        const credit = await client.commitReceiptCorrection(committed.receipt.id, {
           id: "treatment-credit", type: "credit", total: -10,
           items: [{ title: "Kulanz", quantity: 1, unitPrice: -10, total: -10 }],
           completedAt: "2030-01-06T09:00:00.000Z", isFull: false
         }, committed.receiptsRecord);
         assertDeepEqual((await client.readTreatmentRecords()).treatmentRecords[0], historical, "Gutschrift veränderte Behandlungssnapshot");
-        await client.commitReceiptCorrection(committed.receipt.number, {
+        await client.commitReceiptCorrection(committed.receipt.id, {
           id: "treatment-cancellation", type: "cancellation", total: -39,
           items: committed.receipt.items.map(item => ({ ...item, unitPrice: -39, total: -39 })),
           completedAt: "2030-01-06T10:00:00.000Z"
@@ -2920,7 +2920,7 @@
                 if (record.internalDocumentation) assert(panel.innerText.includes(record.internalDocumentation), "Interne Dokumentation wurde verändert oder gekürzt");
                 if (record.customerCareAdvice) assert(panel.innerText.includes(record.customerCareAdvice), "Pflegehinweis wurde verändert oder gekürzt");
                 assert(!panel.querySelector("b"), "Gespeicherter Text wird als HTML interpretiert");
-                assertEqual(panel.querySelector("[data-open-receipt]").dataset.openReceipt, record.receiptNumber, "Belegaktion ist falsch zugeordnet");
+                assertEqual(panel.querySelector("[data-open-receipt]").dataset.openReceipt, record.receiptId, "Belegaktion ist falsch zugeordnet");
               });
               assert(closedHeight < list.getBoundingClientRect().height * .6, "Zusammenklappen spart nicht mindestens 40 Prozent Listenhöhe");
               noOverflow();
@@ -3301,7 +3301,7 @@
           );
           assertEqual(voucherSale.receipt.companyId, companyId, "Gutscheinverkaufsbeleg trägt nicht Profil 1");
           assertEqual(voucherSale.voucher.companyId, companyId, "Neuer Gutschein trägt nicht Profil 1");
-          const correction = await client.commitReceiptCorrection(committed.receipt.number, {
+          const correction = await client.commitReceiptCorrection(committed.receipt.id, {
             id: "multi-company-new-correction", type: "cancellation", completedAt: "2030-01-05T13:00:00.000Z",
             total: -committed.receipt.total
           }, voucherSale.receiptsRecord);
@@ -3888,6 +3888,118 @@
 
     return [
       {
+        name: "MULTI-COMPANY-004D: Receipt-ID-Mutationen isolieren kollidierende Nummern in beiden Richtungen",
+        run: async () => {
+          const waitFor = async predicate => {
+            for (let attempt = 0; attempt < 160; attempt += 1) {
+              if (await predicate()) return;
+              await new Promise(resolve => setTimeout(resolve, 50));
+            }
+            throw new Error("Receipt-ID-Ansicht wurde nicht rechtzeitig bereit");
+          };
+          for (const targetIndex of [0, 1]) {
+            const client = context.makeClient(`receipt-id-collision-${targetIndex}`, { appBuild: betaBuild });
+            const fixture = setupFixture(client.tenantId);
+            let settings = await enableBetaTest(client, fixture);
+            const ids = settings.companies.map(profile => profile.id);
+            const receipts = [];
+            let record = await client.readReceipts();
+            for (let i = 0; i < 2; i += 1) {
+              const draftSettings = clone(settings);
+              draftSettings.activeCompanyId = ids[i];
+              const committed = await client.commitReceipt(companyDraft(`collision-${i}`, draftSettings,
+                "2030-07-02T10:00:00.000Z", { paymentStatus: "open", paymentMethod: null }), settings, record);
+              settings = committed.settingsRecord;
+              record = committed.receiptsRecord;
+              receipts.push(committed.receipt);
+            }
+            record.receipts.forEach(receipt => {
+              if (receipts.some(entry => entry.id === receipt.id)) receipt.number = receipt.receiptNumber = "2030-000001";
+            });
+            record = await client.writeReceipts(record);
+            settings.activeCompanyId = ids[1 - targetIndex];
+            settings.companies[0].paymentChoices = [{ id: "cash", title: "Bar", active: true }, { id: "transfer", title: "Überweisung", active: true }];
+            settings.companies[1].paymentChoices = [{ id: "paypal", title: "PayPal", active: true }];
+            settings = await client.writeSettings(settings);
+            const foreignCredited = await client.commitReceiptCorrection(receipts[1 - targetIndex].id, {
+              id: `foreign-existing-credit-${targetIndex}`, type: "credit", total: -15, completedAt: "2030-07-02T11:00:00.000Z"
+            }, record);
+            record = foreignCredited.record;
+            settings = foreignCredited.settingsRecord;
+            const target = record.receipts.find(receipt => receipt.id === receipts[targetIndex].id);
+            const other = record.receipts.find(receipt => receipt.id === receipts[1 - targetIndex].id);
+            const otherBefore = clone(other);
+            const otherCounter = clone(settings.companies[1 - targetIndex].receiptSettings.numbering);
+            const choice = settings.companies[targetIndex].paymentChoices[0];
+            const foreignChoice = settings.companies[1 - targetIndex].paymentChoices[0];
+            const blockedSettings = api.setCompanyBetaProductiveTest(settings, fixture.companyId, false, betaBuild);
+            blockedSettings.activeCompanyId = ids[0];
+            await client.writeSettings(blockedSettings);
+            const blockedReceipt = record.receipts.find(receipt => receipt.companyId === fixture.companyId && receipt.receiptType === "receipt");
+            await assertRejects(() => client.saveReceiptNote(blockedReceipt.id, "Gesperrt", {}, record), "COMPANY_ACTIVATION_REQUIRED", "Fremdes Aktivprofil darf Notizguard nicht umgehen");
+            await assertRejects(() => client.recordReceiptPayment(blockedReceipt.id, { paymentMethod: "PayPal" }, record), "COMPANY_ACTIVATION_REQUIRED", "Fremdes Aktivprofil darf Zahlungsguard nicht umgehen");
+            await assertRejects(() => client.commitReceiptCorrection(blockedReceipt.id, { id: `blocked-credit-${targetIndex}`, type: "credit", total: -1 }, record), "COMPANY_ACTIVATION_REQUIRED", "Fremdes Aktivprofil darf Korrekturguard nicht umgehen");
+            await client.writeSettings(settings);
+            const index = await fetch("../index.html", { cache: "no-store" }).then(response => response.text());
+            for (const width of [320, 390]) {
+              const frame = document.createElement("iframe");
+              frame.title = `Receipt-ID ${targetIndex} bei ${width}px`;
+              frame.style.cssText = `position:fixed;left:-2000px;top:0;width:${width}px;height:807px;border:0`;
+              setIsolatedAppFrame(frame, isolatedAppMarkup(index, client, `receipt/${target.id}`, context.databaseName, { appBuild: betaBuild }));
+              document.body.append(frame);
+              try {
+                const doc = () => frame.contentDocument;
+                await waitFor(() => doc()?.querySelector('[data-record-payment]'));
+                assertEqual(doc().querySelector('[data-record-payment]').dataset.recordPayment, target.id, "Zahlungsbutton ohne stabile ID");
+                doc().querySelector('[data-record-payment]').click();
+                await waitFor(() => doc()?.querySelector('[data-payment-capture-method]'));
+                const offered = [...doc().querySelectorAll('[data-payment-capture-method]')].map(button => button.dataset.paymentCaptureMethod);
+                assertDeepEqual(offered, settings.companies[targetIndex].paymentChoices.map(entry => entry.id), "UI verwendet fremde Zahlungsarten");
+                doc().querySelector('#bottomSheetClose').click();
+                doc().querySelector('[data-route="receipt-credit"]').click();
+                await waitFor(() => doc()?.querySelector('.credit-full-summary strong'));
+                assert(doc().querySelector('.credit-full-summary strong').textContent.includes("39,00"), "Fremde Gutschrift reduzierte Ziel-Restbetrag");
+                assert(doc().documentElement.scrollWidth <= frame.contentWindow.innerWidth, "Receipt-Mutation läuft horizontal über");
+                assertDeepEqual(frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS, [], "Receipt-ID-UI verursacht Laufzeitfehler");
+                assertEqual((await client.readSettings()).activeCompanyId, ids[1 - targetIndex], "Detailöffnung wechselte Aktivprofil");
+              } finally {
+                frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase();
+                frame.remove();
+              }
+            }
+            await assertRejects(() => client.recordReceiptPayment(target.id, { paymentMethod: foreignChoice.title }, record), "INVALID_DATA", "Fremde Zahlungsart");
+            await assertRejects(() => client.recordReceiptPayment(target.number, { paymentMethod: choice.title }, record), "RECEIPT_NOT_FOUND", "Nummer ist keine Mutations-ID");
+            await assertRejects(() => client.saveReceiptNote(target.number, "Nicht speichern", {}, record), "RECEIPT_NOT_FOUND", "Notiz akzeptiert sichtbare Nummer");
+            await assertRejects(() => client.commitReceiptCorrection(target.number, { id: `wrong-number-${targetIndex}`, type: "credit", total: -1 }, record), "RECEIPT_NOT_FOUND", "Korrektur akzeptiert sichtbare Nummer");
+            const paid = await client.recordReceiptPayment(target.id, { paymentChoiceId: choice.id, paymentMethod: choice.title, amountCents: 3900 }, record);
+            const noted = await client.saveReceiptNote(target.id, "Nur Zielunternehmen", {}, paid.record);
+            assertDeepEqual(noted.record.receipts.find(receipt => receipt.id === other.id), otherBefore, "Fremder Beleg wurde geändert");
+            const credited = await client.commitReceiptCorrection(target.id, { id: `credit-id-${targetIndex}`, type: "credit", total: -10, completedAt: "2030-07-02T12:00:00.000Z" }, noted.record);
+            assertEqual(credited.receipt.companyId, target.companyId, "Gutschrift im falschen Unternehmen");
+            assertEqual(credited.receipt.references.originalReceiptId, target.id, "Gutschrift ohne stabile Ursprungs-ID");
+            assertDeepEqual(credited.receipt.companySnapshot, target.companySnapshot, "Gutschrift änderte historischen Aussteller");
+            const cancelled = await client.commitReceiptCorrection(target.id, { id: `cancel-id-${targetIndex}`, type: "cancellation", total: -39, completedAt: "2030-07-02T13:00:00.000Z" }, credited.record);
+            assertEqual(cancelled.receipt.companyId, target.companyId, "Storno im falschen Unternehmen");
+            assertEqual(cancelled.receipt.references.originalReceiptId, target.id, "Storno ohne stabile Ursprungs-ID");
+            assertDeepEqual(cancelled.settingsRecord.companies[1 - targetIndex].receiptSettings.numbering, otherCounter, "Fremder Zähler geändert");
+            assertEqual(cancelled.settingsRecord.activeCompanyId, ids[1 - targetIndex], "Mutation wechselte Aktivprofil");
+            assertDeepEqual(cancelled.record.receipts.find(receipt => receipt.id === other.id), otherBefore, "Korrektur änderte fremden Beleg");
+            assertEqual((await client.readReceipts()).receipts.filter(receipt => receipt.number === target.number).length, 2, "Kollidierende Nummer nach Reload verloren");
+            const snapshot = await client.exportTenantSnapshot();
+            assertEqual(snapshot.stores.receipts.receipts.filter(receipt => receipt.number === target.number).length, 2, "Snapshot verliert profilbezogene Nummernkollision");
+            const legacy = clone(snapshot);
+            const legacyCredit = legacy.stores.receipts.receipts.find(receipt => receipt.id === credited.receipt.id);
+            legacyCredit.references.originalReceiptId = null;
+            legacyCredit.referenceId = null;
+            assert(api.validateCompanyEntityReferences(legacy.stores.settings, legacy.stores), "Eindeutige profilgebundene Legacy-Referenz ging verloren");
+            const ambiguousOrigin = clone(legacy.stores.receipts.receipts.find(receipt => receipt.id === target.id));
+            ambiguousOrigin.id = `ambiguous-origin-${targetIndex}`;
+            legacy.stores.receipts.receipts.push(ambiguousOrigin);
+            assertThrows(() => api.validateCompanyEntityReferences(legacy.stores.settings, legacy.stores), "RECEIPT_REFERENCE_AMBIGUOUS", "Mehrdeutiger Legacy-Bezug darf nicht first-match wählen");
+          }
+        }
+      },
+      {
         name: "MULTI-COMPANY-004B: Beta-Gate bleibt von echter Lizenz und activation_required getrennt",
         run: async () => {
           const fixture = setupFixture("multi-company-beta-gate");
@@ -4004,7 +4116,7 @@
           assertEqual(second.receipt.number, "CTS-2030-000002", "Zweiter Beta-Profilbeleg zählte nicht korrekt weiter");
           assertDeepEqual(second.settingsRecord.companies[0].receiptSettings.numbering, primaryNumberingBefore,
             "Beta-Profilvorgang veränderte Profil 1");
-          const noted = await client.saveReceiptNote(second.receipt.number, "Beta-Testnotiz", {
+          const noted = await client.saveReceiptNote(second.receipt.id, "Beta-Testnotiz", {
             label: "Interne Notiz aktualisiert", occurredAt: "2030-07-02T11:05:00.000Z"
           }, second.receiptsRecord);
           assertEqual(noted.receipt.internalNote, "Beta-Testnotiz", "Belegnotiz im Beta-Profil wurde nicht gespeichert");
@@ -6454,7 +6566,7 @@
           assertEqual(normal.receipt.number, `${completedYear}-000001`, "Erster normaler Beleg verwendete nicht das fachliche Abschlussjahr");
           assertEqual(normal.settingsRecord.receiptSettings.nextNumber, 2, "Nummernstand wurde nach erstem Beleg nicht fortgeschrieben");
 
-          const cancellation = await receiptClient.commitReceiptCorrection(normal.receipt.number, {
+          const cancellation = await receiptClient.commitReceiptCorrection(normal.receipt.id, {
             id: "fresh-cancellation",
             type: "cancellation",
             total: -39,
@@ -6475,7 +6587,7 @@
             customerId: null,
             customerSnapshot: null
           }), creditSettings, api.snapshotReceipts(creditRuntime, creditClient.tenantId));
-          const credit = await creditClient.commitReceiptCorrection(creditSource.receipt.number, {
+          const credit = await creditClient.commitReceiptCorrection(creditSource.receipt.id, {
             id: "fresh-credit",
             type: "credit",
             total: -10,
@@ -7225,7 +7337,7 @@
           const committed = await persistence.commitReceipt(draft, settings, seed);
           assertEqual(committed.receipt.paymentStatus, "open", "Offener Zahlungsstatus ging verloren");
           assertEqual(committed.receipt.paymentMethod, null, "Offener Beleg erhielt eine Zahlungsart");
-          const payment = await persistence.recordReceiptPayment(committed.receipt.number, {
+          const payment = await persistence.recordReceiptPayment(committed.receipt.id, {
             recordedAt: "2030-01-06T09:00:00.000Z", date: "06.01.2030", time: "10:00",
             displayDate: "06.01.2030 · 10:00", paymentMethod: "EC", amountCents: 3900, detail: "EC · 39,00 €"
           }, committed.receiptsRecord);
@@ -7233,7 +7345,7 @@
           assertEqual(payment.receipt.paymentStatus, "paid", "Zahlungsstatus wurde nicht auf bezahlt gesetzt");
           assertEqual(payment.receipt.paymentEvents.at(-1).amountCents, 3900, "Zahlungsbetrag fehlt");
           assertEqual(payment.receipt.activities.at(-1).label, "Zahlung erfasst", "Zahlungsaktivität fehlt");
-          const repeated = await persistence.recordReceiptPayment(committed.receipt.number, { paymentMethod: "Bar", amountCents: 3900 }, payment.record);
+          const repeated = await persistence.recordReceiptPayment(committed.receipt.id, { paymentMethod: "Bar", amountCents: 3900 }, payment.record);
           assertEqual(repeated.recorded, false, "Bereits erfasste Zahlung wurde ein zweites Mal angelegt");
         }
       },
@@ -7251,12 +7363,12 @@
             sourceActivityDate: "06.01.2030 · 11:00",
             activity: [{ label: "Stornobeleg erstellt", date: "06.01.2030 · 11:00", occurredAt: "2030-01-06T10:00:00.000Z" }]
           };
-          const cancelled = await persistence.commitReceiptCorrection(original.receipt.number, draft, original.receiptsRecord);
+          const cancelled = await persistence.commitReceiptCorrection(original.receipt.id, draft, original.receiptsRecord);
           assert(cancelled.receipt.number.startsWith("ST-2030-"), "Stornonummer besitzt das falsche Format");
           assertEqual(cancelled.sourceReceipt.status, "cancelled", "Ursprungsstatus wurde nicht konsistent fortgeschrieben");
           assert(cancelled.sourceReceipt.references.correctionNumbers.includes(cancelled.receipt.number), "Stornoreferenz fehlt am Ursprung");
           assertEqual(cancelled.receipt.reference, original.receipt.number, "Rückreferenz zum Ursprung fehlt");
-          const repeated = await persistence.commitReceiptCorrection(original.receipt.number, { ...draft, id: "cancellation-second-click" }, cancelled.record);
+          const repeated = await persistence.commitReceiptCorrection(original.receipt.id, { ...draft, id: "cancellation-second-click" }, cancelled.record);
           assertEqual(repeated.created, false, "Mehrfachklick erzeugte einen zweiten Storno");
           assertEqual(repeated.record.receipts.filter(receipt => receipt.type === "cancellation" && receipt.reference === original.receipt.number).length, 1, "Doppelter Stornodatensatz vorhanden");
         }
@@ -7268,13 +7380,13 @@
           const settings = recordFixture(persistence.tenantId, "completed");
           const seed = receiptsRecordFixture(persistence.tenantId);
           const original = await persistence.commitReceipt(receiptDraftFixture("receipt-credit-source"), settings, seed);
-          const partial = await persistence.commitReceiptCorrection(original.receipt.number, {
+          const partial = await persistence.commitReceiptCorrection(original.receipt.id, {
             id: "credit-partial", type: "credit", total: -10, items: [{ title: "Kulanz", quantity: 1, unitPrice: -10, total: -10 }],
             completedAt: "2030-01-06T10:00:00.000Z", sourceActivityDate: "06.01.2030 · 11:00", isFull: false
           }, original.receiptsRecord);
           assert(partial.receipt.number.startsWith("GS-2030-"), "Gutschriftsnummer besitzt das falsche Format");
           assertEqual(partial.sourceReceipt.status, "partially-credited", "Teilgutschrift setzte falschen Ursprungsstatus");
-          const full = await persistence.commitReceiptCorrection(original.receipt.number, {
+          const full = await persistence.commitReceiptCorrection(original.receipt.id, {
             id: "credit-rest", type: "credit", total: -29, items: [{ title: "Restgutschrift", quantity: 1, unitPrice: -29, total: -29 }],
             completedAt: "2030-01-06T10:05:00.000Z", sourceActivityDate: "06.01.2030 · 11:05", isFull: true
           }, partial.record);

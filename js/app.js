@@ -92,8 +92,8 @@
     editingCustomerId: null,
     receiptFilter: "all",
     receiptSearch: "",
-    receiptDetailNumber: null,
-    receiptPreviewNumber: null,
+    receiptDetailId: null,
+    receiptPreviewId: null,
     receiptPreviewReturnRoute: "receipt-success",
     receiptCounter: 0,
     creditMode: "full",
@@ -129,7 +129,7 @@
     taxSettingsNotice: "",
     paymentSettingsNotice: "",
     businessAreaSettingsNotice: "",
-    paymentCaptureReceiptNumber: null,
+    paymentCaptureReceiptId: null,
     catalogManagerAreaId: null,
     catalogManagerView: "items",
     catalogManagerSearch: "",
@@ -1626,6 +1626,11 @@
   const activeNormalPaymentChoices = () => activePaymentChoices().filter(isNormalPaymentChoice);
   const preferredNormalPaymentId = () => activeNormalPaymentChoices()[0]?.id ?? null;
 
+  function receiptPaymentChoices(receipt) {
+    const profile = persistence?.companyProfileById(currentSettingsRecord, receipt?.companyId);
+    return (profile?.paymentChoices || []).filter(choice => choice.active !== false && isNormalPaymentChoice(choice));
+  }
+
   function paymentLabel() {
     return data.paymentChoices.find(choice => choice.id === state.paymentChoice)?.title ?? "Nicht angegeben";
   }
@@ -2135,16 +2140,16 @@
   }
 
   async function renderReceiptPreview() {
-    const receipt = state.receiptPreviewNumber ? receiptByNumber(state.receiptPreviewNumber) : state.finishedReceipt;
+    const receipt = state.receiptPreviewId ? receiptById(state.receiptPreviewId) : state.finishedReceipt;
     if (!receipt) {
-      navigate(state.receiptPreviewNumber ? "receipts" : "home", false);
+      navigate(state.receiptPreviewId ? "receipts" : "home", false);
       return;
     }
     const renderToken = ++receiptPreviewRenderToken;
-    const expectedNumber = receipt.number;
+    const expectedId = receipt.id;
     const previewIsCurrent = () => renderToken === receiptPreviewRenderToken
       && state.route === "receipt-preview"
-      && (state.receiptPreviewNumber ? state.receiptPreviewNumber === expectedNumber : state.finishedReceipt === receipt);
+      && (state.receiptPreviewId ? state.receiptPreviewId === expectedId : state.finishedReceipt === receipt);
     mainContent.innerHTML = `<section class="document-preparing" aria-live="polite"><span class="persistence-loading-spinner" aria-hidden="true"></span><strong>Digitaler Beleg wird vorbereitet …</strong></section>`;
     let model;
     let publicKey = "";
@@ -2197,7 +2202,7 @@
     if (target.kind === "receipt") {
       const receipt = receiptById(target.reference);
       if (receipt) {
-        state.receiptDetailNumber = receipt.number;
+        state.receiptDetailId = receipt.id;
         state.qrLookupError = "";
         return "receipt-detail";
       }
@@ -2553,7 +2558,7 @@
             ${entry.internalDocumentation?.trim() ? `<div><strong>Dokumentation (intern)</strong><p>${escapeHtml(entry.internalDocumentation)}</p></div>` : ""}
             ${entry.customerCareAdvice?.trim() ? `<div><strong>Pflegehinweis</strong><p>${escapeHtml(entry.customerCareAdvice)}</p></div>` : ""}
             <p class="treatment-history-meta">${entry.prescriptionId ? "Mit Rezeptzuordnung" : "Ohne Rezeptzuordnung"}${entry.userSnapshot?.displayName ? ` · ${escapeHtml(entry.userSnapshot.displayName)}` : ""}</p>
-            <button class="button button-secondary" type="button" data-open-receipt="${escapeHtml(entry.receiptNumber)}">Beleg öffnen</button>
+            <button class="button button-secondary" type="button" data-open-receipt="${escapeHtml(entry.receiptId)}">Beleg öffnen</button>
           </div>
         </article>`;
       }).join("") || '<p class="page-copy">Noch keine abgeschlossene Behandlungsdokumentation vorhanden.</p>'}</div>
@@ -2699,14 +2704,14 @@
                       <strong>Verknüpfte Korrekturen</strong>
                       ${related.map(item => {
                         const relatedStatus = customerHistoryStatus(item);
-                        return `<button type="button" data-open-receipt="${escapeHtml(item.number)}">
+                        return `<button type="button" data-open-receipt="${escapeHtml(item.id)}">
                           <span>${escapeHtml(item.number)}</span>
                           <span class="receipt-status ${relatedStatus.className}">${escapeHtml(relatedStatus.label)}</span>
                           <strong>${formatCurrency(item.total)}</strong>
                         </button>`;
                       }).join("")}
                     </div>` : ""}
-                    <button class="customer-history-open-receipt" type="button" data-open-receipt="${escapeHtml(receipt.number)}">Vorgang öffnen</button>
+                    <button class="customer-history-open-receipt" type="button" data-open-receipt="${escapeHtml(receipt.id)}">Vorgang öffnen</button>
                   </div>` : ""}
                 </article>`;
               }).join("")}
@@ -2781,11 +2786,25 @@
   }
 
   function receiptByNumber(number) {
-    return data.receipts.find(receipt => receipt.companyId === activeCompanyId() && receipt.number === number) || null;
+    const matches = data.receipts.filter(receipt => receipt.companyId === activeCompanyId() && receipt.number === number);
+    return matches.length === 1 ? matches[0] : null;
   }
 
   function receiptById(id) {
     return data.receipts.find(receipt => receipt.id === id) || null;
+  }
+
+  function receiptCorrections(receipt) {
+    const uniqueLegacyOrigin = data.receipts.filter(origin =>
+      origin.companyId === receipt.companyId && origin.number === receipt.number).length === 1;
+    return data.receipts.filter(item => {
+      if (item.companyId !== receipt.companyId) return false;
+      const originalId = item.references?.originalReceiptId || item.referenceId;
+      if (originalId) return originalId === receipt.id;
+      // Legacy reference: never infer an origin across companies or ambiguity.
+      const number = item.references?.originalReceiptNumber || item.reference;
+      return number === receipt.number && uniqueLegacyOrigin;
+    });
   }
 
   function receiptKindLabel(receipt) {
@@ -2851,12 +2870,12 @@
 
       <div class="receipt-admin-list">
         ${receipts.length ? receipts.map(receipt => state.receiptFilter === "open" ? `<article class="open-payment-card">
-          <button class="open-payment-card-main" type="button" data-open-receipt="${escapeHtml(receipt.number)}">
+          <button class="open-payment-card-main" type="button" data-open-receipt="${escapeHtml(receipt.id)}">
             <span><small>${escapeHtml(receipt.number)} · ${escapeHtml(formatGermanDate(receipt.date || receipt.completedAt || receipt.createdAt))}</small><strong>${escapeHtml(receiptCustomerLabel(receipt))}</strong><em>${escapeHtml(receipt.contextSnapshot?.businessArea?.label || "Geschäftsbereich")}</em>${receipt.internalNote ? `<span>${escapeHtml(receipt.internalNote)}</span>` : ""}</span>
             <strong>${formatCurrency(receipt.total)}</strong>
           </button>
-          <button class="button button-primary" type="button" data-record-payment="${escapeHtml(receipt.number)}">Zahlung erfassen</button>
-        </article>` : `<button class="receipt-admin-card" type="button" data-open-receipt="${escapeHtml(receipt.number)}">
+          <button class="button button-primary" type="button" data-record-payment="${escapeHtml(receipt.id)}">Zahlung erfassen</button>
+        </article>` : `<button class="receipt-admin-card" type="button" data-open-receipt="${escapeHtml(receipt.id)}">
           <span class="receipt-card-main">
             <span class="receipt-card-number">${escapeHtml(receipt.number)}</span>
             ${receipt.receiptKind === "voucher-sale" ? `<span class="receipt-card-kind">Gutscheinverkauf</span>` : ""}
@@ -2882,17 +2901,19 @@
   }
 
   function renderReceiptDetail() {
-    const receipt = receiptByNumber(state.receiptDetailNumber);
+    const receipt = receiptById(state.receiptDetailId);
     if (!receipt) { navigate("receipts", false); return; }
     const paidVoucher = receipt.voucherPayment ? voucherByReference(receipt.voucherPayment.reference) : null;
-    const related = data.receipts.filter(item => item.companyId === receipt.companyId
-      && (item.reference === receipt.number || item.number === receipt.reference));
-    const relatedCreditsTotal = data.receipts
-      .filter(item => item.companyId === receipt.companyId && item.reference === receipt.number && item.type === "credit")
+    const originalId = receipt.references?.originalReceiptId || receipt.referenceId;
+    const originalMatches = data.receipts.filter(item => item.companyId === receipt.companyId
+      && (originalId ? item.id === originalId : item.number === receipt.reference));
+    const original = originalMatches.length === 1 ? originalMatches[0] : null;
+    const related = [...receiptCorrections(receipt), ...(original ? [original] : [])];
+    const relatedCreditsTotal = receiptCorrections(receipt)
+      .filter(item => item.type === "credit")
       .reduce((sum, item) => sum + Math.abs(Number(item.total || 0)), 0);
     const remainingCredit = Math.max(0, Number(receipt.total || 0) - relatedCreditsTotal);
-    const hasCancellation = data.receipts.some(item => item.companyId === receipt.companyId
-      && item.reference === receipt.number && item.type === "cancellation");
+    const hasCancellation = receiptCorrections(receipt).some(item => item.type === "cancellation");
     const canRecordPayment = receipt.type === "receipt" && receipt.paymentStatus === "open" && receipt.status !== "cancelled";
     const canCorrect = receipt.type === "receipt"
       && receipt.receiptKind !== "voucher-sale"
@@ -2922,7 +2943,7 @@
         ${receipt.paymentStatus === "open" ? "" : `<div class="receipt-detail-row"><span>Zahlungsart</span><strong>${escapeHtml(receiptPaymentMethodLabel(receipt))}</strong></div>`}
         ${receipt.voucherPayment ? `<div class="receipt-detail-row"><span>Bezahlt mit Gutschein</span><strong>${formatCurrency(receipt.voucherPayment.amount)}</strong></div><div class="receipt-detail-row"><span>Gutscheincode</span><strong>${escapeHtml(receipt.voucherPayment.code)}</strong></div>` : ""}
         ${receipt.remainderPayment ? `<div class="receipt-detail-row"><span>Restzahlung · ${escapeHtml(receipt.remainderPayment.method)}</span><strong>${formatCurrency(receipt.remainderPayment.amount)}</strong></div>` : ""}
-        ${receipt.reference ? `<div class="receipt-detail-row"><span>Bezug</span><button type="button" data-open-receipt="${escapeHtml(receipt.reference)}">${escapeHtml(receipt.reference)}</button></div>` : ""}
+        ${receipt.reference ? `<div class="receipt-detail-row"><span>Bezug</span>${original ? `<button type="button" data-open-receipt="${escapeHtml(original.id)}">${escapeHtml(receipt.reference)}</button>` : `<strong>${escapeHtml(receipt.reference)}</strong>`}</div>` : ""}
       </section>
 
       ${paidVoucher ? `<section class="receipt-detail-card voucher-receipt-link"><div class="receipt-section-title"><h2>Verwendeter Gutschein</h2></div><p>Dieser Gutschein wurde für die Bezahlung des Belegs verwendet.</p><button class="button button-primary" type="button" data-open-linked-voucher="${escapeHtml(paidVoucher.reference)}">Gutschein öffnen</button></section>` : ""}
@@ -2947,7 +2968,7 @@
 
       ${related.length ? `<section class="receipt-detail-card">
         <div class="receipt-section-title"><h2>Verknüpfte Vorgänge</h2></div>
-        ${related.map(item => `<button class="related-receipt" type="button" data-open-receipt="${escapeHtml(item.number)}">
+        ${related.map(item => `<button class="related-receipt" type="button" data-open-receipt="${escapeHtml(item.id)}">
           <span><strong>${escapeHtml(item.number)}</strong><small>${escapeHtml(receiptStatusLabel(item))}</small></span>
           <strong>${formatCurrency(item.total)}</strong>
         </button>`).join("")}
@@ -2958,7 +2979,7 @@
         ${(receipt.activity || []).map(entry => `<div><span>${escapeHtml(entry.label)}${entry.detail ? `<em>${escapeHtml(entry.detail)}</em>` : ""}</span><small>${escapeHtml(formatStoredDateTime(entry.date, entry.occurredAt))}</small></div>`).join("")}
       </section>
 
-      ${canRecordPayment ? `<section class="receipt-open-payment-action"><div><strong>Zahlung ist noch offen</strong><p>Erfasse die tatsächliche Zahlungsart, sobald der vollständige Betrag bezahlt wurde.</p></div><button class="button button-primary" type="button" data-record-payment="${escapeHtml(receipt.number)}">Zahlung erfassen</button></section>` : ""}
+      ${canRecordPayment ? `<section class="receipt-open-payment-action"><div><strong>Zahlung ist noch offen</strong><p>Erfasse die tatsächliche Zahlungsart, sobald der vollständige Betrag bezahlt wurde.</p></div><button class="button button-primary" type="button" data-record-payment="${escapeHtml(receipt.id)}">Zahlung erfassen</button></section>` : ""}
 
       <section class="receipt-detail-card receipt-internal-notes">
         <div class="receipt-section-title"><h2>Interne Notiz</h2></div>
@@ -2967,9 +2988,9 @@
       </section>
 
       <section class="receipt-primary-actions">
-        <button class="button button-secondary" type="button" data-preview-receipt="${escapeHtml(receipt.number)}">${receipt.receiptKind === "voucher-sale" ? "Kassenbon anzeigen" : "Beleg anzeigen"}</button>
+        <button class="button button-secondary" type="button" data-preview-receipt="${escapeHtml(receipt.id)}">${receipt.receiptKind === "voucher-sale" ? "Kassenbon anzeigen" : "Beleg anzeigen"}</button>
         ${documentOutputActionsMarkup("receipt", receipt.id || receipt.number)}
-        ${receipt.receiptKind === "voucher-sale" ? "" : `<button class="button button-secondary" type="button" data-action="copy-receipt">Duplizieren</button>`}
+        ${receipt.receiptKind === "voucher-sale" || receipt.companyId !== activeCompanyId() ? "" : `<button class="button button-secondary" type="button" data-action="copy-receipt">Duplizieren</button>`}
       </section>
 
       ${canCorrect ? `<section class="receipt-correction-card">
@@ -2986,10 +3007,10 @@
   }
 
   function renderReceiptCredit() {
-    const receipt = receiptByNumber(state.receiptDetailNumber);
+    const receipt = receiptById(state.receiptDetailId);
     if (!receipt) { navigate("receipts", false); return; }
-    const alreadyCredited = data.receipts
-      .filter(item => item.companyId === receipt.companyId && item.reference === receipt.number && item.type === "credit")
+    const alreadyCredited = receiptCorrections(receipt)
+      .filter(item => item.type === "credit")
       .reduce((sum, item) => sum + Math.abs(Number(item.total || 0)), 0);
     const maximumCredit = Math.max(0, Number(receipt.total || 0) - alreadyCredited);
     if (maximumCredit <= 0.009 || receipt.status === "cancelled" || receipt.status === "credited") {
@@ -3089,12 +3110,12 @@
       applyReceiptsRecord(result.record);
       applySettingsRecord(result.settingsRecord);
       if (!result.receipt) throw new Error("Die Gutschrift wurde nicht bestätigt.");
-      state.receiptDetailNumber = result.receipt.number;
+      state.receiptDetailId = result.receipt.id;
       state.successNotice = `${isFull ? "Gesamtgutschrift" : "Teilgutschrift"} ${result.receipt.number} wurde lokal gespeichert.`;
       saved = true;
     } catch (error) {
       logPersistenceError("Gutschrift speichern fehlgeschlagen", error);
-      state.receiptDetailNumber = receipt.number;
+      state.receiptDetailId = receipt.id;
       state.successNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error, "Die Gutschrift konnte nicht gespeichert werden.")}`;
     } finally {
       pendingSettingsWrites = Math.max(0, pendingSettingsWrites - 1);
@@ -3437,7 +3458,7 @@
               <div><dt>Restwert danach</dt><dd>${formatCurrency(event.balanceAfter)}</dd></div>
               ${event.receiptNumber ? `<div><dt>Beleg</dt><dd>${escapeHtml(event.receiptNumber)}</dd></div>` : ""}
             </dl>
-            ${eventReceipt ? `<button class="voucher-history-receipt-link" type="button" data-open-receipt="${escapeHtml(eventReceipt.number)}">${event.type === "sold" ? "Verkaufsbeleg" : "Beleg"} öffnen</button>` : ""}
+            ${eventReceipt ? `<button class="voucher-history-receipt-link" type="button" data-open-receipt="${escapeHtml(eventReceipt.id)}">${event.type === "sold" ? "Verkaufsbeleg" : "Beleg"} öffnen</button>` : ""}
           </div>
         </article>`;
         }).join("") : `<p class="voucher-history-empty">Noch keine historischen Vorgänge vorhanden.</p>`}
@@ -3875,7 +3896,7 @@
         <div><span>Verkauft am</span><strong>${escapeHtml(formatGermanDateTime({ date: voucher.soldAt, time: voucher.soldTime, iso: voucher.soldAtIso || voucher.createdAt }))}</strong></div>
         <div><span>Zahlungsart beim Verkauf</span><strong>${escapeHtml(voucher.payment || "Nicht angegeben")}</strong></div>
         ${voucher.contextSnapshot?.businessArea ? `<div><span>Geschäftsbereich beim Verkauf</span><strong>${escapeHtml(voucher.contextSnapshot.businessArea.label)}</strong></div>` : ""}
-        ${voucher.saleReceipt?.number ? `<div><span>Verkaufsbeleg</span>${saleReceipt ? `<button type="button" data-open-receipt="${escapeHtml(saleReceipt.number)}">${escapeHtml(saleReceipt.number)} · Verkaufsbeleg öffnen</button>` : `<strong>${escapeHtml(voucher.saleReceipt.number)}</strong>`}</div>` : ""}
+        ${voucher.saleReceipt?.number ? `<div><span>Verkaufsbeleg</span>${saleReceipt ? `<button type="button" data-open-receipt="${escapeHtml(saleReceipt.id)}">${escapeHtml(saleReceipt.number)} · Verkaufsbeleg öffnen</button>` : `<strong>${escapeHtml(voucher.saleReceipt.number)}</strong>`}</div>` : ""}
         ${voucher.customer ? `<div><span>Zugeordneter Kunde</span><strong>${escapeHtml(voucher.customer.name)}</strong></div>` : ""}
         ${voucher.displayName ? `<div><span>Name auf dem Gutschein</span><strong>${escapeHtml(voucher.displayName)}</strong></div>` : ""}
       </section>
@@ -4012,19 +4033,19 @@
 
   function openPaymentCapture(receipt) {
     if (!receipt || receipt.type !== "receipt" || receipt.paymentStatus !== "open" || receipt.status === "cancelled") return;
-    state.paymentCaptureReceiptNumber = receipt.number;
+    state.paymentCaptureReceiptId = receipt.id;
     openBottomSheet("Zahlung erfassen", `<div class="payment-capture-sheet">
       <p><strong>${escapeHtml(receipt.number)}</strong><span>${escapeHtml(receiptCustomerLabel(receipt))} · ${formatCurrency(receipt.total)}</span></p>
       <div role="group" aria-label="Tatsächliche Zahlungsart">
-        ${activeNormalPaymentChoices().map(choice => `<button type="button" data-payment-capture-method="${escapeHtml(choice.id)}"><span aria-hidden="true">${escapeHtml(choice.icon)}</span><strong>${escapeHtml(choice.title)}</strong></button>`).join("")}
+        ${receiptPaymentChoices(receipt).map(choice => `<button type="button" data-payment-capture-method="${escapeHtml(choice.id)}"><span aria-hidden="true">${escapeHtml(choice.icon)}</span><strong>${escapeHtml(choice.title)}</strong></button>`).join("")}
       </div>
       <small>Der vollständige Betrag wird als bezahlt markiert. Teilzahlungen und automatische Bankprüfungen sind nicht enthalten.</small>
     </div>`);
   }
 
   async function recordOpenPayment(methodId) {
-    const receipt = receiptByNumber(state.paymentCaptureReceiptNumber);
-    const method = activeNormalPaymentChoices().find(choice => choice.id === methodId);
+    const receipt = receiptById(state.paymentCaptureReceiptId);
+    const method = receiptPaymentChoices(receipt).find(choice => choice.id === methodId);
     if (!receipt || receipt.type !== "receipt" || receipt.paymentStatus !== "open" || !method) return false;
     const now = new Date();
     const date = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }).format(now);
@@ -4038,7 +4059,8 @@
           userMessage: "Die Zahlung konnte nicht sicher lokal gespeichert werden."
         });
       }
-      const result = await persistence.recordReceiptPayment(receipt.number, {
+      const result = await persistence.recordReceiptPayment(receipt.id, {
+        paymentChoiceId: method.id,
         recordedAt: now.toISOString(),
         date,
         time,
@@ -5605,7 +5627,7 @@
     state.customerChoice = "none";
     resetCheckoutTreatmentDocumentation();
     state.finishedReceipt = null;
-    state.receiptDetailNumber = null;
+    state.receiptDetailId = null;
     state.voucherDetailReference = null;
     state.receiptsReadyForWrites = true;
     state.vouchersReadyForWrites = true;
@@ -5970,7 +5992,7 @@
       state.prescriptionDetailId = null;
       state.treatmentTemplateDraft = null;
       state.voucherSaleCustomerId = null;
-      state.receiptDetailNumber = null;
+      state.receiptDetailId = null;
       state.voucherDetailReference = null;
       refreshSettingsDerivedState();
       refreshBusinessSwitcher();
@@ -7076,8 +7098,8 @@
     const paymentCaptureMethod = event.target.closest("[data-payment-capture-method]");
     if (paymentCaptureMethod) {
       const recorded = await recordOpenPayment(paymentCaptureMethod.dataset.paymentCaptureMethod);
-      const receiptNumber = state.paymentCaptureReceiptNumber;
-      state.paymentCaptureReceiptNumber = null;
+      const receiptId = state.paymentCaptureReceiptId;
+      state.paymentCaptureReceiptId = null;
       closeBottomSheet();
       if (!recorded) {
         if (state.route === "receipt-detail") renderReceiptDetail();
@@ -7089,7 +7111,7 @@
         return;
       }
       if (state.route === "receipt-detail") {
-        state.receiptDetailNumber = receiptNumber;
+        state.receiptDetailId = receiptId;
         state.successNotice = "Zahlung wurde vollständig erfasst.";
         renderReceiptDetail();
       } else {
@@ -7349,7 +7371,7 @@
     }
     const recordPayment = event.target.closest("[data-record-payment]");
     if (recordPayment) {
-      openPaymentCapture(receiptByNumber(recordPayment.dataset.recordPayment));
+      openPaymentCapture(receiptById(recordPayment.dataset.recordPayment));
       return;
     }
     const openLinkedVoucher = event.target.closest("[data-open-linked-voucher]");
@@ -7363,17 +7385,19 @@
     }
     const previewReceipt = event.target.closest("[data-preview-receipt]");
     if (previewReceipt) {
-      const receipt = receiptByNumber(previewReceipt.dataset.previewReceipt);
+      const receipt = receiptById(previewReceipt.dataset.previewReceipt);
       if (!receipt) return;
-      state.receiptDetailNumber = receipt.number;
-      state.receiptPreviewNumber = receipt.number;
+      state.receiptDetailId = receipt.id;
+      state.receiptPreviewId = receipt.id;
       state.receiptPreviewReturnRoute = "receipt-detail";
       navigate("receipt-preview");
       return;
     }
     const openReceipt = event.target.closest("[data-open-receipt]");
     if (openReceipt) {
-      state.receiptDetailNumber = openReceipt.dataset.openReceipt;
+      const receipt = receiptById(openReceipt.dataset.openReceipt) || receiptByNumber(openReceipt.dataset.openReceipt);
+      if (!receipt) return;
+      state.receiptDetailId = receipt.id;
       state.successNotice = "";
       navigate("receipt-detail");
       return;
@@ -7643,7 +7667,7 @@
     if (route) {
       if ((route.dataset.route === "checkout" || route.dataset.route === "edit-cart") && !cartCount()) return;
       if (route.dataset.route === "receipt-preview" && state.route === "receipt-success") {
-        state.receiptPreviewNumber = null;
+        state.receiptPreviewId = null;
         state.receiptPreviewReturnRoute = "receipt-success";
       }
       if (route.dataset.route === "customer-picker") {
@@ -8099,7 +8123,7 @@
       }
     }
     if (action === "save-receipt-note") {
-      const receipt = receiptByNumber(state.receiptDetailNumber);
+      const receipt = receiptById(state.receiptDetailId);
       const field = document.getElementById("receiptInternalNote");
       if (receipt && field) {
         const now = new Date();
@@ -8113,7 +8137,7 @@
               userMessage: "Die interne Notiz konnte nicht sicher lokal gespeichert werden."
             });
           }
-          const result = await persistence.saveReceiptNote(receipt.number, field.value.trim(), {
+          const result = await persistence.saveReceiptNote(receipt.id, field.value.trim(), {
             label: "Interne Notiz aktualisiert",
             date,
             occurredAt: now.toISOString()
@@ -8132,8 +8156,8 @@
       return;
     }
     if (action === "copy-receipt") {
-      const receipt = receiptByNumber(state.receiptDetailNumber);
-      if (receipt && receipt.receiptKind !== "voucher-sale") {
+      const receipt = receiptById(state.receiptDetailId);
+      if (receipt && receipt.companyId === activeCompanyId() && receipt.receiptKind !== "voucher-sale") {
         resetCheckoutPrescription();
         resetCheckoutTreatmentDocumentation();
         state.checkoutReceiptId = null;
@@ -8159,7 +8183,7 @@
       }
     }
     if (action === "cancel-receipt") {
-      const receipt = receiptByNumber(state.receiptDetailNumber);
+      const receipt = receiptById(state.receiptDetailId);
       if (!receipt || receipt.status === "cancelled") return;
       openConfirmDialog({
         title: "Gesamten Beleg stornieren?",
@@ -8170,10 +8194,10 @@
       });
     }
     if (action === "create-full-credit") {
-      const receipt = receiptByNumber(state.receiptDetailNumber);
+      const receipt = receiptById(state.receiptDetailId);
       if (!receipt) return;
-      const alreadyCredited = data.receipts
-        .filter(item => item.reference === receipt.number && item.type === "credit")
+      const alreadyCredited = receiptCorrections(receipt)
+        .filter(item => item.type === "credit")
         .reduce((sum, item) => sum + Math.abs(Number(item.total || 0)), 0);
       const maximumCredit = Math.max(0, Number(receipt.total || 0) - alreadyCredited);
       if (maximumCredit <= 0.009) return;
@@ -8786,7 +8810,7 @@
     const creditForm = event.target.closest("#creditForm");
     if (creditForm) {
       event.preventDefault();
-      const receipt = receiptByNumber(state.receiptDetailNumber);
+      const receipt = receiptById(state.receiptDetailId);
       if (!receipt) return;
       const fd = new FormData(creditForm);
       const amount = Number(String(fd.get("creditAmount") || "").replace(",", "."));
@@ -8933,8 +8957,8 @@
         await persistence.deleteReceipts();
         const normalizedDefaults = persistence.normalizeReceiptsRecord(defaultReceiptsRecord, defaultReceiptsRecord, persistence.tenantId);
         applyReceiptsRecord(normalizedDefaults.record);
-        state.receiptDetailNumber = null;
-        state.receiptPreviewNumber = null;
+        state.receiptDetailId = null;
+        state.receiptPreviewId = null;
         state.finishedReceipt = null;
         state.receiptsReadyForWrites = true;
         refreshSettingsDerivedState();
@@ -9089,7 +9113,7 @@
     }
 
     if (pendingAction === "cancel-current-receipt") {
-      const receipt = receiptByNumber(state.receiptDetailNumber);
+      const receipt = receiptById(state.receiptDetailId);
       if (!receipt || receipt.status === "cancelled") {
         closeDiscardDialog();
         return;
@@ -9160,14 +9184,14 @@
     }
 
     if (pendingAction === "credit-current-receipt") {
-      const receipt = receiptByNumber(state.receiptDetailNumber);
+      const receipt = receiptById(state.receiptDetailId);
       if (!receipt) {
         closeDiscardDialog();
         return;
       }
 
-      const alreadyCredited = data.receipts
-        .filter(item => item.reference === receipt.number && item.type === "credit")
+      const alreadyCredited = receiptCorrections(receipt)
+        .filter(item => item.type === "credit")
         .reduce((sum, item) => sum + Math.abs(Number(item.total || 0)), 0);
       const maximumCredit = Math.max(0, Number(receipt.total || 0) - alreadyCredited);
 

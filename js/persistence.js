@@ -2316,24 +2316,25 @@
         });
         return [];
       }
-      if (seenIds.has(normalized.id) || seenNumbers.has(normalized.number)) {
+      const numberKey = JSON.stringify([normalized.companyId, normalized.number]);
+      if (seenIds.has(normalized.id) || seenNumbers.has(numberKey)) {
         repairs.add("RECEIPT_DUPLICATE_REMOVED");
         diagnostics.push({
           invariant: "RECEIPT_ID_OR_NUMBER_DUPLICATE",
           duplicateFields: [
             ...(seenIds.has(normalized.id) ? ["id"] : []),
-            ...(seenNumbers.has(normalized.number) ? ["number"] : [])
+            ...(seenNumbers.has(numberKey) ? ["number"] : [])
           ],
           receipts: uniqueDiagnosticRecords([
             seenIds.get(normalized.id),
-            seenNumbers.get(normalized.number),
+            seenNumbers.get(numberKey),
             normalized
           ], diagnosticReceiptView)
         });
         return [];
       }
       seenIds.set(normalized.id, normalized);
-      seenNumbers.set(normalized.number, normalized);
+      seenNumbers.set(numberKey, normalized);
       return [normalized];
     });
     return {
@@ -2738,16 +2739,16 @@
         );
         return;
       }
-      if (receiptById.has(id) || receiptByNumber.has(number)) {
+      if (receiptById.has(id) || receiptByNumber.has(JSON.stringify([receipt.companyId, number]))) {
         addFinding(
           `Die Beleg-ID oder Belegnummer ${number} ist mehrfach vorhanden.`,
           "RECEIPT_ID_OR_NUMBER_DUPLICATE",
           {
-            receipts: [receiptById.get(id), receiptByNumber.get(number), receipt],
+            receipts: [receiptById.get(id), receiptByNumber.get(JSON.stringify([receipt.companyId, number])), receipt],
             details: {
               duplicateFields: [
                 ...(receiptById.has(id) ? ["id"] : []),
-                ...(receiptByNumber.has(number) ? ["number"] : [])
+                ...(receiptByNumber.has(JSON.stringify([receipt.companyId, number])) ? ["number"] : [])
               ]
             }
           }
@@ -2755,7 +2756,7 @@
         return;
       }
       receiptById.set(id, receipt);
-      receiptByNumber.set(number, receipt);
+      receiptByNumber.set(JSON.stringify([receipt.companyId, number]), receipt);
     });
 
     const voucherByReference = new Map();
@@ -2809,7 +2810,7 @@
       }
 
       const receiptByCanonicalId = receiptById.get(saleReceiptId);
-      const receiptByCanonicalNumber = receiptByNumber.get(saleReceiptNumber);
+      const receiptByCanonicalNumber = receiptByNumber.get(JSON.stringify([voucher.companyId, saleReceiptNumber]));
       if (!receiptByCanonicalId || !receiptByCanonicalNumber) {
         addFinding(
           `Der Gutschein ${code} verweist auf den nicht vollständig gespeicherten Verkaufsbeleg ${saleReceiptNumber || saleReceiptId}.`,
@@ -2847,8 +2848,8 @@
           { vouchers: [voucher], receipts: [receiptByCanonicalId] }
         );
       }
-      if (receiptOwnerById.has(saleReceiptId) || receiptOwnerByNumber.has(saleReceiptNumber)) {
-        const previousReference = receiptOwnerById.get(saleReceiptId) || receiptOwnerByNumber.get(saleReceiptNumber);
+      if (receiptOwnerById.has(saleReceiptId) || receiptOwnerByNumber.has(JSON.stringify([voucher.companyId, saleReceiptNumber]))) {
+        const previousReference = receiptOwnerById.get(saleReceiptId) || receiptOwnerByNumber.get(JSON.stringify([voucher.companyId, saleReceiptNumber]));
         addFinding(
           `Der Verkaufsbeleg ${saleReceiptNumber} ist mehr als einem Gutschein zugeordnet.`,
           "VOUCHER_SALE_RECEIPT_MULTIPLE_OWNERS",
@@ -2859,7 +2860,7 @@
         );
       }
       receiptOwnerById.set(saleReceiptId, reference);
-      receiptOwnerByNumber.set(saleReceiptNumber, reference);
+      receiptOwnerByNumber.set(JSON.stringify([voucher.companyId, saleReceiptNumber]), reference);
     });
 
     receipts.filter(receipt => receipt.receiptKind === "voucher-sale").forEach(receipt => {
@@ -7215,7 +7216,7 @@
       });
     }
 
-    function recordReceiptPayment(receiptNumber, paymentInput, seedReceiptsRecord) {
+    function recordReceiptPayment(receiptId, paymentInput, seedReceiptsRecord) {
       let payment;
       try {
         payment = cloneSerializable(paymentInput);
@@ -7223,7 +7224,7 @@
         return Promise.reject(error);
       }
       return mutateReceipts(seedReceiptsRecord, (record, settings) => {
-        const receipt = record.receipts.find(entry => entry.number === receiptNumber);
+        const receipt = record.receipts.find(entry => entry.id === receiptId);
         if (!receipt) throw new PersistenceError("RECEIPT_NOT_FOUND", "Der Beleg wurde nicht gefunden.");
         assertCompanyProductive(settings, receipt.companyId, appBuild);
         if (receipt.receiptType !== "receipt" || receipt.status === "cancelled") {
@@ -7234,6 +7235,11 @@
         const amountCents = centsFrom(payment.amountCents, payment.amount ?? receipt.total);
         const paymentMethod = trimmedString(payment.paymentMethod);
         if (!paymentMethod) throw new PersistenceError("INVALID_DATA", "Bitte eine gültige Zahlungsart auswählen.");
+        const profile = companyProfileById(settings, receipt.companyId);
+        if (!profile.paymentChoices.some(choice => choice.active !== false && choice.id !== "voucher"
+          && choice.title === paymentMethod && (!payment.paymentChoiceId || choice.id === payment.paymentChoiceId))) {
+          throw new PersistenceError("INVALID_DATA", "Diese Zahlungsart ist für das Unternehmen des Belegs nicht verfügbar.");
+        }
         const event = {
           type: "payment_recorded",
           recordedAt,
@@ -7262,11 +7268,11 @@
       }, "RECEIPT_PAYMENT_FAILED", "Die Zahlung konnte nicht lokal gespeichert werden.");
     }
 
-    function saveReceiptNote(receiptNumber, note, activityInput, seedReceiptsRecord) {
+    function saveReceiptNote(receiptId, note, activityInput, seedReceiptsRecord) {
       const safeNote = stringValue(note).trim();
       const activity = isPlainObject(activityInput) ? cloneSafe(activityInput) : {};
       return mutateReceipts(seedReceiptsRecord, (record, settings) => {
-        const receipt = record.receipts.find(entry => entry.number === receiptNumber);
+        const receipt = record.receipts.find(entry => entry.id === receiptId);
         if (!receipt) throw new PersistenceError("RECEIPT_NOT_FOUND", "Der Beleg wurde nicht gefunden.");
         assertCompanyProductive(settings, receipt.companyId, appBuild);
         const occurredAt = stableIso(activity.occurredAt, new Date().toISOString());
@@ -7295,18 +7301,7 @@
         return Promise.reject(new PersistenceError("INVALID_DATA", "Der Korrekturvorgang ist unvollständig."));
       }
       return mutateReceipts(seedReceiptsRecord, (record, settings) => {
-        const existingById = record.receipts.find(receipt => receipt.id === draft.id);
-        if (existingById) return { changed: false, created: false, receipt: existingById };
-        const sourceById = record.receipts.find(receipt => receipt.id === sourceReceiptReference) || null;
-        const requestedCompanyId = nullableStringId(draft.companyId);
-        const sourceByNumber = record.receipts.filter(receipt => (
-          receipt.number === sourceReceiptReference
-          && (!requestedCompanyId || receipt.companyId === requestedCompanyId)
-        ));
-        if (!sourceById && sourceByNumber.length > 1) {
-          throw new PersistenceError("RECEIPT_REFERENCE_AMBIGUOUS", "Der Ursprungsbeleg ist über seine sichtbare Nummer nicht eindeutig. Bitte verwende die stabile Belegreferenz.");
-        }
-        const source = sourceById || sourceByNumber[0] || null;
+        const source = record.receipts.find(receipt => receipt.id === sourceReceiptReference) || null;
         if (!source || source.receiptType !== "receipt") {
           throw new PersistenceError("RECEIPT_NOT_FOUND", "Der Ursprungsbeleg wurde nicht gefunden.");
         }
@@ -7314,7 +7309,15 @@
         if (nullableStringId(draft.companyId) && draft.companyId !== source.companyId) {
           throw new PersistenceError("COMPANY_REFERENCE_INVALID", "Der Korrekturbeleg gehört nicht zum Unternehmensprofil des Ursprungsbelegs.");
         }
-        const related = record.receipts.filter(receipt => (
+        const existingById = record.receipts.find(receipt => receipt.id === draft.id);
+        if (existingById) {
+          if (existingById.companyId !== source.companyId || existingById.references?.originalReceiptId !== source.id
+            || existingById.receiptType !== draft.type) {
+            throw new PersistenceError("RECEIPT_REFERENCE_AMBIGUOUS", "Die Korrektur-ID gehört nicht zu diesem Ursprungsbeleg.");
+          }
+          return { changed: false, created: false, receipt: existingById };
+        }
+        const related = record.receipts.filter(receipt => receipt.companyId === source.companyId && (
           receipt.references?.originalReceiptId === source.id
           || (!receipt.references?.originalReceiptId
             && receipt.companyId === source.companyId
@@ -7394,7 +7397,7 @@
           source.status = "cancelled";
         } else {
           const creditedCents = record.receipts
-            .filter(receipt => receipt.receiptType === "credit" && (
+            .filter(receipt => receipt.companyId === source.companyId && receipt.receiptType === "credit" && (
               receipt.references?.originalReceiptId === source.id
               || (!receipt.references?.originalReceiptId && receipt.companyId === source.companyId && receipt.reference === source.number)
             ))

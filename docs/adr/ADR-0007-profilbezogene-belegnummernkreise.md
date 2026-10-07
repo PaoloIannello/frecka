@@ -39,6 +39,12 @@ Storno und Gutschrift übernehmen `companyId` sowie die unveränderlichen Untern
 
 ## Folgen
 
+### Ergänzung MULTI-COMPANY-004D: Identität bestehender Belegmutationen
+
+Nachträgliche Zahlung, interne Notiz, Storno und Gutschrift adressieren ausschließlich die stabile Receipt-ID. Die sichtbare Nummer bleibt Anzeige-/Suchwert; `activeCompanyId` ist weder Mutationsidentität noch Zielunternehmen. Der bestehende zentrale Write-Guard prüft das `companyId` des geladenen Zielreceipts. Nachträgliche Zahlungsarten stammen aus dessen Profil und werden in derselben Schreibtransaktion erneut geprüft. Ein temporärer Profilwechsel findet nicht statt.
+
+Korrektursummen verwenden primär die stabile Ursprungs-ID und zusätzlich dieselbe Unternehmensgrenze. Historische Nummernreferenzen bleiben nur bei eindeutiger Zuordnung innerhalb desselben Unternehmens lesbar; sie sind kein Mutationsschlüssel. Belegnormalisierung und Belegnummern-Gegenprüfung unterscheiden Nummern nach Unternehmen, während Receipt-IDs installationsweit eindeutig bleiben. Schema 9, historische Snapshots, Nummernkreise, Backupformat und Lizenz-/Beta-Regeln bleiben unverändert.
+
 - Nummern können je Profil, Typ und Jahr unabhängig fortgesetzt und geprüft werden.
 - Jahreswechsel erzeugen ohne Migration einen neuen Sequenzkontext; alte Kontexte bleiben erhalten.
 - Historische Belege, Backups, PDFs, QR-/Public-Payloads und Exporte werden nicht umnummeriert.

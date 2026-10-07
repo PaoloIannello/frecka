@@ -1,6 +1,6 @@
 # Lokale Settings-, Katalog-, Kunden-, Beleg- und Gutscheinpersistenz
 
-**Stand:** MULTI-COMPANY-004B auf Basis MULTI-COMPANY-002/003/004, PODOLOGY-006, LICENSE-005, TSE-002, SETTINGS-002, USER-002, PERSISTENCE-007, BACKUP-001 und EXPORT-003
+**Stand:** MULTI-COMPANY-004D auf Basis MULTI-COMPANY-002/003/004/004B/004C, PODOLOGY-006, LICENSE-005, TSE-002, SETTINGS-002, USER-002, PERSISTENCE-007, BACKUP-001 und EXPORT-003
 **Geltungsbereich:** Kanonische verwaltbare Unternehmensprofile mit aktivem Arbeitskontext, lokaler Produktivsperre für Zusatzprofile und eng begrenzter buildgebundener Beta-Testfreigabe, profilbezogene Belegnummernkreise, vollständige FRECKA-Einstellungen, lokaler Benutzer und portable Lizenzreferenz, gerätelokale Lizenzruntime, Katalog, gemeinsame Kundenstammdaten, abgeschlossene Belege, offene Zahlungen, Stornos, Gutschriften, Gutscheine, Rezepte und Behandlungsdokumentation
 **Nicht enthalten:** Entwürfe, QR-Grafiken, E-Mail-, Kamera- und Druckstatus, PDF-Dateien sowie eine dauerhafte Ablage von Backup-Dateien
 
@@ -201,6 +201,8 @@ Neue Belege und Gutscheine referenzieren weiterhin die stabile Kunden-ID und erz
 
 ## Belegmodell, Nummernvergabe und Atomarität
 
+MULTI-COMPANY-004D härtet bestehende Belegmutationen: `recordReceiptPayment`, `saveReceiptNote` und `commitReceiptCorrection` erhalten die stabile Receipt-ID, keine sichtbare Nummer. Detail- und Zahlungszustand halten nur diese ID. Das Zielprofil und dessen zentraler Produktivguard werden aus `receipt.companyId` aufgelöst; nachträgliche Zahlungsarten werden aus diesem Profil angeboten und beim Schreiben erneut validiert. Der aktive Arbeitskontext und offene Entwürfe bleiben unverändert. Gleiche sichtbare Nummern in verschiedenen Unternehmen bleiben getrennte Receipts, auch nach Normalisierung und Reload. Historische Korrektursummen verwenden stabile Referenzen beziehungsweise ausschließlich eindeutige profilgebundene Legacy-Bezüge. Es entstehen weder Store, Migration, Schemaänderung noch gemeinsame Belegübersicht. Siehe [ADR-0007](adr/ADR-0007-profilbezogene-belegnummernkreise.md).
+
 `data.receipts` bleibt die einzige fachliche Beleglaufzeitquelle. Der Receipt-Store speichert eine versionierte Projektion genau dieser Liste. Laden und Speichern ersetzen beziehungsweise normalisieren Einträge in-place; Belegübersicht, Detail, Kassenzettel, Filter und Kundenverlauf lesen weiterhin dieselben Objekte.
 
 Der kanonische Nummernstand liegt ausschließlich unter `settings.companies[].receiptSettings.numbering` (Formatversion 1). Er enthält Modus, optionales Profilkürzel, konfigurierbare Startsequenzen sowie getrennte nächste Sequenzen für `receipt`, `cancellation` und `credit`, jeweils nach vierstelligem fachlichem Abschlussjahr. Im Receipt-Store wird kein paralleler Zähler geführt. Die bisherigen Felder `yearPrefix` und `nextNumber` sind eine synchronisierte Kompatibilitätsprojektion für die noch unveränderte Ein-Profil-Oberfläche, nicht eine zweite Wahrheit.
@@ -285,6 +287,8 @@ Beim Laden werden verwaiste Zuordnungen entfernt. Ein Standardort ist nur gülti
 - Die Reihenfolge von Objekteigenschaften ist keine Dateninvariante. Insbesondere wird ein inhaltlich identischer BACKUP-004-Reminder nach dem erhaltenden Settings-Merge mit dem kanonischen Wertvergleich geprüft und nicht mehr allein wegen einer abweichenden Schlüsselreihenfolge als reparaturbedürftig eingestuft.
 
 ## Automatisierter Browser-Smoke-Test
+
+MULTI-COMPANY-004D ergänzt Kollisionsfälle in beiden Richtungen mit identischen sichtbaren Nummern, verschiedenen Receipt-IDs, fremdem aktivem Profil, profilbezogenen Zahlungsarten, gesperrten Zielprofilen, getrennten Korrekturkreisen und unverändertem Fremdbeleg. Die Receipt-ID-Detail-/Zahlungs-/Gutschriftsansicht wird bei 320 und 390 px geprüft. Sichtbare Nummern werden als Mutationsschlüssel abgewiesen; Reload und Tenant-Snapshot erhalten beide Belege. Der aktuelle Gesamtlauf umfasst 289 Fälle.
 
 `tests/persistence-smoke.html` führt ohne zusätzliche Bibliothek native IndexedDB- und Web-Crypto-Prüfungen aus. Die Seite muss über HTTP oder HTTPS geöffnet werden und startet automatisch. Jeder Lauf verwendet einen zufälligen Datenbanknamen mit dem Präfix `frecka-persist-smoke-`, zeigt jeden Fall als PASS oder FAIL und löscht anschließend ausschließlich diese Testdatenbank. Ein Guard schützt die Produktionsdatenbank `frecka`.
 
