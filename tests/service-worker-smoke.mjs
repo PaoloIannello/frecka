@@ -7,7 +7,7 @@ const appSource = await readFile(new URL("../js/app.js", import.meta.url), "utf8
 const indexSource = await readFile(new URL("../index.html", import.meta.url), "utf8");
 const stylesSource = await readFile(new URL("../styles.css", import.meta.url), "utf8");
 const manifest = JSON.parse(await readFile(new URL("../manifest.webmanifest", import.meta.url), "utf8"));
-const baseUrl = "https://beta.frecka.app/releases/0.11.13-test/site/";
+const baseUrl = "https://beta.frecka.app/releases/0.11.14-test/site/";
 const listeners = new Map();
 const addedUrls = [];
 const deletedCaches = [];
@@ -18,6 +18,7 @@ const cacheNames = new Set([
   "frecka-app-shell-0.9.0-old",
   "frecka-app-shell-0.11.11-betapreview002-1",
   "frecka-app-shell-0.11.12-betapreview003-1",
+  "frecka-app-shell-0.11.13-betapreview004-1",
   "unrelated-application-cache"
 ]);
 
@@ -88,13 +89,13 @@ assert.equal(skipWaitingCalls, 0, "Die Installation darf den Worker nicht mehr a
 assert.equal(addedUrls.length, 23, "Der vollständige App-Shell muss vorab gecacht werden.");
 assert.equal(new Set(addedUrls).size, addedUrls.length, "App-Shell-URLs dürfen nicht doppelt sein.");
 assert.ok(addedUrls.includes(`${baseUrl}index.html`));
-assert.ok(addedUrls.includes(`${baseUrl}styles.css?v=betapreview004-1`));
-assert.ok(addedUrls.includes(`${baseUrl}vendor/jszip-v3.10.1.min.js?v=betapreview004-1`));
-assert.ok(addedUrls.includes(`${baseUrl}js/export-package.js?v=betapreview004-1`));
-assert.ok(addedUrls.includes(`${baseUrl}js/license-runtime.js?v=betapreview004-1`));
-assert.ok(addedUrls.includes(`${baseUrl}js/pwa-update.js?v=betapreview004-1`));
-assert.ok(addedUrls.includes(`${baseUrl}js/app.js?v=betapreview004-1`));
-assert.ok(addedUrls.includes(`${baseUrl}js/backup.js?v=betapreview004-1`));
+assert.ok(addedUrls.includes(`${baseUrl}styles.css?v=betapreview005-1`));
+assert.ok(addedUrls.includes(`${baseUrl}vendor/jszip-v3.10.1.min.js?v=betapreview005-1`));
+assert.ok(addedUrls.includes(`${baseUrl}js/export-package.js?v=betapreview005-1`));
+assert.ok(addedUrls.includes(`${baseUrl}js/license-runtime.js?v=betapreview005-1`));
+assert.ok(addedUrls.includes(`${baseUrl}js/pwa-update.js?v=betapreview005-1`));
+assert.ok(addedUrls.includes(`${baseUrl}js/app.js?v=betapreview005-1`));
+assert.ok(addedUrls.includes(`${baseUrl}js/backup.js?v=betapreview005-1`));
 assert.ok(addedUrls.every(url => url.startsWith(baseUrl)), "Alle URLs müssen relativ zum Release-Unterpfad bleiben.");
 
 const htmlRuntimeReferences = [...indexSource.matchAll(/(?:src|href)="([^"]+)"/g)]
@@ -109,8 +110,8 @@ for (const icon of manifest.icons) {
 
 assert.equal(manifest.start_url, "./index.html#/home");
 assert.equal(manifest.scope, "./");
-assert.equal(new URL(manifest.start_url, baseUrl).pathname, "/releases/0.11.13-test/site/index.html");
-assert.equal(new URL(manifest.scope, baseUrl).pathname, "/releases/0.11.13-test/site/");
+assert.equal(new URL(manifest.start_url, baseUrl).pathname, "/releases/0.11.14-test/site/index.html");
+assert.equal(new URL(manifest.scope, baseUrl).pathname, "/releases/0.11.14-test/site/");
 const bottomNavigationStart = indexSource.indexOf('<nav id="bottomNav"');
 assert.ok(bottomNavigationStart > 0, "Bottom-Navigation fehlt im App-Shell.");
 assert.match(indexSource.slice(0, bottomNavigationStart), /<main id="mainContent"[\s\S]*<\/main>\s*<\/div>\s*$/, "Bottom-Navigation liegt nicht außerhalb des scrollenden App-Containers.");
@@ -123,10 +124,11 @@ assert.doesNotMatch(source, /LEGACY_AUTO_ACTIVATION_FOR_SERVICEWORKER_002/, "Die
 assert.doesNotMatch(source, /clients\.claim\s*\(/, "Der Worker darf laufende Clients nicht automatisch übernehmen.");
 assert.doesNotMatch(source, /indexedDB|localStorage|sessionStorage/, "Der Worker darf keine Geschäftsdaten berühren.");
 
-const currentCache = [...cacheNames].find(name => name === "frecka-app-shell-0.11.13-betapreview004-1");
+const currentCache = [...cacheNames].find(name => name === "frecka-app-shell-0.11.14-betapreview005-1");
 assert.ok(currentCache, "Der versionsgebundene Cache wurde nicht angelegt.");
 assert.ok(cacheNames.has("frecka-app-shell-0.11.11-betapreview002-1"), "Installation darf einen historischen Cache nicht vor bewusster Aktivierung entfernen.");
-assert.ok(cacheNames.has("frecka-app-shell-0.11.12-betapreview003-1"), "Installation darf den unmittelbaren Vorgängercache nicht vor bewusster Aktivierung entfernen.");
+assert.ok(cacheNames.has("frecka-app-shell-0.11.12-betapreview003-1"), "Installation darf historische Caches nicht vor bewusster Aktivierung entfernen.");
+assert.ok(cacheNames.has("frecka-app-shell-0.11.13-betapreview004-1"), "Installation darf den unmittelbaren Vorgängercache nicht vor bewusster Aktivierung entfernen.");
 
 let unrelatedMessageWaited = false;
 listeners.get("message")({
@@ -156,7 +158,7 @@ listeners.get("activate")({
 });
 await activatePromise;
 
-assert.deepEqual(deletedCaches, ["frecka-app-shell-0.9.0-old", "frecka-app-shell-0.11.11-betapreview002-1", "frecka-app-shell-0.11.12-betapreview003-1"]);
+assert.deepEqual(deletedCaches, ["frecka-app-shell-0.9.0-old", "frecka-app-shell-0.11.11-betapreview002-1", "frecka-app-shell-0.11.12-betapreview003-1", "frecka-app-shell-0.11.13-betapreview004-1"]);
 assert.ok(cacheNames.has(currentCache));
 assert.ok(cacheNames.has("unrelated-application-cache"), "Fremde Caches dürfen nicht gelöscht werden.");
 
@@ -178,7 +180,7 @@ listeners.get("fetch")({
 assert.equal(await navigationResponse, cachedEntry, "Offline-Navigation muss auf index.html zurückfallen.");
 assert.equal(networkRequests.length, 0, "Für den gecachten Offline-Start darf kein Netzwerkzugriff nötig sein.");
 
-const cachedAsset = { source: "cache", url: `${baseUrl}styles.css?v=betapreview004-1` };
+const cachedAsset = { source: "cache", url: `${baseUrl}styles.css?v=betapreview005-1` };
 responses.set(cachedAsset.url, cachedAsset);
 let assetResponse;
 listeners.get("fetch")({

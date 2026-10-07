@@ -754,6 +754,8 @@ Diese Entscheidungen werden nicht geraten. Sie blockieren keine lokale Entwicklu
 
 ## 18. Verbindliche Begleitdokumente
 
+Aktueller Release-Prep: `0.11.14 / BETA-PREVIEW-005` bündelt 004D/005; Freigabenachweis `docs/releases/0.11.14.md`. Asset-Key `betapreview005-1`, App-Shell-Cache `frecka-app-shell-0.11.14-betapreview005-1`, Schema 9. Release-ID ausschließlich aus dem späteren echten Release-Commit ableiten. Dieser Vorbereitungsschritt erzeugt weder Tag noch Artefakt oder Upload; reale Geräteabnahme und Web-Station-Umschaltung bleiben separate Gates.
+
 - `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`;
 - `docs/architecture/deployment-synology.md`;
 - `docs/adr/ADR-0003-synology-als-infrastrukturplattform.md`;

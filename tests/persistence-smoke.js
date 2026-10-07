@@ -3816,17 +3816,19 @@
   }
 
   function buildMultiCompanyBetaTestTests(context) {
-    const betaBuild = "BETA-PREVIEW-004";
+    const betaBuild = "BETA-PREVIEW-005";
     const priorBetaBuild = "BETA-PREVIEW-003";
     const originalBetaBuild = "BETA-PREVIEW-002";
-    const nonBetaBuild = "RELEASE-0.11.13";
+    const nonBetaBuild = "RELEASE-0.11.14";
     const disallowedBuilds = Object.freeze([
-      "BETA-PREVIEW-005",
+      "BETA-PREVIEW-006",
       nonBetaBuild,
       "PRODUCTION",
       "",
-      "BETA-PREVIEW-004-DEV",
-      "beta-preview-004",
+      "BETA-PREVIEW-005-DEV",
+      "BETA-PREVIEW-005-TEST",
+      "RELEASE",
+      "beta-preview-005",
       "UNKNOWN-BUILD"
     ]);
     const setupFixture = tenantId => {
@@ -4165,7 +4167,9 @@
             "Profil 1 wurde durch das Beta-Gate verändert");
           assertEqual(blocked.code, "activation_required", "Zusatzprofil verlor den echten Aktivierungsstatus");
           assert(!blocked.productive && blocked.betaProductiveTestAvailable, "Zusatzprofil ist ohne explizite Freigabe produktiv");
-          assert(api.betaProductiveTestBuildAllowed(betaBuild), "BETA-PREVIEW-004 fehlt in der expliziten Allowlist");
+          assert(api.betaProductiveTestBuildAllowed(betaBuild), "BETA-PREVIEW-005 fehlt in der expliziten Allowlist");
+          assert(api.betaProductiveTestBuildAllowed("BETA-PREVIEW-004"), "Bestehende BETA-PREVIEW-004-Freigabe ging verloren");
+          assert(api.companyProductiveStatus(api.setCompanyBetaProductiveTest(settings, additional.id, true, "BETA-PREVIEW-004"), additional.id, "BETA-PREVIEW-004").productive, "Bestehender Beta-004-Modus ging verloren");
           assert(api.betaProductiveTestBuildAllowed(priorBetaBuild), "BETA-PREVIEW-003 ging aus dem bestehenden Testvertrag verloren");
           assert(api.betaProductiveTestBuildAllowed(originalBetaBuild), "BETA-PREVIEW-002 ging aus dem bestehenden Testvertrag verloren");
           disallowedBuilds.forEach(build => {
@@ -4401,7 +4405,7 @@
             "Reload verlor die lokale Beta-Testfreigabe");
           assert((await source.readReceipts()).receipts.some(receipt => receipt.id === committed.receipt.id),
             "Reload verlor den Beta-Profilbeleg");
-          const snapshot = await source.exportTenantSnapshot({ appVersion: "0.11.13", appBuild: betaBuild });
+          const snapshot = await source.exportTenantSnapshot({ appVersion: "0.11.14", appBuild: betaBuild });
           const serialized = JSON.stringify(snapshot);
           assert(!serialized.includes("betaProductiveTest"), "Portable Sicherung enthält die lokale Beta-Testfreigabe");
           const encrypted = await backupApi.encryptTenantSnapshot(snapshot, "Beta-Test-Sicherungskennwort 2030");
@@ -4684,6 +4688,10 @@
             await client.readSettings(), fixture.companyId, true, betaBuild, "2030-07-05T08:00:00.000Z"
           );
           await client.writeSettings(betaEnabledSettings);
+          const foreignDraftSettings = clone(betaEnabledSettings);
+          foreignDraftSettings.activeCompanyId = fixture.companyId;
+          await client.commitReceipt(companyDraft("context-foreign-draft", foreignDraftSettings,
+            "2030-07-05T09:00:00.000Z"), betaEnabledSettings, await client.readReceipts());
           const initialSettings = await client.readSettings();
           const numberingBefore = initialSettings.companies.map(profile => clone(profile.receiptSettings.numbering));
           const customersBefore = clone(await client.readCustomers());
@@ -4782,6 +4790,10 @@
               assert(doc().querySelector("#bottomSheetBackdrop").hidden, "Ansichtsfilter löst Draft-Guard aus");
               assertEqual(doc().querySelector("#businessSwitcher").value, businessBefore, "Ansichtsfilter ändert Bereich");
             }
+            doc().querySelector('[data-open-receipt="context-foreign-draft"]').click();
+            await waitFor(() => doc()?.querySelector("#receiptInternalNote"), "Fremdreceipt bei offenem Entwurf");
+            assertEqual(doc().querySelector("#businessSwitcher").value, businessBefore, "Fremdreceipt ändert Draft-Bereich");
+            assertEqual((await client.readSettings()).activeCompanyId, primaryId, "Fremdreceipt wechselt Draft-Unternehmen");
             doc().querySelector('[data-route="home"]').click();
             await waitFor(() => doc()?.querySelector('[data-action="resume-receipt"]'), "Entwurf auf Startseite");
             doc().querySelector('[data-action="resume-receipt"]').click();
@@ -6152,7 +6164,7 @@
           ["is-share", "is-menu", "is-home", "is-app", "is-confirm"].forEach(icon => assert(css.includes(icon), `Lokales Piktogramm fehlt: ${icon}`));
           assert(css.includes("@media(max-width:390px)") && css.includes("@media(max-width:350px)"), "Mobile Installationsdarstellung ist nicht abgesichert");
           assert(!index.includes('data-route="installation"'), "Installationshilfe wurde fälschlich zur Hauptnavigation hinzugefügt");
-          assert(worker.includes('\"./js/app.js?v=betapreview004-1\"') && worker.includes('\"./styles.css?v=betapreview004-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
+          assert(worker.includes('\"./js/app.js?v=betapreview005-1\"') && worker.includes('\"./styles.css?v=betapreview005-1\"'), "Installationshilfe ist nicht Bestandteil der vorhandenen App-Shell-Dateien");
 
           const measureInstallationLayout = width => new Promise((resolve, reject) => {
             const frame = document.createElement("iframe");
@@ -6211,7 +6223,7 @@
           const css = await cssResponse.text();
           const index = await indexResponse.text();
           assert(index.includes('content="width=device-width, initial-scale=1, viewport-fit=cover"'), "Mobiler Viewport-Vertrag fehlt");
-          assert(index.includes('href="styles.css?v=betapreview004-1"'), "Die weiterhin wirksamen ANDROID-001-Styles fehlen im aktuellen Cache-Schlüssel");
+          assert(index.includes('href="styles.css?v=betapreview005-1"'), "Die weiterhin wirksamen ANDROID-001-Styles fehlen im aktuellen Cache-Schlüssel");
           assert(!css.includes("text-size-adjust") && !css.includes("font-size: 16px !important"), "Browserpräferenz wird aggressiv überschrieben");
           ["renderHome", "renderSettings", "renderReceiptDetail", "renderReceiptPreview"].forEach(renderer => {
             assert(appSource.includes(`function ${renderer}(`), `Produktive Ansicht fehlt: ${renderer}`);

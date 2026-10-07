@@ -20,7 +20,7 @@ ODER
 (betaProductiveTest.enabled UND aktueller Build ausdrücklich freigegeben)
 ```
 
-Der aktuelle Vertrag erlaubt die Testfreigabe ausschließlich für die explizit genannten kanonischen Buildkennungen `BETA-PREVIEW-002`, `BETA-PREVIEW-003` und `BETA-PREVIEW-004`. Die dritte Kennung erweitert die kontrollierte Geräteabnahme auf Version 0.11.13 mit MULTI-COMPANY-004C; es gibt weder Präfix- noch Wildcard-Freigaben. Hostname, URL und Installationsmodus sind keine Berechtigungsquelle. Jeder andere Build ignoriert ein gespeichertes Flag immer. Profil 1 verwendet unverändert den regulären Pfad und kann keine Beta-Testfreigabe erhalten.
+Der aktuelle Vertrag erlaubt die Testfreigabe ausschließlich für die explizit genannten kanonischen Buildkennungen `BETA-PREVIEW-002`, `BETA-PREVIEW-003`, `BETA-PREVIEW-004` und `BETA-PREVIEW-005`. Die dritte Kennung erweitert die kontrollierte Geräteabnahme auf Version 0.11.13 mit MULTI-COMPANY-004C; es gibt weder Präfix- noch Wildcard-Freigaben. Hostname, URL und Installationsmodus sind keine Berechtigungsquelle. Jeder andere Build ignoriert ein gespeichertes Flag immer. Profil 1 verwendet unverändert den regulären Pfad und kann keine Beta-Testfreigabe erhalten.
 
 Das Zusatzprofil bleibt fachlich und lizenzrechtlich `activation_required`. Die UI bezeichnet den wirksamen Zustand ausschließlich als Beta-Testmodus und weist darauf hin, dass keine reguläre Lizenz besteht. Aktivieren und Deaktivieren verändern weder `license`, `licenseRuntime`, Serveridentität, Geräteschlüssel noch Nummernkreise.
 
@@ -29,6 +29,8 @@ Die Freigabe ist installationslokaler Testzustand. Die zentrale portable Tenant-
 Nach erfolgreicher zentraler Guard-Prüfung laufen Belege, Korrekturen, Gutscheine, Rezepte und Behandlungsdokumentation unverändert durch ihre vorhandenen atomaren und profilgebundenen Pfade. Es gibt keine fachlichen Einzel-Bypässe.
 
 ## Folgen
+
+BETA-PREVIEW-005 ergänzt als vierte exakt benannte Kennung die kontrollierte 0.11.14-Abnahme von 004D/005. Bestehende Freigaben bleiben erhalten; `BETA-PREVIEW-006`, erweiterte oder anders geschriebene Kennungen und Produktionsbuilds bleiben gesperrt. Produktstatus und portable Ausschlüsse ändern sich nicht.
 
 - Die reale Beta kann produktive Pfade eines gezielt freigegebenen Zusatzprofils prüfen.
 - Der echte Status `activation_required` und die spätere Multi-Binding-Architektur bleiben unverändert.

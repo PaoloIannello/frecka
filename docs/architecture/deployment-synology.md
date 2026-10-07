@@ -2,7 +2,7 @@
 
 Stand: 28. September 2026
 
-Geltungsbereich: historische Beta-Stände bis `0.11.12` / `BETA-PREVIEW-003`, vorbereiteter Home-Kontextwechsel-Betatest `0.11.13` / `BETA-PREVIEW-004` und lokaler automatisierter Beta-Release
+Geltungsbereich: historische Beta-Stände bis `0.11.13` / `BETA-PREVIEW-004`, vorbereiteter Belegübersicht-Betatest `0.11.14` / `BETA-PREVIEW-005` und lokaler automatisierter Beta-Release
 
 Der verbindliche Infrastrukturrahmen steht in `docs/architecture/FRECKA_Infrastructure_Blueprint_V1.0.md`. Dieses Dokument konkretisiert ausschließlich die statische Laufzeitmenge und ihre spätere Zuordnung zu Synology Web Station.
 
@@ -258,6 +258,8 @@ Das veröffentlichte Release `0.11.9-2d6b2d4` ergänzt ausschließlich PODOLOGY-
 0.11.12 ergänzt auf Basis von 0.11.11 ausschließlich MULTI-COMPANY-004B. Die lokale, profilbezogene Testfreigabe bleibt auf die explizit genannten Builds `BETA-PREVIEW-002` und `BETA-PREVIEW-003` begrenzt, verändert den Status `activation_required` nicht und wird weder gesichert noch exportiert. Schema, Stores, Lizenzruntime und Fachpfade bleiben unverändert. Die strukturierte technische Freigabe steht in `docs/releases/0.11.12.md`. Tag, Artefakt, Upload, Web-Station-Umschaltung, Geräteabnahme und Produktion bleiben separate Gates.
 
 ### 2.24 Vorbereiteter Home-Kontextwechsel-Betatest 0.11.13
+
+Der nachfolgende vorbereitete Stand 0.11.14 / BETA-PREVIEW-005 bündelt 004D/005 auf Schema 9, verwendet `betapreview005-1` und `frecka-app-shell-0.11.14-betapreview005-1` und ergänzt exakt die neue Buildkennung in der Beta-Allowlist. Freigabenachweis: `docs/releases/0.11.14.md`. Zielpfade und Deploymentlogik bleiben unverändert; Release-ID und Artefakt entstehen erst aus einem späteren freigegebenen Release-Commit. Web Station, Geräteabnahme und Produktion bleiben manuelle Gates.
 
 0.11.13 ergänzt auf Basis von 0.11.12 ausschließlich MULTI-COMPANY-004C. Der Home-Switcher verwendet für Unternehmen den kanonischen persistierenden Profilwechsel samt Draft-Schutz und für Geschäftsbereiche den vorhandenen Laufzeitzustand. Die lokale Testfreigabe bleibt auf die einzeln benannten Builds `BETA-PREVIEW-002`, `BETA-PREVIEW-003` und `BETA-PREVIEW-004` begrenzt. Schema, Stores, Lizenzruntime, Nummernkreise und Ausgabeformate bleiben unverändert. Die strukturierte technische Freigabe steht in `docs/releases/0.11.13.md`. Tag, Artefakt, Upload, Web-Station-Umschaltung, Geräteabnahme und Produktion bleiben separate Gates.
 
