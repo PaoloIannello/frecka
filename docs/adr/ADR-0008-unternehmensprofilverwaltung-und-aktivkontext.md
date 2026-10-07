@@ -35,7 +35,15 @@ Der Kontextschalter ruft genau diesen zentralen Draft-Schutz auf. Er zeigt den b
 
 Bis zu einem eigenen Lizenz-Multi-Binding-Block ist ausschließlich Profil 1 produktiv. Jedes weitere Profil ist auswählbar und konfigurierbar, bleibt aber lokal `activation_required`; Belegabschluss und weitere produktive Mutationen werden in der Persistenzschicht abgewiesen. Die Lizenzreferenz oder Runtime von Profil 1 wird nicht kopiert. Diese konservative Zwischenregel ist keine Lizenzautorisation.
 
-Unternehmensprofile werden in V1 nicht physisch gelöscht. Dadurch entstehen weder Kaskaden noch verwaiste historische Daten. Bis MULTI-COMPANY-005 werden bestehende Beleglisten und Exporte sicher auf das aktive Profil begrenzt; eine profilübergreifende Übersicht oder Steuerberaterauswertung ist nicht Teil dieser Entscheidung.
+Unternehmensprofile werden in V1 nicht physisch gelöscht. Dadurch entstehen weder Kaskaden noch verwaiste historische Daten. MULTI-COMPANY-005 ergänzt ausschließlich die gemeinsame Belegübersicht; Exporte bleiben unabhängig vom Ansichtsfilter auf ihren bestehenden Vertrag begrenzt. Insbesondere bleibt der Steuerberaterexport unternehmensbezogen, ohne steuerliche Konsolidierung.
+
+### Ergänzung MULTI-COMPANY-005: unabhängiger Belegfilter
+
+`activeCompanyId` bleibt der produktive Unternehmenskontext. `receiptCompanyFilter` ist ausschließlich flüchtiger UI-Zustand: ein vorhandenes Profil oder `all`. Normale Navigation zur Übersicht initialisiert ihn aus dem aktiven Unternehmen; Rückkehr aus Belegdetail und Dokument-/Korrekturansicht erhält die Auswahl. Bei einem Profil entfällt die Auswahl. Es gibt keine Filterpersistenz, zweite Unternehmensautorität, Migration oder zusätzliche Belegsammlung.
+
+Die Übersicht filtert die gemeinsame kanonische Laufzeitquelle `data.receipts` nach `receipt.companyId`, anschließend nach bestehendem Status und Suchtext, und sortiert weiterhin chronologisch. Zählung und Summe beziehen sich ausschließlich auf sichtbare Belege; dies ist keine steuerliche Auswertung. Bei allen Unternehmen zeigt jede Zeile das explizite Profilkürzel oder den historischen Ausstellernamen aus dem Receipt-Snapshot. Aktuelle Unternehmensdaten ersetzen keine historischen Dokumentdaten.
+
+`receipt.id` bleibt technische Identität; gleiche sichtbare Nummern verschiedener Unternehmen bleiben getrennte Treffer. Fremde Belege öffnen ohne Profil-/Geschäftsbereichs- oder Entwurfswechsel. Mutationen verwenden unverändert ADR-0007/004D: Zielreceipt, dessen `companyId`, Zahlungsarten, Write-Guard und Nummernkreise. Die aktive Lizenz autorisiert kein fremdes Profil. Kundenhistorie, Gutscheine und Podologie behalten ihre bestehenden Unternehmensgrenzen; der Filter wird weder exportiert noch gesichert oder öffentlich transportiert.
 
 ## Folgen
 
@@ -45,7 +53,7 @@ Unternehmensprofile werden in V1 nicht physisch gelöscht. Dadurch entstehen wed
 - Offene Entwürfe und profilfremde Referenzen können keine Cross-Company-Geschäftsvorfälle erzeugen.
 - Vollbackup und Restore enthalten alle Profile gemeinsam; `licenseRuntime` bleibt ausgeschlossen und Restore hebt die Produktsperre eines Zusatzprofils nicht auf.
 - Profilbearbeitung wirkt nur auf künftige Vorgänge. Dokumente, Public Viewer, QR, PDFs und historische Exporte bleiben snapshotbasiert.
-- Die vollständige Aktivierung weiterer Profile benötigt einen getrennten Lizenz-Multi-Binding-Block. Profilübergreifende Listen und Exporte benötigen MULTI-COMPANY-005.
+- Die vollständige Aktivierung weiterer Profile benötigt einen getrennten Lizenz-Multi-Binding-Block. Die gemeinsame Belegliste aus MULTI-COMPANY-005 erteilt keine profilübergreifende Export- oder Schreibberechtigung.
 
 ## Alternativen
 

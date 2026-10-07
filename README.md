@@ -12,6 +12,8 @@ Ein vollständig neuer Mandant startet ohne Kunden, Katalogpositionen, Belege, o
 
 ## Betriebsmodell V1.0
 
+Entwicklungsstand nach dem unveränderten Release 0.11.13: MULTI-COMPANY-004D adressiert Belegmutationen über stabile Receipt-IDs. MULTI-COMPANY-005 ergänzt eine gemeinsame Belegübersicht mit unabhängigem Unternehmensfilter. Der Filter ändert weder aktives Unternehmen noch Geschäftsbereich oder Entwurf. Exporte behalten ihren bestehenden Vertrag; der Steuerberaterexport bleibt unternehmensbezogen. Details: [ADR-0008](docs/adr/ADR-0008-unternehmensprofilverwaltung-und-aktivkontext.md). Dies ist noch kein neuer Release oder Gerätefreigabenachweis.
+
 FRECKA V1.0 ist im definierten Einsatz ein lokales Beleg- und Dokumentationstool für Geschäftsvorfälle, Einnahmen und Zahlungsarten. Es ersetzt weder Kassenbuch, vollständige Kassenführung, Kassenbericht, Kassensturz noch Buchhaltung. Nach der mitgeteilten individuellen steuerberaterlichen Einordnung ist für genau dieses Betriebsmodell keine TSE vorgesehen; daraus folgt keine allgemeine TSE-Befreiung für FRECKA oder andere Betriebe. Abweichende Nutzung oder erweiterter Funktionsumfang muss erneut steuerlich eingeordnet werden. Die verbindliche Reichweite, Grenze zur offenen Ladenkasse und weiterhin offenen V1-Compliance-Punkte stehen in [`docs/compliance-v1.md`](docs/compliance-v1.md).
 
 UX-011 / UPDATE-002 / BACKUP-003/004 ergänzt darauf eine reale Seite **Einstellungen → Update**, bereinigt veraltete „Geplant“-Kennzeichnungen und erinnert nach einem wählbaren Intervall ohne bestätigte Sicherungsdatei nicht blockierend an ein neues lokales Backup. Zur Auswahl stehen 48 Stunden, 5 Tage und wöchentlich; wöchentlich ist der abwärtskompatible Standard. Die manuelle Suche verwendet den vorhandenen Updatecontroller; Restore übernimmt die Intervallwahl, gilt aber niemals als neue Sicherung und bewahrt lokale Frist- und Snooze-Zeitpunkte.
@@ -60,7 +62,7 @@ ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzei
 - ein offener Beleg-, Gutschein- oder Podologieentwurf blockiert den Profilwechsel; Geschäftsbereiche und Leistungsorte werden ausschließlich im aktiven Profil bearbeitet
 - Kunden bleiben gemeinsam, während Gutscheine, Rezepte, Behandlungen und produktive Mutationen profilgebunden bleiben
 - zusätzliche Profile sind zur Konfiguration auswählbar, aber bis zum gesonderten Lizenz-Multi-Binding-Block technisch `activation_required` und nicht produktiv schreibfähig
-- Beleglisten und Exporte sind bis MULTI-COMPANY-005 sicher auf das aktive Profil begrenzt; noch keine profilübergreifende Auswertung
+- Im Release 0.11.11 sind Beleglisten und Exporte auf das aktive Profil begrenzt; der spätere Entwicklungsblock MULTI-COMPANY-005 erweitert nur die Belegliste, nicht die steuerliche Auswertung
 - zentrale Auflösung statt verstreuter `companies[0]`-Annahmen; nach Schema 9 gibt es keinen stillen Profil-1-Fallback für fehlende Referenzen
 - einheitliche Release-, Asset- und App-Shell-Kennung `0.11.11 / BETA-PREVIEW-002 / betapreview002-1`; reale In-place-Migration und Geräteabnahme bleiben nachgelagerte Gates
 

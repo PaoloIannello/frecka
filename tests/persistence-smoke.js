@@ -3888,6 +3888,158 @@
 
     return [
       {
+        name: "MULTI-COMPANY-005: Gemeinsame Liste isoliert Filter, Identität, Snapshots und fremde Mutationen",
+        run: async () => {
+          const waitFor = async predicate => {
+            for (let attempt = 0; attempt < 180; attempt += 1) {
+              if (await predicate()) return;
+              await new Promise(resolve => setTimeout(resolve, 50));
+            }
+            throw new Error("Gemeinsame Belegübersicht wurde nicht rechtzeitig bereit");
+          };
+          const [indexSource, cssSource] = await Promise.all([
+            fetch("../index.html", { cache: "no-store" }).then(response => response.text()),
+            fetch("../styles.css", { cache: "no-store" }).then(response => response.text())
+          ]);
+          // Development keeps release asset keys unchanged; inspect current CSS, not HTTP cache.
+          const index = indexSource.replace(/<link rel="stylesheet"[^>]+>/, `<style>${cssSource}</style>`);
+          const client = context.makeClient("receipt-view-filter", { appBuild: betaBuild });
+          const fixture = setupFixture(client.tenantId);
+          let settings = await enableBetaTest(client, fixture);
+          const primaryId = settings.companies[0].id;
+          let record = await client.readReceipts();
+          for (const [id, companyId, date, open] of [
+            ["view-a1", primaryId, "2030-07-02T10:00:00.000Z", false],
+            ["view-a2", primaryId, "2030-07-02T12:00:00.000Z", false],
+            ["view-b1", fixture.companyId, "2030-07-02T11:00:00.000Z", true],
+            ["view-b2", fixture.companyId, "2030-07-02T13:00:00.000Z", false],
+            ["view-b3", fixture.companyId, "2030-07-02T14:00:00.000Z", false]
+          ]) {
+            const draftSettings = clone(settings);
+            draftSettings.activeCompanyId = companyId;
+            const result = await client.commitReceipt(companyDraft(id, draftSettings, date,
+              open ? { paymentStatus: "open", paymentMethod: null } : {}), settings, record);
+            settings = result.settingsRecord;
+            record = result.receiptsRecord;
+          }
+          record.receipts.filter(receipt => ["view-a1", "view-b1"].includes(receipt.id))
+            .forEach(receipt => { receipt.number = receipt.receiptNumber = "2030-000001"; });
+          record = await client.writeReceipts(record);
+          settings.activeCompanyId = primaryId;
+          settings.companies[1].paymentChoices = [{ id: "paypal", title: "PayPal", active: true }];
+          settings.companies[0].company.name = "Aktueller Name ohne erfundenes Kürzel mit sehr langem Unternehmensnamen";
+          settings.companies[1].company.name = "Umbenannter aktueller Aussteller";
+          await client.writeSettings(settings);
+          const settingsBefore = await client.readSettings();
+          const receiptsBefore = await client.readReceipts();
+          const primaryReceipts = receiptsBefore.receipts.filter(receipt => receipt.companyId === primaryId);
+          for (const width of [320, 390, 1280]) {
+            const frame = document.createElement("iframe");
+            frame.title = `Gemeinsame Belegübersicht ${width}px`;
+            frame.style.cssText = `position:fixed;left:-2000px;top:0;width:${width}px;height:844px;border:0`;
+            setIsolatedAppFrame(frame, isolatedAppMarkup(index, client, "receipts", context.databaseName, { appBuild: betaBuild }));
+            document.body.append(frame);
+            try {
+              const doc = () => frame.contentDocument;
+              await waitFor(() => doc()?.querySelector("#receiptCompanyFilter"));
+              const select = value => {
+                const field = doc().querySelector("#receiptCompanyFilter");
+                field.value = value;
+                field.dispatchEvent(new frame.contentWindow.Event("change", { bubbles: true }));
+              };
+              const visibleIds = () => [...doc().querySelectorAll(".receipt-admin-list [data-open-receipt]")].map(button => button.dataset.openReceipt);
+              assertEqual(doc().querySelector("#receiptCompanyFilter").value, primaryId, "Standardfilter ist nicht Aktivprofil");
+              assert(!visibleIds().includes("view-b1") && visibleIds().includes("view-a1"), "Standardliste vermischt Profile");
+              select(fixture.companyId);
+              assert(visibleIds().includes("view-b1") && !visibleIds().includes("view-a1"), "Einzelfilter B ist falsch");
+              select("all");
+              assert(visibleIds().includes("view-a1") && visibleIds().includes("view-b1"), "Gemeinsame Liste verliert Receipts");
+              assertEqual(doc().querySelectorAll(".receipt-company-marker").length, visibleIds().length, "Unternehmensmarker fehlt");
+              assert(doc().querySelector('[data-open-receipt="view-b1"] .receipt-company-marker').textContent === "CTS", "Explizites Kürzel fehlt");
+              assert(!doc().querySelector('[data-open-receipt="view-a1"] .receipt-company-marker').textContent.includes("Aktueller Name"), "Historischer Aussteller durch Stammdaten ersetzt");
+              const ids = visibleIds().filter(id => id.startsWith("view-"));
+              assertDeepEqual(ids, ["view-b3", "view-b2", "view-a2", "view-b1", "view-a1"], "Chronologie gruppiert Unternehmen");
+              const search = doc().querySelector("#receiptSearch");
+              search.value = "2030-000001";
+              search.dispatchEvent(new frame.contentWindow.Event("input", { bubbles: true }));
+              assertEqual(visibleIds().length, 2, "Kollidierende Nummer wurde dedupliziert");
+              assert(doc().querySelector(".receipt-list-summary strong").textContent.includes("78,00"), "Summe entspricht nicht gefilterten Belegen");
+              const filter = doc().querySelector("#receiptCompanyFilter");
+              assert(filter.labels.length && filter.getAttribute("aria-describedby"), "Filter ohne zugängliche Beschriftung");
+              await waitFor(() => doc().querySelector("#receiptCompanyFilter").getBoundingClientRect().height >= 44);
+              assert(doc().documentElement.scrollWidth <= frame.contentWindow.innerWidth, `Überlauf bei ${width}px`);
+              const areaBefore = doc().querySelector("#businessSwitcher").value;
+              doc().querySelector('[data-open-receipt="view-b1"]').click();
+              await waitFor(() => doc()?.querySelector("#receiptInternalNote"));
+              assertEqual(doc().querySelector("#businessSwitcher").value, areaBefore, "Detail wechselt Geschäftsbereich");
+              assertEqual((await client.readSettings()).activeCompanyId, primaryId, "Filter/Detail wechselt Aktivprofil");
+              assertDeepEqual(await client.readSettings(), settingsBefore, "Reiner Filter schreibt Einstellungen");
+              assertDeepEqual(await client.readReceipts(), receiptsBefore, "Reiner Filter schreibt Belege");
+              doc().querySelector('[data-preview-receipt="view-b1"]').click();
+              await waitFor(() => doc()?.querySelector(".receipt-paper"));
+              assert(doc().querySelector(".receipt-paper").textContent.includes("Podologie Beta"), "Fremddokument verwendet aktuellen statt historischen Aussteller");
+              doc().querySelector('[data-route="receipt-detail"]').click();
+              await waitFor(() => doc()?.querySelector("#receiptInternalNote"));
+              doc().querySelector('[data-document-output-action="qr"]').click();
+              await waitFor(() => doc()?.querySelector("#qrFullscreen") && !doc().querySelector("#qrFullscreen").hidden);
+              assert(doc().querySelector("#qrFullscreenCode svg"), "Fremdreceipt ohne QR");
+              doc().querySelector("#qrFullscreenClose").click();
+              assertEqual((await client.readSettings()).activeCompanyId, primaryId, "Dokumentaktion wechselt Aktivprofil");
+              if (width === 1280) {
+                doc().querySelector("#receiptInternalNote").value = "Nur Unternehmen B";
+                doc().querySelector('[data-action="save-receipt-note"]').click();
+                await waitFor(async () => (await client.readReceipts()).receipts.find(receipt => receipt.id === "view-b1").internalNote === "Nur Unternehmen B");
+                await waitFor(() => doc()?.querySelector(".receipt-action-notice"));
+                doc().querySelector('[data-record-payment="view-b1"]').click();
+                await waitFor(() => doc()?.querySelector('[data-payment-capture-method="paypal"]'));
+                assertEqual(doc().querySelectorAll("[data-payment-capture-method]").length, 1, "Zahlungsarten aus Aktivprofil");
+                doc().querySelector('[data-payment-capture-method="paypal"]').click();
+                await waitFor(async () => (await client.readReceipts()).receipts.find(receipt => receipt.id === "view-b1").paymentStatus === "paid");
+                // Separate B origins: mutations are entered through the shared list.
+                for (const [origin, action] of [["view-b2", "cancel-receipt"], ["view-b3", "credit"]]) {
+                  doc().querySelector('[data-route="receipts"]').click();
+                  await waitFor(() => doc()?.querySelector("#receiptCompanyFilter"));
+                  select("all");
+                  const field = doc().querySelector("#receiptSearch");
+                  field.value = "";
+                  field.dispatchEvent(new frame.contentWindow.Event("input", { bubbles: true }));
+                  doc().querySelector(`[data-open-receipt="${origin}"]`).click();
+                  await waitFor(() => doc()?.querySelector("#receiptInternalNote"));
+                  if (action === "credit") {
+                    doc().querySelector('[data-route="receipt-credit"]').click();
+                    doc().querySelector('[data-action="create-full-credit"]').click();
+                  } else doc().querySelector('[data-action="cancel-receipt"]').click();
+                  await waitFor(() => doc()?.querySelector('#confirmDiscard'));
+                  doc().querySelector('#confirmDiscard').click();
+                  await waitFor(async () => (await client.readReceipts()).receipts.some(receipt => receipt.references?.originalReceiptId === origin));
+                  await waitFor(() => doc()?.querySelector("#receiptInternalNote"));
+                }
+                const after = await client.readReceipts();
+                assertDeepEqual(after.receipts.filter(receipt => receipt.companyId === primaryId), primaryReceipts, "Fremdmutation änderte A");
+                assert(after.receipts.filter(receipt => receipt.references?.originalReceiptId?.startsWith("view-b")).every(receipt => receipt.companyId === fixture.companyId), "Korrektur im falschen Unternehmen");
+                const afterSettings = await client.readSettings();
+                assertEqual(afterSettings.activeCompanyId, primaryId, "Mutation änderte Aktivprofil");
+                assertDeepEqual(afterSettings.companies[0].receiptSettings.numbering, settingsBefore.companies[0].receiptSettings.numbering, "Korrektur änderte A-Counter");
+                const snapshot = await client.exportTenantSnapshot();
+                assert(!JSON.stringify(snapshot).includes("receiptCompanyFilter"), "Ansichtsfilter im Backup");
+                const projection = exportApi.createExportProjection(snapshot, {
+                  periodType: "custom", dateFrom: "2030-07-01", dateTo: "2030-07-31", exportType: "tax-advisor"
+                });
+                assertEqual(projection.receipts.length, 2, "Ansichtsfilter erweitert Steuerberaterexport um B-Belege");
+                const blocked = api.setCompanyBetaProductiveTest(afterSettings, fixture.companyId, false, betaBuild);
+                await client.writeSettings(blocked);
+                await assertRejects(() => client.saveReceiptNote("view-b1", "Gesperrt", {}, after), "COMPANY_ACTIVATION_REQUIRED", "A autorisiert B");
+                await client.writeSettings(afterSettings);
+              }
+              assertDeepEqual(frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS, [], "Gemeinsame Liste verursacht Laufzeitfehler");
+            } finally {
+              frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase();
+              frame.remove();
+            }
+          }
+        }
+      },
+      {
         name: "MULTI-COMPANY-004D: Receipt-ID-Mutationen isolieren kollidierende Nummern in beiden Richtungen",
         run: async () => {
           const waitFor = async predicate => {
@@ -4471,6 +4623,9 @@
               assert(doc().documentElement.scrollWidth <= frame.contentWindow.innerWidth,
                 `Single-Company-Header läuft bei ${width} px horizontal über`);
               assertDeepEqual(frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS, [], "Single-Company-Umschalter verursachte Laufzeitfehler");
+              doc().querySelector('[data-route="receipts"]').click();
+              await waitFor(() => doc()?.querySelector(".receipts-page"));
+              assert(!doc().querySelector("#receiptCompanyFilter"), "Single Company zeigt unnötigen Belegfilter");
             } finally {
               frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase();
               frame.remove();
@@ -4614,6 +4769,25 @@
               "Draft-Schutz meldet den blockierten Wechsel nicht");
             assertEqual((await client.readSettings()).activeCompanyId, primaryId, "Draft-Schutz ließ activeCompanyId wechseln");
             assert(doc().querySelector(".compact-cart.has-items"), "Blockierter Wechsel verwarf den Draft");
+            doc().querySelector("#bottomSheetClose").click();
+            const cartBefore = doc().querySelector(".compact-cart-summary > span").textContent
+              + doc().querySelector(".compact-cart-summary > strong").textContent;
+            const businessBefore = doc().querySelector("#businessSwitcher").value;
+            doc().querySelector('[data-route="receipts"]').click();
+            await waitFor(() => doc()?.querySelector("#receiptCompanyFilter"), "Belegfilter mit offenem Entwurf");
+            for (const value of [fixture.companyId, "all"]) {
+              const filter = doc().querySelector("#receiptCompanyFilter");
+              filter.value = value;
+              filter.dispatchEvent(new frame.contentWindow.Event("change", { bubbles: true }));
+              assert(doc().querySelector("#bottomSheetBackdrop").hidden, "Ansichtsfilter löst Draft-Guard aus");
+              assertEqual(doc().querySelector("#businessSwitcher").value, businessBefore, "Ansichtsfilter ändert Bereich");
+            }
+            doc().querySelector('[data-route="home"]').click();
+            await waitFor(() => doc()?.querySelector('[data-action="resume-receipt"]'), "Entwurf auf Startseite");
+            doc().querySelector('[data-action="resume-receipt"]').click();
+            await waitFor(() => doc()?.querySelector(".compact-cart.has-items"), "Unveränderter Entwurf nach Ansichtsfilter");
+            assertEqual(doc().querySelector(".compact-cart-summary > span").textContent
+              + doc().querySelector(".compact-cart-summary > strong").textContent, cartBefore, "Ansichtsfilter veränderte Entwurf");
             assertDeepEqual(frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS, [], "Context-Switcher verursachte UI-Laufzeitfehler");
           } finally {
             frame.contentWindow?.FRECKA_PERSISTENCE?.closeDatabase();

@@ -79,6 +79,8 @@ BETA-HANDOFF-001 trennt den produktiven Erststart zusätzlich von der historisch
 
 ## Datenbankvertrag
 
+MULTI-COMPANY-005 ergänzt ausschließlich `receiptCompanyFilter` im App-UI-State. Der Filter liest dieselbe gemeinsame `data.receipts`-Quelle und verändert keinen Store. `activeCompanyId`, aktiver Geschäftsbereich, Entwürfe, Schreibguards und profilbezogene Zähler bleiben unabhängig. Such-/Statusfilter und chronologische Sortierung gelten innerhalb der sichtbaren Menge; gleiche Nummern bleiben über stabile Receipt-IDs getrennt. Snapshotbasierte Ausstellerdaten bleiben historisch. Backup/Restore, Export und Public Viewer enthalten keinen Ansichtsfilter. Details: [ADR-0008](adr/ADR-0008-unternehmensprofilverwaltung-und-aktivkontext.md).
+
 - Datenbankname: `frecka`
 - Datenbankschema-Version: `9` (MULTI-COMPANY-002)
 - Object Stores: `settings`, `catalog`, `customers`, `receipts`, `vouchers`, `prescriptions`, `treatmentRecords` und `licenseRuntime`
@@ -287,6 +289,8 @@ Beim Laden werden verwaiste Zuordnungen entfernt. Ein Standardort ist nur gülti
 - Die Reihenfolge von Objekteigenschaften ist keine Dateninvariante. Insbesondere wird ein inhaltlich identischer BACKUP-004-Reminder nach dem erhaltenden Settings-Merge mit dem kanonischen Wertvergleich geprüft und nicht mehr allein wegen einer abweichenden Schlüsselreihenfolge als reparaturbedürftig eingestuft.
 
 ## Automatisierter Browser-Smoke-Test
+
+MULTI-COMPANY-005 ergänzt die gemeinsame Liste mit aktivem Standardfilter, Einzelprofil/Alle, kollidierenden sichtbaren Nummern, chronologischer Sortierung, sichtbarer Summe, historischen Unternehmensmarkern und fremden Detail-/Dokument-/QR-Aktionen bei 320, 390 und 1280 px. Integration aus der gemeinsamen Liste prüft B-Notiz, B-Zahlung mit B-Zahlungsarten, B-Storno und B-Gutschrift bei unveränderten A-Belegen, A-Zählern und aktivem A-Kontext. Single-Company, offener Entwurf, Guard, Exportgrenze und Ausschluss des UI-Filters aus dem Snapshot sind regressionsgesichert. Der Gesamtlauf umfasst 290 Fälle; reale iPhone-/Android-Abnahme bleibt ein getrenntes Gate.
 
 MULTI-COMPANY-004D ergänzt Kollisionsfälle in beiden Richtungen mit identischen sichtbaren Nummern, verschiedenen Receipt-IDs, fremdem aktivem Profil, profilbezogenen Zahlungsarten, gesperrten Zielprofilen, getrennten Korrekturkreisen und unverändertem Fremdbeleg. Die Receipt-ID-Detail-/Zahlungs-/Gutschriftsansicht wird bei 320 und 390 px geprüft. Sichtbare Nummern werden als Mutationsschlüssel abgewiesen; Reload und Tenant-Snapshot erhalten beide Belege. Der aktuelle Gesamtlauf umfasst 289 Fälle.
 

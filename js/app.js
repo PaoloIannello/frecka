@@ -91,6 +91,7 @@
     pendingDialogAction: null,
     editingCustomerId: null,
     receiptFilter: "all",
+    receiptCompanyFilter: null, // View-state only; never a productive company context.
     receiptSearch: "",
     receiptDetailId: null,
     receiptPreviewId: null,
@@ -2816,8 +2817,9 @@
 
   function visibleReceipts() {
     const search = state.receiptSearch.trim().toLowerCase();
+    const companyFilter = state.receiptCompanyFilter ?? activeCompanyId();
     return data.receipts
-      .filter(receipt => receipt.companyId === activeCompanyId())
+      .filter(receipt => companyFilter === "all" || receipt.companyId === companyFilter)
       .filter(receipt => {
         if (state.receiptFilter === "completed") return receipt.type !== "credit" && receipt.status !== "cancelled" && receipt.paymentStatus !== "open";
         if (state.receiptFilter === "cancelled") return receipt.status === "cancelled";
@@ -2839,6 +2841,16 @@
   }
 
   function renderReceipts() {
+    const profiles = companyProfiles();
+    if (state.receiptCompanyFilter === null || (state.receiptCompanyFilter !== "all"
+      && !profiles.some(profile => profile.id === state.receiptCompanyFilter))) {
+      state.receiptCompanyFilter = activeCompanyId();
+    }
+    const companyMarker = receipt => state.receiptCompanyFilter === "all"
+      ? `<span class="receipt-company-marker">${escapeHtml(
+        profiles.find(profile => profile.id === receipt.companyId)?.receiptSettings?.numbering?.profileCode
+        || companyDisplayName(receipt.companySnapshot || receipt.contextSnapshot?.company)
+      )}</span>` : "";
     const receipts = visibleReceipts();
     const total = receipts.reduce((sum, receipt) => sum + Number(receipt.total || 0), 0);
     mainContent.innerHTML = `<section class="receipts-page page-enter">
@@ -2846,6 +2858,14 @@
         <p class="eyebrow">Belegverwaltung</p>
         <h1>Belege</h1>
         <p>Alle Belege, Stornos und Gutschriften.</p>
+        ${profiles.length > 1 ? `<div class="receipt-company-filter">
+          <label for="receiptCompanyFilter">Belege filtern · Unternehmen</label>
+          <select id="receiptCompanyFilter" aria-describedby="receiptCompanyFilterHelp">
+            <option value="all" ${state.receiptCompanyFilter === "all" ? "selected" : ""}>Alle Unternehmen</option>
+            ${profiles.map(profile => `<option value="${escapeHtml(profile.id)}" ${state.receiptCompanyFilter === profile.id ? "selected" : ""}>${escapeHtml(contextCompanyShortLabel(profile))}${profile.id === activeCompanyId() ? " · aktives Unternehmen" : ""}</option>`).join("")}
+          </select>
+          <small id="receiptCompanyFilterHelp">Ändert nur die Liste, nicht dein aktives Unternehmen.</small>
+        </div>` : ""}
         <label class="search-field receipt-search">
           <span aria-hidden="true">⌕</span>
           <input id="receiptSearch" type="search" placeholder="Beleg, Kunde, Betrag oder Datum" value="${escapeHtml(state.receiptSearch)}">
@@ -2871,12 +2891,13 @@
       <div class="receipt-admin-list">
         ${receipts.length ? receipts.map(receipt => state.receiptFilter === "open" ? `<article class="open-payment-card">
           <button class="open-payment-card-main" type="button" data-open-receipt="${escapeHtml(receipt.id)}">
-            <span><small>${escapeHtml(receipt.number)} · ${escapeHtml(formatGermanDate(receipt.date || receipt.completedAt || receipt.createdAt))}</small><strong>${escapeHtml(receiptCustomerLabel(receipt))}</strong><em>${escapeHtml(receipt.contextSnapshot?.businessArea?.label || "Geschäftsbereich")}</em>${receipt.internalNote ? `<span>${escapeHtml(receipt.internalNote)}</span>` : ""}</span>
+            <span>${companyMarker(receipt)}<small>${escapeHtml(receipt.number)} · ${escapeHtml(formatGermanDate(receipt.date || receipt.completedAt || receipt.createdAt))}</small><strong>${escapeHtml(receiptCustomerLabel(receipt))}</strong><em>${escapeHtml(receipt.contextSnapshot?.businessArea?.label || "Geschäftsbereich")}</em>${receipt.internalNote ? `<span>${escapeHtml(receipt.internalNote)}</span>` : ""}</span>
             <strong>${formatCurrency(receipt.total)}</strong>
           </button>
           <button class="button button-primary" type="button" data-record-payment="${escapeHtml(receipt.id)}">Zahlung erfassen</button>
         </article>` : `<button class="receipt-admin-card" type="button" data-open-receipt="${escapeHtml(receipt.id)}">
           <span class="receipt-card-main">
+            ${companyMarker(receipt)}
             <span class="receipt-card-number">${escapeHtml(receipt.number)}</span>
             ${receipt.receiptKind === "voucher-sale" ? `<span class="receipt-card-kind">Gutscheinverkauf</span>` : ""}
             <strong>${escapeHtml(receiptCustomerLabel(receipt))}</strong>
@@ -2890,6 +2911,13 @@
       </div>
     </section>`;
 
+    document.getElementById("receiptCompanyFilter")?.addEventListener("change", event => {
+      const value = event.target.value;
+      if (value !== "all" && !companyProfiles().some(profile => profile.id === value)) return;
+      state.receiptCompanyFilter = value;
+      renderReceipts();
+      document.getElementById("receiptCompanyFilter")?.focus();
+    });
     const input = document.getElementById("receiptSearch");
     input?.addEventListener("input", event => {
       state.receiptSearch = event.target.value;
@@ -6710,6 +6738,10 @@
   function navigate(route, pushHistory = true) {
     if (pendingSettingsWrites) return false;
     const nextRoute = validRoutes.has(route) ? route : "home";
+    // Return from receipt actions preserves the view; normal list entry starts active.
+    if (nextRoute === "receipts" && !["receipts", "receipt-detail", "receipt-credit", "receipt-preview"].includes(state.route)) {
+      state.receiptCompanyFilter = activeCompanyId();
+    }
     if (state.route !== nextRoute && (state.route === "settings-backup" || nextRoute === "settings-backup")) {
       resetRestoreFlow();
     }
