@@ -9072,6 +9072,24 @@
         }
       },
       {
+        name: "MULTI-COMPANY-007: Datenexport (CSV) benennt Unternehmensumfang und Grenzen eindeutig",
+        run: async () => {
+          const response = await fetch("../js/app.js", { cache: "no-store" });
+          assert(response.ok, "Exportoberfläche konnte nicht geladen werden");
+          const source = await response.text();
+          const start = source.indexOf("function renderSettingsExport()");
+          const end = source.indexOf("function applyRestoredTenantRecords", start);
+          const markup = source.slice(start, end);
+          assert(markup.includes("<strong>Datenexport (CSV)</strong>"), "Neue sichtbare Exportbezeichnung fehlt");
+          assert(markup.includes("Daten des aktuell ausgewählten Unternehmens für den gewählten Zeitraum und Geschäftsbereich."), "Unternehmens-, Zeitraum- oder Bereichsgrenze fehlt");
+          assert(markup.includes("Zugeordnete Kundendaten können optional einbezogen werden."), "Optionale Kundenzuordnung fehlt");
+          assert(markup.includes("Kein Backup und kein installationsweiter Gesamtexport."), "Abgrenzung zu Backup und Gesamtexport fehlt");
+          assert(!/Eigene Daten|eigene Daten/.test(markup), "Veraltete UI-Bezeichnung geblieben");
+          assert(source.includes('note: "Steuerberater-ZIP und Datenexport (CSV)"'), "Einstellungsübersicht verwendet die alte Bezeichnung");
+          assert(markup.includes('value="own-data"') && markup.includes('name="includeCustomers"'), "Bestehende interne Kennung oder Kundenoption wurde verändert");
+        }
+      },
+      {
         name: "Exportkern ist rein snapshotbasiert und verändert das Datenbankschema nicht",
         run: async () => {
           assert(typeof exportApi?.createExportProjection === "function", "Zentrale Exportprojektion fehlt");
@@ -9229,7 +9247,7 @@
         }
       },
       {
-        name: "Steuerberatung exportiert keine Kunden, Eigene Daten nur zugeordnete Kunden",
+        name: "Steuerberatung exportiert keine Kunden, Datenexport (CSV) nur zugeordnete Kunden",
         run: async () => {
           const snapshot = completeExportSnapshotFixture("test-export-privacy");
           snapshot.stores.settings.backupReminder = api.setBackupReminderInterval(snapshot.stores.settings.backupReminder, "5-days");
@@ -9242,7 +9260,7 @@
           assertEqual(taxFiles.projection.license, null, "Steuerberatungsexport enthält Lizenzdaten");
           assertEqual(taxFiles.projection.company, null, "Steuerberatungsexport enthält zusätzliche Unternehmensstammdaten");
           assertEqual(taxFiles.projection.operatingSettings, null, "Steuerberatungsexport enthält reine App-Einstellungen");
-          assert(ownFiles.files.some(file => file.name === "Kunden.csv"), "Eigene Daten enthalten trotz Auswahl keine Kundendatei");
+          assert(ownFiles.files.some(file => file.name === "Kunden.csv"), "Datenexport (CSV) enthält trotz Auswahl keine Kundendatei");
           assertDeepEqual(ownFiles.projection.customers.map(customer => customer.id), ["customer-anna"], "Nicht zugeordnete Kunden wurden exportiert");
           assertEqual(ownFiles.projection.activeUser?.displayName, "Testperson", "Eigene-Daten-Projektion enthält den aktiven Benutzer nicht");
           assertEqual(ownFiles.projection.activeUser?.tenantId, snapshot.tenantId, "Exportierter Benutzer gehört zum falschen Mandanten");

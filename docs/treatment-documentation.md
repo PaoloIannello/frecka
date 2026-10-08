@@ -74,7 +74,7 @@ Behandlungsdatensätze, interne Dokumentation, Kundenpflegehinweise und Vorlagen
 
 Nicht ausgegeben werden medizinische Inhalte weiterhin in:
 
-- „Eigene Daten“ und Kunden-CSV;
+- „Datenexport (CSV)“ und Kunden-CSV;
 - Steuerberater-CSV, ZIP und Steuerberater-Beleg-PDFs;
 - QR, Public-Payload und zustandslosem Public Viewer;
 - Integritätsdiagnosen, technischen Logs und Fehlermeldungen.

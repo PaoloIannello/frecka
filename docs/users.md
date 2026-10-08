@@ -41,7 +41,7 @@ Historische gültige Backups ohne USER-001 bleiben wiederherstellbar. Noch vor d
 
 ## Export
 
-Die reine Exportprojektion erhält den aktiven Benutzer aus `stores.settings`. Der Exporttyp `Eigene Daten` enthält ihn als strukturierten Projektionskontext und nennt seinen Anzeigenamen in `Export-Info.txt`. Der Steuerberaterexport erhält `activeUser: null` und gibt keine Benutzerstammdaten aus. CSV-Dateisatz, ZIP-Struktur und Steuerberaterdaten bleiben unverändert.
+Die reine Exportprojektion erhält den aktiven Benutzer aus `stores.settings`. Der Exporttyp `Datenexport (CSV)` enthält ihn als strukturierten Projektionskontext und nennt seinen Anzeigenamen in `Export-Info.txt`. Der Steuerberaterexport erhält `activeUser: null` und gibt keine Benutzerstammdaten aus. CSV-Dateisatz, ZIP-Struktur und Steuerberaterdaten bleiben unverändert.
 
 ## Einstellungsseite
 
@@ -49,7 +49,7 @@ USER-002 macht den vorhandenen aktiven Benutzer unter `Einstellungen → Benutze
 
 Eine erfolgreiche Änderung aktualisiert nur `displayName` und `updatedAt` des bestehenden Benutzerobjekts und wird unmittelbar über den zentralen Settings-Writer persistiert. Benutzer-ID, Mandant, Aktivstatus und `createdAt` bleiben unverändert. Bei einem Schreibfehler wird auch die Laufzeitänderung zurückgenommen. Es gibt keinen zweiten Benutzerzustand, keinen eigenen Store und keine neue Navigationsebene.
 
-Da Backup, Restore und der Export `Eigene Daten` dieselbe zentrale Settings-Projektion verwenden, wird der gespeicherte Anzeigename ohne zusätzliche Sammel- oder Transformationslogik in diese Abläufe übernommen.
+Da Backup, Restore und der Export `Datenexport (CSV)` dieselbe zentrale Settings-Projektion verwenden, wird der gespeicherte Anzeigename ohne zusätzliche Sammel- oder Transformationslogik in diese Abläufe übernommen.
 
 ## Zukunftsgrenzen
 

@@ -153,7 +153,7 @@ Verbindliche Regeln:
 - Ein verschlüsseltes Backup umfasst Daten, Formatversion, Integritätsinformationen und die für einen kontrollierten Import nötigen Metadaten.
 - Der optionale Cloudspeicher wird ausschließlich vom Kunden ausgewählt und kontrolliert. FRECKA besitzt dort kein zentrales Konto und keine eigene Kopie.
 - Vor einem Import werden Entschlüsselung, Integrität, Formatversion und Kompatibilität geprüft. Ein Import darf den vorhandenen Bestand nicht ohne ausdrückliche Bestätigung ersetzen.
-- Unverschlüsselte Fachexporte sind bewusste Nutzerdownloads. Kundendaten werden dabei nur für den Exporttyp „Eigene Daten“ und nach ausdrücklicher Auswahl auf die im Filter referenzierten Kunden begrenzt.
+- Unverschlüsselte Fachexporte sind bewusste Nutzerdownloads. Kundendaten werden dabei nur für den Exporttyp „Datenexport (CSV)“ und nach ausdrücklicher Auswahl auf die im Filter referenzierten Kunden begrenzt.
 - Öffentliche Fragmentlinks werden nicht als zweite Belegablage behandelt. Der Public Viewer liest sie zustandslos und darf weder Datensätze anlegen noch vorhandene Unternehmerdaten verändern.
 - Die Public-Payload enthält ausschließlich den sichtbaren Dokumentinhalt. Interne IDs, Rohsnapshots, Historien, Notizen sowie nicht angezeigte Telefon- und E-Mail-Daten sind ausgeschlossen.
 - Medizinische Kundendokumentangaben sind kontextgebunden: Nur das lokale Kunden-HTML/PDF eines normalen Belegs darf Rezeptdatum und Kundenpflegehinweis enthalten. Restriktive und Steuerberatermodelle, Public-Payload/Viewer, Diagnose, Logs und reguläre Exporte enthalten diese Angaben nicht; interne Behandlungsdokumentation wird niemals in ein Dokument projiziert.

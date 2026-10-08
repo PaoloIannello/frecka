@@ -4018,7 +4018,7 @@
     openPayments: ["Offene Zahlungen", ["Offene Zahlungen sind nur für Ausnahmefälle gedacht, wenn ein Kunde später bezahlt.", "FRECKA ersetzt keine Buchhaltung und überwacht keine Bankkonten.", "Teilzahlungen und Mahnungen werden nicht verwaltet."]],
     receiptTexts: ["Belegtexte", ["Dankes- und Fußtext sind freiwillig.", "Sie werden als Momentaufnahme in neue Belege übernommen.", "Bereits erstellte Belege ändern sich nicht rückwirkend."]],
     backup: ["Sicherung & Wiederherstellung", ["Die Sicherungsdatei enthält alle lokalen FRECKA-Daten dieses Betriebs.", "Sie wird vor dem Speichern mit deinem Sicherungskennwort verschlüsselt.", "Ohne dieses Kennwort kann die Sicherung nicht wiederhergestellt werden.", "FRECKA speichert weder Datei noch Sicherungskennwort zentral."]],
-    export: ["Export", ["Der Export wird ausschließlich aus dem geprüften lokalen FRECKA-Snapshot erzeugt.", "Zeitraum und Geschäftsbereich begrenzen die enthaltenen Belege und Gutscheine.", "Kundendaten sind nur im Exporttyp „Eigene Daten“ optional enthalten.", "Die Dateien werden auf diesem Gerät erstellt und nicht an FRECKA übertragen."]],
+    export: ["Export", ["Der Datenexport (CSV) enthält Daten des aktuell ausgewählten Unternehmens für den gewählten Zeitraum und Geschäftsbereich.", "Zugeordnete Kundendaten können optional einbezogen werden.", "Er ist kein Backup und kein installationsweiter Gesamtexport.", "Die Dateien werden auf diesem Gerät erstellt und nicht an FRECKA übertragen."]],
     update: ["Update", ["Updates ersetzen ausschließlich Programmcode.", "Geschäftsdaten bleiben lokal auf dem Endgerät.", "Die Synology ist nur als späterer Update-Server vorgesehen."]],
     tse: ["TSE", ["Die TSE-Nutzung ist optional und derzeit nicht eingerichtet.", "Als vorgesehener Anbieter ist fiskaly SIGN DE hinterlegt.", "FRECKA stellt in diesem Stand keine Verbindung her.", "Aktivierung und Anbieterkommunikation folgen in einem eigenen Produktblock."]]
   };
@@ -4266,7 +4266,7 @@
     { id: "settings-catalog", icon: "≡", title: "Leistungen & Produkte", note: "Katalog je Geschäftsbereich verwalten", available: true },
     { id: "settings-help", icon: "?", title: "Hilfe & Lernen", note: "Erste Schritte und häufige Fragen", available: true },
     { id: "settings-backup", icon: "↥", title: "Sicherung & Wiederherstellung", note: "Verschlüsselte Gesamtsicherung erstellen oder einspielen", available: true },
-    { id: "settings-export", icon: "⇥", title: "Export", note: "Steuerberater-ZIP und eigene Daten", available: true },
+    { id: "settings-export", icon: "⇥", title: "Export", note: "Steuerberater-ZIP und Datenexport (CSV)", available: true },
     { id: "settings-update", icon: "↻", title: "Update", note: "Version prüfen und kontrolliert installieren", available: true },
     { id: "settings-tse", icon: "T", title: "TSE-Vorbereitung", note: "Optional · fiskaly SIGN DE · nicht verbunden", available: true }
   ];
@@ -5612,7 +5612,7 @@
         <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
         <p class="eyebrow">Einstellungen</p>
         <h1 class="flow-title">Export</h1>
-        <p class="page-copy">Steuerberatung als vollständiges ZIP-Paket oder eigene Daten als klar dokumentierte Einzeldateien ausgeben.</p>
+        <p class="page-copy">Steuerberatung als vollständiges ZIP-Paket oder Datenexport (CSV) als Einzeldateien ausgeben.</p>
       </div>
       ${exportNoticeMarkup()}
       <section class="export-privacy"><span aria-hidden="true">⌂</span><div><strong>Bleibt vollständig auf diesem Gerät</strong><p>FRECKA liest einmal den zentralen, geprüften Datensnapshot. Der Export verändert keine Geschäftsdaten und wird an keinen Server übertragen.</p></div></section>
@@ -5620,7 +5620,7 @@
         ${cardTitle("Export zusammenstellen", "export")}
         <fieldset class="export-choice-group"><legend>Wofür brauchst du den Export?</legend>
           <label class="export-choice"><input type="radio" name="exportType" value="tax-advisor" ${state.exportType === "tax-advisor" ? "checked" : ""}><span><strong>Steuerberatung</strong><small>Ein ZIP-Paket mit Übersicht, CSV-Daten und allen gefilterten Beleg-PDFs – ohne Kundenstammdatendatei</small></span></label>
-          <label class="export-choice"><input type="radio" name="exportType" value="own-data" ${state.exportType === "own-data" ? "checked" : ""}><span><strong>Eigene Daten</strong><small>Gleicher fachlicher Export, optional mit zugeordneten Kunden</small></span></label>
+          <label class="export-choice"><input type="radio" name="exportType" value="own-data" ${state.exportType === "own-data" ? "checked" : ""}><span><strong>Datenexport (CSV)</strong><small>Daten des aktuell ausgewählten Unternehmens für den gewählten Zeitraum und Geschäftsbereich. Zugeordnete Kundendaten können optional einbezogen werden. Kein Backup und kein installationsweiter Gesamtexport.</small></span></label>
         </fieldset>
         <div class="export-filter-grid">
           <label class="setting-field"><span>Zeitraum</span><select name="periodType"><option value="current-month" ${state.exportPeriodType === "current-month" ? "selected" : ""}>Aktueller Monat</option><option value="last-month" ${state.exportPeriodType === "last-month" ? "selected" : ""}>Letzter Monat</option><option value="custom" ${customDates ? "selected" : ""}>Eigenes Datum</option></select></label>

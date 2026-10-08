@@ -161,7 +161,7 @@ ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzei
 
 - eine reale, rein lesende Seite **Einstellungen → TSE-Vorbereitung** mit dem verbindlichen Anbieter `fiskaly SIGN DE`
 - neutrale technische Vorbereitung; standardmäßig weder eingerichtet noch aktiviert oder verbunden und keine allgemeine Aussage zur TSE-Pflicht oder -Befreiung
-- ausschließlich lokale Konfigurationsmetadaten im bestehenden Settings-Datensatz sowie in Backup, Restore und dem Exporttyp **Eigene Daten**
+- ausschließlich lokale Konfigurationsmetadaten im bestehenden Settings-Datensatz sowie in Backup, Restore und dem Exporttyp **Datenexport (CSV)**
 - keine Zugangsdaten, Anbieterkommunikation, TSE-Transaktionen, Belegfelder, Signaturen oder simulierte Fiskalisierung
 - unveränderter Steuerberaterexport; TSE-003 und Folgeblöcke bleiben für Aktivierung, Verbindung und echte Fiskaldaten zuständig
 
@@ -171,7 +171,7 @@ ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzei
 - Währung EUR und Sprache Deutsch eindeutig nur lesbar; keine Mehrwährungs- oder neue Beleglogik
 - bestehende Beleg-, Storno- und Gutschriftnummernkreise nur lesbar, auch beim erneuten Durchlauf der Ersteinrichtung
 - Standard-MwSt. ausschließlich als Vorauswahl für neue Katalogeinträge; keine Änderung vorhandener Positions- oder Belegsteuern
-- automatische Aufnahme in Settings-Persistenz, verschlüsseltes Backup und Restore sowie betriebliche Metadaten ausschließlich im Exporttyp **Eigene Daten**
+- automatische Aufnahme in Settings-Persistenz, verschlüsseltes Backup und Restore sowie betriebliche Metadaten ausschließlich im Exporttyp **Datenexport (CSV)**
 - unveränderter Steuerberaterexport und keine neuen Zahlungsarten, Rechtstexte, Stores oder Schema-Versionen
 
 ## Neu in SETTINGS-001
@@ -181,7 +181,7 @@ ONBOARDING-001 ergänzt unter **Einstellungen → Hilfe & Lernen** eine jederzei
 - ein eigener Unternehmens-Änderungszeitpunkt, der nur bei tatsächlichen Änderungen fortgeschrieben wird
 - ausschließlich lokal gespeicherte, inhaltlich geprüfte PNG-/JPEG-Logos bis 1 MB in einem versionierten, unveränderlichen Asset-Register des vorhandenen Settings-Datensatzes sowie in verschlüsseltem Backup und Restore
 - klare Branding-Priorität: Geschäftsbereichslogo, sonst Unternehmenslogo, sonst textbasierter Fallback; historische Belege und Gutscheine lösen ihre gespeicherte Asset-ID weiterhin zur damaligen Bildversion auf
-- zusätzliche Unternehmensangaben nur im Exporttyp **Eigene Daten**; unveränderter Steuerberaterexport und unveränderte Public-Viewer-Whitelist
+- zusätzliche Unternehmensangaben nur im Exporttyp **Datenexport (CSV)**; unveränderter Steuerberaterexport und unveränderte Public-Viewer-Whitelist
 - proportionale Logo-Bildausgabe in interner Ansicht sowie Beleg-, Gutschein-, Storno-, Gutschrift- und Steuerberater-PDF; Public Viewer und öffentliche QR-Payloads bleiben frei von Bildrohdaten
 
 ## Neu in RELEASE-AUTOMATION-001/002
@@ -312,7 +312,7 @@ Die Legacy-Brücke aus SERVICEWORKER-002 blieb in 0.10.9 ausnahmsweise erhalten.
 - Wiederverwendung der bestehenden Dokumentenengine: PDF-Anzeige und Teilen verwenden dasselbe echte, vollständig lokal erzeugte PDF
 - Fallbackfolge für Dokumente: PDF-Datei → öffentlicher Kundenlink → lokales Speichern
 - Steuerberater-ZIP als eine fertige Datei im nativen Teilen-Dialog oder als lokaler Speichern-Fallback
-- Dateiauswahl beim rückwärtskompatiblen Exporttyp `Eigene Daten`; `Kunden.csv` bleibt bis zur ausdrücklichen Auswahl abgewählt
+- Dateiauswahl beim rückwärtskompatiblen Exporttyp `Datenexport (CSV)`; `Kunden.csv` bleibt bis zur ausdrücklichen Auswahl abgewählt
 - ein öffentlicher Read-only-Viewer für Belege und Gutscheine, der seine datensparsame, versionierte Darstellung ausschließlich aus dem URL-Fragment liest
 - geräteübergreifender QR-Kundenbeleg ohne serverseitige Belegablage und ohne Zugriff auf lokale Unternehmerdaten des Kundengeräts
 - öffentliche Darstellung ohne interne Historien, Notizen, Kunden-Telefonnummern, Kunden-E-Mail-Adressen oder rohe FRECKA-Stores
@@ -356,7 +356,7 @@ Der grundlegende QR-Vertrag steht in `docs/qr.md`; öffentlicher Payload, Fragme
 - Bereichs-, Steuersatz- und Gesamtsummen ausschließlich aus gespeicherten Beleg- und Steuergruppenwerten
 - PDFs für normale Belege, offene Belege, Stornos, Gutschriften und Gutscheinverkaufsbelege über dieselbe Dokumentenengine
 - rückwärtskompatible Einzeldatei-API mit `Belege.csv`, `Belegpositionen.csv`, `Gutscheine.csv`, `Gutschein-Historie.csv` und `Export-Info.txt`
-- optionale, datensparsame `Kunden.csv` ausschließlich beim Exporttyp „Eigene Daten“
+- optionale, datensparsame `Kunden.csv` ausschließlich beim Exporttyp „Datenexport (CSV)“
 - UTF-8-BOM, Semikolon, deutsche Dezimalwerte, sauberes Escaping und CSV-Injection-Schutz
 - lokal vendortes JSZip 3.10.1 unter MIT-Lizenzoption; kein CDN, keine npm-Runtime und kein Server
 - 145 bestandene native Browser-Smoke-Tests im aktuellen Stand

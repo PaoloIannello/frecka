@@ -32,7 +32,7 @@ Eine feste Erlaubnisliste entfernt jedes andere Feld. Insbesondere werden keine 
 
 Weil `tseSettings` Teil von `stores.settings` ist, verwenden Backup und Restore unverändert den zentralen Tenant-Snapshot. Es gibt keinen neuen Store und keine zweite Sammelroutine.
 
-Der Exporttyp **Eigene Daten** darf die fünf Konfigurationswerte und lesbare Statusbezeichnungen ausgeben. Der Steuerberaterexport enthält keine TSE-Konfiguration, keine TSE-Spalten, keine Belegplatzhalter und keine fingierten Transaktionsdaten.
+Der Exporttyp **Datenexport (CSV)** darf die fünf Konfigurationswerte und lesbare Statusbezeichnungen ausgeben. Der Steuerberaterexport enthält keine TSE-Konfiguration, keine TSE-Spalten, keine Belegplatzhalter und keine fingierten Transaktionsdaten.
 
 ## UI
 
