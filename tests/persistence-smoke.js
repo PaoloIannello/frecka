@@ -4845,6 +4845,330 @@
     ];
   }
 
+  function buildOnboardingTests(context) {
+    function throwCollectedErrors(errors) {
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) {
+        throw new AggregateError(errors, errors.map(error => error.message).join("\n"), { cause: errors[0] });
+      }
+    }
+
+    async function runWithCleanup(body, cleanup) {
+      const errors = [];
+      let result;
+      try { result = await body(); } catch (error) { errors.push(error); }
+      try { await cleanup(); } catch (error) {
+        errors.push(...(error instanceof AggregateError ? error.errors : [error]));
+      }
+      throwCollectedErrors(errors);
+      return result;
+    }
+
+    async function cleanFrames(frames, clients = [], deleteDatabase = null) {
+      const errors = [];
+      const attempt = async action => {
+        try { await action(); } catch (error) { errors.push(error); }
+      };
+      for (const item of frames) {
+        if (!item.isConnected) continue;
+        const frameWindow = item.contentWindow;
+        await attempt(() => assertDeepEqual(frameWindow?.FRECKA_PRESCRIPTION_UI_ERRORS || [], [], "Onboarding verursachte Laufzeitfehler"));
+        await attempt(() => frameWindow?.FRECKA_PERSISTENCE?.closeDatabase());
+        await attempt(() => item.remove());
+        // Still remove a frame if its remove() operation itself failed.
+        if (item.isConnected) await attempt(() => item.parentNode.removeChild(item));
+      }
+      for (const client of clients) await attempt(() => client.closeDatabase());
+      if (deleteDatabase) await attempt(deleteDatabase);
+      throwCollectedErrors(errors);
+    }
+
+    const waitFor = async predicate => {
+      for (let attempt = 0; attempt < 160; attempt += 1) {
+        if (await predicate()) return;
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      throw new Error(`Onboarding wurde nicht rechtzeitig bereit: ${predicate.toString()}`);
+    };
+    async function fixture(label, kind = "extra", status = "started", width = 390) {
+      const client = context.makeClient(`onboarding-${label}`);
+      const snapshot = completeTenantSnapshotFixture(client.tenantId);
+      snapshot.stores.settings = api.normalizeSettingsRecord(snapshot.stores.settings, snapshot.stores.settings, client.tenantId).record;
+      const first = api.activeCompanyProfile(snapshot.stores.settings);
+      first.setup.status = status;
+      if (kind !== "legacy") {
+        first.receiptSettings.numbering.mode = "profile";
+        first.receiptSettings.numbering.profileCode = "FR";
+      }
+      if (kind === "extra") {
+        snapshot.stores.settings = api.createCompanyProfileSettings(snapshot.stores.settings, {
+          profileCode: "POD", createdAt: "2030-06-01T08:00:00.000Z",
+          company: { name: "Podologie Test", owner: "Paula Test", street: "Südweg", houseNumber: "2", zip: "54321", city: "Südstadt" }
+        }, client.tenantId);
+        api.activeCompanyProfile(snapshot.stores.settings).setup.status = status;
+      }
+      await client.restoreTenantSnapshot(snapshot);
+      const before = await client.exportTenantSnapshot();
+      const index = await fetch("../index.html", { cache: "no-store" }).then(response => response.text());
+      const frames = [];
+      const open = async (route = "settings") => {
+        const frame = document.createElement("iframe");
+        frame.title = `Onboarding ${label}`;
+        frame.style.cssText = `position:fixed;left:-2000px;top:0;width:${width}px;height:807px;border:0`;
+        setIsolatedAppFrame(frame, isolatedAppMarkup(index, client, route, context.databaseName));
+        document.body.append(frame);
+        frames.push(frame);
+        await waitFor(() => frame.contentDocument?.querySelector(route === "settings-company" ? "#companySettingsForm" : '[data-action="setup-start"], [data-action="setup-restart"]'));
+        return frame;
+      };
+      let frame;
+      try { frame = await open(); } catch (error) {
+        await runWithCleanup(() => { throw error; }, () => cleanFrames(frames, [client]));
+      }
+      const doc = () => frame.contentDocument;
+      const start = async (target = frame) => {
+        target.contentDocument.querySelector('[data-action="setup-start"], [data-action="setup-restart"]').click();
+        await waitFor(() => target.contentDocument.querySelector('#setupWizardForm[data-setup-step="1"]'));
+      };
+      const step = async number => {
+        doc().querySelector("#setupWizardForm").requestSubmit();
+        await waitFor(() => doc().querySelector(`#setupWizardForm[data-setup-step="${number}"]`));
+      };
+      const clean = () => cleanFrames(frames, [client]);
+      return { client, before, frame, doc, start, step, open, clean, waitFor };
+    }
+    const numbering = settings => settings.companies.map(profile => ({ id: profile.id, receiptSettings: profile.receiptSettings }));
+    return [
+      ...["normal", "body", "cleanup", "body-cleanup", "unexpected-close", "multiple", "delete", "retry"].map(failure => ({
+        name: `ONBOARDING-003: Ressourcenbereinigung schließt alle Verbindungen und erhält Fehler (${failure})`,
+        run: async () => {
+          const databaseName = createDatabaseName();
+          const client = api.createSettingsPersistence({ databaseName, tenantId: "test-onboarding-cleanup" });
+          const frames = [];
+          const closed = [];
+          const originalError = new Error("ORIGINAL_TEST_ASSERTION");
+          const cleanupError = new Error("CLEANUP_FAILURE");
+          const removeError = new Error("REMOVE_FAILURE");
+          const deleteError = new Error("DELETE_FAILURE");
+          const failsBody = ["body", "body-cleanup", "delete", "retry"].includes(failure);
+          const failsClose = ["cleanup", "body-cleanup", "unexpected-close", "multiple", "retry"].includes(failure);
+          let deletionAttempted = false;
+          let reportedError;
+          await runWithCleanup(async () => {
+            await client.writeSettings(recordFixture(client.tenantId, "started"));
+            client.closeDatabase();
+            const index = await fetch("../index.html", { cache: "no-store" }).then(response => response.text());
+            for (let number = 0; number < 2; number += 1) {
+              const frame = document.createElement("iframe");
+              frame.title = `Onboarding Cleanup ${failure} ${number}`;
+              frame.style.cssText = "position:fixed;left:-2000px;top:0;width:390px;height:807px;border:0";
+              frames.push(frame);
+              setIsolatedAppFrame(frame, isolatedAppMarkup(index, client, "settings", databaseName));
+              document.body.append(frame);
+              await waitFor(() => frame.contentDocument?.querySelector('[data-action="setup-start"]'));
+              const persistence = frame.contentWindow.FRECKA_PERSISTENCE;
+              // Fault injection is limited to this disposable test frame, never production code.
+              frame.contentWindow.FRECKA_PERSISTENCE = {
+                ...persistence,
+                closeDatabase: () => {
+                  persistence.closeDatabase();
+                  closed.push(number);
+                  if (failsClose && number === 0) throw cleanupError;
+                }
+              };
+              if (failure === "multiple" && number === 0) {
+                frame.contentWindow.FRECKA_PRESCRIPTION_UI_ERRORS.push("CLEANUP_ASSERTION_FAILURE");
+                frame.remove = () => { throw removeError; };
+              }
+            }
+            try {
+              await runWithCleanup(() => {
+                if (failsBody) throw originalError;
+              }, () => cleanFrames(frames, [client], async () => {
+                deletionAttempted = true;
+                if (failure === "delete") throw deleteError;
+                await deleteTestDatabase(databaseName);
+              }));
+            } catch (error) { reportedError = error; }
+            assertDeepEqual(closed, [0, 1], "Nicht alle iframe-Verbindungen wurden geschlossen");
+            assert(frames.every(frame => !frame.isConnected), "Nicht alle Testframes wurden entfernt");
+            assert(deletionAttempted, "Datenbank-Löschung wurde nach einem Fehler nicht versucht");
+            if (failure === "normal") {
+              assertEqual(reportedError, undefined, "Normale Bereinigung meldete einen Fehler");
+            } else {
+              const errors = reportedError instanceof AggregateError ? reportedError.errors : [reportedError];
+              if (failsBody) {
+                assertEqual(errors[0], originalError, "Ursprünglicher Testfehler blieb nicht primär erhalten");
+                assert(reportedError.message.includes(originalError.message), "Testfehler fehlt in der sichtbaren Diagnose");
+              }
+              if (failsClose) {
+                assert(errors.includes(cleanupError), "Schließfehler wurde verschluckt");
+                assert(reportedError.message.includes(cleanupError.message), "Schließfehler fehlt in der sichtbaren Diagnose");
+              }
+              if (failure === "multiple") {
+                assertEqual(errors.length, 3, "Nicht alle Cleanup-Fehler wurden gesammelt");
+                assert(errors.includes(removeError), "Entfernungsfehler wurde verschluckt");
+                assert(reportedError.message.includes("CLEANUP_ASSERTION_FAILURE") && reportedError.message.includes(removeError.message), "Mehrfachdiagnose ist unvollständig");
+              }
+              if (failure === "delete") {
+                assert(errors.includes(deleteError) && reportedError.message.includes(deleteError.message), "Löschfehler wurde verdeckt");
+              }
+              if (errors.length > 1) {
+                assertEqual(reportedError.cause, errors[0], "Primäre Fehlerursache wurde überschrieben");
+              }
+            }
+            // Repeat cleanup to prove idempotence; retry a simulated failed deletion for real.
+            await cleanFrames(frames, [client], () => deleteTestDatabase(databaseName));
+            assertDeepEqual(closed, [0, 1], "Bereinigung bearbeitete bereits entfernte Frames erneut");
+            if (failure === "retry") {
+              const nextClient = api.createSettingsPersistence({ databaseName, tenantId: "test-onboarding-cleanup-retry" });
+              await runWithCleanup(async () => {
+                await nextClient.writeSettings(recordFixture(nextClient.tenantId, "started"));
+                assertEqual((await nextClient.readSettings()).setup.status, "started", "Isolierter Folgelauf war blockiert");
+              }, () => cleanFrames([], [nextClient], () => deleteTestDatabase(databaseName)));
+            }
+            await deleteTestDatabase(databaseName);
+          }, () => cleanFrames(frames, [client], () => deleteTestDatabase(databaseName)));
+        }
+      })),
+      ...["legacy", "first", "extra"].map(kind => ({
+        name: `ONBOARDING-003: Schritt 2 erhält Nummernmodus und Kürzel (${kind})`,
+        run: async () => {
+          const test = await fixture(kind, kind);
+          await runWithCleanup(async () => {
+            await test.start(); await test.step(2);
+            assert(!test.doc().querySelector('[name="profileCode"]'), "Assistent enthält unerwartet ein Kürzelfeld");
+            await test.step(3);
+            assertDeepEqual(numbering(await test.client.readSettings()), numbering(test.before.stores.settings), "Assistent änderte Kürzel oder Nummernkreise");
+            assertDeepEqual((await test.client.readReceipts()).receipts, test.before.stores.receipts.receipts, "Historische Belege wurden verändert");
+          }, test.clean);
+        }
+      })),
+      ...[320, 390].map(width => ({
+        name: `ONBOARDING-003: Zusatzprofil bearbeitet Name/Adresse ohne fremde Änderungen (${width} px)`,
+        run: async () => {
+          const test = await fixture(`edit-${width}`, "extra", "started", width);
+          await runWithCleanup(async () => {
+            await test.start(); await test.step(2);
+            const form = test.doc().querySelector("#setupWizardForm");
+            form.elements.name.value = "Neue Geschäftsbezeichnung";
+            form.elements.street.value = "Neue Straße";
+            form.elements.houseNumber.value = "8";
+            assert(test.doc().documentElement.scrollWidth <= width, "Assistent läuft horizontal über");
+            await test.step(3);
+            const after = await test.client.readSettings();
+            assertEqual(api.activeCompanyProfile(after).company.name, "Neue Geschäftsbezeichnung", "Name wurde nicht gespeichert");
+            assertEqual(api.activeCompanyProfile(after).company.street, "Neue Straße", "Straße wurde nicht gespeichert");
+            assertDeepEqual(numbering(after), numbering(test.before.stores.settings), "Nummernkreise änderten sich");
+            assertDeepEqual(after.companies[0], test.before.stores.settings.companies[0], "Fremdes Profil änderte sich");
+          }, test.clean);
+        }
+      })),
+      ...["", "1!", "FR"].map(code => ({
+        name: `ONBOARDING-003: Explizites Kürzel wird weiterhin abgewiesen (${code || "leer"})`,
+        run: async () => {
+          const test = await fixture(`invalid-${code || "empty"}`);
+          await runWithCleanup(async () => {
+            const frame = await test.open("settings-company");
+            const form = frame.contentDocument.querySelector("#companySettingsForm");
+            form.elements.profileCode.value = code;
+            // Exercise the shared handler, including invalid input that native validation normally blocks.
+            form.dispatchEvent(new frame.contentWindow.Event("submit", { bubbles: true, cancelable: true }));
+            await waitFor(() => frame.contentDocument.querySelector(".settings-save-notice.is-error"));
+            assertDeepEqual(await test.client.readSettings(), test.before.stores.settings, "Ungültiges/dupliziertes Kürzel wurde gespeichert");
+          }, test.clean);
+        }
+      })),
+      {
+        name: "ONBOARDING-003: Profilwechsel verwirft Schritt und unbestätigte Formularwerte",
+        run: async () => {
+          const test = await fixture("switch");
+          await runWithCleanup(async () => {
+            await test.start();
+            test.doc().querySelector('[name="companyMode"][value="multiple"]').checked = true;
+            await test.step(2); await test.step(3);
+            test.doc().querySelector('[data-setup-back]').click();
+            await waitFor(() => test.doc().querySelector('#setupWizardForm[data-setup-step="2"]'));
+            test.doc().querySelector('[name="name"]').value = "Nicht gespeicherter fremder Name";
+            test.frame.contentWindow.location.hash = "#/settings-company";
+            await waitFor(() => test.doc().querySelector("#companySettingsForm"));
+            test.doc().querySelector('[data-company-switch]').click();
+            await waitFor(async () => (await test.client.readSettings()).activeCompanyId === test.before.stores.settings.companies[0].id);
+            test.frame.contentWindow.location.hash = "#/settings";
+            await waitFor(() => test.doc().querySelector('[data-action="setup-start"]'));
+            await test.start();
+            assert(test.doc().querySelector('[name="companyMode"][value="single"]').checked, "Fremder flüchtiger Nutzungsmodus wurde übernommen");
+            await test.step(2);
+            assertEqual(test.doc().querySelector('[name="name"]').value, test.before.stores.settings.companies[0].company.name, "Fremder Unternehmensname wurde übernommen");
+            assertDeepEqual(numbering(await test.client.readSettings()), numbering(test.before.stores.settings), "Profilwechsel änderte Nummern");
+            assertDeepEqual((await test.client.readSettings()).companies[1].company, test.before.stores.settings.companies[1].company,
+              "Unbestätigte Eingabe veränderte das verlassene Profil");
+          }, test.clean);
+        }
+      },
+      {
+        name: "ONBOARDING-003: Erneute Durchsicht erhält completed und Kürzel",
+        run: async () => {
+          const test = await fixture("restart", "first", "completed");
+          await runWithCleanup(async () => {
+            await test.start(); await test.step(2); await test.step(3);
+            assertEqual(api.activeCompanyProfile(await test.client.readSettings()).setup.status, "completed", "Durchsicht setzte Setupstatus zurück");
+            test.frame.contentWindow.location.hash = "#/settings";
+            await waitFor(() => test.doc().querySelector('[data-action="setup-restart"]'));
+            await test.start();
+            assertDeepEqual(numbering(await test.client.readSettings()), numbering(test.before.stores.settings), "Neustart änderte Nummern");
+          }, test.clean);
+        }
+      },
+      {
+        name: "ONBOARDING-003: App-Neustart beginnt gestartetes Setup bei Schritt 1",
+        run: async () => {
+          const test = await fixture("reload");
+          await runWithCleanup(async () => {
+            await test.start(); await test.step(2); await test.step(3);
+            const reloaded = await test.open();
+            await test.start(reloaded);
+            assertEqual(api.activeCompanyProfile(await test.client.readSettings()).setup.status, "started", "Neustart änderte Setupstatus");
+            assertDeepEqual(numbering(await test.client.readSettings()), numbering(test.before.stores.settings), "Neustart änderte Nummern");
+          }, test.clean);
+        }
+      },
+      ...[false, true].map(changeActiveProfile => ({
+        name: `ONBOARDING-003: Mehrprofil-Restore setzt UI-Schritt zurück (${changeActiveProfile ? "anderes" : "gleiches"} aktives Profil)`,
+        run: async () => {
+          const test = await fixture(`restore-${changeActiveProfile}`);
+          await runWithCleanup(async () => {
+            await test.start(); await test.step(2); await test.step(3);
+            const snapshot = await test.client.exportTenantSnapshot();
+            if (changeActiveProfile) snapshot.stores.settings.activeCompanyId = snapshot.stores.settings.companies[0].id;
+            const passphrase = "Onboarding Restore Kennwort 2030";
+            const encrypted = await backupApi.encryptTenantSnapshot(snapshot, passphrase);
+            test.frame.contentWindow.location.hash = "#/settings-backup";
+            await waitFor(() => test.doc().querySelector("#backupRestoreFile"));
+            const transfer = new test.frame.contentWindow.DataTransfer();
+            transfer.items.add(new test.frame.contentWindow.File([encrypted], "onboarding.frecka-backup"));
+            const input = test.doc().querySelector("#backupRestoreFile");
+            input.files = transfer.files;
+            input.dispatchEvent(new test.frame.contentWindow.Event("change", { bubbles: true }));
+            await waitFor(() => test.doc().querySelector("#backupUnlockForm"));
+            test.doc().querySelector('#backupUnlockForm [name="passphrase"]').value = passphrase;
+            test.doc().querySelector("#backupUnlockForm").requestSubmit();
+            await waitFor(() => test.doc().querySelector("#backupRestoreConfirmForm"));
+            test.doc().querySelector('[name="restoreConfirmed"]').checked = true;
+            test.doc().querySelector("#backupRestoreConfirmForm").requestSubmit();
+            await waitFor(() => test.doc().body.textContent.includes("Die Sicherung wurde vollständig wiederhergestellt."));
+            test.frame.contentWindow.location.hash = "#/settings";
+            await waitFor(() => test.doc().querySelector('[data-action="setup-start"]'));
+            await test.start();
+            assertDeepEqual((await test.client.readSettings()).companies, snapshot.stores.settings.companies, "Restore veränderte Profilstatus, Kürzel oder Nummern");
+            assertEqual((await test.client.readSettings()).activeCompanyId, snapshot.stores.settings.activeCompanyId, "Restore verlor das aktive Profil");
+            assertDeepEqual((await test.client.readReceipts()).receipts, snapshot.stores.receipts.receipts, "Restore veränderte historische Belege");
+          }, test.clean);
+        }
+      }))
+    ];
+  }
+
   function buildTests(context) {
     const cryptoPassphrase = "Sehr sicherer Backup Testsatz 2030";
     const wrongCryptoPassphrase = "Ganz andere sichere Passphrase";
@@ -4859,6 +5183,7 @@
       return encryptedFixturePromise;
     };
     return [
+      ...buildOnboardingTests(context),
       ...buildMultiCompanyTests(context),
       ...buildMultiCompanyNumberingTests(context),
       ...buildMultiCompanyBetaTestTests(context),

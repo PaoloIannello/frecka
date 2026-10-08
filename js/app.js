@@ -780,8 +780,19 @@
     );
   }
 
+  function resetSetupTransientState() {
+    state.setupStep = 1;
+    state.setupNotice = "";
+    state.setupTestPreviewVisible = false;
+    state.onboardingCompanyMode = "single";
+  }
+
   function applySettingsRecord(record) {
     const profile = settingsCompanyProfile(record);
+    // Same-profile writes retain the current step; a different context never does.
+    if (!currentSettingsRecord || currentSettingsRecord.activeCompanyId !== profile.id) {
+      resetSetupTransientState();
+    }
     currentSettingsRecord = cloneSettingsValue(record);
     data.companySettings.activeCompanyId = profile.id;
     replaceSettingsArray(data.users, record.users);
@@ -4374,7 +4385,7 @@
     const profile = activeProfileRecord();
     const submittedCode = formData.has("profileCode") ? String(formData.get("profileCode") || "").trim() : "";
     let normalizedCode = profile?.receiptSettings?.numbering?.profileCode || null;
-    if (submittedCode || profile?.receiptSettings?.numbering?.mode === "profile") {
+    if (formData.has("profileCode") && (submittedCode || profile?.receiptSettings?.numbering?.mode === "profile")) {
       const codeResult = normalizeSubmittedProfileCode(submittedCode);
       if (codeResult.error) return { error: codeResult.error, changed: false };
       normalizedCode = codeResult.value;
@@ -5638,6 +5649,8 @@
   }
 
   function applyRestoredTenantRecords(records) {
+    // Restore also replaces the data context when the active profile ID is unchanged.
+    resetSetupTransientState();
     applySettingsRecord(records.settings);
     applyCatalogRecord(records.catalog);
     applyCustomersRecord(records.customers);
@@ -8071,9 +8084,7 @@
     }
     if (action === "setup-restart") {
       if (state.setup.status !== "completed") return;
-      state.setupStep = 1;
-      state.setupNotice = "";
-      state.setupTestPreviewVisible = false;
+      resetSetupTransientState();
       state.setupFirstStartVisible = false;
       navigate("setup-wizard");
       return;
