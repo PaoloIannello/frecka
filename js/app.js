@@ -307,6 +307,10 @@
   let qrFullscreenReturnFocus = null;
   let qrNativeFullscreenOwned = false;
   let bottomSheetReturnFocus = null;
+  let setupFormBaseline = null;
+  let setupLeaveAction = null;
+  let setupSaving = false;
+  let setupHistoryRestore = null;
 
   function updateActivationPermission() {
     if (state.cart.length || state.checkoutSubmitting) {
@@ -781,6 +785,7 @@
   }
 
   function resetSetupTransientState() {
+    setupFormBaseline = null;
     state.setupStep = 1;
     state.setupNotice = "";
     state.setupTestPreviewVisible = false;
@@ -1307,6 +1312,11 @@
   }
 
   function switchActiveBusinessArea(areaId) {
+    if (guardSetupDeparture(() => commitActiveBusinessAreaSwitch(areaId))) return false;
+    return commitActiveBusinessAreaSwitch(areaId);
+  }
+
+  function commitActiveBusinessAreaSwitch(areaId) {
     if (pendingSettingsWrites) return false;
     const area = contextBusinessAreas().find(entry => entry.id === areaId);
     if (!area) return false;
@@ -4055,6 +4065,7 @@
   }
 
   function closeBottomSheet() {
+    setupLeaveAction = null;
     const returnFocus = bottomSheetReturnFocus;
     bottomSheetBackdrop.hidden = true;
     bottomSheet.className = "bottom-sheet";
@@ -4503,7 +4514,7 @@
     return `<div class="setup-actions">
       ${state.setupStep > 1 ? `<button class="button button-secondary" type="button" data-setup-back>Zurück</button>` : ""}
       <button class="button button-primary" type="submit">${escapeHtml(nextLabel)}</button>
-      <button class="setup-cancel" type="button" data-setup-cancel>Assistent abbrechen</button>
+      <button class="setup-cancel" type="button" data-setup-cancel>Speichern &amp; unterbrechen</button>
     </div>`;
   }
 
@@ -4753,7 +4764,7 @@
       case 6: return `<div class="payment-settings-list">${data.paymentChoices.map(choice => `<article class="payment-setting-row"><span class="payment-setting-icon" aria-hidden="true">${escapeHtml(choice.icon)}</span><span class="payment-setting-name"><strong>${escapeHtml(choice.title)}</strong><small>${choice.id === "voucher" ? "Gutscheinsystem" : "Normale Zahlungsart"}</small></span><label class="payment-setting-toggle"><input type="checkbox" data-payment-toggle="${escapeHtml(choice.id)}" ${choice.active !== false ? "checked" : ""}><span>${choice.active !== false ? "Aktiv" : "Deaktiviert"}</span></label></article>`).join("")}</div><p class="prototype-note">Mindestens eine normale Zahlungsart muss aktiv bleiben. Offene Zahlungen werden getrennt im Checkout erfasst.</p>${setupActions()}`;
       case 7: return `<div class="business-model-note"><strong>Geschäftsbereiche gehören zum aktiven Unternehmen.</strong><span>Lege hier fachliche Bereiche desselben Unternehmens an. Eigenständige Unternehmen verwaltest du getrennt in den Einstellungen.</span></div><div class="business-area-list">${setupBusinessAreaRows()}</div><button class="button button-secondary business-area-add" type="button" data-action="business-area-add">＋ Geschäftsbereich</button>${setupActions()}`;
       case 8: return `<section class="settings-form-card settings-single-column"><h2>Optionale Belegtexte</h2><label class="setting-field full"><span>Dankestext <small>optional</small></span><input name="thankYouText" maxlength="120" placeholder="z. B. Vielen Dank für deinen Besuch." value="${escapeHtml(receipt.thankYouText || "")}"></label><label class="setting-field full"><span>Fußtext <small>optional</small></span><textarea name="footerText" rows="3" maxlength="240" placeholder="z. B. Termine bitte 24 Stunden vorher absagen.">${escapeHtml(receipt.footerText || "")}</textarea></label></section>${setupActions("Weiter oder überspringen")}`;
-      case 9: return `<div class="setup-info-card"><div class="setup-info-symbol" aria-hidden="true">T</div><h2>TSE ist optional</h2><p>FRECKA ist ohne TSE vollständig nutzbar. Als vorgesehener Anbieter ist fiskaly SIGN DE hinterlegt; eine Verbindung oder Aktivierung findet noch nicht statt.</p><p>Den aktuellen Vorbereitungsstatus findest du jederzeit in den Einstellungen. Die tatsächliche Anbindung folgt in einem eigenen Produktblock.</p><button class="button button-primary" type="button" data-setup-tse>Verstanden</button><button class="button button-secondary" type="button" data-setup-tse>Später in Einstellungen prüfen</button></div><div class="setup-actions"><button class="button button-secondary" type="button" data-setup-back>Zurück</button><button class="setup-cancel" type="button" data-setup-cancel>Assistent abbrechen</button></div>`;
+      case 9: return `<div class="setup-info-card"><div class="setup-info-symbol" aria-hidden="true">T</div><h2>TSE ist optional</h2><p>FRECKA ist ohne TSE vollständig nutzbar. Als vorgesehener Anbieter ist fiskaly SIGN DE hinterlegt; eine Verbindung oder Aktivierung findet noch nicht statt.</p><p>Den aktuellen Vorbereitungsstatus findest du jederzeit in den Einstellungen. Die tatsächliche Anbindung folgt in einem eigenen Produktblock.</p><button class="button button-primary" type="button" data-setup-tse>Verstanden</button><button class="button button-secondary" type="button" data-setup-tse>Später in Einstellungen prüfen</button></div><div class="setup-actions"><button class="button button-secondary" type="button" data-setup-back>Zurück</button><button class="setup-cancel" type="button" data-setup-cancel>Speichern &amp; unterbrechen</button></div>`;
       case 10: return `${setupSummary()}${setupActions("Weiter zum Testbeleg")}`;
       case 11: return `<div class="setup-info-card"><h2>Jetzt einen Testbeleg erstellen</h2><p>Die Vorschau verwendet deine aktuellen Angaben, erzeugt aber keinen echten Beleg.</p><button class="button button-secondary" type="button" data-setup-test>${state.setupTestPreviewVisible ? "Vorschau aktualisieren" : "Testbeleg-Vorschau anzeigen"}</button></div>${state.setupTestPreviewVisible ? setupTestReceipt() : ""}${setupActions(state.setupTestPreviewVisible ? "Einrichtung abschließen" : "Testbeleg überspringen")}`;
       case 12: return activeCompanyIsProductive()
@@ -4765,6 +4776,10 @@
 
   function attachSetupStepBehavior() {
     const form = document.getElementById("setupWizardForm");
+    form?.querySelectorAll("[data-payment-toggle]").forEach(input => {
+      input.name = "setupPaymentChoice";
+      input.value = input.dataset.paymentToggle;
+    });
     form?.querySelectorAll('input[name="taxStatus"]').forEach(input => input.addEventListener("change", () => {
       const rates = form.querySelector(".setup-tax-rate");
       if (rates) rates.hidden = input.value !== "vat";
@@ -4787,22 +4802,96 @@
       <form id="setupWizardForm" class="settings-form setup-form" data-setup-step="${state.setupStep}">${setupStepContent()}</form>
     </section>`;
     attachSetupStepBehavior();
+    setupFormBaseline = setupFormSignature();
   }
 
-  function saveSetupStep(formData, validate = true) {
+  function setupFormSignature() {
+    const form = document.getElementById("setupWizardForm");
+    return form ? JSON.stringify([activeCompanyId(), state.setupStep, [...new FormData(form).entries()]]) : null;
+  }
+
+  function setupHasUnconfirmedInputs() {
+    return state.route === "setup-wizard" && setupFormBaseline !== null && setupFormSignature() !== setupFormBaseline;
+  }
+
+  function showSetupError(message) {
+    state.setupNotice = message;
+    let notice = document.querySelector(".setup-page > .settings-save-notice");
+    if (!notice) {
+      notice = document.createElement("div");
+      notice.className = "settings-save-notice is-error";
+      notice.setAttribute("role", "alert");
+      document.getElementById("setupWizardForm")?.before(notice);
+    }
+    notice.textContent = message;
+    notice.tabIndex = -1;
+    notice.focus();
+  }
+
+  async function saveSetupAndContinue(continuation, completed = false) {
+    if (setupSaving || pendingSettingsWrites) return false;
+    const form = document.getElementById("setupWizardForm");
+    if (!form || !form.reportValidity()) return false;
+    const previous = cloneSettingsValue(currentSettingsRecord);
+    const previousMode = state.onboardingCompanyMode;
+    const previousArea = state.activeBusinessArea;
+    const previousStep = state.setupStep;
+    setupSaving = true;
+    try {
+      const error = saveSetupStep(new FormData(form));
+      if (error) throw Object.assign(new Error(error), { userMessage: error });
+      if (state.setup.status !== "completed") state.setup.status = completed ? "completed" : "started";
+      await persistCurrentSettings();
+      if (previousStep === 6) refreshPaymentSelections();
+      state.setupNotice = "";
+      setupFormBaseline = setupFormSignature();
+    } catch (error) {
+      // Restore confirmed runtime settings without replacing the user's DOM inputs.
+      applySettingsRecord(previous);
+      state.setupStep = previousStep;
+      state.onboardingCompanyMode = previousMode;
+      state.activeBusinessArea = previousArea;
+      refreshBusinessSwitcher();
+      showSetupError(error.userMessage || `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`);
+      return false;
+    } finally {
+      setupSaving = false;
+    }
+    await continuation();
+    return true;
+  }
+
+  function refreshPaymentSelections() {
+    if (!activePaymentChoices().some(entry => entry.id === state.paymentChoice)) state.paymentChoice = preferredNormalPaymentId() || activePaymentChoices()[0]?.id || "cash";
+    if (!activeNormalPaymentChoices().some(entry => entry.id === state.checkoutVoucherRemainderPayment)) state.checkoutVoucherRemainderPayment = preferredNormalPaymentId() || "cash";
+    if (!activeNormalPaymentChoices().some(entry => entry.id === state.voucherSalePaymentChoice)) state.voucherSalePaymentChoice = preferredNormalPaymentId() || "cash";
+  }
+
+  function guardSetupDeparture(action) {
+    if (setupLeaveAction) return true;
+    if (!setupHasUnconfirmedInputs()) return false;
+    openBottomSheet("Ungespeicherte Eingaben", `<p>Deine Eingaben in diesem Schritt sind noch nicht gespeichert.</p>
+      <button class="button button-primary" type="button" data-setup-leave="save">Speichern und wechseln</button>
+      <button class="button button-secondary" type="button" data-setup-leave="stay">Im Assistenten bleiben</button>
+      <button class="button button-ghost" type="button" data-setup-leave="discard">Änderungen verwerfen</button>`);
+    setupLeaveAction = action;
+    return true;
+  }
+
+  function saveSetupStep(formData) {
     if (state.setupStep === 1) {
       state.onboardingCompanyMode = formData.get("companyMode") === "multiple" ? "multiple" : "single";
     }
     if (state.setupStep === 2) {
       const required = ["owner", "street", "zip", "city"];
-      if (validate && required.some(name => !String(formData.get(name) || "").trim())) return "Bitte alle Pflichtangaben zum Unternehmen ausfüllen.";
+      if (required.some(name => !String(formData.get(name) || "").trim())) return "Bitte alle Pflichtangaben zum Unternehmen ausfüllen.";
       const result = applyCompanyForm(formData);
-      if (validate && result.error) return result.error;
+      if (result.error) return result.error;
     }
     if (state.setupStep === 3) {
       const requestedCompanyLocationUse = formData.get("useAsServiceLocation") === "on";
       const uncoveredArea = uncoveredBusinessAreaForCompanyLocationChoice(requestedCompanyLocationUse);
-      if (uncoveredArea) return validate ? `Bitte zuerst einen eigenen aktiven Leistungsort für ${uncoveredArea.label} zuordnen.` : "";
+      if (uncoveredArea) return `Bitte zuerst einen eigenen aktiven Leistungsort für ${uncoveredArea.label} zuordnen.`;
       if (data.company.useAsServiceLocation !== requestedCompanyLocationUse) {
         data.company.useAsServiceLocation = requestedCompanyLocationUse;
         data.company.updatedAt = new Date().toISOString();
@@ -4812,7 +4901,7 @@
     if (state.setupStep === 4) {
       const status = String(formData.get("taxStatus") || "undecided");
       const defaultRate = Number(formData.get("defaultTaxRate"));
-      if (validate && status === "vat" && ![7, 19].includes(defaultRate)) return "Bitte einen Standard-Steuersatz auswählen.";
+      if (status === "vat" && ![7, 19].includes(defaultRate)) return "Bitte einen Standard-Steuersatz auswählen.";
       data.taxSettings.status = ["vat", "small-business", "undecided"].includes(status) ? status : "undecided";
       if (status === "vat") {
         data.taxSettings.defaultRate = defaultRate;
@@ -4823,10 +4912,16 @@
         data.taxSettings.rates.forEach(rate => { rate.active = rate.rate === defaultRate || rate.active; });
       }
     }
-    if (state.setupStep === 6 && !activeNormalPaymentChoices().length) return "Mindestens eine normale Zahlungsart muss aktiv bleiben.";
+    if (state.setupStep === 6) {
+      const activeIds = formData.getAll("setupPaymentChoice").map(String);
+      if (!data.paymentChoices.some(choice => activeIds.includes(choice.id) && isNormalPaymentChoice(choice))) {
+        return "Mindestens eine normale Zahlungsart muss aktiv bleiben.";
+      }
+      data.paymentChoices.forEach(choice => { choice.active = activeIds.includes(choice.id); });
+    }
     if (state.setupStep === 7) {
       const error = applyBusinessAreaForm(formData);
-      if (validate && error) return error;
+      if (error) return error;
     }
     if (state.setupStep === 8) {
       data.receiptSettings.footerText = String(formData.get("footerText") || "").trim();
@@ -6000,6 +6095,17 @@
   }
 
   async function switchActiveCompany(companyId) {
+    if (companyId !== activeCompanyId() && hasUnsavedCompanyScopedDraft()) {
+      return commitActiveCompanySwitch(companyId);
+    }
+    if (guardSetupDeparture(async () => {
+      if (await commitActiveCompanySwitch(companyId)) renderRoute(false);
+      openContextSwitcher(true);
+    })) return false;
+    return commitActiveCompanySwitch(companyId);
+  }
+
+  async function commitActiveCompanySwitch(companyId) {
     if (!currentSettingsRecord || companyId === activeCompanyId()) return true;
     if (!persistence.companyProfileById(currentSettingsRecord, companyId)) {
       state.companySwitchNotice = "Das ausgewählte Unternehmensprofil ist nicht verfügbar.";
@@ -6750,6 +6856,11 @@
 
   function navigate(route, pushHistory = true) {
     if (pendingSettingsWrites) return false;
+    if (guardSetupDeparture(() => commitNavigation(route, pushHistory))) return false;
+    return commitNavigation(route, pushHistory);
+  }
+
+  function commitNavigation(route, pushHistory = true) {
     const nextRoute = validRoutes.has(route) ? route : "home";
     // Return from receipt actions preserves the view; normal list entry starts active.
     if (nextRoute === "receipts" && !["receipts", "receipt-detail", "receipt-credit", "receipt-preview"].includes(state.route)) {
@@ -6851,6 +6962,18 @@
   }
 
   document.addEventListener("click", async event => {
+    const setupLeave = event.target.closest("[data-setup-leave]");
+    if (setupLeave && setupLeaveAction) {
+      const action = setupLeaveAction;
+      const choice = setupLeave.dataset.setupLeave;
+      closeBottomSheet();
+      if (choice === "save") await saveSetupAndContinue(action);
+      else if (choice === "discard") {
+        renderSetupWizard();
+        await action();
+      }
+      return;
+    }
     if (!state.settingsReady) return;
     const publicQrOpen = event.target.closest("[data-public-qr-key]");
     if (publicQrOpen) {
@@ -7013,21 +7136,13 @@
     }
     const setupEditCatalog = event.target.closest("[data-setup-edit-catalog]");
     if (setupEditCatalog) {
-      const form = document.getElementById("setupWizardForm");
-      if (form) saveSetupStep(new FormData(form), false);
-      if (state.setup.status !== "completed") state.setup.status = "started";
-      try {
-        await persistCurrentSettings();
-      } catch (error) {
-        state.setupNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`;
-        renderSetupWizard();
-        return;
-      }
-      state.catalogManagerAreaId = setupEditCatalog.dataset.setupEditCatalog;
-      state.catalogManagerReturnRoute = "setup-wizard";
-      state.catalogManagerView = "items";
-      state.catalogSettingsNotice = "";
-      navigate("settings-catalog");
+      await saveSetupAndContinue(() => {
+        state.catalogManagerAreaId = setupEditCatalog.dataset.setupEditCatalog;
+        state.catalogManagerReturnRoute = "setup-wizard";
+        state.catalogManagerView = "items";
+        state.catalogSettingsNotice = "";
+        commitNavigation("settings-catalog");
+      });
       return;
     }
     const newTreatmentTemplate = event.target.closest("[data-new-treatment-template]");
@@ -7222,6 +7337,7 @@
     const contextCompanySwitch = event.target.closest("[data-context-company-id]");
     if (contextCompanySwitch) {
       const switched = await switchActiveCompany(contextCompanySwitch.dataset.contextCompanyId);
+      if (setupLeaveAction) return;
       if (switched) renderRoute(false);
       openContextSwitcher(true);
       const focusTarget = switched
@@ -7238,6 +7354,7 @@
     const companySwitch = event.target.closest("[data-company-switch]");
     if (companySwitch) {
       await switchActiveCompany(companySwitch.dataset.companySwitch);
+      if (setupLeaveAction) return;
       renderCompanySettings();
       return;
     }
@@ -7596,32 +7713,15 @@
     }
     const setupBack = event.target.closest("[data-setup-back]");
     if (setupBack) {
-      const form = document.getElementById("setupWizardForm");
-      if (form) saveSetupStep(new FormData(form), false);
-      if (state.setup.status !== "completed") state.setup.status = "started";
-      try {
-        await persistCurrentSettings();
-        state.setupNotice = "";
-      } catch (error) {
-        state.setupNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`;
-      }
-      state.setupStep = Math.max(1, state.setupStep - 1);
-      renderSetupWizard();
+      await saveSetupAndContinue(() => {
+        state.setupStep = Math.max(1, state.setupStep - 1);
+        renderSetupWizard();
+      });
       return;
     }
     const setupCancel = event.target.closest("[data-setup-cancel]");
     if (setupCancel) {
-      const form = document.getElementById("setupWizardForm");
-      if (form) saveSetupStep(new FormData(form), false);
-      if (state.setup.status !== "completed") state.setup.status = "started";
-      try {
-        await persistCurrentSettings();
-        state.setupNotice = "";
-      } catch (error) {
-        state.settingsStorageNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`;
-        state.settingsStorageNoticeIsError = true;
-      }
-      navigate("settings");
+      await saveSetupAndContinue(() => commitNavigation("settings"));
       return;
     }
     const setupJump = event.target.closest("[data-setup-jump]");
@@ -7632,9 +7732,10 @@
       return;
     }
     if (event.target.closest("[data-setup-tse]")) {
-      state.setupStep = 10;
-      state.setupNotice = "";
-      renderSetupWizard();
+      await saveSetupAndContinue(() => {
+        state.setupStep = 10;
+        renderSetupWizard();
+      });
       return;
     }
     if (event.target.closest("[data-setup-test]")) {
@@ -7644,6 +7745,11 @@
     }
     const paymentToggle = event.target.closest("[data-payment-toggle]");
     if (paymentToggle) {
+      if (state.route === "setup-wizard") {
+        const label = paymentToggle.closest("label")?.querySelector("span");
+        if (label) label.textContent = paymentToggle.checked ? "Aktiv" : "Deaktiviert";
+        return;
+      }
       const choice = data.paymentChoices.find(entry => entry.id === paymentToggle.dataset.paymentToggle);
       if (!choice) return;
       const showPaymentNotice = (message, isError = false) => {
@@ -7671,9 +7777,7 @@
       const previousRemainderPayment = state.checkoutVoucherRemainderPayment;
       const previousVoucherSalePayment = state.voucherSalePaymentChoice;
       choice.active = wantsActive;
-      if (!activePaymentChoices().some(entry => entry.id === state.paymentChoice)) state.paymentChoice = preferredNormalPaymentId() || activePaymentChoices()[0]?.id || "cash";
-      if (!activeNormalPaymentChoices().some(entry => entry.id === state.checkoutVoucherRemainderPayment)) state.checkoutVoucherRemainderPayment = preferredNormalPaymentId() || "cash";
-      if (!activeNormalPaymentChoices().some(entry => entry.id === state.voucherSalePaymentChoice)) state.voucherSalePaymentChoice = preferredNormalPaymentId() || "cash";
+      refreshPaymentSelections();
       const label = paymentToggle.closest("label")?.querySelector("span");
       if (label) label.textContent = wantsActive ? "Aktiv" : "Deaktiviert";
       try {
@@ -8096,16 +8200,8 @@
     }
     if (action === "business-area-add") {
       if (state.route === "setup-wizard") {
-        const form = document.getElementById("setupWizardForm");
-        if (form) saveSetupStep(new FormData(form), false);
-        if (state.setup.status !== "completed") state.setup.status = "started";
-        try {
-          await persistCurrentSettings();
-        } catch (error) {
-          state.setupNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`;
-          renderSetupWizard();
-          return;
-        }
+        await saveSetupAndContinue(openBusinessTemplatePicker);
+        return;
       }
       openBusinessTemplatePicker();
       return;
@@ -8482,27 +8578,12 @@
     if (setupWizardForm) {
       event.preventDefault();
       if (state.setupStep >= setupSteps.length) return;
-      const error = saveSetupStep(new FormData(setupWizardForm));
-      if (error) {
-        state.setupNotice = error;
-        renderSetupWizard();
-        return;
-      }
-      const previousSetupStatus = state.setup.status;
       const nextSetupStep = state.setupStep + 1;
-      state.setup.status = previousSetupStatus === "completed" || nextSetupStep === setupSteps.length ? "completed" : "started";
-      try {
-        await persistCurrentSettings();
-      } catch (persistenceError) {
-        state.setup.status = previousSetupStatus;
-        state.setupNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(persistenceError)}`;
+      await saveSetupAndContinue(() => {
+        state.setupStep = nextSetupStep;
+        state.setupFirstStartVisible = state.setup.status !== "completed";
         renderSetupWizard();
-        return;
-      }
-      state.setupNotice = "";
-      state.setupStep = nextSetupStep;
-      state.setupFirstStartVisible = state.setup.status !== "completed";
-      renderSetupWizard();
+      }, nextSetupStep === setupSteps.length);
       return;
     }
 
@@ -9298,6 +9379,11 @@
   window.addEventListener("popstate", event => {
     if (!state.settingsReady) return;
     const targetHistoryIndex = Number.isInteger(event.state?.freckaIndex) ? event.state.freckaIndex : null;
+    if (setupHistoryRestore?.resolve) {
+      setupHistoryRestore.resolve();
+      setupHistoryRestore = null;
+      return;
+    }
     if (pendingSettingsWrites) {
       if (targetHistoryIndex === null) {
         history.pushState({ route: state.route, freckaIndex: currentHistoryIndex }, "", `#/${state.route}`);
@@ -9307,9 +9393,34 @@
       }
       return;
     }
+    if (setupHasUnconfirmedInputs()) {
+      const targetHash = window.location.hash;
+      const targetRoute = event.state?.route;
+      let restored = Promise.resolve();
+      const correction = targetHistoryIndex === null ? 0 : currentHistoryIndex - targetHistoryIndex;
+      if (correction) {
+        restored = new Promise(resolve => { setupHistoryRestore = { resolve }; });
+        history.go(correction);
+      } else {
+        history.pushState({ route: state.route, freckaIndex: currentHistoryIndex }, "", `#/${state.route}`);
+      }
+      guardSetupDeparture(async () => {
+        await restored;
+        // Re-enter through the router; accepting the guard creates a fresh history entry.
+        const deepLinkRoute = targetRoute ? null : resolveQrDeepLink(targetHash);
+        commitNavigation(targetRoute ?? deepLinkRoute ?? (targetHash.replace("#/", "") || "home"));
+      });
+      return;
+    }
     if (targetHistoryIndex !== null) currentHistoryIndex = targetHistoryIndex;
     const deepLinkRoute = event.state?.route ? null : resolveQrDeepLink(window.location.hash);
     navigate(event.state?.route ?? deepLinkRoute ?? (window.location.hash.replace("#/", "") || "home"), false);
+  });
+
+  window.addEventListener("beforeunload", event => {
+    if (!setupHasUnconfirmedInputs()) return;
+    event.preventDefault();
+    event.returnValue = "";
   });
 
   function updateBrowserBottomOffset() {

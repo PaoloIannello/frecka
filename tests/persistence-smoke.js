@@ -4938,7 +4938,318 @@
       return { client, before, frame, doc, start, step, open, clean, waitFor };
     }
     const numbering = settings => settings.companies.map(profile => ({ id: profile.id, receiptSettings: profile.receiptSettings }));
+    function failNextSettingsWrite(frame) {
+      const prototype = frame.contentWindow.IDBDatabase.prototype;
+      const original = prototype.transaction;
+      let abortNext = true;
+      prototype.transaction = function (...args) {
+        const transaction = original.apply(this, args);
+        if (abortNext && args[1] === "readwrite" && Array.from(transaction.objectStoreNames).includes("settings")) {
+          abortNext = false;
+          frame.contentWindow.queueMicrotask(() => transaction.abort());
+        }
+        return transaction;
+      };
+      return () => { prototype.transaction = original; };
+    }
     return [
+      ...["receipt", "voucher"].flatMap(kind => ["save", "discard", "stay", "write-error"].map(choice => ({
+        name: `ONBOARDING-004A REWORK-001: ${kind}-Deep-Link – ${choice}`,
+        run: async () => {
+          const test = await fixture(`document-${kind}-${choice}`, "first");
+          await runWithCleanup(async () => {
+            await test.start(); await test.step(2);
+            const before = await test.client.exportTenantSnapshot();
+            const form = test.doc().querySelector("#setupWizardForm");
+            form.querySelector('[name="name"]').value = "Dokumentnavigation Test";
+            const receipt = before.stores.receipts.receipts[0];
+            const voucher = before.stores.vouchers.vouchers[0];
+            const hash = `#/${kind}/${encodeURIComponent(kind === "receipt" ? receipt.id : voucher.reference)}`;
+            await runWithCleanup(async () => {
+              test.frame.contentWindow.location.hash = hash;
+              await waitFor(() => test.doc().querySelector('[data-setup-leave="save"]'));
+              test.doc().querySelector(`[data-setup-leave="${choice === "write-error" ? "save" : choice}"]`).click();
+              if (choice === "stay" || choice === "write-error") {
+                await waitFor(() => choice === "stay" ? !test.doc().querySelector('[data-setup-leave="save"]') : test.doc().querySelector(".settings-save-notice"));
+                assertEqual(test.doc().querySelector("#setupWizardForm"), form, "Dokumentnavigation ersetzte Formular");
+                assertEqual(form.querySelector('[name="name"]').value, "Dokumentnavigation Test", "Eingaben gingen verloren");
+                assert(!test.doc().querySelector(`.${kind}-detail-page`), "Dokument wurde trotz Abbruch geöffnet");
+                assertDeepEqual((await test.client.exportTenantSnapshot()).stores, before.stores, "Abbruch änderte gespeicherte Daten");
+                if (choice === "stay") return;
+                test.frame.contentWindow.location.hash = hash;
+                await waitFor(() => test.doc().querySelector('[data-setup-leave="save"]'));
+                test.doc().querySelector('[data-setup-leave="save"]').click();
+              }
+              await waitFor(() => test.doc().querySelector(`.${kind}-detail-page`));
+              assertEqual(test.doc().querySelector(kind === "receipt" ? ".receipt-detail-page .flow-title" : ".voucher-code-block strong").textContent,
+                kind === "receipt" ? receipt.number : voucher.code, "Falsches Dokument geöffnet");
+              const after = await test.client.exportTenantSnapshot();
+              assertDeepEqual(after.stores.receipts, before.stores.receipts, "Belege verändert");
+              assertDeepEqual(after.stores.vouchers, before.stores.vouchers, "Gutscheine verändert");
+              assertDeepEqual(numbering(after.stores.settings), numbering(before.stores.settings), "Dokumentnavigation änderte Nummernkreise");
+              if (choice === "discard") assertDeepEqual(after.stores.settings, before.stores.settings, "Verwerfen speicherte Änderungen");
+              else assertEqual(api.activeCompanyProfile(after.stores.settings).company.name, "Dokumentnavigation Test", "Speichern vor Dokumentnavigation fehlgeschlagen");
+            }, choice === "write-error" ? failNextSettingsWrite(test.frame) : () => {});
+          }, test.clean);
+        }
+      }))),
+      ...[false, true].map(dirty => ({
+        name: `ONBOARDING-004A REWORK-001: Entwurf sperrt Unternehmenswechsel vor Assistent (${dirty})`,
+        run: async () => {
+          const test = await fixture(`draft-first-${dirty}`);
+          await runWithCleanup(async () => {
+            const primaryId = test.before.stores.settings.companies[0].id;
+            const extraId = test.before.stores.settings.activeCompanyId;
+            test.doc().querySelector("#contextSwitcher").click();
+            test.doc().querySelector(`[data-context-company-id="${primaryId}"]`).click();
+            await waitFor(async () => (await test.client.readSettings()).activeCompanyId === primaryId);
+            await waitFor(() => test.doc().querySelector(`[data-context-company-id="${primaryId}"][aria-current="true"]`));
+            test.doc().querySelector("#bottomSheetClose").click();
+            test.frame.contentWindow.location.hash = "#/home";
+            await waitFor(() => test.doc().querySelector('[data-action="new-receipt"]'));
+            test.doc().querySelector('[data-action="new-receipt"]').click();
+            await waitFor(() => test.doc().querySelector("[data-toggle-item]"));
+            test.doc().querySelector("[data-toggle-item]").click();
+            await waitFor(() => test.doc().querySelector(".compact-cart.has-items"));
+            test.frame.contentWindow.location.hash = "#/settings";
+            await waitFor(() => test.doc().querySelector('[data-action="setup-start"]'));
+            await test.start(); await test.step(2);
+            const form = test.doc().querySelector("#setupWizardForm");
+            const name = form.querySelector('[name="name"]');
+            if (dirty) name.value = "Nicht speichern oder verwerfen";
+            const value = name.value;
+            const before = await test.client.exportTenantSnapshot();
+            test.doc().querySelector("#contextSwitcher").click();
+            test.doc().querySelector(`[data-context-company-id="${extraId}"]`).click();
+            await waitFor(() => test.doc().querySelector(".context-switcher-notice.is-error"));
+            assert(test.doc().querySelector(".context-switcher-notice").textContent.includes("offenen Entwurf"), "Bestehende Draft-Meldung fehlt");
+            assert(!test.doc().querySelector("[data-setup-leave]"), "Assistenten-Guard wurde vor Draft-Sperre geöffnet");
+            assertEqual(test.doc().querySelector("#setupWizardForm"), form, "Draft-Sperre renderte Formular neu");
+            assertEqual(name.value, value, "Draft-Sperre verwarf Eingaben");
+            assertDeepEqual((await test.client.exportTenantSnapshot()).stores, before.stores, "Draft-Sperre speicherte Daten oder wechselte Profil");
+          }, test.clean);
+        }
+      })),
+      ...["invalid", "write-error"].map(outcome => ({
+        name: `ONBOARDING-004A: Zahlungsarten ${outcome} – Checkboxen erhalten, Schrittabschluss speichert`,
+        run: async () => {
+          const test = await fixture(`payments-${outcome}`, "first");
+          await runWithCleanup(async () => {
+            await test.start();
+            for (let next = 2; next <= 6; next += 1) await test.step(next);
+            const form = test.doc().querySelector("#setupWizardForm");
+            const cash = form.querySelector('[data-payment-toggle="cash"]');
+            const card = form.querySelector('[data-payment-toggle="ec"]');
+            cash.click();
+            if (outcome === "invalid") card.click();
+            const before = await test.client.readSettings();
+            assert(api.activeCompanyProfile(before).paymentChoices.find(choice => choice.id === "cash").active, "Assistent speicherte vor Schrittabschluss");
+            const restoreWrite = outcome === "write-error" ? failNextSettingsWrite(test.frame) : () => {};
+            await runWithCleanup(async () => {
+              form.requestSubmit();
+              await waitFor(() => test.doc().querySelector(".settings-save-notice")?.textContent);
+              assertEqual(test.doc().querySelector("#setupWizardForm"), form, "Zahlungsfehler renderte neu");
+              assert(!cash.checked, "Zahlungsfehler verwarf Checkbox");
+              assertEqual(card.checked, outcome !== "invalid", "Karten-Auswahl ging verloren");
+              assertDeepEqual(await test.client.readSettings(), before, "Zahlungsfehler übernahm Daten");
+              if (outcome === "invalid") card.click();
+              form.requestSubmit();
+              await waitFor(() => test.doc().querySelector('#setupWizardForm[data-setup-step="7"]'));
+              assert(!api.activeCompanyProfile(await test.client.readSettings()).paymentChoices.find(choice => choice.id === "cash").active, "Zahlungs-Retry speicherte nicht");
+            }, restoreWrite);
+          }, test.clean);
+        }
+      })),
+      ...[3, 4].map(step => ({
+        name: `ONBOARDING-004A: Schritt ${step} erhält Checkbox/Radio nach Schreibfehler, Laufzeit-Rollback`,
+        run: async () => {
+          const test = await fixture(`controls-${step}`, "first");
+          await runWithCleanup(async () => {
+            await test.start();
+            for (let next = 2; next <= step; next += 1) await test.step(next);
+            const form = test.doc().querySelector("#setupWizardForm");
+            const control = form.querySelector(step === 3 ? '[name="useAsServiceLocation"]' : '[name="taxStatus"][value="small-business"]');
+            control.checked = step !== 3;
+            const before = await test.client.readSettings();
+            await runWithCleanup(async () => {
+              form.requestSubmit();
+              await waitFor(() => test.doc().querySelector(".settings-save-notice")?.textContent);
+              assertEqual(test.doc().querySelector("#setupWizardForm"), form, "Schreibfehler renderte neu");
+              assertEqual(control.checked, step !== 3, "Schreibfehler verlor Auswahl");
+              assertDeepEqual(await test.client.readSettings(), before, "Schreibfehler änderte Settings");
+              test.doc().querySelector('[data-route="settings"]').click();
+              await waitFor(() => test.doc().querySelector('[data-setup-leave="discard"]'));
+              test.doc().querySelector('[data-setup-leave="discard"]').click();
+              await waitFor(() => test.doc().querySelector('[data-action="setup-start"]'));
+              test.doc().querySelector('[data-action="setup-start"]').click();
+              await waitFor(() => test.doc().querySelector(`#setupWizardForm[data-setup-step="${step}"]`));
+              assert(test.doc().querySelector(`#setupWizardForm[data-setup-step="${step}"]`), "Wiedereintritt verlor Schritt");
+              const restored = test.doc().querySelector(step === 3 ? '[name="useAsServiceLocation"]' : '[name="taxStatus"][value="vat"]');
+              assert(restored.checked, "Verwerfen zeigte fehlgeschlagen übernommene Laufzeitdaten");
+            }, failNextSettingsWrite(test.frame));
+          }, test.clean);
+        }
+      })),
+      {
+        name: "ONBOARDING-004A: Geschäftsbereichsvalidierung erhält alle Werte und übernimmt nichts teilweise",
+        run: async () => {
+          const test = await fixture("areas-invalid", "first");
+          await runWithCleanup(async () => {
+            await test.start();
+            for (let next = 2; next <= 7; next += 1) await test.step(next);
+            const form = test.doc().querySelector("#setupWizardForm");
+            const labels = [...form.querySelectorAll('[name^="areaLabel:"]')];
+            labels[0].value = "Neue Bereichsbezeichnung";
+            labels[1].value = "   ";
+            const before = await test.client.readSettings();
+            form.requestSubmit();
+            await waitFor(() => test.doc().querySelector(".settings-save-notice")?.textContent);
+            assertEqual(test.doc().querySelector("#setupWizardForm"), form, "Bereichsfehler renderte neu");
+            assertEqual(labels[0].value, "Neue Bereichsbezeichnung", "Bereichsname ging verloren");
+            assertEqual(labels[1].value, "   ", "Ungültige Eingabe ging verloren");
+            assertDeepEqual(await test.client.readSettings(), before, "Bereichsfehler übernahm Daten teilweise");
+          }, test.clean);
+        }
+      },
+      {
+        name: "ONBOARDING-004A: Guard-Speichern bei Schreibfehler bleibt im Formular und erlaubt erneuten Routenversuch",
+        run: async () => {
+          const test = await fixture("guard-write-error", "first");
+          await runWithCleanup(async () => {
+            await test.start(); await test.step(2);
+            const form = test.doc().querySelector("#setupWizardForm");
+            form.querySelector('[name="name"]').value = "Guard-Wiederholung";
+            await runWithCleanup(async () => {
+              test.doc().querySelector('[data-route="settings"]').click();
+              await waitFor(() => test.doc().querySelector('[data-setup-leave="save"]'));
+              test.doc().querySelector('[data-setup-leave="save"]').click();
+              await waitFor(() => test.doc().querySelector(".settings-save-notice")?.textContent);
+              assertEqual(test.doc().querySelector("#setupWizardForm"), form, "Guard-Fehler verließ Formular");
+              assertEqual(form.querySelector('[name="name"]').value, "Guard-Wiederholung", "Guard verlor Eingabe");
+              test.doc().querySelector('[data-route="settings"]').click();
+              await waitFor(() => test.doc().querySelector('[data-setup-leave="save"]'));
+              test.doc().querySelector('[data-setup-leave="save"]').click();
+              await waitFor(() => test.doc().querySelector('[data-action="setup-start"]'));
+              assertEqual(api.activeCompanyProfile(await test.client.readSettings()).company.name, "Guard-Wiederholung", "Guard-Retry speicherte nicht");
+            }, failNextSettingsWrite(test.frame));
+          }, test.clean);
+        }
+      },
+      ...["forward", "back", "interrupt"].flatMap(action => ["valid", "invalid", "write-error"].map(outcome => ({
+        name: `ONBOARDING-004A: ${action} – ${outcome}, Eingabeerhalt und atomare Übernahme`,
+        run: async () => {
+          const test = await fixture(`${action}-${outcome}`, "first");
+          await runWithCleanup(async () => {
+            await test.start(); await test.step(2);
+            const before = await test.client.exportTenantSnapshot();
+            const form = test.doc().querySelector("#setupWizardForm");
+            form.querySelector('[name="name"]').value = "Geänderte Geschäftsbezeichnung";
+            form.querySelector('[name="street"]').value = "Neue Straße";
+            form.querySelector('[name="houseNumber"]').value = outcome === "invalid" ? "" : "17";
+            const restoreWrite = outcome === "write-error" ? failNextSettingsWrite(test.frame) : () => {};
+            const act = () => action === "forward" ? form.requestSubmit() :
+              test.doc().querySelector(action === "back" ? "[data-setup-back]" : "[data-setup-cancel]").click();
+            await runWithCleanup(async () => {
+              act();
+              if (outcome !== "valid") {
+                await waitFor(() => test.doc().querySelector(".setup-page .settings-save-notice")?.textContent);
+                assertEqual(test.doc().querySelector("#setupWizardForm"), form, "Fehler ersetzte das Formular");
+                assertEqual(form.dataset.setupStep, "2", "Fehler wechselte den Schritt");
+                assertEqual(form.querySelector('[name="name"]').value, "Geänderte Geschäftsbezeichnung", "Name ging verloren");
+                assertEqual(form.querySelector('[name="street"]').value, "Neue Straße", "Straße ging verloren");
+                assertDeepEqual((await test.client.exportTenantSnapshot()).stores, before.stores, "Fehler änderte dauerhafte Daten");
+                form.querySelector('[name="houseNumber"]').value = "17";
+                act();
+              }
+              await waitFor(() => action === "interrupt" ? test.doc().querySelector('[data-action="setup-start"]') :
+                test.doc().querySelector(`#setupWizardForm[data-setup-step="${action === "forward" ? 3 : 1}"]`));
+              const after = await test.client.exportTenantSnapshot();
+              assertEqual(api.activeCompanyProfile(after.stores.settings).company.name, "Geänderte Geschäftsbezeichnung", "Änderung wurde nicht gespeichert");
+              assertDeepEqual(numbering(after.stores.settings), numbering(before.stores.settings), "Nummern wurden verändert");
+              for (const store of ["receipts", "vouchers", "customers", "catalog"]) {
+                assertDeepEqual(after.stores[store], before.stores[store], `${store} wurde verändert`);
+              }
+              if (action === "interrupt") {
+                const restarted = await test.open(); await test.start(restarted);
+                assert(restarted.contentDocument.querySelector('#setupWizardForm[data-setup-step="1"]'), "Neustart beginnt nicht bei Schritt 1");
+                restarted.contentDocument.querySelector("#setupWizardForm").requestSubmit();
+                await waitFor(() => restarted.contentDocument.querySelector('#setupWizardForm[data-setup-step="2"]'));
+                assertEqual(restarted.contentDocument.querySelector('[name="name"]').value, "Geänderte Geschäftsbezeichnung", "Neustart verlor gespeicherte Angaben");
+              }
+            }, restoreWrite);
+          }, test.clean);
+        }
+      }))),
+      ...[320, 390].flatMap(width => ["save", "discard", "stay"].map(choice => ({
+        name: `ONBOARDING-004A: Externer Routenwechsel – ${choice} (${width} px)`,
+        run: async () => {
+          const test = await fixture(`route-${choice}-${width}`, "extra", "started", width);
+          await runWithCleanup(async () => {
+            await test.start(); await test.step(2);
+            const form = test.doc().querySelector("#setupWizardForm");
+            form.querySelector('[name="name"]').value = "Unbestätigter Name";
+            test.doc().querySelector('[data-route="settings"]').click();
+            await waitFor(() => test.doc().querySelector('[data-setup-leave="save"]'));
+            assert(test.doc().documentElement.scrollWidth <= test.frame.contentWindow.innerWidth, `Guard läuft bei ${width} px über`);
+            test.doc().querySelector(`[data-setup-leave="${choice}"]`).click();
+            await waitFor(() => choice === "stay" ? !test.doc().querySelector('[data-setup-leave="save"]') :
+              test.doc().querySelector('[data-action="setup-start"]'));
+            if (choice === "stay") {
+              assertEqual(test.doc().querySelector("#setupWizardForm"), form, "Bleiben ersetzte das Formular");
+              assertEqual(form.querySelector('[name="name"]').value, "Unbestätigter Name", "Bleiben verlor Eingaben");
+            }
+            const after = await test.client.readSettings();
+            assertEqual(api.activeCompanyProfile(after).company.name, choice === "save" ? "Unbestätigter Name" :
+              api.activeCompanyProfile(test.before.stores.settings).company.name, "Guard übernahm falsche Daten");
+            assertDeepEqual(after.companies[0], test.before.stores.settings.companies[0], "Guard änderte fremdes Profil");
+            assertDeepEqual(numbering(after), numbering(test.before.stores.settings), "Guard änderte Kürzel oder Nummern");
+          }, test.clean);
+        }
+      }))),
+      ...["back", "forward"].map(direction => ({
+        name: `ONBOARDING-004A: Browser-${direction} schützt Eingaben`,
+        run: async () => {
+          const test = await fixture(`history-${direction}`);
+          await runWithCleanup(async () => {
+            await test.start(); await test.step(2);
+            if (direction === "forward") {
+              test.doc().querySelector('[data-route="settings"]').click();
+              await waitFor(() => test.doc().querySelector('[data-action="setup-start"]'));
+              test.frame.contentWindow.history.back();
+              await waitFor(() => test.doc().querySelector('#setupWizardForm[data-setup-step="2"]'));
+            }
+            const form = test.doc().querySelector("#setupWizardForm");
+            form.querySelector('[name="name"]').value = "Browser-Eingabe";
+            test.frame.contentWindow.history[direction]();
+            await waitFor(() => test.doc().querySelector('[data-setup-leave="stay"]'));
+            test.doc().querySelector('[data-setup-leave="stay"]').click();
+            await waitFor(() => test.frame.contentWindow.location.hash === "#/setup-wizard");
+            assertEqual(test.doc().querySelector("#setupWizardForm"), form, "History ersetzte das Formular");
+            assertEqual(form.querySelector('[name="name"]').value, "Browser-Eingabe", "History verlor Eingaben");
+          }, test.clean);
+        }
+      })),
+      ...["save", "discard", "stay"].map(choice => ({
+        name: `ONBOARDING-004A: Unternehmenswechsel – ${choice}, Profilisolation`,
+        run: async () => {
+          const test = await fixture(`company-${choice}`);
+          await runWithCleanup(async () => {
+            await test.start(); await test.step(2);
+            test.doc().querySelector('[name="name"]').value = "Name des Zusatzprofils";
+            test.doc().querySelector("#contextSwitcher").click();
+            await waitFor(() => test.doc().querySelector(`[data-context-company-id="${test.before.stores.settings.companies[0].id}"]`));
+            test.doc().querySelector(`[data-context-company-id="${test.before.stores.settings.companies[0].id}"]`).click();
+            await waitFor(() => test.doc().querySelector('[data-setup-leave="save"]'));
+            test.doc().querySelector(`[data-setup-leave="${choice}"]`).click();
+            await waitFor(async () => choice === "stay" ? !test.doc().querySelector('[data-setup-leave="save"]') :
+              (await test.client.readSettings()).activeCompanyId === test.before.stores.settings.companies[0].id);
+            const after = await test.client.readSettings();
+            assertEqual(after.companies[1].company.name, choice === "save" ? "Name des Zusatzprofils" : test.before.stores.settings.companies[1].company.name, "Wechsel speicherte falsche Daten");
+            assertDeepEqual(after.companies[0], test.before.stores.settings.companies[0], "Wechsel änderte fremdes Profil");
+            assertDeepEqual(numbering(after), numbering(test.before.stores.settings), "Wechsel änderte Nummern");
+          }, test.clean);
+        }
+      })),
       ...["normal", "body", "cleanup", "body-cleanup", "unexpected-close", "multiple", "delete", "retry"].map(failure => ({
         name: `ONBOARDING-003: Ressourcenbereinigung schließt alle Verbindungen und erhält Fehler (${failure})`,
         run: async () => {
@@ -5091,6 +5402,8 @@
             await waitFor(() => test.doc().querySelector('#setupWizardForm[data-setup-step="2"]'));
             test.doc().querySelector('[name="name"]').value = "Nicht gespeicherter fremder Name";
             test.frame.contentWindow.location.hash = "#/settings-company";
+            await waitFor(() => test.doc().querySelector('[data-setup-leave="discard"]'));
+            test.doc().querySelector('[data-setup-leave="discard"]').click();
             await waitFor(() => test.doc().querySelector("#companySettingsForm"));
             test.doc().querySelector('[data-company-switch]').click();
             await waitFor(async () => (await test.client.readSettings()).activeCompanyId === test.before.stores.settings.companies[0].id);
