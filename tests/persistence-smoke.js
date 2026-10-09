@@ -4890,7 +4890,7 @@
       }
       throw new Error(`Onboarding wurde nicht rechtzeitig bereit: ${predicate.toString()}`);
     };
-    async function fixture(label, kind = "extra", status = "started", width = 390) {
+    async function fixture(label, kind = "extra", status = "started", width = 390, configure = () => {}) {
       const client = context.makeClient(`onboarding-${label}`);
       const snapshot = completeTenantSnapshotFixture(client.tenantId);
       snapshot.stores.settings = api.normalizeSettingsRecord(snapshot.stores.settings, snapshot.stores.settings, client.tenantId).record;
@@ -4907,6 +4907,7 @@
         }, client.tenantId);
         api.activeCompanyProfile(snapshot.stores.settings).setup.status = status;
       }
+      configure(snapshot);
       await client.restoreTenantSnapshot(snapshot);
       const before = await client.exportTenantSnapshot();
       const index = await fetch("../index.html", { cache: "no-store" }).then(response => response.text());
@@ -4953,6 +4954,176 @@
       return () => { prototype.transaction = original; };
     }
     return [
+      ...["unchanged", "pending", "create", "edit", "write-error", "completed"].map(action => ({
+        name: `ONBOARDING-004B: Leistungsort-Roundtrip ${action}`,
+        run: async () => {
+          const test = await fixture(`locations-${action}`, "first", action === "completed" ? "completed" : "started", 320, snapshot => {
+            if (["pending", "create", "write-error"].includes(action)) {
+              snapshot.stores.settings.serviceLocations.forEach(location => { location.addressMode = "company"; });
+            }
+          });
+          await runWithCleanup(async () => {
+            await test.start(); await test.step(2); await test.step(3);
+            const before = await test.client.exportTenantSnapshot();
+            const pending = ["pending", "create", "write-error"].includes(action);
+            test.doc().querySelector('[name="useAsServiceLocation"]').checked = !pending;
+            if (pending) {
+              test.doc().querySelector("#setupWizardForm").requestSubmit();
+              await waitFor(() => test.doc().querySelector(".settings-save-notice"));
+            }
+            test.doc().querySelector("[data-setup-manage-locations]").click();
+            await waitFor(() => test.doc().querySelector("[data-setup-location-return]"));
+            assertDeepEqual((await test.client.exportTenantSnapshot()).stores, before.stores, "Verwaltungszugang speicherte unvollständigen Schritt");
+            assert(test.doc().documentElement.scrollWidth <= test.frame.contentWindow.innerWidth, "Verwaltung läuft bei 320px über");
+            if (["create", "edit", "write-error"].includes(action)) {
+              if (action === "edit") {
+                const existing = before.stores.settings.serviceLocations.find(location => location.addressMode === "own");
+                test.doc().querySelector(`[data-edit-service-location="${existing.id}"]`).click();
+              } else test.doc().querySelector('[data-action="service-location-add"]').click();
+              const form = test.doc().querySelector("#serviceLocationForm");
+              form.querySelector('[name="addressMode"][value="own"]').click();
+              for (const [name, value] of Object.entries({ name: "Eigener Testort", street: "Testweg", houseNumber: "42", zip: "12345", city: "Teststadt" })) form.elements.namedItem(name).value = value;
+              if (action !== "edit") form.querySelectorAll('[name="businessAreaIds"]').forEach(input => { input.checked = true; });
+              await runWithCleanup(async () => {
+                form.requestSubmit();
+                if (action === "write-error") {
+                  await waitFor(() => test.doc().querySelector(".settings-save-notice")?.textContent.includes("Lokales Speichern fehlgeschlagen"));
+                  assertEqual(test.doc().querySelector("#serviceLocationForm"), form, "Schreibfehler verwarf Formular");
+                  assertEqual(form.elements.namedItem("street").value, "Testweg", "Schreibfehler verlor Adresse");
+                  assertDeepEqual((await test.client.exportTenantSnapshot()).stores, before.stores, "Fehler übernahm Leistungsort");
+                  form.requestSubmit();
+                }
+                await waitFor(() => test.doc().querySelector("[data-setup-location-return]"));
+              }, action === "write-error" ? failNextSettingsWrite(test.frame) : () => {});
+              const settings = await test.client.readSettings();
+              assertDeepEqual(api.activeCompanyProfile(settings).company, api.activeCompanyProfile(before.stores.settings).company, "Eigene Adresse änderte Unternehmensanschrift");
+              assertDeepEqual(settings.businessAreas, before.stores.settings.businessAreas, "Vorhandene Standardzuordnungen verändert");
+              const editedId = action === "edit" ? before.stores.settings.serviceLocations.find(location => location.addressMode === "own").id : null;
+              for (const location of before.stores.settings.serviceLocations.filter(location => location.id !== editedId)) {
+                assertDeepEqual(settings.serviceLocations.find(entry => entry.id === location.id), location, "Vorhandener Leistungsort verloren");
+              }
+              const saved = settings.serviceLocations.find(location => location.name === "Eigener Testort");
+              assertEqual(saved.street, "Testweg", "Eigene Adresse nicht gespeichert");
+              assert(saved.businessAreaIds.length > 0, "Zuordnungen fehlen");
+            }
+            test.doc().querySelector("[data-setup-location-return]").click();
+            await waitFor(() => test.doc().querySelector('#setupWizardForm[data-setup-step="3"]'));
+            assertEqual(test.doc().querySelector('[name="useAsServiceLocation"]').checked, !pending, "Rückkehr verlor unbestätigte Auswahl");
+            assertEqual(test.doc().activeElement, test.doc().querySelector(".setup-head h1"), "Rückkehr fokussiert nicht Überschrift");
+            if (["create", "edit", "write-error"].includes(action)) assert(test.doc().querySelector(".setup-location-overview").textContent.includes("Eigener Testort"), "Aktualisierter Ort fehlt im Assistenten");
+            else assertDeepEqual((await test.client.exportTenantSnapshot()).stores, before.stores, "Roundtrip ohne Änderung mutierte Daten");
+            if (action === "completed") assertEqual(api.activeCompanyProfile(await test.client.readSettings()).setup.status, "completed", "Rückkehr setzte Abschluss zurück");
+            if (["create", "write-error"].includes(action)) {
+              await test.step(4);
+              assertEqual(api.activeCompanyProfile(await test.client.readSettings()).company.useAsServiceLocation, false, "Auswahl wurde nach Anlegen nicht regulär gespeichert");
+            }
+          }, test.clean);
+        }
+      })),
+      ...["legacy", "first", "extra", "year-change"].map(kind => ({
+        name: `ONBOARDING-004B: Nummernvorschau und Zusammenfassung ${kind}, keine Reservierung`,
+        run: async () => {
+          const test = await fixture(`number-summary-${kind}`, kind, "started", 390, snapshot => {
+            if (kind === "year-change") {
+              const receipt = api.activeCompanyProfile(snapshot.stores.settings).receiptSettings;
+              receipt.numbering.displayYear = "2031";
+              receipt.numbering.nextSequences.receipt["2031"] = 1;
+            }
+          });
+          await runWithCleanup(async () => {
+            await test.start();
+            for (let next = 2; next <= 5; next += 1) await test.step(next);
+            const before = await test.client.readSettings();
+            const preview = test.doc().querySelector(".receipt-number-preview strong").textContent;
+            const profile = api.activeCompanyProfile(before);
+            if (kind === "year-change") assertEqual(preview, "FR-2031-000001", "Neuer Jahresstand falsch");
+            assertEqual(preview.startsWith(`${profile.receiptSettings.numbering.profileCode}-`), kind !== "legacy", "Profilkürzel falsch");
+            for (let next = 6; next <= 9; next += 1) await test.step(next);
+            test.doc().querySelector("[data-setup-tse]").click();
+            await waitFor(() => test.doc().querySelector('[data-setup-step="10"]'));
+            assertEqual(test.doc().querySelector('[data-setup-jump="5"]').closest("article").querySelector("strong").textContent, preview, "Zusammenfassung zeigt andere Nummer");
+            assertDeepEqual(numbering(await test.client.readSettings()), numbering(before), "Vorschau verbrauchte Nummer");
+          }, test.clean);
+        }
+      })),
+      ...["back", "restart"].map(action => ({
+        name: `ONBOARDING-004B: Leistungsort-Rückkehr ${action}`,
+        run: async () => {
+          const test = await fixture(`location-history-${action}`, "first");
+          await runWithCleanup(async () => {
+            await test.start(); await test.step(2); await test.step(3);
+            const before = await test.client.exportTenantSnapshot();
+            test.doc().querySelector('[name="useAsServiceLocation"]').checked = false;
+            test.doc().querySelector("[data-setup-manage-locations]").click();
+            await waitFor(() => test.doc().querySelector("[data-setup-location-return]"));
+            if (action === "back") {
+              test.frame.contentWindow.history.back();
+              await waitFor(() => test.doc().querySelector('[data-setup-step="3"]'));
+              assertEqual(test.doc().querySelector('[name="useAsServiceLocation"]').checked, false, "Browser-Zurück verlor Auswahl");
+              test.doc().querySelector('[data-route="settings"]').click();
+              await waitFor(() => test.doc().querySelector('[data-setup-leave="stay"]'));
+              test.doc().querySelector('[data-setup-leave="stay"]').click();
+              assertEqual(test.doc().querySelector('[name="useAsServiceLocation"]').checked, false, "Rückkehr verlor Navigationsschutz");
+            } else {
+              const restarted = await test.open();
+              restarted.contentWindow.location.hash = "#/settings-location";
+              await waitFor(() => restarted.contentDocument.querySelector(".service-location-list"));
+              assert(!restarted.contentDocument.querySelector("[data-setup-location-return]"), "Neustart übernahm flüchtigen Kontext");
+            }
+            assertDeepEqual((await test.client.exportTenantSnapshot()).stores, before.stores, "Rückkehr/Neustart speicherte Auswahl");
+          }, test.clean);
+        }
+      })),
+      {
+        name: "ONBOARDING-004B: Profilwechsel verwirft Leistungsort-Rückkehrkontext",
+        run: async () => {
+          const test = await fixture("location-context-company");
+          await runWithCleanup(async () => {
+            await test.start(); await test.step(2); await test.step(3);
+            test.doc().querySelector('[name="useAsServiceLocation"]').checked = false;
+            test.doc().querySelector("[data-setup-manage-locations]").click();
+            await waitFor(() => test.doc().querySelector("[data-setup-location-return]"));
+            const before = await test.client.readSettings();
+            const primaryId = before.companies[0].id;
+            test.doc().querySelector("#contextSwitcher").click();
+            test.doc().querySelector(`[data-context-company-id="${primaryId}"]`).click();
+            await waitFor(async () => (await test.client.readSettings()).activeCompanyId === primaryId);
+            await waitFor(() => !test.doc().querySelector("[data-setup-location-return]"));
+            const after = await test.client.readSettings();
+            assertDeepEqual(after.companies, before.companies, "Profilwechsel übernahm unbestätigte Auswahl");
+          }, test.clean);
+        }
+      },
+      ...["native", "custom", "stay"].map(kind => ({
+        name: `ONBOARDING-004B: Fokus ${kind}`,
+        run: async () => {
+          const test = await fixture(`focus-${kind}`, "first");
+          await runWithCleanup(async () => {
+            await test.start();
+            assertEqual(test.doc().activeElement, test.doc().querySelector(".setup-head h1"), "Schritt 1 ohne Überschriftfokus");
+            await test.step(2);
+            assertEqual(test.doc().activeElement, test.doc().querySelector(".setup-head h1"), "Schrittwechsel öffnet Eingabefokus");
+            const form = test.doc().querySelector("#setupWizardForm");
+            const owner = form.elements.namedItem("owner");
+            if (kind === "stay") {
+              owner.value = "Geänderte Person";
+              const route = test.doc().querySelector('[data-route="settings"]');
+              owner.focus(); route.click();
+              await waitFor(() => test.doc().querySelector('[data-setup-leave="stay"]'));
+              test.doc().querySelector('[data-setup-leave="stay"]').click();
+              assertEqual(test.doc().activeElement, owner, "Bleiben verlor Rückkehrfokus");
+              assertEqual(owner.value, "Geänderte Person", "Bleiben verlor Eingabe");
+            } else {
+              owner.value = kind === "native" ? "" : "   ";
+              form.querySelector('[data-setup-back]').click();
+              await waitFor(() => test.doc().querySelector("#setupSaveError"));
+              assertEqual(test.doc().activeElement, owner, "Validierung fokussiert nicht Pflichtfeld");
+              assertEqual(owner.getAttribute("aria-describedby"), "setupSaveError", "Fehler nicht dem Feld zugeordnet");
+              assertEqual(test.doc().querySelector("#setupSaveError").getAttribute("role"), "alert", "Fehler nicht zugänglich");
+            }
+          }, test.clean);
+        }
+      })),
       ...["receipt", "voucher"].flatMap(kind => ["save", "discard", "stay", "write-error"].map(choice => ({
         name: `ONBOARDING-004A REWORK-001: ${kind}-Deep-Link – ${choice}`,
         run: async () => {
@@ -5452,6 +5623,8 @@
           const test = await fixture(`restore-${changeActiveProfile}`);
           await runWithCleanup(async () => {
             await test.start(); await test.step(2); await test.step(3);
+            test.doc().querySelector("[data-setup-manage-locations]").click();
+            await waitFor(() => test.doc().querySelector("[data-setup-location-return]"));
             const snapshot = await test.client.exportTenantSnapshot();
             if (changeActiveProfile) snapshot.stores.settings.activeCompanyId = snapshot.stores.settings.companies[0].id;
             const passphrase = "Onboarding Restore Kennwort 2030";
@@ -5470,6 +5643,9 @@
             test.doc().querySelector('[name="restoreConfirmed"]').checked = true;
             test.doc().querySelector("#backupRestoreConfirmForm").requestSubmit();
             await waitFor(() => test.doc().body.textContent.includes("Die Sicherung wurde vollständig wiederhergestellt."));
+            test.frame.contentWindow.location.hash = "#/settings-location";
+            await waitFor(() => test.doc().querySelector(".service-location-list"));
+            assert(!test.doc().querySelector("[data-setup-location-return]"), "Restore erhielt veralteten Rückkehrkontext");
             test.frame.contentWindow.location.hash = "#/settings";
             await waitFor(() => test.doc().querySelector('[data-action="setup-start"]'));
             await test.start();

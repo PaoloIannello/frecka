@@ -311,6 +311,7 @@
   let setupLeaveAction = null;
   let setupSaving = false;
   let setupHistoryRestore = null;
+  let setupLocationReturn = null;
 
   function updateActivationPermission() {
     if (state.cart.length || state.checkoutSubmitting) {
@@ -785,6 +786,7 @@
   }
 
   function resetSetupTransientState() {
+    setupLocationReturn = null;
     setupFormBaseline = null;
     state.setupStep = 1;
     state.setupNotice = "";
@@ -4696,7 +4698,7 @@
       [2, "Unternehmen", [companyIdentity.name, companyIdentity.owner].filter(Boolean).join(" · ") || "Nicht angegeben", companyComplete, companyComplete ? "Pflichtangaben vorhanden" : "Pflichtangaben prüfen"],
       [3, "Leistungsorte", defaultLocation?.name || "Kein Standard-Leistungsort", locationComplete, locationComplete ? `${availableLocationCount} aktive Orte · jeder Bereich hat einen Standard` : "Zuordnung und Standard prüfen"],
       [4, "Steuern", taxLabels[data.taxSettings.status] || taxLabels.undecided, taxComplete, taxComplete ? (data.taxSettings.status === "vat" ? `${data.taxSettings.defaultRate} % Standard` : "Status gewählt") : "Steuerstatus fachlich klären"],
-      [5, "Belegnummer", `${data.receiptSettings.yearPrefix}-${String(data.receiptSettings.nextNumber).padStart(6, "0")}`, numberComplete, numberComplete ? "Nummernkreis vorbereitet" : "Nummernkreis prüfen"],
+      [5, "Belegnummer", setupReceiptNumberPreview(), numberComplete, numberComplete ? "Nummernkreis vorbereitet" : "Nummernkreis prüfen"],
       [6, "Zahlungsarten", activePaymentChoices().map(choice => choice.title).join(", "), paymentComplete, paymentComplete ? "Normale Zahlungsart aktiv" : "Zahlungsart aktivieren"],
       [7, "Geschäftsbereiche", activeBusinessAreas().map(area => area.label).join(", "), businessComplete, businessComplete ? `Standard: ${defaultBusinessArea()?.label || "–"}` : "Standardbereich auswählen"],
       [7, "Leistungen & Preise", catalogComplete ? "Katalog geprüft" : `${catalogReviewTotal} Einträge zu prüfen`, catalogComplete, catalogComplete ? "Aktive Leistungen für jeden Bereich vorhanden" : catalogHasEntries ? "Preise und Steuersätze bestätigen" : "Mindestens einen aktiven Eintrag je Bereich anlegen"],
@@ -4736,13 +4738,18 @@
     </article>`;
   }
 
+  function setupReceiptNumberPreview() {
+    const receipt = data.receiptSettings;
+    const numbering = receipt.numbering || {};
+    const year = numbering.displayYear || receipt.yearPrefix;
+    const next = numbering.nextSequences?.receipt?.[year] || receipt.nextNumber;
+    return `${numbering.mode === "profile" ? `${numbering.profileCode}-` : ""}${year}-${String(next).padStart(6, "0")}`;
+  }
+
   function setupStepContent() {
     const company = data.company;
     const receipt = data.receiptSettings;
-    const numbering = receipt.numbering || {};
-    const numberingYear = numbering.displayYear || receipt.yearPrefix;
-    const numberingNext = numbering.nextSequences?.receipt?.[numberingYear] || receipt.nextNumber;
-    const receiptNumberPreview = `${numbering.mode === "profile" ? `${numbering.profileCode}-` : ""}${numberingYear}-${String(numberingNext).padStart(6, "0")}`;
+    const receiptNumberPreview = setupReceiptNumberPreview();
     switch (state.setupStep) {
       case 1: return `<div class="setup-welcome"><div class="setup-welcome-symbol" aria-hidden="true">✓</div><h2>In etwa fünf Minuten ist FRECKA einsatzbereit.</h2><p>Wir richten gemeinsam alles ein.<br>Du kannst jederzeit unterbrechen und später weitermachen.</p><fieldset class="settings-option-list onboarding-company-choice"><legend>Wie möchtest du FRECKA nutzen?</legend><label><input type="radio" name="companyMode" value="single" ${state.onboardingCompanyMode !== "multiple" ? "checked" : ""}><span><strong>Ich arbeite mit einem Unternehmen</strong><small>Eine Unternehmenseinheit – auch mit mehreren Geschäftsbereichen oder Leistungsorten.</small></span></label><label><input type="radio" name="companyMode" value="multiple" ${state.onboardingCompanyMode === "multiple" ? "checked" : ""}><span><strong>Ich verwalte mehrere eigenständige Unternehmen</strong><small>Zum Beispiel Unternehmen mit getrennten Unternehmens- oder Steuerdaten. Weitere Profile legst du danach in den Einstellungen an.</small></span></label></fieldset><p class="settings-neutral-note">Diese Auswahl erklärt nur die Datenstruktur und ersetzt keine rechtliche oder steuerliche Beratung.</p></div>${setupActions("Einrichtung starten")}`;
       case 2: return `<section class="settings-form-card"><h2>Unternehmen</h2>
@@ -4776,6 +4783,9 @@
 
   function attachSetupStepBehavior() {
     const form = document.getElementById("setupWizardForm");
+    if (state.setupStep === 3) {
+      form.querySelector(".setup-actions").insertAdjacentHTML("beforebegin", `<button class="button button-secondary" type="button" data-setup-manage-locations>Leistungsorte verwalten</button><p class="settings-neutral-note">Deine Auswahl bleibt bei der Rückkehr erhalten. Gespeichert wird sie erst mit Weiter, Zurück oder Speichern &amp; unterbrechen.</p>`);
+    }
     form?.querySelectorAll("[data-payment-toggle]").forEach(input => {
       input.name = "setupPaymentChoice";
       input.value = input.dataset.paymentToggle;
@@ -4803,6 +4813,13 @@
     </section>`;
     attachSetupStepBehavior();
     setupFormBaseline = setupFormSignature();
+    if (state.setupStep === 3 && setupLocationReturn?.companyId === activeCompanyId()) {
+      document.querySelector('[name="useAsServiceLocation"]').checked = setupLocationReturn.useAsServiceLocation;
+      setupLocationReturn = null;
+    }
+    const heading = mainContent.querySelector(".setup-head h1");
+    heading.tabIndex = -1;
+    heading.focus({ preventScroll: true });
   }
 
   function setupFormSignature() {
@@ -4814,7 +4831,7 @@
     return state.route === "setup-wizard" && setupFormBaseline !== null && setupFormSignature() !== setupFormBaseline;
   }
 
-  function showSetupError(message) {
+  function showSetupError(message, field = null) {
     state.setupNotice = message;
     let notice = document.querySelector(".setup-page > .settings-save-notice");
     if (!notice) {
@@ -4824,14 +4841,23 @@
       document.getElementById("setupWizardForm")?.before(notice);
     }
     notice.textContent = message;
+    notice.id = "setupSaveError";
     notice.tabIndex = -1;
-    notice.focus();
+    if (field?.isConnected) {
+      field.setAttribute("aria-describedby", notice.id);
+      field.focus({ preventScroll: true });
+    } else notice.focus({ preventScroll: true });
   }
 
   async function saveSetupAndContinue(continuation, completed = false) {
     if (setupSaving || pendingSettingsWrites) return false;
     const form = document.getElementById("setupWizardForm");
-    if (!form || !form.reportValidity()) return false;
+    if (!form) return false;
+    if (!form.reportValidity()) {
+      const invalid = form.querySelector(":invalid");
+      showSetupError(invalid?.validationMessage || "Bitte die Eingaben prüfen.", invalid);
+      return false;
+    }
     const previous = cloneSettingsValue(currentSettingsRecord);
     const previousMode = state.onboardingCompanyMode;
     const previousArea = state.activeBusinessArea;
@@ -4839,7 +4865,12 @@
     setupSaving = true;
     try {
       const error = saveSetupStep(new FormData(form));
-      if (error) throw Object.assign(new Error(error), { userMessage: error });
+      if (error) {
+        const empty = [...form.querySelectorAll("input[required], [name^='areaLabel:']")]
+          .find(input => !input.value.trim());
+        const field = empty || (error.includes("Hausnummer") ? form.elements.namedItem("houseNumber") : null);
+        throw Object.assign(new Error(error), { userMessage: error, field });
+      }
       if (state.setup.status !== "completed") state.setup.status = completed ? "completed" : "started";
       await persistCurrentSettings();
       if (previousStep === 6) refreshPaymentSelections();
@@ -4852,7 +4883,7 @@
       state.onboardingCompanyMode = previousMode;
       state.activeBusinessArea = previousArea;
       refreshBusinessSwitcher();
-      showSetupError(error.userMessage || `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`);
+      showSetupError(error.userMessage || `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(error)}`, error.field);
       return false;
     } finally {
       setupSaving = false;
@@ -6159,7 +6190,9 @@
     }
     mainContent.innerHTML = `<section class="flow-page settings-form-page page-enter">
       <div class="flow-head compact-flow-head">
-        <button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>
+        ${setupLocationReturn?.companyId === activeCompanyId()
+          ? `<button class="button button-back" type="button" data-setup-location-return>Zurück zum Einrichtungsassistenten</button>`
+          : `<button class="button button-back" type="button" data-route="settings"><span aria-hidden="true">←</span> Zurück</button>`}
         <p class="eyebrow">Einstellungen</p>
         <h1 class="flow-title">Leistungsorte</h1>
         <p class="page-copy">Orte verwalten und den passenden Geschäftsbereichen zuordnen.</p>
@@ -6843,7 +6876,7 @@
       button.classList.toggle("is-active", active);
       active ? button.setAttribute("aria-current", "page") : button.removeAttribute("aria-current");
     });
-    mainContent.focus({ preventScroll: true });
+    (state.route === "setup-wizard" ? mainContent.querySelector(".setup-head h1") : mainContent).focus({ preventScroll: true });
     window.scrollTo({ top: 0, behavior: "auto" });
     if (pushHistory) {
       const hash = `#/${state.route}`;
@@ -6962,6 +6995,21 @@
   }
 
   document.addEventListener("click", async event => {
+    if (event.target.closest("[data-setup-manage-locations]") && state.route === "setup-wizard" && state.setupStep === 3) {
+      if (pendingSettingsWrites || setupSaving) return;
+      // This single step's pending choice stays in memory, never in an incomplete settings write.
+      setupLocationReturn = { companyId: activeCompanyId(), useAsServiceLocation: document.querySelector('[name="useAsServiceLocation"]').checked };
+      state.serviceLocationEditingId = null;
+      state.serviceLocationNotice = "";
+      commitNavigation("settings-location");
+      return;
+    }
+    if (event.target.closest("[data-setup-location-return]") && setupLocationReturn?.companyId === activeCompanyId()) {
+      state.setupStep = 3;
+      state.setupNotice = "";
+      commitNavigation("setup-wizard");
+      return;
+    }
     const setupLeave = event.target.closest("[data-setup-leave]");
     if (setupLeave && setupLeaveAction) {
       const action = setupLeaveAction;
@@ -8708,19 +8756,41 @@
     const serviceLocationForm = event.target.closest("#serviceLocationForm");
     if (serviceLocationForm) {
       event.preventDefault();
+      const previous = cloneSettingsValue(currentSettingsRecord);
       const formData = new FormData(serviceLocationForm);
       const locationError = applyServiceLocationForm(formData);
       if (locationError) {
         state.serviceLocationNotice = locationError;
-        renderServiceLocationSettings();
+        let notice = mainContent.querySelector(".settings-save-notice");
+        if (!notice) {
+          notice = document.createElement("div");
+          notice.className = "settings-save-notice is-error";
+          serviceLocationForm.before(notice);
+        }
+        notice.setAttribute("role", "alert");
+        notice.textContent = locationError;
+        notice.tabIndex = -1;
+        notice.focus({ preventScroll: true });
         return;
       }
-      state.serviceLocationEditingId = null;
       try {
         await persistCurrentSettings();
+        state.serviceLocationEditingId = null;
         state.serviceLocationNotice = "Leistungsort und Geschäftsbereichszuordnung wurden lokal gespeichert.";
       } catch (persistenceError) {
+        applySettingsRecord(previous);
         state.serviceLocationNotice = `Lokales Speichern fehlgeschlagen: ${persistenceErrorMessage(persistenceError)}`;
+        let notice = mainContent.querySelector(".settings-save-notice");
+        if (!notice) {
+          notice = document.createElement("div");
+          notice.className = "settings-save-notice is-error";
+          serviceLocationForm.before(notice);
+        }
+        notice.setAttribute("role", "alert");
+        notice.textContent = state.serviceLocationNotice;
+        notice.tabIndex = -1;
+        notice.focus({ preventScroll: true });
+        return;
       }
       renderServiceLocationSettings();
       return;
